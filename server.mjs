@@ -1309,7 +1309,16 @@ export async function createHarnessServer(options = {}) {
         const query=new URL(req.url,`http://${host}`).searchParams;
         return json(res,200,await skillsCatalog.list({cwd:query.get('cwd')||undefined,query:query.get('query')||'',source:query.get('source')||'all',refresh:query.get('refresh')==='true'}));
       }
+      const restoreSkillId=pathname.endsWith('/restore')?skillIdFromRequestPath(pathname.slice(0,-8)):null;
+      if(restoreSkillId&&req.method==='POST'){
+        if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Edit skills in BLACKICE on this computer.'});
+        const saved=await skillsCatalog.restore({id:restoreSkillId,value:await body(req)});sendEvent({type:'skills.updated',id:restoreSkillId});return json(res,200,saved);
+      }
       const skillId=skillIdFromRequestPath(pathname);
+      if(skillId&&req.method==='DELETE'){
+        if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Edit skills in BLACKICE on this computer.'});
+        const deleted=await skillsCatalog.delete({id:skillId,value:await body(req)});sendEvent({type:'skills.updated',id:skillId});return json(res,200,deleted);
+      }
       if(skillId&&req.method==='POST'){
         if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Edit skills in BLACKICE on this computer.'});
         const saved=await skillsCatalog.save({id:skillId,value:await body(req)});sendEvent({type:'skills.updated',id:skillId});return json(res,200,saved);

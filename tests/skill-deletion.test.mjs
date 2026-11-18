@@ -1,0 +1,76 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm,readFile,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {EventEmitter} from 'node:events';
+import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
+import {readReleaseSkill} from '../lib/release-skills.mjs';
+import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
+import {createHarnessServer} from '../server.mjs';
+const temporary=async t=>{const dir=await mkdtemp(path.join(tmpdir(),'skill-delete-'));t.after(()=>rm(dir,{recursive:true,force:true}));return dir;};
+test('bundled deletion persists, excludes model access, restores unchanged default, and leaves unrelated files intact',async t=>{
+ const root=await temporary(t),catalog=createSkillsCatalog({dataDir:root}),id='builtin-browser';
+ const original=await catalog.detail({id}),other=await catalog.detail({id:'builtin-job-search'});
+ await writeFile(path.join(root,'unrelated.txt'),'Untouched content');
+ const deleted=await catalog.delete({id,value:{expectedRevision:original.revision}});
+ assert.deepEqual(deleted,{id,revision:2,deleted:true});
+ const persisted=JSON.parse(await readFile(path.join(root,'skill-edits','skills.json'),'utf8')).entries[id];
+ assert.deepEqual(persisted,{revision:2,deleted:true});
+ const fresh=createSkillsCatalog({dataDir:root});
+ assert.ok(!(await fresh.list()).entries.some(x=>x.id===id));
+ assert.ok(!(await fresh.list({source:'bundled'})).entries.some(x=>x.id===id));
+ await assert.rejects(fresh.detail({id}),{status:404});
+ const trash=(await fresh.list({source:'deleted'})).entries;
+ assert.equal(trash.length,1);assert.equal(trash[0].id,id);assert.equal(trash[0].deleted,true);assert.equal('content' in trash[0],false);
+ const handler=createRetrievalToolHandler({cwd:root,dataDir:root});
+ const found=JSON.parse((await handler({name:'relay_skills',arguments:{action:'search'}})).contentItems[0].text);
+ assert.ok(!found.entries.some(x=>x.id===id));await assert.rejects(handler({name:'relay_skills',arguments:{action:'read',id}}),{status:404});
+ for(const action of ['remove','delete','restore'])await assert.rejects(handler({name:'relay_skills',arguments:{action,id}}));
+ await assert.rejects(fresh.save({id,value:{expectedRevision:1,content:'stale'}}),{status:409});
+ await assert.rejects(fresh.save({id,value:{expectedRevision:2,content:'cannot resurrect'}}),{status:409});
+ await assert.rejects(fresh.restore({id,value:{expectedRevision:1}}),{status:409});
+ const restored=await fresh.restore({id,value:{expectedRevision:2}});
+ assert.equal(restored.content,original.content);assert.equal(restored.source,'bundled');assert.equal(restored.revision,3);
+ assert.equal((await fresh.list({source:'deleted'})).entries.length,0);
+ assert.equal(readReleaseSkill(id).content,original.content);assert.deepEqual(await fresh.detail({id:other.id}),other);
+ assert.equal(await readFile(path.join(root,'unrelated.txt'),'utf8'),'Untouched content');
+ await assert.rejects(fresh.restore({id,value:{expectedRevision:3}}),{status:409});
+});
+test('edited document deletion restores exact saved bytes and concurrent stale saves cannot overwrite it',async t=>{
+ const root=await temporary(t),a=createSkillsCatalog({dataDir:root}),b=createSkillsCatalog({dataDir:root}),id='builtin-browser';
+ const text='# Human document\r\nExact text \u03c0\n';
+ const saved=await a.save({id,value:{expectedRevision:1,content:text}});
+ const outcomes=await Promise.allSettled([a.delete({id,value:{expectedRevision:saved.revision}}),b.save({id,value:{expectedRevision:saved.revision,content:'# Other edit'}})]);
+ assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);
+ assert.equal(outcomes.find(x=>x.status==='rejected').reason.status,409);
+ let trash=(await a.list({source:'deleted'})).entries;
+ if(!trash.length){const active=await a.detail({id});await a.delete({id,value:{expectedRevision:active.revision}});trash=(await a.list({source:'deleted'})).entries;}
+ const raw=JSON.parse(await readFile(path.join(root,'skill-edits','skills.json'),'utf8')).entries[id];
+ const restored=await b.restore({id,value:{expectedRevision:trash[0].revision}});
+ assert.equal(restored.content,raw.content);assert.equal(restored.source,'user');
+ // A separate deterministic saved edit confirms exact requested document round-trip.
+ const exact=await a.save({id,value:{expectedRevision:restored.revision,content:text}});
+ const deleted=await a.delete({id,value:{expectedRevision:exact.revision}});
+ assert.equal((await b.restore({id,value:{expectedRevision:deleted.revision}})).content,text);
+ for(const value of [{},{expectedRevision:0},{expectedRevision:999},{expectedRevision:1,content:'extra'}])await assert.rejects(a.delete({id,value}));
+});
+class Runtime extends EventEmitter{status(){return{connected:true,authenticated:true,models:[]};}async start(){return this.status();}async close(){}async runAgent(){throw Error('Deletion must not start a model');}}
+test('human HTTP delete/restore enforces auth, local access, CAS and restart persistence',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'skill-delete-http-'));let app,base,cookie;t.after(async()=>{try{await app?.close();}finally{await rm(root,{recursive:true,force:true});}});
+ const start=async()=>{app=await createHarnessServer({runtime:new Runtime(),dataDir:root,defaultCwd:root,port:0,remoteAccess:false});base=await app.listen();cookie=(await fetch(base)).headers.get('set-cookie').split(';')[0];};await start();
+ const request=(route,method='GET',payload,headers={Cookie:cookie})=>fetch(new URL(route,base),{method,headers:{...headers,'Content-Type':'application/json'},...(payload?{body:JSON.stringify(payload)}:{})});
+ const route='/api/skills/builtin-browser';
+ assert.equal((await request(route,'DELETE',{expectedRevision:1},{})).status,401);
+ assert.equal((await request(route,'DELETE',{expectedRevision:1},{Cookie:cookie,'x-blackice-remote':'1'})).status,403);
+ const response=await request(route,'DELETE',{expectedRevision:1});assert.equal(response.status,200);const deleted=await response.json();
+ await app.close();await start();
+ assert.equal((await request(route)).status,404);
+ const trash=await(await request('/api/skills?source=deleted')).json();assert.equal(trash.entries[0].id,'builtin-browser');
+ assert.equal((await request(route,'POST',{expectedRevision:deleted.revision,content:'cannot restore by save'})).status,409);
+ assert.equal((await request(route+'/restore','POST',{expectedRevision:deleted.revision},{})).status,401);
+ assert.equal((await request(route+'/restore','POST',{expectedRevision:deleted.revision},{Cookie:cookie,'x-blackice-remote':'1'})).status,403);
+ assert.equal((await request(route+'/restore','POST',{expectedRevision:1})).status,409);
+ const restore=await request(route+'/restore','POST',{expectedRevision:deleted.revision});assert.equal(restore.status,200);
+ assert.equal((await request(route)).status,200);
+});
