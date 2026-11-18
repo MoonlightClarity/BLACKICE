@@ -40,3 +40,7 @@ This is source qualification only. No installer was built or installed here; liv
 ## Direct-document follow-up
 
 The next iteration removes the separate Edit step and duplicated metadata fields. A selected skill is one directly editable document with Save and Discard changes. Saves send only content and its edit-start revision. Display labels derive from the document heading; search reads the document. No user document text is rewritten by folder operations. Folder names rename inline; arrows expand/collapse; drag moves folders or skills; Ctrl+Enter indents a folder under its preceding sibling and Ctrl+Shift+Enter outdents it. Stale edits retain their original revision and draft across refresh rather than silently rebasing.
+
+## Skill deletion follow-up
+
+The selected document now exposes Delete skill. Inline confirmation identifies the selected skill and warns before discarding its unsaved changes. Deletion persists across restart and excludes the skill from future model search/read. Existing conversation text is not erased. Deleted skills can be restored: a saved human document is retained exactly; an unedited bundled skill restores the then-current bundled default. Revision checks prevent stale deletion, restore or save from overwriting concurrent state. Folder placement is retained for restore, so a deleted skill must be restored and moved before its folder can be removed as empty. Bundled assets and unrelated documents are unchanged. This source work is not installed.

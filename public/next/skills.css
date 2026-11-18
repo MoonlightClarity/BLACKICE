@@ -36,3 +36,9 @@
 #skills-editor textarea{min-height:55dvh}
 
 .skills-folder-row>button{width:auto}.skills-folder-row>.skills-folder-arrow{width:26px}.skills-folder-row>.skills-folder-remove{flex:none;width:25px}
+
+#skills-trash{margin-top:20px;padding-top:12px;border-top:1px solid var(--line)}
+#skills-trash-list>li{display:flex;align-items:center;gap:8px;justify-content:space-between;padding:4px 0}
+#skills-trash-list button{width:auto}
+.skills-delete-confirm{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:5px}
+.skills-delete-confirm button{margin-right:8px}

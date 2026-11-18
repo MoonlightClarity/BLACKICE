@@ -1,0 +1,36 @@
+const {app,BrowserWindow}=require('electron'),fs=require('fs'),path=require('path'),{pathToFileURL}=require('url'),{EventEmitter}=require('events');
+const root=process.argv[2],out=process.argv[3];fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();let win,server;const checks=[],sleep=ms=>new Promise(r=>setTimeout(r,ms)),run=s=>win.webContents.executeJavaScript(s);
+const until=async s=>{for(let i=0;i<100;i++){if(await run(s))return;await sleep(100);}throw Error('Timed out: '+s);};
+class Runtime extends EventEmitter{status(){return{connected:true,authenticated:true,models:[]};}async start(){return this.status();}async close(){}async runAgent(){throw Error('No model run allowed');}}
+(async()=>{
+ await app.whenReady();const {createHarnessServer}=await import(pathToFileURL(path.join(root,'server.mjs')));
+ const start=async()=>{server=await createHarnessServer({runtime:new Runtime(),dataDir:path.join(out,'data'),defaultCwd:out,port:0});return server.listen();};
+ let base=await start();win=new BrowserWindow({show:false,width:1200,height:900,webPreferences:{offscreen:true,backgroundThrottling:false}});
+ await win.loadURL(base+'/#skills');await until('!!document.querySelector("[data-skill-id=builtin-browser]")');
+ const select=async()=>{await run('document.querySelector("[data-skill-id=builtin-browser]").click()');await until('!document.querySelector("#skills-editor").hidden');};
+ await select();const original=await run('document.querySelector("#skills-edit-content").value');
+ const saved='# Human browser document\nExact saved content\n';
+ await run('document.querySelector("#skills-edit-content").value='+JSON.stringify(saved)+';document.querySelector("#skills-edit-content").dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#skills-editor").requestSubmit()');await until('document.querySelector("#skills-save-status").textContent==="Saved."');
+ await run('document.querySelector("#skills-edit-content").value="Unsent changes";document.querySelector("#skills-edit-content").dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#skills-delete").click()');
+ await until('!document.querySelector("#skills-delete-confirm").hidden');
+ if(!await run('document.querySelector("#skills-delete-message").textContent.includes("unsaved changes will be discarded")'))throw Error('Missing draft warning');
+ await run('document.querySelector("#skills-delete-confirm").scrollIntoView({block:"center"})');await sleep(200);
+ fs.writeFileSync(path.join(out,'delete-confirmation.png'),(await win.webContents.capturePage()).toPNG());
+ await run('document.querySelector("#skills-delete-cancel").click()');
+ if(await run('document.querySelector("#skills-edit-content").value')!=='Unsent changes')throw Error('Cancel lost draft');
+ await run('document.querySelector("#skills-delete").click();document.querySelector("#skills-delete-yes").click()');
+ await until('!!document.querySelector("[data-restore-skill=builtin-browser]")');
+ if(await run('!!document.querySelector("[data-skill-id=builtin-browser]")'))throw Error('Deleted skill still listed');
+ if(await run('fetch("/api/skills/builtin-browser").then(r=>r.status)')!==404)throw Error('Deleted skill still readable');
+ checks.push('Actual Delete confirmation warns about draft; cancel preserves it; confirmed deletion removes UI/API access');
+ await win.reload();await until('!!document.querySelector("[data-restore-skill=builtin-browser]")');
+ if(await run('!!document.querySelector("[data-skill-id=builtin-browser]")'))throw Error('Reload resurrected skill');
+ await win.loadURL('about:blank');await server.close();base=await start();await win.loadURL(base+'/#skills');await until('!!document.querySelector("[data-restore-skill=builtin-browser]")');
+ checks.push('Deletion persists through page reload and server restart');
+ await run('document.querySelector("#skills-trash").open=true');await sleep(200);fs.writeFileSync(path.join(out,'deleted-skills.png'),(await win.webContents.capturePage()).toPNG());
+ await run('document.querySelector("[data-restore-skill=builtin-browser]").click()');await until('!!document.querySelector("[data-skill-id=builtin-browser]")');await select();
+ if(await run('document.querySelector("#skills-edit-content").value')!==saved)throw Error('Restore did not recover exact saved override');
+ const bundled=await import(pathToFileURL(path.join(root,'lib/release-skills.mjs')));if(bundled.readReleaseSkill('builtin-browser').content!==original)throw Error('Bundled original changed');
+ checks.push('Restore recovers exact saved human document, not discarded draft; bundled source unchanged');
+ fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:true,checks},null,2));
+})().catch(e=>{fs.writeFileSync(path.join(out,'error.txt'),e.stack);process.exitCode=1}).finally(async()=>{win?.destroy();if(server)await server.close();app.exit(process.exitCode||0)});setTimeout(()=>app.exit(2),60000).unref();
