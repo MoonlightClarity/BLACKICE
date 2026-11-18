@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ConnectionManager, MCPClient, connectedBrowserIdentity, createConnectionToolHandler, executeConnectedBrowser } from '../lib/mcp.mjs';
+import { ConnectionManager, MCPClient, connectedBrowserIdentity, executeConnectedBrowser } from '../lib/mcp.mjs';
 import { chromeAutoConnectConnection, isChromeBrowserConnection } from '../lib/chrome-browser.mjs';
 
 const schema = { type: 'object', properties: { code: { type: 'string' } }, additionalProperties: true };
@@ -30,8 +30,8 @@ async function harness(t, { catalog = neoTools, onCall } = {}) {
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const manager = await new ConnectionManager({ dataDir: directory }).init();
-  t.after(async () => { await manager.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
-  const config = { id: 'native-browser', name: 'Native fixture', transport: 'http', url: `http://127.0.0.1:${server.address().port}/mcp`, timeoutMs: 1000 };
+  t.after(async () => { try { await manager.close(); } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); } });
+  const config = { id: 'browseros-neo', name: 'Native fixture', transport: 'http', url: `http://127.0.0.1:${server.address().port}/mcp`, timeoutMs: 1000 };
   await manager.save(config);
   return { manager, calls, directory, config };
 }
@@ -46,16 +46,17 @@ test('browser inventory is metadata only and distinguishes attached Chrome from 
   const result = await executeConnectedBrowser({ manager, action: 'connections' });
   assert.equal(result.success, true); assert.equal(calls.length, 0);
   const { connections } = JSON.parse(result.contentItems[0].text);
-  assert.equal(connections.length, 2);
-  assert.equal(connections[0].connected, true); assert.equal(connections[0].available, false); assert.equal(connections[0].accountAuthenticated, 'unknown');
-  assert.equal(connections[1].mode, 'imported-profile'); assert.equal(connections[1].adapter, 'chrome-devtools');
+  assert.equal(connections.length, 3);
+  const chromeConnections=connections.filter(row=>row.browser==='chrome');
+  assert.equal(chromeConnections[0].connected, true); assert.equal(chromeConnections[0].available, false); assert.equal(chromeConnections[0].accountAuthenticated, 'unknown');
+  assert.equal(chromeConnections[1].mode, 'imported-profile'); assert.equal(chromeConnections[1].adapter, 'chrome-devtools');
   assert.doesNotMatch(JSON.stringify(result), /C:\/Chrome|C:\/Imported/);
   assert.equal(manager.list().find(item => item.id === chrome.id).agentAvailable, true);
 });
 
-test('native aliases are identified from actual discovery and retain the complete SDK schemas', async t => {
+test('configured Neo retains its identity through actual discovery and retains the complete SDK schemas', async t => {
   const { manager, config, calls } = await harness(t);
-  assert.equal(connectedBrowserIdentity(manager, config.id), null);
+  assert.equal(connectedBrowserIdentity(manager, config.id)?.browser, 'neo');
   const tools = await executeConnectedBrowser({ manager, action: 'tools', connectionId: config.id });
   assert.equal(tools.success, true); assert.equal(tools.receipt.browser, 'neo'); assert.equal(tools.receipt.actionDispatched, false);
   const catalog = JSON.parse(tools.contentItems[0].text);
@@ -68,13 +69,13 @@ test('native aliases are identified from actual discovery and retain the complet
   assert.equal(JSON.parse(result.contentItems.at(-1).text).connectedBrowser.browser, 'neo');
 });
 
-test('task agents use the same configured native gateway without a contained-browser gate', async t => {
+test('explicit browser callers use the configured native gateway without a contained-browser gate', async t => {
   const { manager, config, calls } = await harness(t);
   await manager.save({ ...config, name: 'BrowserOS Neo' });
-  const handler = createConnectionToolHandler({ manager });
-  const catalog = await handler({ name: 'relay_connections', arguments: { action: 'tools', connectionId: config.id } });
+  const handler = (request => executeConnectedBrowser({manager,...request}));
+  const catalog = await handler({ action: 'tools', connectionId: config.id });
   assert.equal(catalog.success, true); assert.equal(catalog.receipt.browser, 'neo');
-  const result = await handler({ name: 'relay_connections', arguments: { action: 'call', connectionId: config.id, name: 'request_human_help', arguments: {} } });
+  const result = await handler({ action: 'call', connectionId: config.id, name: 'request_human_help', arguments: {} });
   assert.equal(result.success, true); assert.equal(result.receipt.actionDispatched, true); assert.equal(callsToTools(calls).length, 1);
 });
 
@@ -86,9 +87,9 @@ test('unknown tools, disabled configurations and nonbrowser connections are reje
   const disabled = await executeConnectedBrowser({ manager, action: 'call', connectionId: config.id, name: 'run', arguments: {} });
   assert.equal(disabled.success, false); assert.equal(disabled.receipt.actionDispatched, false);
   assert.equal(manager.list()[0].agentAvailable, false); assert.equal(callsToTools(calls).length, 0);
-  const other = await harness(t, { catalog: [{ name: 'echo', description: 'Generic service.', inputSchema: schema }] });
-  const unknown = await executeConnectedBrowser({ manager: other.manager, action: 'call', connectionId: other.config.id, name: 'echo', arguments: {} });
-  assert.equal(unknown.success, false); assert.equal(unknown.receipt.code, 'MCP_BROWSER_UNRECOGNIZED'); assert.equal(callsToTools(other.calls).length, 0);
+  await assert.rejects(manager.save({...config,id:'generic-service',enabled:true}),{code:'BROWSER_CONNECTION_REQUIRED'});
+  const unknown=await executeConnectedBrowser({manager,action:'call',connectionId:'generic-service',name:'echo',arguments:{}});
+  assert.equal(unknown.success,false);assert.equal(unknown.receipt.actionDispatched,false);assert.equal(callsToTools(calls).length,0);
 });
 
 test('native errors and failed transport after dispatch retain truthful receipts without replay', async t => {

@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BROWSER_TOOL, BrowserWorkspace, createBrowserToolHandler, containedBrowserAvailable } from '../lib/browser.mjs';
 import { BrowserRouter } from '../desktop/browser-router.mjs';
-import { createConnectionToolHandler } from '../lib/mcp.mjs';
+import { executeConnectedBrowser } from '../lib/mcp.mjs';
 import { chromeAutoConnectConnection } from '../lib/chrome-browser.mjs';
 import { DesktopController } from '../lib/desktop.mjs';
 
 const browserCall = arguments_ => ({ name: 'relay_browser', arguments: arguments_ });
-const connectionCall = arguments_ => ({ name: 'relay_connections', arguments: arguments_ });
+const connectionCall = arguments_ => arguments_;
 const driver = id => ({
   calls: [], status: () => ({ available: true, tabs: [{ tabId: id, url: 'https://example.com/' }], activeTab: id, downloads: [{ id, tabId: id }] }),
   async perform(args) { this.calls.push(args); return { tabId: id, text: 'Observed page' }; }, async close() {},
@@ -99,12 +99,12 @@ test('connection discovery includes native browsers and their full catalogs with
     tools: async id => { calls.push(['tools', id]); clients.set(id, { tools: catalog(id) }); return { tools: catalog(id) }; },
     connect: async id => { calls.push(['connect', id]); return clients.get(id); },
     call: async (id, name, args, { onDispatch } = {}) => { calls.push(['call', id, name, args]); onDispatch?.(); return { content: [{ type: 'text', text: 'Observed connected-tool result' }] }; } };
-  for (const containedBrowser of [false, true]) {
-    const handler = createConnectionToolHandler({ manager, containedBrowser });
+  {
+    const handler = (request=>executeConnectedBrowser({manager,...request}));
     const discoveryStart = calls.length;
     const result = await handler(connectionCall({ action: 'connections' }));
     assert.equal(result.success, true);
-    assert.deepEqual(JSON.parse(result.contentItems[0].text).map(entry => entry.id), [...configs.keys()]);
+    assert.deepEqual(JSON.parse(result.contentItems[0].text).connections.map(entry => entry.connectionId), ['browseros-neo','alias',chrome.id]);
     assert.equal(calls.length, discoveryStart, 'listing connections does not connect, refresh or launch a browser');
     for (const id of ['browseros-neo', 'alias', chrome.id]) {
       const tools = await handler(connectionCall({ action: 'tools', connectionId: id }));
@@ -120,8 +120,10 @@ test('connection discovery includes native browsers and their full catalogs with
     }
   }
   assert.equal(calls.includes('refresh'), false, 'native browser availability no longer adds a startup or refresh prerequisite');
-  assert.equal((await createConnectionToolHandler({ manager })(connectionCall({ action: 'call', connectionId: 'notes', name: 'read' }))).success, true);
-  assert.deepEqual(calls.at(-1), ['call', 'notes', 'read', {}], 'ordinary MCP integrations still execute');
+  const before=calls.filter(row=>Array.isArray(row)&&row[0]==='call').length;
+  const rejected=await executeConnectedBrowser({manager,action:'call',connectionId:'notes',name:'read'});
+  assert.equal(rejected.success,false);assert.equal(rejected.receipt.actionDispatched,false);
+  assert.equal(calls.filter(row=>Array.isArray(row)&&row[0]==='call').length,before);
 });
 
 test('a Neo alias identified by its discovered catalog executes its supported native tool without a blanket denial', async () => {
@@ -130,7 +132,7 @@ test('a Neo alias identified by its discovered catalog executes its supported na
   const manager = { clients, configs, list: () => [...configs.values()], redact: String,
     tools: async id => { clients.set(id, { tools }); return { tools }; }, connect: async id => clients.get(id),
     call: async (id, name, args, { onDispatch } = {}) => { executed.push({ id, name, args }); onDispatch?.(); return { content: [{ type: 'text', text: 'Observed native state' }] }; } };
-  const handler = createConnectionToolHandler({ manager });
+  const handler = (request=>executeConnectedBrowser({manager,...request}));
   const discovery = await handler(connectionCall({ action: 'tools', connectionId: 'renamed' }));
   assert.equal(discovery.success, true); assert.deepEqual(JSON.parse(discovery.contentItems[0].text).tools, tools); assert.equal(executed.length, 0);
   const args = { code: 'return await browser.pages.list()' };
@@ -150,3 +152,4 @@ test('desktop public status truthfully advertises implemented background accessi
   status.actions.length = 0;
   assert.ok(desktop.status().actions.includes('invoke'), 'status action lists do not mutate controller capabilities');
 });
+
