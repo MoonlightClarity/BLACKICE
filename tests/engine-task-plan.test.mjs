@@ -1,13 +1,12 @@
-// Historical schema-13 task state remains usable; automatic Planning gates are retired.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { HarnessEngine, validateWorkflow } from './fixture-legacy-planning-engine.mjs';
+import { HarnessEngine, validateWorkflow } from '../lib/engine.mjs';
 import { TaskInbox } from '../lib/inbox.mjs';
-import { TaskStateStore, TASK_SCHEMA_VERSION, taskToolForVersion } from './fixture-legacy-task-state.mjs';
+import { TaskStateStore, TASK_SCHEMA_VERSION, currentTaskTool } from '../lib/task-state.mjs';
 import { MethodStore } from '../lib/methods.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
 import { capabilityGuidance } from '../lib/tool-routing.mjs';
@@ -33,9 +32,9 @@ const toolLeaf = (id, action, target, status = 'active') => ({ ...leaf(id, actio
   operation: { kind: 'tool', tool: 'relay_workspace', action, target },
   result: 'The returned ' + action + ' receipt for ' + target, note: 'Call relay_workspace ' + action + ' once for ' + target,
   doneWhen: 'The receipt identifies the requested path and result.' });
-async function savePlan(options, steps = [leaf()], plan = {}) {
+async function saveManualPlan(context, options, steps = [leaf()], plan = {}) {
   const state = await taskCall(options, { action: 'read' });
-  return taskCall(options, { action: 'plan', expectedRevision: state.revision, steps, plan: { layout: 'sequence', taskType: 'general', ...plan } });
+  return context.tasks.setPlan(state.taskId, { steps, plan: { layout: 'sequence', taskType: 'general', ...plan } }, { expectedRevision: state.revision, source: 'human' });
 }
 async function fixture(t, execute, { model = 'fixture-plan-model', threadId = 'native-plan-thread', supportsTools = true, workflowId = 'ordinary-plan-chat' } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-engine-plan-')), cwd = path.join(directory, 'workspace'); await mkdir(cwd);
@@ -60,7 +59,7 @@ async function fixture(t, execute, { model = 'fixture-plan-model', threadId = 'n
 }
 const completed = run => assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
 const answerEvents = run => run.events.filter(event => ['delta', 'message'].includes(event.data?.type) || event.data?.type === 'item' && ['agentMessage', 'exitedReviewMode'].includes(event.data.item?.type));
-const optionalTool = version => taskToolForVersion(version, { executionGuardrails: false });
+const optionalTool = () => currentTaskTool({ executionGuardrails: false });
 
 test('ordinary answer events stream without a compulsory plan or final review', async t => {
   const f = await fixture(t, async (options, number, context) => {
@@ -92,24 +91,24 @@ test('ordinary tools run directly and an optional authored outline preserves rea
     const written = await call(options, 'relay_workspace', { action: 'write', path: 'result.txt', text: 'verified fixture output' });
     assert.equal(written.success, true, written.contentItems?.[0]?.text);
     assert.equal(await readFile(path.join(context.cwd, 'result.txt'), 'utf8'), 'verified fixture output');
-    let state = await savePlan(options, [toolLeaf('inspect', 'read', 'result.txt')]);
-    assert.deepEqual(state.plan.authoredBy, { runId: run.id, nodeId: 'agent' });
+    let state = await saveManualPlan(context, options, [toolLeaf('inspect', 'read', 'result.txt')]);
+    assert.equal(state.plan.origin, 'human');
     const read = await call(options, 'relay_workspace', { action: 'read', path: 'result.txt' });
     assert.equal(read.success, true); assert.match(payload(read).content, /verified fixture output/);
-    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'inspect', status: 'done', evidence: 'Read result.txt and observed verified fixture output.' });
+    state = await context.tasks.setStep(state.taskId, 'inspect', { status: 'done', evidence: 'Read result.txt and observed verified fixture output.' }, { expectedRevision: state.revision, source: 'human' });
     assert.equal(state.progress.done, 1);
     return { output: 'Created and read the result.', threadId: context.threadId };
   });
   const run = await f.settled(f.start().id); completed(run);
   assert.equal(f.runtime.calls.length, 1); assert.equal(run.nodes.agent.planning.status, 'off');
-  assert.equal(run.taskState.plan.origin, 'agent'); assert.equal(run.taskState.progress.done, 1);
+  assert.equal(run.taskState.plan.origin, 'human'); assert.equal(run.taskState.progress.done, 1);
   assert.equal(run.nodes.agent.taskSchemaVersion, TASK_SCHEMA_VERSION);
 });
 
 test('saved Inbox detail survives restart without reactivating automatic Planning', async t => {
   const f = await fixture(t, async (options, number, context) => {
     assert.doesNotMatch(options.developerInstructions, /detailed operational outline/);
-    const state = await savePlan(options, [leaf()], { detail: number === 1 ? 'detailed' : 'compact' });
+    const state = await saveManualPlan(context, options, [leaf()], { detail: number === 1 ? 'detailed' : 'compact' });
     assert.equal(state.plan.detail, number === 1 ? 'detailed' : 'compact');
     return { output: 'The optional authored detail was retained.', threadId: context.threadId };
   });
@@ -137,9 +136,9 @@ test('inspection needs no saved leaf and answering does not fabricate optional s
     await writeFile(path.join(context.cwd, 'input.txt'), 'Actual task material.');
     const read = await call(options, 'relay_workspace', { action: 'read', path: 'input.txt' });
     assert.equal(read.success, true); assert.equal(payload(read).content, '1: Actual task material.');
-    const description = await taskCall(options, { action: 'describe', methodQuery: 'Research a question' });
-    assert.ok(JSON.stringify(description).includes('research-brief')); assert.equal(description.totalMethods, 589); assert.ok(description.methods.length <= 20);
-    await savePlan(options, [toolLeaf('inspect', 'read', 'input.txt')]);
+    const description = await taskCall(options, { action: 'describe' });
+    assert.ok(description.actionFields.plan.includes('contract'));
+    await saveManualPlan(context, options, [toolLeaf('inspect', 'read', 'input.txt')]);
     return { output: 'The source was inspected; the optional outline is still active.', threadId: context.threadId };
   });
   const run = await f.settled(f.start().id); completed(run);
@@ -148,7 +147,7 @@ test('inspection needs no saved leaf and answering does not fabricate optional s
 });
 
 test('invalid and stale optional edits remain atomic without vetoing independent tools', async t => {
-  const f = await fixture(t, async options => {
+  const f = await fixture(t, async (options, number, context) => {
     const initial = await taskCall(options, { action: 'read' });
     const invalid = await call(options, 'relay_task', { action: 'plan', expectedRevision: initial.revision, steps: [] });
     assert.equal(invalid.success, false);
@@ -157,7 +156,7 @@ test('invalid and stale optional edits remain atomic without vetoing independent
     assert.equal(stale.success, false); assert.deepEqual(await taskCall(options, { action: 'read' }), initial);
     const write = await call(options, 'relay_workspace', { action: 'write', path: 'independent.txt', text: 'real write' });
     assert.equal(write.success, true);
-    const state = await savePlan(options, [leaf()]); assert.equal(state.plan.origin, 'agent');
+    const state = await saveManualPlan(context, options, [leaf()]); assert.equal(state.plan.origin, 'human');
     return { output: 'Rejected edits preserved state; the independent write succeeded.' };
   });
   const run = await f.settled(f.start().id); completed(run); assert.equal(f.runtime.calls.length, 1);
@@ -165,19 +164,19 @@ test('invalid and stale optional edits remain atomic without vetoing independent
 });
 
 test('nested outline chronology and continue reviews persist without gating the answer', async t => {
-  const f = await fixture(t, async options => {
-    let state = await savePlan(options, [
+  const f = await fixture(t, async (options, number, context) => {
+    let state = await saveManualPlan(context, options, [
       { id: 'sources', title: 'Inspect two inputs', kind: 'parallel', parentId: null },
       { ...leaf('left', 'Inspect the first input'), parentId: 'sources' },
       { ...leaf('right', 'Inspect the second input'), parentId: 'sources', status: 'pending' },
       { ...leaf('report', 'Combine findings'), status: 'pending', dependsOn: ['sources'] },
     ]);
-    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'left', status: 'done', evidence: 'Inspected the first supplied input.' });
-    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'right', status: 'active' });
-    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'right', status: 'done', evidence: 'Inspected the second supplied input.' });
-    state = await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'report', status: 'active' });
+    state = await context.tasks.setStep(state.taskId, 'left', { status: 'done', evidence: 'Inspected the first supplied input.' }, { expectedRevision: state.revision, source: 'human' });
+    state = await context.tasks.setStep(state.taskId, 'right', { status: 'active' }, { expectedRevision: state.revision, source: 'human' });
+    state = await context.tasks.setStep(state.taskId, 'right', { status: 'done', evidence: 'Inspected the second supplied input.' }, { expectedRevision: state.revision, source: 'human' });
+    state = await context.tasks.setStep(state.taskId, 'report', { status: 'active' }, { expectedRevision: state.revision, source: 'human' });
     assert.equal(state.steps.find(step => step.id === 'sources').status, 'done');
-    await taskCall(options, { action: 'review', expectedRevision: state.revision, review: { decision: 'continue', nextStepId: 'report', summary: 'Both inputs are inspected. Synthesis remains active and is not claimed complete.' } });
+    await context.tasks.review(state.taskId, { decision: 'continue', nextStepId: 'report', summary: 'Both inputs are inspected. Synthesis remains active and is not claimed complete.' }, { expectedRevision: state.revision, source: 'human', schemaVersion: 14, runId: context.engine.listRuns()[0].id, nodeId: 'agent' });
     return { output: 'Both inputs inspected; synthesis remains active.' };
   });
   const run = await f.settled(f.start().id); completed(run);
@@ -192,16 +191,16 @@ test('follow-ups preserve completed evidence, request identity and original run 
   let firstSnapshot;
   const f = await fixture(t, async (options, number, context) => {
     if (number === 1) {
-      const state = await savePlan(options);
-      await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'answer', status: 'done', evidence: 'Computed 2 + 2 = 4.' });
+      const state = await saveManualPlan(context, options);
+      await context.tasks.setStep(state.taskId, 'answer', { status: 'done', evidence: 'Computed 2 + 2 = 4.' }, { expectedRevision: state.revision, source: 'human' });
       return { output: '4', threadId: context.threadId };
     }
     assert.equal(options.threadId, context.threadId);
-    const prior = await taskCall(options, { action: 'read' }); assert.equal(prior.steps[0].status, 'done'); assert.match(prior.steps[0].evidence, /2 \+ 2/);
+    const prior = await context.tasks.get((await taskCall(options, { action: 'read' })).taskId); assert.equal(prior.steps[0].status, 'done'); assert.match(prior.steps[0].evidence, /2 \+ 2/);
     assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'followup.txt', text: 'direct follow-up' })).success, true);
-    const state = await taskCall(options, { action: 'plan', expectedRevision: prior.revision, steps: [...prior.steps, leaf('followup', 'Explain the next example')], plan: { layout: 'sequence', detail: 'detailed', taskType: 'general' } });
-    assert.equal(state.steps[0].evidence, prior.steps[0].evidence); assert.notEqual(state.plan.authoredBy.runId, firstSnapshot.id);
-    await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'followup', status: 'done', evidence: 'Explained the requested second example.' });
+    const state = await context.tasks.setPlan(prior.taskId, { steps: [...prior.steps, leaf('followup', 'Explain the next example')], plan: { layout: 'sequence', detail: 'detailed', taskType: 'general' } }, { expectedRevision: prior.revision, source: 'human' });
+    assert.equal(state.steps[0].evidence, prior.steps[0].evidence); assert.equal(state.plan.origin, 'human');
+    await context.tasks.setStep(state.taskId, 'followup', { status: 'done', evidence: 'Explained the requested second example.' }, { expectedRevision: state.revision, source: 'human' });
     return { output: 'A second example is ready.', threadId: context.threadId };
   });
   firstSnapshot = await f.settled(f.start({ task: 'What is 2 + 2?', planDetail: 'compact' }).id); completed(firstSnapshot);
@@ -214,32 +213,24 @@ test('follow-ups preserve completed evidence, request identity and original run 
   assert.deepEqual(f.engine.getRun(firstSnapshot.id), firstSnapshot); assert.equal(f.runtime.calls.length, 2);
 });
 
-for (const version of [1, 2, 3, 4]) test('saved native task schema v' + version + ' retains its original catalog without an automatic handoff', async t => {
+for (const version of [1, 2, 3, 4]) test('unsupported native task schema v' + version + ' cannot dispatch or mutate saved work', async t => {
   const f = await fixture(t, async (options, number, context) => {
-    assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_task'), optionalTool(number === 1 ? TASK_SCHEMA_VERSION : version));
-    if (number === 1) {
-      const state = await savePlan(options);
-      await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'answer', status: 'done', evidence: 'The original catalog was observed.' });
-    } else {
-      assert.equal(options.threadId, context.threadId);
-      assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'legacy.txt', text: 'v' + version })).success, true);
-      if (version < 4) assert.equal((await call(options, 'relay_task', { action: 'describe' })).success, false);
-    }
-    return { output: 'Catalog retained.', threadId: context.threadId };
+    assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_task'), optionalTool());
+    return { output: 'Current catalog observed.', threadId: context.threadId };
   });
   const first = await f.settled(f.start().id); completed(first);
   f.engine.runs.get(first.id).nodes.agent.taskSchemaVersion = version;
-  const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Use the original tools.' }).id); completed(next);
-  assert.equal(next.nodes.agent.taskSchemaVersion, version); assert.equal(next.nodes.agent.planning.status, 'off');
-  assert.equal(next.modelHandoff, undefined); assert.equal(next.taskId, first.taskId);
-  assert.equal(next.taskState.steps[0].evidence, first.taskState.steps[0].evidence);
+  const prior = await f.tasks.get(first.taskId);
+  assert.throws(() => f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue.' }), { code: 'NATIVE_CATALOG_UNSUPPORTED' });
+  assert.equal(f.runtime.calls.length, 1);
+  assert.deepEqual(await f.tasks.get(first.taskId), prior);
 });
 
 test('provider continuations receive current optional tools when saved schema is absent', async t => {
   const f = await fixture(t, async (options, number, context) => {
     assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_task'), optionalTool(TASK_SCHEMA_VERSION));
-    const prior = await taskCall(options, { action: 'read' });
-    await savePlan(options, [...prior.steps, { ...leaf('provider-' + number, 'Inspect provider catalog'), status: 'pending' }]);
+    const prior = await context.tasks.get((await taskCall(options, { action: 'read' })).taskId);
+    await saveManualPlan(context, options, [...prior.steps, { ...leaf('provider-' + number, 'Inspect provider catalog'), status: 'pending' }]);
     return { output: 'Current provider catalog.', threadId: context.threadId };
   }, { model: 'fixture-api::model', threadId: 'provider_plan-fixture' });
   const first = await f.settled(f.start().id); completed(first); delete f.engine.runs.get(first.id).nodes.agent.taskSchemaVersion;
@@ -248,12 +239,12 @@ test('provider continuations receive current optional tools when saved schema is
 });
 
 test('project workers retain explicit method authoring without recursive project orchestration', async t => {
-  const f = await fixture(t, async options => {
+  const f = await fixture(t, async (options, number, context) => {
     assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_project'));
-    const description = await taskCall(options, { action: 'describe', methodId: 'software-feature' });
-    assert.ok(JSON.stringify(description).includes('Inspect the current behavior'));
-    const state = await savePlan(options, [leaf('inspect', 'Inspect assigned task')], { taskType: 'software', method: { id: 'software-feature', revision: 1 } });
-    await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'inspect', status: 'done', evidence: 'Observed the software-feature guidance and no recursive project tool.' });
+    const description = await taskCall(options, { action: 'describe' });
+    assert.ok(description.actionFields.plan.includes('contract'));
+    const state = await saveManualPlan(context, options, [leaf('inspect', 'Inspect assigned task')], { taskType: 'software', method: { id: 'software-feature', revision: 1 } });
+    await context.tasks.setStep(state.taskId, 'inspect', { status: 'done', evidence: 'Observed the software-feature guidance and no recursive project tool.' }, { expectedRevision: state.revision, source: 'human' });
     return { output: 'Assigned task method checked.' };
   }, { workflowId: 'project-plan-worker' });
   f.engine.projects = {}; f.engine.capabilities = {};
@@ -263,7 +254,7 @@ test('project workers retain explicit method authoring without recursive project
 
 test('answers without plans or tool support preserve measured usage and never fabricate steps', async t => {
   const usage = { inputTokens: 12, outputTokens: 8, totalTokens: 20 };
-  const missing = await fixture(t, async options => {
+  const missing = await fixture(t, async (options, number, context) => {
     options.onEvent({ type: 'delta', delta: 'A direct response.' });
     return { output: 'A direct response.', threadId: 'native-unplanned-result', turnId: 'turn-unplanned', usage };
   });
@@ -271,7 +262,7 @@ test('answers without plans or tool support preserve measured usage and never fa
   assert.equal(run.nodes.agent.output, 'A direct response.'); assert.equal(answerEvents(run).length, 1);
   assert.deepEqual(run.nodes.agent.usage, usage); assert.equal(run.nodes.agent.threadId, 'native-unplanned-result'); assert.equal(run.nodes.agent.turnId, 'turn-unplanned');
   assert.equal(run.taskState.plan, undefined); assert.deepEqual(run.taskState.steps, []); assert.equal(run.taskState.progress.done, 0);
-  const unsupported = await fixture(t, async options => {
+  const unsupported = await fixture(t, async (options, number, context) => {
     assert.equal(options.dynamicTools, undefined); assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE/);
     return { output: 'This model can answer without tools.' };
   }, { supportsTools: false });
@@ -283,18 +274,18 @@ test('answers without plans or tool support preserve measured usage and never fa
 test('a follow-up can answer directly while preserving earlier completed outline evidence', async t => {
   const f = await fixture(t, async (options, number, context) => {
     if (number === 1) {
-      const state = await savePlan(options);
-      await taskCall(options, { action: 'step', expectedRevision: state.revision, stepId: 'answer', status: 'done', evidence: 'The original answer was checked.' });
+      const state = await saveManualPlan(context, options);
+      await context.tasks.setStep(state.taskId, 'answer', { status: 'done', evidence: 'The original answer was checked.' }, { expectedRevision: state.revision, source: 'human' });
       return { output: 'Original answer.', threadId: context.threadId };
     }
-    const prior = await taskCall(options, { action: 'read' }); assert.equal(prior.steps[0].status, 'done');
+    const prior = await context.tasks.get((await taskCall(options, { action: 'read' })).taskId); assert.equal(prior.steps[0].status, 'done');
     options.onEvent({ type: 'delta', delta: 'Direct follow-up.' });
     return { output: 'Direct follow-up.', threadId: context.threadId };
   });
   const first = await f.settled(f.start().id); completed(first);
   const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Answer the next question.' }).id); completed(next);
   assert.equal(next.nodes.agent.output, 'Direct follow-up.'); assert.equal(answerEvents(next).length, 1);
-  assert.equal(next.taskState.plan.authoredBy.runId, first.id); assert.deepEqual(next.taskState.steps, first.taskState.steps);
+  assert.deepEqual(next.taskState.plan.authoredBy, first.taskState.plan.authoredBy); assert.deepEqual(next.taskState.steps, first.taskState.steps);
 });
 
 test('plan detail remains request identity and Retry retains a genuine failure cause', async t => {
@@ -317,7 +308,7 @@ test('plan detail remains request identity and Retry retains a genuine failure c
 for (const alreadyPlanned of [false, true]) test('Stop ' + (alreadyPlanned ? 'after' : 'before') + ' optional authoring preserves state and rejects late work', async t => {
   let ready = false;
   const f = await fixture(t, async (options, number, context) => {
-    if (alreadyPlanned) await savePlan(options);
+    if (alreadyPlanned) await saveManualPlan(context, options);
     options.onEvent({ type: 'delta', delta: 'Text before Stop.' }); ready = true;
     await new Promise(resolve => { if (options.signal.aborted) resolve(); else options.signal.addEventListener('abort', resolve, { once: true }); });
     await assert.rejects(call(options, 'relay_workspace', { action: 'write', path: 'after-stop.txt', text: 'must not be written' }), { name: 'AbortError' });
@@ -329,7 +320,7 @@ for (const alreadyPlanned of [false, true]) test('Stop ' + (alreadyPlanned ? 'af
   try { await wait(() => { const run = f.engine.getRun(accepted.id); assert.ok(!run.settled, run.error); return ready; }); }
   finally { if (!f.engine.getRun(accepted.id).settled) f.engine.cancelRun(accepted.id); }
   const stopped = await f.settled(accepted.id); assert.equal(stopped.status, 'cancelled');
-  assert.equal(stopped.taskState.progress.done, 0); assert.equal(stopped.taskState.plan?.origin, alreadyPlanned ? 'agent' : undefined);
+  assert.equal(stopped.taskState.progress.done, 0); assert.equal(stopped.taskState.plan?.origin, alreadyPlanned ? 'human' : undefined);
   assert.equal(stopped.nodes.agent.planning.status, 'off'); assert.equal(stopped.taskState.interruption.status, 'cancelled');
   assert.equal(answerEvents(stopped).length, 1); assert.equal(stopped.nodes.agent.output, 'Text before Stop.');
   assert.equal(stopped.nodes.agent.usage.totalTokens, 17);
@@ -338,7 +329,7 @@ for (const alreadyPlanned of [false, true]) test('Stop ' + (alreadyPlanned ? 'af
 });
 
 test('optional capability guidance never advertises compulsory outline gates', () => {
-  for (const version of [1, 2, 3, 4, TASK_SCHEMA_VERSION]) {
+  for (const version of [TASK_SCHEMA_VERSION]) {
     const guidance = capabilityGuidance([optionalTool(version)], { planningMode: 'off', executionGuardrails: false });
     assert.doesNotMatch(guidance, /branching outline is the working state|branching outline is the default|Before the final response, return to planning/);
   }
