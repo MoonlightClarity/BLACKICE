@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {mkdtemp,mkdir,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,rm,writeFile,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHarnessServer} from '../server.mjs';
@@ -19,6 +19,7 @@ class NoModelRuntime extends EventEmitter {
 test('server delivers release-owned Skills without legacy contamination or model startup',async t=>{
   const root=await mkdtemp(path.join(tmpdir(),'blackice-combined-skills-tabs-http-'));
   const cwd=path.join(root,'work');await mkdir(cwd);
+  const memory=path.join(root,'data','knowledge.json'),bytes=JSON.stringify({entries:[{id:'combined-fixture-skill',kind:'skill',title:'Scoped combined procedure',content:'Not release content'}]});await mkdir(path.dirname(memory));await writeFile(memory,bytes);
   const runtime=new NoModelRuntime();
   const app=await createHarnessServer({
     runtime,remoteAccess:false,autoAttachDesktop:false,port:0,
@@ -48,9 +49,7 @@ test('server delivers release-owned Skills without legacy contamination or model
     else assert.ok(body.includes(content),asset+' has the expected module content');
   }
   assert.equal((await get('/next/workspaces/undocumented-unlisted-asset.mjs')).status,404);
-  const saved=await app.knowledge.upsert({id:'combined-fixture-skill',kind:'skill',
-    title:'Scoped combined procedure',summary:'Only an actual saved revision',content:'# Saved\nLatest revision 1',cwd});
-  assert.equal(saved.revision,1);
+  assert.equal(Object.hasOwn(app,'knowledge'),false);
   const listResponse=await get('/api/skills?source=all');
   assert.equal(listResponse.status,200);
   const catalog=await listResponse.json();
@@ -61,5 +60,6 @@ test('server delivers release-owned Skills without legacy contamination or model
   const method=await read.json();assert.equal(method.immutable,true);assert.match(method.content,/When to use/);
   assert.equal((await get('/api/skills/saved%3Acombined-fixture-skill')).status,404);
   assert.equal((await get('/api/skills/builtin-..%2Fescape')).status,404);
+  assert.equal(await readFile(memory,'utf8'),bytes);
   assert.equal(runtime.inferences,0);
 });
