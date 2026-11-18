@@ -20,5 +20,17 @@ const controls=await run('[...document.querySelectorAll(".next-browser-icon-butt
 assert.ok(controls.length>=10);for(const control of controls){assert.ok(control.label);assert.ok(control.title);assert.equal(control.svg,'http://www.w3.org/2000/svg');assert.equal(control.hidden,'true');assert.equal(control.focusable,'false');}
 await run('document.querySelector("#next-browser-tools-toggle").click();true');
 for(const width of [1200,640,390]){win.setSize(width,900);await sleep(180);assert.equal(await run('document.documentElement.scrollWidth<=innerWidth+1'),true);fs.writeFileSync(path.join(out,'native-'+width+'.png'),(await win.webContents.capturePage()).toPNG());}
+// A disclosure glyph must not inherit text-label ellipsis, even at large text sizes.
+const folderChecks=[];
+for(const size of [12,13,16,24,32]){
+ await run('document.querySelectorAll(".next-browser-folder-toggle").forEach(b=>b.style.fontSize="'+size+'px");true');
+ const metrics=await run('[...document.querySelectorAll(".next-browser-folder-toggle")].map(b=>({label:b.getAttribute("aria-label"),text:b.textContent,overflow:getComputedStyle(b).textOverflow,display:getComputedStyle(b).display}))');
+ assert.ok(metrics.length>=2);for(const item of metrics){assert.equal(item.overflow,'clip');assert.equal(item.display,'flex'); /* Inline flex blockifies as a flex item. */assert.ok(item.label);assert.ok(['\u25be','\u25b8'].includes(item.text));}folderChecks.push({size,metrics});
+}
+await run('document.querySelectorAll(".next-browser-folder-toggle").forEach(b=>b.style.removeProperty("font-size"));document.querySelector(".next-browser-folder-toggle").click();true');
+assert.equal(await run('document.querySelector(".next-browser-folder-toggle").getAttribute("aria-expanded")'),'false');
+await run('document.querySelector(".next-browser-folder-toggle").click();true');assert.equal(await run('document.querySelector(".next-browser-folder-toggle").getAttribute("aria-expanded")'),'true');
+await sleep(150);fs.writeFileSync(path.join(out,'folder-disclosure.png'),(await win.webContents.capturePage()).toPNG());
+fs.writeFileSync(path.join(out,'folder-checks.json'),JSON.stringify(folderChecks,null,2));
 fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:true,controls,checks:['Real SVG namespace and hidden decorative semantics','All icon controls named with tooltips','Move modal and close unused retain behavior','Native responsive chrome at1200/640/390 without horizontal overflow']},null,2));
 })().catch(e=>{fs.writeFileSync(path.join(out,'error.txt'),e.stack);process.exitCode=1;}).finally(async()=>{win?.destroy();if(server)await server.close();app.exit(process.exitCode||0);});setTimeout(()=>app.exit(2),60000).unref();

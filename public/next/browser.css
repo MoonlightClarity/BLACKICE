@@ -185,7 +185,8 @@
 .next-browser-folder-toolbar,.next-browser-folder-heading{display:flex;gap:5px;align-items:center;min-width:0}
 .next-browser-folder-toolbar{justify-content:space-between}
 .next-browser-folder-group{min-width:0;width:100%}
-.next-browser-folder-toggle{flex:1;text-align:left;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Disclosure is one icon, never a truncated text label. */
+.next-browser-folder-toggle{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:0;overflow:visible;text-overflow:clip;white-space:nowrap}
 .next-browser-folder-children{padding-left:13px;margin-left:7px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:3px}
 .next-browser-folder-children[hidden]{display:none}
 .next-browser-folder-tree .next-browser-tab-group{width:100%;box-sizing:border-box}
