@@ -82,3 +82,19 @@ test('open create draft keeps its displayed target and revision when selection c
  assert.equal(input.value,'Frozen target','conflict retains draft');
  assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
 });
+
+test('Escape clears creation draft and restores caption for next selected target',async t=>{
+ const f=await fixture(t,{compact:true});
+ await f.folder('a').querySelector('.next-schedule-folder-name').dispatch('click',{});
+ await f.manager.querySelector('summary').dispatch('click',{});
+ const input=f.manager.querySelector('form').querySelector('input');input.value='Discard this draft';
+ await f.folder('b').querySelector('.next-schedule-folder-name').dispatch('click',{});
+ assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
+ await input.dispatch('keydown',{key:'Escape'});
+ assert.equal(f.manager.open,false);assert.equal(input.value,'');assert.equal(f.calls.length,0);
+ assert.equal(f.manager.querySelector('summary').textContent,'New folder in Beta');
+ await f.manager.querySelector('summary').dispatch('click',{});
+ await f.list.querySelector('h3').dispatch('keydown',{key:'Enter'});
+ await input.dispatch('keydown',{key:'Escape'});
+ assert.equal(f.manager.querySelector('summary').textContent,'New folder');assert.equal(f.calls.length,0);
+});

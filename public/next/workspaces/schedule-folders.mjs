@@ -46,7 +46,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   }
   if(!compact)selected.addEventListener('change', editSelection);
   function beginCreate(parentId=null){if(pending)return;parent.value=parentId||'';createRevision=organization.revision;managerTitle.textContent=parentId?'New folder in '+path(parentId):'New folder';manager.open=true;name.focus();}
-  if(compact){managerTitle.addEventListener('click',event=>{if(!manager.open){event.preventDefault();beginCreate(selectedParent);}});const cancel=add(actions,'button','Cancel');cancel.type='button';cancel.addEventListener('click',()=>{if(pending)return;manager.open=false;name.value='';parent.value='';managerTitle.textContent=selectedParent?'New folder in '+path(selectedParent):'New folder';});name.addEventListener('keydown',event=>{if(event.key==='Escape'&&!pending){event.preventDefault();manager.open=false;name.value='';parent.value='';}});}
+  if(compact){managerTitle.addEventListener('click',event=>{if(!manager.open){event.preventDefault();beginCreate(selectedParent);}});const cancel=add(actions,'button','Cancel');cancel.type='button';cancel.addEventListener('click',()=>{if(pending)return;manager.open=false;name.value='';parent.value='';managerTitle.textContent=selectedParent?'New folder in '+path(selectedParent):'New folder';});name.addEventListener('keydown',event=>{if(event.key==='Escape'&&!pending){event.preventDefault();manager.open=false;name.value='';parent.value='';managerTitle.textContent=selectedParent?'New folder in '+path(selectedParent):'New folder';}});}
   async function mutate(payload, expectedRevision = organization.revision) {
     if (pending) return false;
     for (const select of [...fileSelects,...folderButtons]) select.disabled = true;
