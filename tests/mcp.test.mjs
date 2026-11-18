@@ -5,7 +5,7 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MCPClient, ConnectionManager, normalizeConnection, createConnectionToolHandler } from '../lib/mcp.mjs';
+import { MCPClient, ConnectionManager, normalizeConnection } from '../lib/mcp.mjs';
 import { chromeAutoConnectConnection } from '../lib/chrome-browser.mjs';
 
 const fixture = fileURLToPath(new URL('./fixtures/mcp-server.mjs', import.meta.url));
@@ -19,14 +19,10 @@ async function managerHarness(t, options = {}) {
   const cleanupManagers = [manager];
   t.after(async () => { await Promise.all(cleanupManagers.map(client => client.close())); assert.match(path.basename(dataDir), /^relay-mcp-test-/); await rm(dataDir, { recursive: true, force: true }); }); return { manager, dataDir, cleanupManagers };
 }
+const neo=(extra={})=>({id:'browseros-neo',transport:'http',url:'http://127.0.0.1:12345/mcp',...extra});
+async function stdioHarness(t,timeoutMs=5000){const dataDir=await mkdtemp(path.join(tmpdir(),'relay-mcp-client-')),clients=[];const create=()=>{const client=new MCPClient({config:normalizeConnection(stdio(dataDir,{timeoutMs})),secrets:{env:{RELAY_MCP_LOG:path.join(dataDir,'events.log')}}});clients.push(client);return client;};t.after(async()=>{await Promise.all(clients.map(c=>c.close()));await rm(dataDir,{recursive:true,force:true});});return {dataDir,create,client:create()};}
 const stdio = (dataDir, extra = {}) => ({ id: 'fixture', name: 'Local fixture', transport: 'stdio', command: process.execPath, args: [fixture], cwd: dataDir, ...extra });
-test('configured native browser tools are available without an unrelated contained-browser prerequisite',async()=>{
- const invoked=[],manager={signedBrowser:{connectionId:'browseros-neo'},redact:String,refreshSignedBrowser:async()=>{assert.fail('Explicit tool calls use their configured MCP connection without an unrelated refresh.');},tools:async()=>{invoked.push('tools');return {tools:[{name:'run',inputSchema:{type:'object'}}]};},call:async(id,name,args)=>{invoked.push({id,name,args});return {content:[{type:'text',text:'Native browser observation.'}]};}};
- const handler=createConnectionToolHandler({manager});
- const catalog=await handler({name:'relay_connections',arguments:{action:'tools',connectionId:'browseros-neo'}});assert.equal(catalog.success,true);assert.equal(JSON.parse(catalog.contentItems[0].text).tools[0].name,'run');
- const result=await handler({name:'relay_connections',arguments:{action:'call',connectionId:'browseros-neo',name:'run',arguments:{code:'return await browser.pages.list();'}}});assert.equal(result.success,true);
- assert.deepEqual(invoked,['tools',{id:'browseros-neo',name:'run',args:{code:'return await browser.pages.list();'}}]);
-});
+
 
 test('managed Chrome never triggers a native connection dialog from an unconnected agent call', async t => {
   const { manager } = await managerHarness(t); const config = chromeAutoConnectConnection(); await manager.save(config);
@@ -58,80 +54,61 @@ test('managed Chrome preserves explicit browser choices at the actual gateway an
 test('connection configuration rejects malformed destinations, credential URLs and managed headers', async t => {
   for (const input of [{ id: '../bad', command: 'node' }, { id: 'test', transport: 'bad' }, { id: 'test', command: 'node', cwd: 'relative' }, { id: 'test', command: 'node', args: [null] }, { id: 'test', transport: 'http', url: 'http://user:secret@example.test/mcp' }, { id: 'test', transport: 'http', url: 'https://example.test/mcp?token=secret' }, { id: 'test', command: 'node', timeoutMs: 999 }]) assert.throws(() => normalizeConnection(input));
   const { manager, dataDir } = await managerHarness(t);
-  await assert.rejects(manager.save(stdio(dataDir, { headers: { 'Mcp-Session-Id': 'override' } })), /managed/);
-  await assert.rejects(manager.save(stdio(dataDir, { headers: { Authorization: 'line\nbreak' } })), /one line/);
+  await assert.rejects(manager.save(neo({ headers: { 'Mcp-Session-Id': 'override' } })), /managed/);
+  await assert.rejects(manager.save(neo({ headers: { Authorization: 'line\nbreak' } })), /one line/);
+  await assert.rejects(manager.save(stdio(dataDir)), /Only specialized browser/);
 });
 
-test('real stdio handshake, pagination, server ping and actual file write use the discovered catalog', async t => {
-  const { manager, dataDir } = await managerHarness(t); await manager.save(stdio(dataDir));
-  const client = await manager.connect('fixture'); assert.equal(client.connected, true); assert.equal(client.tools.length, 6);
-  const catalog = await manager.tools('fixture', { query: 'add' }); assert.equal(catalog.tools.length, 1); assert.equal(catalog.tools[0].name, 'add');
-  assert.equal((await manager.call('fixture', 'add', { a: 19, b: 23 })).content[0].text, '42');
-  assert.equal((await manager.call('fixture', 'ping_then_echo', { text: 'ping acknowledged' })).content[0].text, 'ping acknowledged');
-  const target = path.join(dataDir, 'actual-write.txt'); await manager.call('fixture', 'write_file', { path: target, content: 'Real fixture write\nverified.' }); assert.equal(await readFile(target, 'utf8'), 'Real fixture write\nverified.');
-  await assert.rejects(manager.call('fixture', 'unlisted', {}), /current catalog/); assert.equal(manager.status().connections[0].busy, 0);
-  const pid = client.child.pid; await manager.disconnect('fixture'); await until(() => !alive(pid)); assert.equal(manager.status().connected, 0);
-  assert.equal((await manager.call('fixture', 'echo', { text: 'Reconnected.' })).content[0].text, 'Reconnected.');
+test('real direct stdio handshake pagination ping file write and reconnect',async t=>{
+ const {client,dataDir,create}=await stdioHarness(t);await client.start();assert.equal(client.tools.length,6);
+ assert.equal((await client.call('add',{a:19,b:23})).content[0].text,'42');
+ assert.equal((await client.call('ping_then_echo',{text:'ping acknowledged'})).content[0].text,'ping acknowledged');
+ const target=path.join(dataDir,'actual-write.txt');await client.call('write_file',{path:target,content:'verified write'});assert.equal(await readFile(target,'utf8'),'verified write');
+ await assert.rejects(client.call('unlisted',{}),/current catalog/);const pid=client.child.pid;await client.close();await until(()=>!alive(pid));
+ const next=create();await next.start();assert.equal((await next.call('echo',{text:'Reconnected.'})).content[0].text,'Reconnected.');
 });
 
-test('credentials use the OS-vault adapter, stay redacted in public data and survive restart', async t => {
-  const secret = 'secret-quoted-"-slash-\\-long-test-value';
-  const { manager, dataDir, cleanupManagers } = await managerHarness(t, vault); const saved = await manager.save(stdio(dataDir, { env: { RELAY_MCP_SECRET: secret } }));
-  assert.equal(saved.secretStorage, 'encrypted'); assert.ok(!JSON.stringify(saved).includes('secret-quoted')); assert.ok(!JSON.stringify(manager.status()).includes('secret-quoted'));
-  const raw = await readFile(path.join(dataDir, 'connections.json'), 'utf8'); assert.ok(!raw.includes('RELAY_MCP_SECRET')); assert.ok(!raw.includes(JSON.stringify(secret).slice(1, -1)));
-  manager.configs.get('fixture').name = 'A service echoed ' + secret; assert.ok(!JSON.stringify(manager.status()).includes('secret-quoted'));
-  const restored = await new ConnectionManager({ dataDir, ...vault }).init(); cleanupManagers.push(restored); assert.equal(restored.secrets.get('fixture').env.RELAY_MCP_SECRET, secret);
-  const handler = createConnectionToolHandler({ manager: restored }); const result = await handler({ name: 'relay_connections', arguments: { action: 'call', connectionId: 'fixture', name: 'environment', arguments: {} } }); assert.equal(result.success, true); assert.equal(result.contentItems[0].text, '[redacted]');
+test('specialized browser vault credentials survive restart without public disclosure',async t=>{
+ const secret='private-browser-vault-secret';const {manager,dataDir,cleanupManagers}=await managerHarness(t,vault);
+ await manager.save(neo({headers:{Authorization:'Bearer '+secret}}));assert.equal(manager.list()[0].secretStorage,'encrypted');assert.ok(!JSON.stringify(manager.status()).includes(secret));
+ assert.ok(!(await readFile(path.join(dataDir,'browser-connections.json'),'utf8')).includes(secret));manager.configs.get('browseros-neo').name='echoed '+secret;assert.ok(!JSON.stringify(manager.status()).includes(secret));
+ const restored=await new ConnectionManager({dataDir,...vault}).init();cleanupManagers.push(restored);assert.equal(restored.secrets.get('browseros-neo').headers.Authorization,'Bearer '+secret);
 });
 
-test('plain-server credentials are session-only and removing before explicit init preserves other saved connections', async t => {
-  const { manager, dataDir } = await managerHarness(t); await manager.save(stdio(dataDir, { env: { RELAY_MCP_SECRET: 'session-only-key-value' } }));
-  await manager.save({ id: 'second', transport: 'http', url: 'http://127.0.0.1:12345/mcp' });
-  assert.equal(manager.list()[0].secretStorage, 'session'); assert.ok(!(await readFile(path.join(dataDir, 'connections.json'), 'utf8')).includes('session-only-key-value'));
-  const restored = new ConnectionManager({ dataDir }); t.after(() => restored.close()); await restored.remove('second'); assert.equal(restored.list().length, 1); assert.equal(restored.list()[0].id, 'fixture'); assert.equal(restored.secrets.has('fixture'), false);
+test('specialized session credentials are not persisted and remove preserves another browser',async t=>{
+ const {manager,dataDir}=await managerHarness(t);await manager.save(neo({headers:{Authorization:'Bearer session-only-key-value'}}));await manager.save(chromeAutoConnectConnection());
+ assert.equal(manager.list().find(x=>x.id==='browseros-neo').secretStorage,'session');assert.ok(!(await readFile(path.join(dataDir,'browser-connections.json'),'utf8')).includes('session-only-key-value'));
+ const restored=new ConnectionManager({dataDir});t.after(()=>restored.close());await restored.remove(chromeAutoConnectConnection().id);assert.equal(restored.list().length,1);assert.equal(restored.list()[0].id,'browseros-neo');assert.equal(restored.secrets.has('browseros-neo'),false);
 });
 
-test('stdio cancellation kills the server and its child process, and the next call reconnects', async t => {
-  const { manager, dataDir } = await managerHarness(t); const log = path.join(dataDir, 'events.log'); await manager.save(stdio(dataDir, { env: { RELAY_MCP_LOG: log } }));
-  const controller = new AbortController(), pending = manager.call('fixture', 'wait', { spawnChild: true }, { signal: controller.signal }); pending.catch(() => {});
-  const worker = await until(async () => { try { return (await readFile(log, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line)).find(entry => entry.workerPid); } catch { return null; } });
-  const parent = manager.clients.get('fixture').child.pid; assert.ok(alive(parent)); assert.ok(alive(worker.workerPid)); controller.abort(); await assert.rejects(pending, { code: 'ABORT_ERR', name: 'AbortError' });
-  await until(() => !alive(parent) && !alive(worker.workerPid)); assert.equal(manager.status().connections[0].busy, 0); assert.equal((await manager.call('fixture', 'add', { a: 1, b: 2 })).content[0].text, '3');
+test('direct stdio cancellation releases server and child before new client',async t=>{
+ const {client,dataDir,create}=await stdioHarness(t);await client.start();const controller=new AbortController(),pending=client.call('wait',{spawnChild:true},{signal:controller.signal});pending.catch(()=>{});
+ const worker=await until(async()=>{try{return (await readFile(path.join(dataDir,'events.log'),'utf8')).split('\n').filter(Boolean).map(JSON.parse).find(x=>x.workerPid);}catch{return null;}});
+ const pid=client.child.pid;assert.ok(alive(pid)&&alive(worker.workerPid));
+ controller.abort();await assert.rejects(pending,{code:'ABORT_ERR',name:'AbortError'});
+ await client.close();await until(()=>!alive(pid)&&!alive(worker.workerPid));const next=create();await next.start();assert.equal((await next.call('add',{a:1,b:2})).content[0].text,'3');
 });
 
-test('a broken stdio pipe retires the client and its process tree before reconnecting', async t => {
-  const { manager, dataDir } = await managerHarness(t); const log = path.join(dataDir, 'broken-pipe.log');
-  await manager.save(stdio(dataDir, { env: { RELAY_MCP_LOG: log } }));
-  const pending = manager.call('fixture', 'wait', { spawnChild: true }); pending.catch(() => {});
-  const worker = await until(async () => { try { return (await readFile(log, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line)).find(entry => entry.workerPid); } catch { return null; } });
-  const client = manager.clients.get('fixture'), pid = client.child.pid;
-  client.child.stdin.emit('error', new Error('Fixture pipe failure.'));
-  await assert.rejects(pending, /MCP server stopped/);
-  assert.equal(client.closed, true, 'a damaged transport must never be reused');
-  await client.closePromise; await until(() => !alive(pid) && !alive(worker.workerPid));
-  assert.equal((await manager.call('fixture', 'echo', { text: 'New connection.' })).content[0].text, 'New connection.');
-  assert.notEqual(manager.clients.get('fixture'), client);
+test('direct stdio broken pipe releases server and child before new client',async t=>{
+ const {client,dataDir,create}=await stdioHarness(t);await client.start();const controller=new AbortController(),pending=client.call('wait',{spawnChild:true},{signal:controller.signal});pending.catch(()=>{});
+ const worker=await until(async()=>{try{return (await readFile(path.join(dataDir,'events.log'),'utf8')).split('\n').filter(Boolean).map(JSON.parse).find(x=>x.workerPid);}catch{return null;}});
+ const pid=client.child.pid;assert.ok(alive(pid)&&alive(worker.workerPid));
+ client.child.stdin.emit('error',new Error('Fixture pipe failure.'));await assert.rejects(pending,/MCP server stopped/);assert.equal(client.closed,true);
+ await client.close();await until(()=>!alive(pid)&&!alive(worker.workerPid));const next=create();await next.start();assert.equal((await next.call('add',{a:1,b:2})).content[0].text,'3');
 });
 
-test('reconnecting waits for a retired client to release its owned process', async t => {
-  const { manager, dataDir } = await managerHarness(t); await manager.save(stdio(dataDir));
-  const release = deferred(); let cleaned = false, started = false;
-  t.after(() => release.resolve());
-  manager.clients.set('fixture', { closed: true, connected: false, tools: [], closePromise: release.promise.then(() => { cleaned = true; }), async close() { release.resolve(); } });
-  manager.spawnImpl = () => { started = true; assert.equal(cleaned, true, 'the replacement must wait for process cleanup'); throw new Error('Fixture launch stopped.'); };
-  const reconnect = manager.connect('fixture'); reconnect.catch(() => {});
-  await pause(30); assert.equal(started, false);
-  release.resolve(); await assert.rejects(reconnect, /Fixture launch stopped/); assert.equal(started, true);
+test('specialized reconnect waits for retired transport cleanup',async t=>{
+ const {manager}=await managerHarness(t);await manager.save(neo());const release=deferred();let cleaned=false,started=false;t.after(()=>release.resolve());
+ manager.clients.set('browseros-neo',{closed:true,connected:false,tools:[],closePromise:release.promise.then(()=>{cleaned=true;}),async close(){release.resolve();}});
+ manager.fetchImpl=async()=>{started=true;assert.equal(cleaned,true);throw Error('Fixture launch stopped.');};const reconnect=manager.connect('browseros-neo');reconnect.catch(()=>{});await pause(30);assert.equal(started,false);release.resolve();await assert.rejects(reconnect,/Fixture launch stopped/);assert.equal(started,true);
 });
 
-test('tool timeout and application shutdown close real stdio work without leaking pending requests', async t => {
-  const { manager, dataDir } = await managerHarness(t); await manager.save(stdio(dataDir, { timeoutMs: 1000 }));
-  await assert.rejects(manager.call('fixture', 'wait', {}), { code: 'MCP_TIMEOUT' });
-  const client = await manager.connect('fixture'), pending = manager.call('fixture', 'wait', {}); pending.catch(() => {});
-  await until(() => client.pending.size > 0); const pid = client.child.pid; await manager.close(); await assert.rejects(pending, { code: 'ABORT_ERR' }); assert.equal(client.pending.size, 0); await until(() => !alive(pid)); await assert.rejects(manager.connect('fixture'), /shutting down/);
+test('direct stdio timeout and shutdown release real processes and pending work',async t=>{
+ const {client,create}=await stdioHarness(t,1000);await client.start();await assert.rejects(client.call('wait',{}),{code:'MCP_TIMEOUT'});await client.close();
+ const next=create();await next.start();const pending=next.call('wait',{});pending.catch(()=>{});await until(()=>next.pending.size>0);const pid=next.child.pid;await next.close();await assert.rejects(pending,{code:'ABORT_ERR'});assert.equal(next.pending.size,0);await until(()=>!alive(pid));await assert.rejects(next.start(),/closed/);
 });
 
-async function httpHarness(t, { mode = 'json', secret = '' } = {}) {
+async function httpHarness(t, { mode = 'json', secret = '', managerOptions = {} } = {}) {
   const requests = [], enteredSlow = deferred(), cancellation = deferred(), pingReplies = new Map(); let session = 0, expireNext = false;
   const server = createServer(async (request, response) => {
     try {
@@ -158,16 +135,16 @@ async function httpHarness(t, { mode = 'json', secret = '' } = {}) {
     } catch (error) { response.writeHead(500); response.end(error.message); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const result = await managerHarness(t); const url = `http://127.0.0.1:${server.address().port}/mcp`;
-  await result.manager.save({ id: 'http', transport: 'http', url, headers: secret ? { Authorization: 'Bearer ' + secret } : {} });
-  // Register after manager's cleanup, but explicitly close it first so DELETE can reach the server.
-  t.after(async () => { await result.manager.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  let result;
+  t.after(async () => { await result?.manager.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  result = await managerHarness(t,managerOptions); const url = `http://127.0.0.1:${server.address().port}/mcp`;
+  await result.manager.save({ id: 'browseros-neo', transport: 'http', url, headers: secret ? { Authorization: 'Bearer ' + secret } : {} });
   return { ...result, url, requests, enteredSlow, cancellation, expire: () => { expireNext = true; } };
 }
 
 for (const mode of ['json', 'sse']) test(`Streamable HTTP ${mode}: initialize, session/version headers, tool calls and session DELETE`, async t => {
-  const { manager, requests } = await httpHarness(t, { mode, secret: 'http-private-key-value' }); await manager.connect('http');
-  assert.equal((await manager.call('http', 'echo', { text: 'Actual HTTP result.' })).content[0].text, 'Actual HTTP result.');
+  const { manager, requests } = await httpHarness(t, { mode, secret: 'http-private-key-value' }); await manager.connect('browseros-neo');
+  assert.equal((await manager.call('browseros-neo', 'echo', { text: 'Actual HTTP result.' })).content[0].text, 'Actual HTTP result.');
   assert.equal(requests[0].headers['mcp-session-id'], undefined); assert.equal(requests[0].headers.authorization, 'Bearer http-private-key-value');
   for (const request of requests.slice(1)) { assert.equal(request.headers['mcp-session-id'], 'session-1'); assert.equal(request.headers['mcp-protocol-version'], '2025-06-18'); }
   await manager.close(); assert.equal(requests.at(-1).method, 'DELETE'); assert.equal(requests.at(-1).headers['mcp-session-id'], 'session-1');
@@ -175,54 +152,42 @@ for (const mode of ['json', 'sse']) test(`Streamable HTTP ${mode}: initialize, s
 
 test('HTTP server-to-client ping gets a separate response POST and a 202 request cannot claim tool success', async t => {
   const { manager, requests } = await httpHarness(t, { mode: 'sse' });
-  assert.equal((await manager.call('http', 'ping', {})).content[0].text, 'HTTP ping acknowledged'); assert.ok(requests.some(request => !request.method && request.result));
-  await assert.rejects(manager.call('http', 'accepted', {}), { code: 'MCP_PROTOCOL' });
+  assert.equal((await manager.call('browseros-neo', 'ping', {})).content[0].text, 'HTTP ping acknowledged'); assert.ok(requests.some(request => !request.method && request.result));
+  await assert.rejects(manager.call('browseros-neo', 'accepted', {}), { code: 'MCP_PROTOCOL' });
 });
 
 test('HTTP cancellation sends notifications/cancelled with the original request id', async t => {
   const { manager, enteredSlow, cancellation } = await httpHarness(t); const controller = new AbortController();
-  const pending = manager.call('http', 'slow', {}, { signal: controller.signal }); pending.catch(() => {}); const id = await enteredSlow.promise; controller.abort(); await assert.rejects(pending, { code: 'ABORT_ERR' });
+  const pending = manager.call('browseros-neo', 'slow', {}, { signal: controller.signal }); pending.catch(() => {}); const id = await enteredSlow.promise; controller.abort(); await assert.rejects(pending, { code: 'ABORT_ERR' });
   const notice = await Promise.race([cancellation.promise, pause(3000).then(() => { throw new Error('Cancellation notification missing.'); })]); assert.equal(notice.requestId, id); assert.equal(manager.status().connections[0].busy, 0);
 });
 
 test('expired HTTP sessions fail the current action and reinitialize before the next explicit call', async t => {
-  const { manager, requests, expire } = await httpHarness(t); await manager.connect('http'); expire(); await assert.rejects(manager.call('http', 'echo', { text: 'not silently retried' }), { code: 'MCP_SESSION_EXPIRED' });
-  assert.equal((await manager.call('http', 'echo', { text: 'explicit retry' })).content[0].text, 'explicit retry');
+  const { manager, requests, expire } = await httpHarness(t); await manager.connect('browseros-neo'); expire(); await assert.rejects(manager.call('browseros-neo', 'echo', { text: 'not silently retried' }), { code: 'MCP_SESSION_EXPIRED' });
+  assert.equal((await manager.call('browseros-neo', 'echo', { text: 'explicit retry' })).content[0].text, 'explicit retry');
   const initialize = requests.filter(request => request.method === 'initialize'); assert.equal(initialize.length, 2); assert.equal(initialize[1].headers['mcp-session-id'], undefined); assert.equal(requests.at(-1).headers['mcp-session-id'], 'session-2');
 });
 
 test('HTTP catalogs and errors redact secrets, and endpoint changes require each credential group explicitly', async t => {
   const secret = 'private-http-redaction-value', { manager, url } = await httpHarness(t, { secret });
-  const catalog = await manager.tools('http'); assert.ok(!JSON.stringify(catalog).includes(secret));
-  await assert.rejects(manager.call('http', 'error', {}), error => !error.message.includes(secret) && !error.message.includes('unrecognized-token'));
-  await assert.rejects(manager.save({ id: 'http', url: url + '-other', env: {} }), /credentials again/);
-  await manager.save({ id: 'http', url: url + '-other', env: {}, headers: {} }); assert.equal(manager.list()[0].headerNames.length, 0);
+  const catalog = await manager.tools('browseros-neo'); assert.ok(!JSON.stringify(catalog).includes(secret));
+  await assert.rejects(manager.call('browseros-neo', 'error', {}), error => !error.message.includes(secret) && !error.message.includes('unrecognized-token'));
+  await assert.rejects(manager.save({ id: 'browseros-neo', url: url + '-other', env: {} }), /credentials again/);
+  await manager.save({ id: 'browseros-neo', url: url + '-other', env: {}, headers: {} }); assert.equal(manager.list()[0].headerNames.length, 0);
 });
 
-test('credential writes and active calls cannot race to replace or close a connection', async t => {
-  const encrypting = deferred(), release = deferred(); let delay = false;
-  const { manager, dataDir } = await managerHarness(t, { ...vault, encryptSecret: async value => { if (delay) { encrypting.resolve(); await release.promise; } return vault.encryptSecret(value); } });
-  await manager.save(stdio(dataDir)); await manager.connect('fixture'); delay = true;
-  const saving = manager.save({ id: 'fixture', env: { RELAY_MCP_SECRET: 'new-private-key' } }); await encrypting.promise;
-  await assert.rejects(manager.call('fixture', 'add', { a: 1, b: 1 }), { code: 'MCP_BUSY' }); release.resolve(); await saving;
-  const controller = new AbortController(), pending = manager.call('fixture', 'wait', {}, { signal: controller.signal }); pending.catch(() => {}); await until(() => manager.clients.get('fixture')?.pending.size > 0);
-  await assert.rejects(manager.save({ id: 'fixture', name: 'New name' }), { code: 'MCP_BUSY' }); await assert.rejects(manager.disconnect('fixture'), { code: 'MCP_BUSY' }); controller.abort(); await assert.rejects(pending, { code: 'ABORT_ERR' });
+test('specialized credential writes and active HTTP calls cannot race',async t=>{
+ const encrypting=deferred(),release=deferred();let delay=false;
+ const {manager,enteredSlow}=await httpHarness(t,{managerOptions:{...vault,encryptSecret:async value=>{if(delay){encrypting.resolve();await release.promise;}return vault.encryptSecret(value);}}});
+ await manager.connect('browseros-neo');delay=true;const saving=manager.save({id:'browseros-neo',headers:{Authorization:'Bearer new-private-key'}});await encrypting.promise;
+ await assert.rejects(manager.call('browseros-neo','echo',{text:'blocked'}),{code:'MCP_BUSY'});release.resolve();await saving;
+ const controller=new AbortController(),pending=manager.call('browseros-neo','slow',{}, {signal:controller.signal});pending.catch(()=>{});await enteredSlow.promise;
+ await assert.rejects(manager.save({id:'browseros-neo',name:'New name'}),{code:'MCP_BUSY'});await assert.rejects(manager.disconnect('browseros-neo'),{code:'MCP_BUSY'});controller.abort();await assert.rejects(pending,{code:'ABORT_ERR'});
 });
 
-test('bounded progressive catalogs retain valid JSON and the gateway returns tool errors and images faithfully', async t => {
-  const { manager, dataDir } = await managerHarness(t); await manager.save(stdio(dataDir)); const client = await manager.connect('fixture');
-  client.tools = Array.from({ length: 100 }, (_, index) => ({ name: 'tool-' + index, description: 'schema', inputSchema: { type: 'object', properties: { value: { type: 'string', description: 'x'.repeat(2000) } } } }));
-  const catalog = await manager.tools('fixture'); assert.equal(catalog.truncated, true); assert.ok(catalog.tools.length < 40); assert.ok(JSON.stringify(catalog).length < 56000); assert.ok(JSON.parse(JSON.stringify(catalog)).tools.length > 0);
-  const fake = { list: () => [], redact: text => String(text), call: async () => ({ isError: true, content: [{ type: 'text', text: 'Actual failure.' }, { type: 'image', mimeType: 'image/png', data: 'ZmFrZQ==' }], structuredContent: { verified: false } }) };
-  const handler = createConnectionToolHandler({ manager: fake }); const result = await handler({ name: 'relay_connections', arguments: { action: 'call', connectionId: 'test', name: 'observe' } }); assert.equal(result.success, false); assert.equal(result.contentItems[1].type, 'inputImage'); assert.match(result.contentItems.at(-1).text, /verified/);
-});
 
-test('connected tools continue beyond 200 calls and preserve an explicitly configured budget', async () => {
-  const manager = { list: () => [], redact: value => String(value) }, call = { name: 'relay_connections', arguments: { action: 'connections' } }, handler = createConnectionToolHandler({ manager });
-  for (let index = 0; index < 205; index++) assert.equal((await handler(call)).success, true);
-  const limited = createConnectionToolHandler({ manager, maxCalls: 2 }); await limited(call); await limited(call); await assert.rejects(limited(call), /configured connected-tool action limit/);
-  for (const maxCalls of [0, -1, 1.5, false]) assert.throws(() => createConnectionToolHandler({ manager, maxCalls }), /positive whole number/);
-});
+
+
 
 test('real HTTP Neo SDK descriptions survive progressive discovery and truncation stays explicit within the response budget', async t => {
   const sdk = 'Neo run SDK contract\n' + 'Browser page operations. '.repeat(480) + '\nTAIL CONTRACT: page.fill(ref, value), page.click(ref), await page.waitForText(text); every page operation uses its owned handle.';
@@ -245,12 +210,8 @@ test('real HTTP Neo SDK descriptions survive progressive discovery and truncatio
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const { manager } = await managerHarness(t);
   t.after(async () => { await manager.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
-  await manager.save({ id: 'neo-sdk', transport: 'http', url: `http://127.0.0.1:${server.address().port}/mcp` });
-  const gateway = createConnectionToolHandler({ manager });
-  const query = async text => {
-    const result = await gateway({ name: 'relay_connections', arguments: { action: 'tools', connectionId: 'neo-sdk', query: text } });
-    assert.equal(result.success, true); return JSON.parse(result.contentItems[0].text);
-  };
+  await manager.save({ id: 'browseros-neo', transport: 'http', url: `http://127.0.0.1:${server.address().port}/mcp` });
+  const query = text => manager.tools('browseros-neo',{query:text});
   const run = await query('neo_run');
   assert.equal(run.tools.length, 1); assert.equal(run.tools[0].description, sdk); assert.match(run.tools[0].description, /TAIL CONTRACT.*page\.click/);
   assert.equal(run.tools[0].descriptionTruncated, undefined);
