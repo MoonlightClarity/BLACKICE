@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rename, symlink, readdir, rm } fro
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DirectExecutionAPI, DIRECT_EXECUTION_SCOPES } from '../lib/direct-execution-api.mjs';
+import { RELEASE_SKILL_FILE } from '../lib/managed-context-paths.mjs';
 import { FilePatchStore } from '../lib/file-patches.mjs';
 import { BrowserWorkspace } from '../lib/browser.mjs';
 import { chatGPTFileImportTool } from '../lib/chatgpt-file-import.mjs';
@@ -618,13 +619,16 @@ test('direct browser guidance permits ordinary account input without requiring t
 });
 
 
-test('direct structured writes cannot bypass managed memory approval or profile ownership',async t=>{
+test('direct structured writes cannot bypass current profile or immutable Skills ownership',async t=>{
  const {api,dataDir,cwd}=await harness(t);
- for(const [index,file] of ['knowledge.json','knowledge-approvals.json','learning.json','identity/USER.md'].entries()){
+ for(const [index,file] of ['identity/USER.md','identity/SOUL.md','skills-folders.json','skills-folders.json.bak','skills-folders.json.lock'].entries()){
   const target=path.join(dataDir,file);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,'owner text');
   const job=await api.call('blackice_workspace_write',{requestId:'managed-'+index,action:'write',path:target,text:'unapproved'},client);
   const done=await waitJob(api,job.jobId);assert.equal(done.status,'failed');assert.equal(done.effects.possible,false);assert.equal(JSON.parse(done.result.text.text).code,'WORKSPACE_PROTECTED_PATH');assert.equal(await readFile(target,'utf8'),'owner text');
  }
+ const skillsBefore=await readFile(RELEASE_SKILL_FILE,'utf8');
+ const skillsJob=await api.call('blackice_workspace_write',{requestId:'release-skills-denied',action:'write',path:RELEASE_SKILL_FILE,text:'unapproved'},client);
+ const skillsDone=await waitJob(api,skillsJob.jobId);assert.equal(skillsDone.status,'failed');assert.equal(skillsDone.effects.possible,false);assert.equal(JSON.parse(skillsDone.result.text.text).code,'WORKSPACE_PROTECTED_PATH');assert.equal(await readFile(RELEASE_SKILL_FILE,'utf8'),skillsBefore);
  const ordinary=await api.call('blackice_workspace_write',{requestId:'ordinary-after-managed-denial',action:'write',path:path.join(cwd,'knowledge.json'),text:'project data'},client);assert.equal((await waitJob(api,ordinary.jobId)).status,'succeeded');
 });
 

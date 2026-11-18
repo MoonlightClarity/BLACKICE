@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -98,9 +98,12 @@ test('main and delegated worker catalogs expose one narrow filename callable and
       if (options.prompt.startsWith('You are a short-lived')) workerCalls++;
       else {
         mainCalls++;
+        const obsolete = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id:'obsolete', prompt:'Find fixture files only.', canWrite:false }] } });
+        assert.equal(obsolete.success, false, 'Removed worker arguments must reject before dispatch.');
+        assert.equal(workerCalls, 0);
         const delegated = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [
-          { id: 'find-one', prompt: 'Inspect filename fixture only.', canWrite: false },
-          { id: 'find-two', prompt: 'Independently inspect filename fixture only.', canWrite: false },
+          { id: 'find-one', prompt: 'Inspect filename fixture only.' },
+          { id: 'find-two', prompt: 'Independently inspect filename fixture only.' },
         ] } });
         assert.equal(delegated.success, true, JSON.stringify(delegated));
       }
@@ -114,7 +117,10 @@ test('main and delegated worker catalogs expose one narrow filename callable and
   const workflow = createMissionWorkflow({ id: 'find-contract', task: 'Find fixture files.', model: 'fixture', cwd, planningMode: 'off' });
   const run = engine.startRun({ workflow, input: 'Find the synthetic fixture.' }); await engine.executions.get(run.id);
   const saved = engine.getRun(run.id); assert.equal(saved.status, 'completed', saved.error || saved.nodes.agent?.error);
-  assert.equal(mainCalls, 1); assert.equal(workerCalls, 2); await engine.close();
+  assert.equal(mainCalls, 1); assert.equal(workerCalls, 2);
+  assert.equal(await readFile(path.join(cwd,'resume.txt'),'utf8'),'synthetic');
+  assert.deepEqual(await readdir(cwd),['resume.txt'],'Root and worker find calls do not create files.');
+  await engine.close();
 });
 
 

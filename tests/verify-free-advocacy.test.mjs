@@ -82,7 +82,7 @@ test('direct execution preserves the isolated configured budget and actual wire 
   assert.equal(result.responseCycle, null); assert.equal(result.planningGraph, null); assert.equal(result.viability, null);
   assert.equal(result.assessment.objective, 'fail'); assert.equal(result.assessment.checks.caseDeadline, true);
   assert.equal(result.inputIntegrity, true); assert.deepEqual(result.externalDispatches, []);
-  assert.equal(result.planningConfiguration.servicesAttached, true);
+  assert.equal(result.planningConfiguration.servicesAttached, false);
   assert.equal(bodies.length, 1, 'One direct call reaches only the injected provider transport without an analytical or repair pass.');
   for (const body of bodies) {
     assert.equal(body.model, FREE_MODEL_ID);
@@ -191,7 +191,7 @@ test('actual workspace read reaches isolated transport without retired policy be
   assert.equal(result.responseCycle, null); assert.equal(result.planningGraph, null); assert.equal(result.viability, null);
   assert.equal(result.assessment.objective, 'fail'); assert.equal(result.assessment.checks.caseDeadline, true);
   assert.equal(result.inputIntegrity, true); assert.deepEqual(result.externalDispatches, []);
-  assert.equal(result.planningConfiguration.servicesAttached, true);
+  assert.equal(result.planningConfiguration.servicesAttached, false);
   assert.equal(bodies.length, 2, 'One direct execution reads policy then reaches the synthetic provider failure without an analytical or repair pass.');
   const policyMessage=bodies[1].messages.find(message=>message.role==='tool'&&message.tool_call_id==='read-policy');
   assert.ok(policyMessage,'The actual tool result is serialized back to the provider.');

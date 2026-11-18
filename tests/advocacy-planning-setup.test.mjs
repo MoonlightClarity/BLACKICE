@@ -47,7 +47,7 @@ test('default fictional form setup uses direct execution and preserves a provide
   assert.equal(runtime.starts, 0);
   assert.equal(runtime.closes, 0, 'The caller retains runtime ownership across form cases.');
   assert.deepEqual(result.planningConfiguration, { setup: 'application-services', requestedMode: 'ontology',
-    effectiveMode: 'off', enforcement: null, guardrails: false, servicesAttached: true, ontology: null });
+    effectiveMode: 'off', enforcement: null, guardrails: false, servicesAttached: false, ontology: null });
   assert.equal(result.responseCycle, null); assert.equal(result.viability, null); assert.equal(result.planningGraph, null);
   assert.equal(result.inputIntegrity, true); assert.deepEqual(result.externalDispatches, []);
   assert.equal(result.form.calls.length, 0);
