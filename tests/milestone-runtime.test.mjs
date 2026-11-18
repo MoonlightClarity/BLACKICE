@@ -1,16 +1,14 @@
-// Historical schema-13 milestone and saved native catalog regression.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {HarnessEngine} from './fixture-legacy-planning-engine.mjs';
-import {TaskStateStore,TASK_SCHEMA_VERSION} from './fixture-legacy-task-state.mjs';
+import {HarnessEngine} from '../lib/engine.mjs';
+import {TaskStateStore,TASK_SCHEMA_VERSION} from '../lib/task-state.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 import {capabilityGuidance} from '../lib/tool-routing.mjs';
 import {newerTaskState,reduceRunEvent,adoptFetchedRun} from '../public/run-state-model.mjs';
-import {recordFixturePlan,finishFixturePlan} from './fixture-task-plan.mjs';
 
 const deferred=()=>{let resolve;return{promise:new Promise(done=>resolve=done),resolve:value=>resolve(value)};};
 const wait=async predicate=>{const end=Date.now()+5000;while(Date.now()<end){const value=predicate();if(value)return value;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Milestone fixture did not settle.');};
@@ -27,110 +25,65 @@ async function fixture(t,execute){
 }
 const schema=options=>options.dynamicTools.find(tool=>tool.name==='relay_task').inputSchema.properties;
 async function call(options,args){const result=await options.onToolCall({name:'relay_task',arguments:args},{signal:options.signal});assert.equal(result.success,true,result.contentItems?.[0]?.text);return JSON.parse(result.contentItems[0].text);}
-async function finishCatalogCheck(options,state,summary){
- if(!schema(options).action.enum.includes('review')||/TASK PLANNING MODE: OFF/.test(options.developerInstructions||''))return;
- const step=state.steps.find(step=>step.status==='active'&&step.operation?.kind==='reasoning');
- assert.ok(step,'The catalog check must have its own prospective reasoning leaf.');
- const completed=await call(options,{action:'step',expectedRevision:state.revision,stepId:step.id,status:'done',evidence:summary});
- await finishFixturePlan(options,{state:completed,summary});
-}
 
-test('native milestone schema survives continuation and old saved catalogs use compatible fields',async t=>{
- const f=await fixture(t,async(options,number)=>{
-   options.onEvent({type:'thread',threadId:'native-milestone-thread'});
-   const planned=await recordFixturePlan(options,{title:'Inspect the attached milestone catalog',doneWhen:'Continuation retains the saved catalog and its supported milestone fields.'});
-   if(number<3){assert.ok(schema(options).steps.items.properties.doneWhen);assert.ok(schema(options).status.enum.includes('blocked'));assert.ok(schema(options).action.enum.includes('edit'));assert.ok(schema(options).operations);assert.match(options.prompt,/SAVED TASK CONTINUITY/);assert.match(options.prompt,/Optional planning context; chosen edits use the exact current revision/);assert.doesNotMatch(options.prompt,/LIVE PLANNING WORKSPACE|DEFAULT TASK OUTLINE/);}
-   else{assert.equal(schema(options).steps.items.properties.doneWhen,undefined);assert.equal(schema(options).nextAction,undefined);assert.ok(!schema(options).status.enum.includes('blocked'));assert.ok(!schema(options).action.enum.includes('edit'));assert.equal(schema(options).operations,undefined);assert.doesNotMatch(options.prompt,/OPERATIONAL MILESTONES|LIVE PLANNING WORKSPACE/);assert.doesNotMatch(options.developerInstructions,/Give milestones an observable doneWhen/);}
-   await finishCatalogCheck(options,planned,'The attached milestone fields and matching prompt guidance passed their catalog assertions. This turn has no remaining catalog checks.');
-   return{output:'Recorded.',threadId:'native-milestone-thread'};
- });
- const first=await f.settled(f.engine.startRun({workflow:f.workflow,input:'First task.'}).id);assert.equal(first.nodes.agent.taskSchemaVersion,TASK_SCHEMA_VERSION);assert.equal(first.status,'completed',first.error);
- const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'Continue with the saved milestones.'}).id);assert.equal(next.nodes.agent.taskSchemaVersion,TASK_SCHEMA_VERSION);assert.equal(f.runtime.calls[1].threadId,'native-milestone-thread');assert.equal(next.status,'completed',next.error);
- delete f.engine.runs.get(next.id).nodes.agent.taskSchemaVersion;
- const old=await f.settled(f.engine.continueRun(next.id,{nodeId:'agent',message:'Use an older saved native catalog.',planningMode:'off'}).id);assert.equal(old.nodes.agent.taskSchemaVersion,1);assert.equal(old.status,'completed');assert.equal(old.nodes.agent.planning.status,'off');assert.equal(old.nodes.agent.threadId,'native-milestone-thread');assert.equal(f.runtime.calls[2].threadId,'native-milestone-thread');
+test('current native task catalog survives continuation while missing saved catalogs fail closed',async t=>{
+ const f=await fixture(t,async(options)=>{options.onEvent({type:'thread',threadId:'native-milestone-thread'});assert.ok(schema(options).contract);assert.ok(!schema(options).steps);assert.ok(!schema(options).action.enum.includes('step'));return{output:'Current catalog checked.',threadId:'native-milestone-thread'};});
+ const first=await f.settled(f.engine.startRun({workflow:f.workflow,input:'First task.'}).id);assert.equal(first.status,'completed',first.error);
+ const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'Continue.'}).id);assert.equal(next.status,'completed',next.error);assert.equal(next.nodes.agent.taskSchemaVersion,TASK_SCHEMA_VERSION);assert.equal(f.runtime.calls[1].threadId,'native-milestone-thread');
+ delete f.engine.runs.get(next.id).nodes.agent.taskSchemaVersion;delete f.engine.runs.get(next.id).nodes.agent.resumeTaskSchemaVersion;
+ assert.throws(()=>f.engine.continueRun(next.id,{nodeId:'agent',message:'Continue.'}),{code:'NATIVE_CATALOG_UNSUPPORTED'});assert.equal(f.runtime.calls.length,2);
 });
 
-test('native Retry retains its milestone schema after a failed response',async t=>{
- const f=await fixture(t,async(options,number)=>{
-   options.onEvent({type:'thread',threadId:'native-milestone-retry'});
-   if(number===1)throw Error('Fixture transport failure.');
-   const planned=await recordFixturePlan(options,{title:'Resume the interrupted milestone check',doneWhen:'Retry records a current-turn outline with the retained milestone schema and thread.'});
-   assert.ok(schema(options).steps.items.properties.doneWhen);
-   await finishCatalogCheck(options,planned,'The retry retained the milestone completion field in its attached schema. This interrupted catalog check is complete and no selected work remains.');
-   return{output:'Resumed.',threadId:'native-milestone-retry'};
- });
- const failed=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Keep milestones through retry.'}).id);assert.equal(failed.status,'failed');
- const retried=await f.settled(f.engine.retryRun(failed.id).id);assert.equal(retried.status,'completed');assert.equal(retried.nodes.agent.taskSchemaVersion,TASK_SCHEMA_VERSION);assert.equal(f.runtime.calls[1].threadId,'native-milestone-retry');
+test('native Retry retains current schema and genuine transport failure',async t=>{
+ const f=await fixture(t,async(options,number)=>{options.onEvent({type:'thread',threadId:'native-milestone-retry'});if(number===1)throw Error('Fixture transport failure.');assert.ok(schema(options).contract);return{output:'Resumed.',threadId:'native-milestone-retry'};});
+ const failed=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Retain current tools through retry.'}).id);assert.equal(failed.status,'failed');assert.match(failed.error,/Fixture transport failure/);
+ const retried=await f.settled(f.engine.retryRun(failed.id).id);assert.equal(retried.status,'completed',retried.error);assert.equal(retried.nodes.agent.taskSchemaVersion,TASK_SCHEMA_VERSION);assert.equal(f.runtime.calls[1].threadId,'native-milestone-retry');
 });
 
-test('version two native catalogs retain milestones without a changed external-action schema',async t=>{
- const f=await fixture(t,async(options,number)=>{
-   options.onEvent({type:'thread',threadId:'native-v2-catalog'});
-   const planned=await recordFixturePlan(options,{title:'Inspect the retained milestone fields',doneWhen:'The saved catalog keeps its original milestone and external-action capabilities.'});
-   assert.ok(schema(options).steps.items.properties.doneWhen);assert.ok(schema(options).status.enum.includes('blocked'));
-   if(number===1)assert.ok(schema(options).external);else{assert.equal(schema(options).external,undefined);assert.doesNotMatch(options.prompt,/EXTERNAL ACTION RECOVERY/);assert.doesNotMatch(options.developerInstructions,/persist attempt immediately before the final send/);}
-   await finishCatalogCheck(options,planned,'The attached milestone fields and external-action capability match this saved catalog version. All requested schema assertions passed and no checks remain.');
-   return{output:'Saved.',threadId:'native-v2-catalog'};
- });
- const initial=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Original task.'}).id);assert.equal(initial.status,'completed',initial.error);f.engine.runs.get(initial.id).nodes.agent.taskSchemaVersion=2;
- const next=await f.settled(f.engine.continueRun(initial.id,{nodeId:'agent',message:'Continue using the original v2 catalog.',planningMode:'off'}).id);assert.equal(next.nodes.agent.taskSchemaVersion,2);assert.equal(next.status,'completed');assert.equal(next.nodes.agent.planning.status,'off');assert.equal(next.nodes.agent.threadId,'native-v2-catalog');
+test('version two native catalog is rejected without provider dispatch or saved-state mutation',async t=>{
+ const f=await fixture(t,async options=>{options.onEvent({type:'thread',threadId:'native-v2-catalog'});return{output:'Saved.',threadId:'native-v2-catalog'};});
+ const initial=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Original task.'}).id);assert.equal(initial.status,'completed',initial.error);const before=await f.tasks.get(initial.taskId);f.engine.runs.get(initial.id).nodes.agent.taskSchemaVersion=2;
+ assert.throws(()=>f.engine.continueRun(initial.id,{nodeId:'agent',message:'Continue.'}),{code:'NATIVE_CATALOG_UNSUPPORTED'});assert.equal(f.runtime.calls.length,1);assert.deepEqual(await f.tasks.get(initial.taskId),before);
 });
 
-test('Retry after a lost publication response reconciles its durable attempt instead of sending twice',async t=>{
+test('Retry after a lost publication response preserves a direct-store attempt and prevents a second send',async t=>{
  let sends=0;
  const f=await fixture(t,async(options,number)=>{
-   options.onEvent({type:'thread',threadId:'native-publication-thread'});
-   let saved=await call(options,{action:'read'});
-   saved=await call(options,{action:'plan',expectedRevision:saved.revision,steps:[{id:'publish',title:'Reconcile the supplied publication receipt',status:'active',operation:{kind:'reasoning',target:'The supplied publish-once fixture receipt and destination observation'},result:'One reconciled publication receipt without a duplicate send.',note:'Compare the supplied destination observation with the saved publish-once attempt.',doneWhen:'The one existing or newly sent result has a confirmed receipt with observed destination evidence.'}]});
-   if(number===1){
-     saved=await call(options,{action:'external',expectedRevision:saved.revision,external:{receiptId:'publish-once',operation:'prepare',destination:'https://www.linkedin.com/in/fixture/recent-activity/',content:'BLACKICE development update.',attachmentSha256:'a'.repeat(64)}});
-     await call(options,{action:'external',expectedRevision:saved.revision,external:{receiptId:'publish-once',operation:'attempt'}});
-     sends++;throw Error('Connection dropped after the remote send; result unknown.');
-   }
-   assert.equal(saved.externalActions[0].status,'uncertain');assert.match(options.prompt,/Recorded uncertain attempts: publish-once/);assert.match(options.prompt,/inspect the destination before repeating the same possible effect/);
-   const blocked=await options.onToolCall({name:'relay_task',arguments:{action:'external',expectedRevision:saved.revision,external:{receiptId:'publish-once',operation:'attempt'}}});assert.equal(blocked.success,false);assert.equal(blocked.code,'EXTERNAL_ACTION_RECONCILE');
-   saved=await call(options,{action:'external',expectedRevision:saved.revision,external:{receiptId:'publish-once',operation:'confirm',url:'https://www.linkedin.com/feed/update/urn:li:activity:fixture/',evidence:'Fixture reconciliation observed the already-created exact text and attachment.'}});
-   assert.equal(saved.externalActions[0].status,'confirmed');
-   saved=await call(options,{action:'step',expectedRevision:saved.revision,stepId:'publish',status:'done',evidence:'The existing publication was reconciled against the supplied destination observation and its single attempt is now confirmed.'});
-   await finishFixturePlan(options,{state:saved,summary:'The saved single publication attempt is confirmed from destination evidence. Repeating the send was rejected; reconciliation is complete and no further publication work remains.'});
-   return{output:'Existing result reconciled; no second send.',threadId:'native-publication-thread'};
+  options.onEvent({type:'thread',threadId:'native-publication-thread'});
+  const read=await call(options,{action:'read'});let saved=await f.tasks.get(read.taskId);
+  if(number===1){
+   saved=await f.tasks.externalAction(saved.taskId,{receiptId:'publish-once',operation:'prepare',destination:'https://www.linkedin.com/in/fixture/recent-activity/',content:'BLACKICE development update.',attachmentSha256:'a'.repeat(64)},{expectedRevision:saved.revision,source:'human'});
+   await f.tasks.externalAction(saved.taskId,{receiptId:'publish-once',operation:'attempt'},{expectedRevision:saved.revision,source:'human'});
+   sends++;throw Error('Connection dropped after the remote send; result unknown.');
+  }
+  assert.equal(saved.externalActions[0].status,'uncertain');assert.match(options.prompt,/Recorded uncertain attempts: publish-once/);assert.match(options.prompt,/inspect the destination before repeating the same possible effect/);
+  await assert.rejects(f.tasks.externalAction(saved.taskId,{receiptId:'publish-once',operation:'attempt'},{expectedRevision:saved.revision,source:'human'}),{code:'EXTERNAL_ACTION_RECONCILE'});
+  saved=await f.tasks.externalAction(saved.taskId,{receiptId:'publish-once',operation:'confirm',url:'https://www.linkedin.com/feed/update/urn:li:activity:fixture/',evidence:'Fixture reconciliation observed the already-created exact text and attachment.'},{expectedRevision:saved.revision,source:'human'});
+  assert.equal(saved.externalActions[0].status,'confirmed');return{output:'Existing result reconciled; no second send.',threadId:'native-publication-thread'};
  });
  const failed=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Publish exactly one development update.'}).id);assert.equal(failed.status,'failed');assert.equal(failed.taskState.externalActions[0].status,'uncertain');
- const retried=await f.settled(f.engine.retryRun(failed.id).id);assert.equal(retried.status,'completed',retried.error);assert.equal(sends,1);assert.equal(retried.taskState.externalActions[0].status,'confirmed');assert.equal(retried.taskState.externalActions[0].attempts,1);assert.equal(retried.taskId,failed.taskId||failed.id);
+ const retried=await f.settled(f.engine.retryRun(failed.id).id);assert.equal(retried.status,'completed',retried.error);assert.equal(sends,1);assert.equal(retried.taskState.externalActions[0].status,'confirmed');assert.equal(retried.taskState.externalActions[0].attempts,1);assert.equal(retried.taskId,failed.taskId);
 });
 
-test('a delayed older milestone receipt cannot replace a newer committed swarm state',async t=>{
- const committed=deferred(),release=deferred();let taskId,initialRevision,olderRevision,latestRevision,reviewRevision;
+const manualLeaf={id:'deliver',title:'Compare the supplied fixture result',kind:'action',status:'active',operation:{kind:'reasoning',target:'The supplied milestone fixture output'},result:'The checked fixture output.',note:'Compare the supplied fixture output with its expected value.',doneWhen:'The output is checked.'};
+test('delayed older store receipt cannot replace newer engine task state',async t=>{
+ const committed=deferred(),release=deferred();let taskId,olderRevision,latestRevision;
  const f=await fixture(t,async options=>{
-   const initial=await call(options,{action:'read'});taskId=initial.taskId;initialRevision=initial.revision;
-   const older=call(options,{action:'plan',expectedRevision:initial.revision,steps:[{id:'deliver',title:'Compare the supplied fixture result',status:'active',operation:{kind:'reasoning',target:'The supplied milestone fixture output'},result:'The checked fixture output.',note:'Compare the supplied fixture output with its expected value.',doneWhen:'The output is checked.'}]});
-   await committed.promise;
-   const current=await call(options,{action:'read'}),latest=await call(options,{action:'step',expectedRevision:current.revision,stepId:'deliver',status:'done',evidence:'Checked actual output.'});
-   latestRevision=latest.revision;release.resolve();olderRevision=(await older).revision;
-   const adopted=f.engine.getRun(options.runId||f.engine.listRuns()[0].id).taskState;
-   assert.equal(adopted.revision,latestRevision);assert.equal(adopted.steps[0].status,'done');assert.equal(adopted.steps[0].evidence,'Checked actual output.');
-   const raceEvents=f.engine.getRun(options.runId||f.engine.listRuns()[0].id).events.filter(event=>event.data?.type==='task.state').map(event=>event.data.state.revision);
-   assert.deepEqual(raceEvents,[latestRevision],'Before explicit review, only the newer milestone mutation is published; the delayed older receipt stays rejected.');
-   const reviewed=await finishFixturePlan(options,{summary:'The supplied output was checked and the delayed older receipt did not replace its newer completed milestone. No selected work remains.'});
-   reviewRevision=reviewed.revision;
-   assert.equal(reviewRevision,latestRevision+1);
-   assert.equal(reviewed.steps[0].status,'done');assert.equal(reviewed.steps[0].evidence,'Checked actual output.');
-   return{output:'Done.',threadId:'provider_milestone-race'};
+  const initial=await call(options,{action:'read'});taskId=initial.taskId;
+  const older=f.tasks.setPlan(taskId,{plan:{layout:'sequence'},steps:[manualLeaf]},{expectedRevision:initial.revision,source:'human'});
+  await committed.promise;const current=await f.tasks.get(taskId);
+  const latest=await f.tasks.setStep(taskId,'deliver',{status:'done',evidence:'Checked actual output.'},{expectedRevision:current.revision,source:'human'});latestRevision=latest.revision;
+  const raw=f.engine.runs.get(f.engine.listRuns()[0].id);assert.equal(f.engine.adoptTaskState(raw,latest),true);
+  release.resolve();const delayed=await older;olderRevision=delayed.revision;assert.equal(f.engine.adoptTaskState(raw,delayed),false);
+  assert.equal(raw.taskState.revision,latestRevision);assert.equal(raw.taskState.steps[0].status,'done');assert.equal(raw.taskState.steps[0].evidence,'Checked actual output.');return{output:'Done.',threadId:'provider_milestone-race'};
  });
  const original=f.tasks.setPlan.bind(f.tasks);f.tasks.setPlan=async(...args)=>{const result=await original(...args);committed.resolve();await release.promise;return result;};
- const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Check concurrent progress.'}).id);assert.equal(run.status,'completed');assert.equal(run.taskState.progress.done,1);assert.equal(run.taskState.revision,(await f.tasks.get(taskId)).revision);
- const events=run.events.filter(event=>event.data?.type==='task.state').map(event=>event.data.state.revision);assert.equal(olderRevision,initialRevision+1);assert.equal(latestRevision,olderRevision+1);
- // Initial/read snapshots stay silent and the stale receipt stays rejected.
- // The fixture then explicitly requested review, which legitimately commits
- // one additional revision; no implicit mutation may appear beyond that.
- assert.deepEqual(events,[latestRevision,reviewRevision]);assert.equal(run.taskState.revision,reviewRevision);
+ const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Check concurrent progress.'}).id);assert.equal(run.status,'completed',run.error);assert.equal(run.taskState.progress.done,1);assert.equal(latestRevision,olderRevision+1);assert.equal(run.taskState.revision,(await f.tasks.get(taskId)).revision);
 });
 
-test('settled run snapshots reload authoritative milestones even when the writer event was lost',async t=>{
- let f;f=await fixture(t,async options=>{const state=await recordFixturePlan(options,{title:'Check the real result',doneWhen:'The check passes.'});await f.tasks.setStep(state.taskId,state.steps[0].id,{status:'done',evidence:'Fixture check passed.'},{runId:f.engine.listRuns()[0].id,nodeId:'agent',expectedRevision:state.revision});return{output:'Finished.',threadId:'provider_no-event'};});
- // Isolate final snapshot reload from Planning's separate review event, which
- // would itself refresh the in-memory task before this assertion.
- const run=await f.settled(f.engine.startRun({workflow:f.workflow,planningMode:'off',input:'Keep committed progress.'}).id);assert.equal(run.status,'completed');assert.equal(run.taskState.progress.done,1);assert.equal(run.taskState.steps[0].evidence,'Fixture check passed.');
+test('settled snapshots reload authoritative manual milestones after writer event loss',async t=>{
+ const f=await fixture(t,async options=>{const initial=await call(options,{action:'read'});const state=await f.tasks.setPlan(initial.taskId,{plan:{layout:'sequence'},steps:[manualLeaf]},{expectedRevision:initial.revision,source:'human'});await f.tasks.setStep(state.taskId,'deliver',{status:'done',evidence:'Fixture check passed.'},{expectedRevision:state.revision,source:'human'});return{output:'Finished.',threadId:'provider_no-event'};});
+ const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Keep committed progress.'}).id);assert.equal(run.status,'completed',run.error);assert.equal(run.taskState.progress.done,1);assert.equal(run.taskState.steps[0].evidence,'Fixture check passed.');
 });
 
 test('milestone stream and HTTP merges keep revision order and reject another task',()=>{
