@@ -42,8 +42,9 @@ test('connector omitted choices match UI; explicit and saved choices remain avai
  assert.equal(tool.durableArguments(args).directoryMode,'off');
  const selected=normalizePlanningOntology({version:2,modules:{verification:true}});
  engine.runtimeSettings.get=()=>({planningOntology:selected});
- await tool.execute({...args,requestId:'selected',directoryMode:'on'},{client:{id:'fixture'}});
- assert.equal(starts[1].input.directoryMode,'on');assert.deepEqual(starts[1].input.planningOntology,selected);
+ await assert.rejects(tool.execute({...args,requestId:'selected',directoryMode:'on'},{client:{id:'fixture'}}),{code:'DIRECTORY_RETIRED'});
+ await tool.execute({...args,requestId:'selected-off',directoryMode:'off'},{client:{id:'fixture'}});
+ assert.equal(starts[1].input.directoryMode,'off');assert.deepEqual(starts[1].input.planningOntology,selected);
  await assert.rejects(tool.execute({...args,message:'x'.repeat(50001)},{client:{id:'fixture'}}),/Directory Off/);
  assert.equal(starts.length,2,'oversized implicit Off input is rejected before admission');
 });

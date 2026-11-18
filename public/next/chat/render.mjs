@@ -57,7 +57,7 @@ export function createChatFrame(mount) {
     '<label>Reasoning <select id="next-chat-effort"><option value="default">Model default</option></select></label>',
     '<label>Speed <select id="next-chat-tier"><option value="default">Standard</option></select></label>',
     '<label>Planning <select id="next-chat-plan" title="Use selected modules; all default Off. Additional reasoning can cost time and tokens."><option value="ontology">Selected modules</option><option value="off">Off</option></select></label>',
-    '<label>Directory <select id="next-chat-directory-mode" title="Opt-in staged context and saved work. May improve complex tasks at additional time and token cost. Applies to the next response, not running work."><option value="on">On</option><option value="off">Off</option></select></label>',
+    '<input id="next-chat-directory-mode" type="hidden" value="off">',
     '<input id="next-chat-execution-mode" type="hidden" value="automatic">',
     '<button id="next-chat-autonomy-toggle" class="next-chat-goal-toggle" type="button" role="switch" aria-checked="false">Autonomy: Off</button><button id="next-chat-autonomy-settings" class="next-chat-autonomy-settings" type="button" title="Calibrate autonomous operation">Calibrate</button><button id="next-chat-goal-toggle" class="next-chat-goal-toggle" type="button" role="switch" aria-checked="false">Goal: Off</button><span class="next-chat-spacer"></span><button class="next-primary" type="submit" id="next-chat-send">Send</button></div>',
     '<details id="next-chat-ontology-inline" class="next-chat-ontology-inline">',

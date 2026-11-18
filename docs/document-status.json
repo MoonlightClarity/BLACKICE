@@ -67,7 +67,8 @@
     "docs/connectors-mistral-architecture-audit.md",
     "docs/design/swarm-workbook.md",
     "docs/ux-concept-audit-20261117.md",
-    "docs/ux-directory-visibility-20261117.md"
+    "docs/ux-directory-visibility-20261117.md",
+    "docs/context-architecture-reset.md"
   ],
   "historical": [
     "APPLICATION-COMPATIBILITY.md",
