@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: 2.40.5 candidate source index.** Package version is **2.40.5**, not an installed or published artifact. See [2.40.5 source notes](../RELEASE-NOTES-2.40.5.md) and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
+> **Status: 2.40.6 candidate source index.** Package version is **2.40.6**, not an installed or published artifact. See [2.40.6 source notes](../RELEASE-NOTES-2.40.6.md) and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
@@ -14,13 +14,13 @@ Start with the [project README](../README.md). A named document's date, original
 | Remote access and connection scope | [Remote access](../REMOTE-ACCESS.md) |
 | Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md), [stopped-task tab adoption](stopped-task-tab-adoption.md) |
 | Keep work moving within a conversation | [Goal mode](GOAL-MODE.md) |
-| Current architecture and verification limits | [2.40.4 candidate scope](../RELEASE-NOTES-2.40.4.md) |
-| Organize work | To-do outlines, My workflows and [Goal mode](GOAL-MODE.md). No automatic Swarm dispatch. |
+| Current architecture and verification limits | [2.40.6 candidate scope](../RELEASE-NOTES-2.40.6.md) |
+| Organize work | Conversation folders, nested Skills and Browser folders, Cronjobs and [Goal mode](GOAL-MODE.md). No automatic Swarm dispatch. |
 | Build or publish a Windows release | [Signing and release](../SIGNING-AND-RELEASE.md) and [third-party notices](../THIRD-PARTY-NOTICES.md) |
 
-**Current candidate:** Directory, old module controls, automatic learning and old Autonomy/Swarm execution are retired. Skills are release-owned and read-only; workflows are owner-authored. Historical documents below do not reactivate those features.
+**Current candidate:** Directory, old module controls, automatic learning and old Autonomy/Swarm execution are retired. Skills are release-owned and read-only, with user-organized folders. The separate To-do and My workflows spaces have been removed; Cronjobs retain their current saved-workflow editor. Historical documents below do not reactivate those features.
 
-**Workspace navigation:** Chat, To-do, Cronjobs, Browser, My workflows, Skills and Settings. To-do is an outline, not a task dispatcher.
+**Workspace navigation:** Chat, Cronjobs, Browser, Skills and Settings. The retained Planning deep link exposes Goal and Activity plus explicit saved graph plans.
 
 **Workbench retirement:** earlier BLACKICE releases documented an optional Windows VM Workbench and native-display paths. Those are **not current setup features** in 2.39.82 source: the VM UI, APIs and installer inputs were retired. The [retirement regression](../tests/workbench-retired.test.mjs) checks this boundary. Historical [2.39.26 pairing notes](../RELEASE-NOTES-2.39.26.md) are retained for provenance, not as instructions to install a missing Workbench component.
 
