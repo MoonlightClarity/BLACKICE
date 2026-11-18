@@ -50,10 +50,12 @@ test('full history matches take precedence while partial alternatives stay expli
   assert.deepEqual(result.results[1].missingTerms,['project']);
 });
 
-test('release skill metadata requires all query terms and legacy memory is not a tool',async()=>{
+test('skill document search requires all query terms and removed memory is not a tool',async()=>{
   const handler=handlerFor([]);
-  assert.equal((await invoke(handler,{action:'search',query:'job search'},'relay_skills')).result.entries.length,1);
-  assert.equal((await invoke(handler,{action:'search',query:'job search missing timeline'},'relay_skills')).result.entries.length,0);
+  const entries=(await invoke(handler,{action:'search',query:'job search'},'relay_skills')).result.entries;
+  assert.ok(entries.length>0);
+  for(const entry of entries){const full=(await invoke(handler,{action:'read',id:entry.id},'relay_skills')).result.entry;assert.ok(['job','search'].every(term=>full.content.toLowerCase().includes(term)));}
+  assert.equal((await invoke(handler,{action:'search',query:'job search zzz_nonexistent_skill_query_7719'},'relay_skills')).result.entries.length,0);
   await assert.rejects(invoke(handler,{action:'search'},'relay_memory'),/Unknown knowledge tool/);
 });
 
