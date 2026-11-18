@@ -81,7 +81,9 @@ test('model identity writes are blocked even with an exact quote; owner editing 
 test('legacy projection excludes only unchanged proven automatic blocks and preserves human notes', async t => {
   const { store } = await setup(t);
   const args = { fact: 'Use concise output for this folder.', sourceQuote: 'Use concise output', sourceRunId: 'r', sourceLearningId: 'learn_scope', trustedUserText: 'Use concise output' };
-  const saved = await store.recordFact(args);
+  const before = await store.read('user');
+  const content = before.content + '\n<!-- relay-learning:learn_scope -->\n- Use concise output for this folder.\n  - Source: user statement in run r.\n  - Quote: Use concise output\n';
+  const saved = await replace(store, before, content, {provenance:{source:'learning',sourceLearningId:args.sourceLearningId,sourceQuote:args.sourceQuote,sourceRunId:args.sourceRunId}});
   const projected = await store.readForContext('user');
   assert.equal(projected.excludedLearnedEntries, 1);
   assert.doesNotMatch(projected.content, /for this folder/);
@@ -95,55 +97,29 @@ test('legacy projection excludes only unchanged proven automatic blocks and pres
   assert.match((await store.snapshot()).documents.user.content, /My enduring preference/);
 });
 
-test('learning records only sourced user facts, avoids duplicates, and preserves other profile content', async t => {
-  const { store } = await setup(t), args = { fact: 'Prefers compact answers.', sourceQuote: 'I prefer compact answers.', sourceRunId: 'run-fact', trustedUserText: 'For future tasks, I prefer compact answers.' };
-  const first = await store.recordFact(args), duplicate = await store.recordFact(args); assert.equal(first.revision, duplicate.revision); assert.match(first.content, /Source: user statement in run run-fact/); assert.doesNotMatch(first.content, /No personal facts have been recorded/); assert.equal(first.provenance.source, 'learning');
-  await assert.rejects(store.recordFact({ ...args, sourceQuote: 'The user is a doctor.' }), /not present/);
+test('automatic profile write and undo entrypoints do not exist',async t=>{
+ const {store,file}=await setup(t),before=await store.read('user');
+ assert.equal(store.recordFact,undefined);assert.equal(store.removeFact,undefined);
+ assert.equal(await fs.readFile(file('user'),'utf8'),before.content);
+ assert.equal((await store.read('user')).revision,before.revision);
 });
-test('managed learning facts update and undo only their own exact block, with real profile revisions', async t => {
-  const { store } = await setup(t), initial = await store.read('user');
-  await replace(store, initial, initial.content + '\n## My own notes\nKeep this human-authored note.\n');
-  const firstArgs = { fact: 'Use concise output.', sourceQuote: 'use concise output', sourceRunId: 'run-one', sourceLearningId: 'learn_concise', trustedUserText: 'For future work, use concise output and include source links.' };
-  const first = await store.recordFact(firstArgs);assert.equal(first.factSync.managed, true);assert.equal(first.provenance.sourceLearningId, 'learn_concise');
-  const secondArgs = { ...firstArgs, fact: 'Use concise output with source links.', sourceQuote: 'use concise output and include source links', sourceRunId: 'run-two', expectedProfileEntry: firstArgs };
-  const second = await store.recordFact(secondArgs);
-  assert.match(second.content, /Use concise output with source links\./);assert.ok(!second.content.includes('- Use concise output.\n'));
-  assert.equal(second.content.match(/relay-learning:learn_concise/g).length, 1);assert.match(second.content, /Keep this human-authored note/);
-  const removed = await store.removeFact(secondArgs);
-  assert.equal(removed.factSync.removed, true);assert.equal(removed.revision, second.revision + 1);assert.equal(removed.provenance.source, 'user');
-  assert.ok(!removed.content.includes('relay-learning:learn_concise'));assert.ok(!removed.content.includes('Use concise output with source links'));
-  assert.match(removed.content, /Keep this human-authored note/);
-  assert.equal((await store.readVersion('user', second.revision)).content, second.content);
-  assert.equal((await store.removeFact(secondArgs)).revision, removed.revision,'Repeated undo does not create phantom revisions.');
+
+test('proven automatic profile suppression survives restart without modifying saved bytes or history',async t=>{
+ const {store,dataDir,file}=await setup(t),before=await store.read('user');
+ const content=before.content+'\n<!-- relay-learning:old_scope -->\n- Use short replies for this task.\n  - Source: user statement in run old.\n  - Quote: Use short replies\n';
+ const saved=await replace(store,before,content,{provenance:{source:'learning',sourceLearningId:'old_scope',sourceRunId:'old',sourceQuote:'Use short replies'}});
+ const history=await store.readVersion('user',saved.revision);
+ const reopened=await new IdentityStore({dataDir}).init();t.after(()=>reopened.close());
+ const handler=createIdentityToolHandler({store:reopened});
+ const reply=await invoke(handler,{action:'read',kind:'user'});
+ const projected=JSON.parse(reply.contentItems[0].text);
+ assert.equal(projected.excludedLearnedEntries,1);assert.doesNotMatch(projected.content,/short replies for this task/);
+ assert.doesNotMatch((await reopened.snapshot()).documents.user.content,/short replies for this task/);
+ assert.equal(await fs.readFile(file('user'),'utf8'),saved.content);
+ assert.deepEqual(await reopened.readVersion('user',saved.revision),history);
+ assert.equal((await reopened.read('user')).revision,saved.revision);
 });
-test('profile undo preserves human changes and appended notes instead of deleting a modified learning block', async t => {
-  const { store } = await setup(t), args = { fact: 'Use concise output.', sourceQuote: 'use concise output', sourceRunId: 'run-human', sourceLearningId: 'learn_human', trustedUserText: 'Please use concise output.' };
-  const first = await store.recordFact(args);
-  let edited = await replace(store, first, first.content.replace('Use concise output.','Use detailed output for legal research.'));
-  await assert.rejects(store.removeFact(args), /edited after learning/);assert.equal((await store.read('user')).content, edited.content);
-  await assert.rejects(store.recordFact({ ...args, fact: 'A new automated interpretation.', expectedProfileEntry: args }), /edited after learning/);
-  edited = await replace(store, edited, first.content + '  - Personal note: keep this exception.\n');
-  await assert.rejects(store.removeFact(args), /edited after learning/);assert.equal((await store.read('user')).content, edited.content);
-});
-test('legacy fact undo matches its exact statement, quote and source; matching independent facts stay independent', async t => {
-  const { store } = await setup(t), args = { fact: 'Prefers compact answers.', sourceQuote: 'I prefer compact answers.', sourceRunId: 'legacy-run', trustedUserText: 'I prefer compact answers.' };
-  const first = await store.recordFact(args);
-  const wrong = await store.removeFact({ ...args, sourceLearningId: 'learn_legacy', sourceRunId: 'wrong-run' });
-  assert.equal(wrong.factSync.removed, false);assert.equal(wrong.content, first.content);
-  const removed = await store.removeFact({ ...args, sourceLearningId: 'learn_legacy' });
-  assert.equal(removed.factSync.removed, true);assert.ok(!removed.content.includes('Prefers compact answers.'));
-  const manual = await replace(store, removed, removed.content + '\n- Prefers compact answers.\n  - Human note: independently maintained.\n');
-  const duplicate = await store.recordFact({ ...args, sourceLearningId: 'learn_duplicate' });
-  assert.equal(duplicate.factSync.managed, false);assert.equal(duplicate.revision, manual.revision);assert.equal(duplicate.content, manual.content);
-});
-test('an undo with another learning ID cannot consume the body of a separately managed fact', async t => {
-  const { store } = await setup(t), args = { fact: 'Keep exports verified.', sourceQuote: 'Keep exports verified.', sourceRunId: 'same-source', sourceLearningId: 'learn_actual_owner', trustedUserText: 'Keep exports verified.' };
-  const first = await store.recordFact(args);
-  const result = await store.removeFact({ ...args, sourceLearningId: 'learn_unrelated_owner' });
-  assert.equal(result.factSync.removed, false);assert.equal(result.content, first.content);assert.equal(result.revision, first.revision);
-  const other = await store.recordFact({ ...args, sourceLearningId: 'learn_unrelated_owner', expectedProfileEntry: args });
-  assert.equal(other.factSync.managed, false);assert.equal(other.content, first.content);
-});
+
 test('cancelled updates leave canonical content and revision untouched; close drains and rejects new work', async t => {
   const { store, file } = await setup(t), before = await store.read('soul'), controller = new AbortController(); controller.abort();
   await assert.rejects(replace(store, before, 'Cancelled write', { signal: controller.signal }), { name: 'AbortError' }); assert.equal(await fs.readFile(file('soul'), 'utf8'), before.content); assert.equal((await store.read('soul')).revision, before.revision);
