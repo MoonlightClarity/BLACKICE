@@ -17,7 +17,7 @@ async function fixture(t){
  return{component,calls,folder,job,drag,state:()=>organization,fail(){fail=true;},list};
 }
 test('outline moves schedules and nested folders through CAS without changing jobs',async t=>{
- const f=await fixture(t);await f.drag(f.job(),f.folder('b'));assert.equal(f.state().assignments.job,'b');assert.equal(f.calls[0].body.expectedRevision,1);
+ const f=await fixture(t);await f.drag(f.job(),f.folder('b'));assert.equal(f.state().assignments.job,'b');assert.equal(document.activeElement,f.job());assert.equal(f.calls[0].body.expectedRevision,1);
  await f.folder('b').dispatch('keydown',{key:'Enter',ctrlKey:true});await settle();assert.equal(f.state().folders.find(row=>row.id==='b').parentId,'a');
  await f.job().dispatch('keydown',{key:'Enter',ctrlKey:true,shiftKey:true});await settle();assert.equal(f.state().assignments.job,'a');
  await f.job().dispatch('keydown',{key:'Enter',ctrlKey:true});await settle();assert.equal(f.state().assignments.job,'b');
