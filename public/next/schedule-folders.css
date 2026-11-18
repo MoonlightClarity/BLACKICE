@@ -75,3 +75,18 @@
 .next-cronjobs-workspace .next-schedule-folder-branch>summary .next-schedule-folder-remove:hover:not(:disabled){color:var(--text);background:var(--next-button-hover-background)}
 .next-cronjobs-workspace .next-schedule-folder-branch>summary .next-schedule-folder-remove:focus-visible,.next-cronjobs-workspace .next-schedule-unfiled>h3:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .next-cronjobs-workspace .next-schedule-folder-branch>summary .next-schedule-folder-remove:disabled{opacity:.5;cursor:default}
+
+.next-cronjobs-workspace .next-schedule-folder-branch.next-folder-selected>summary{background:var(--next-selection-background);box-shadow:inset 2px 0 var(--accent)}
+.next-schedule-inline-create:not([hidden]){display:flex;align-items:end;gap:8px;flex-wrap:wrap;padding:8px;margin:4px 0;border-left:2px solid var(--accent)}
+.next-schedule-inline-create[hidden]{display:none!important}
+.next-schedule-inline-create>.next-label{flex:1;min-width:140px}
+
+.next-folder-icon-action{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:4px!important;min-width:28px;vertical-align:middle}
+.next-folder-icon-action svg{width:18px;height:18px;pointer-events:none}
+.next-cronjobs-workspace .next-schedule-folder-branch>summary{padding-right:74px}
+.next-cronjobs-workspace .next-schedule-folder-add{position:absolute;right:36px;top:3px}
+.next-schedule-inline-create>.next-field{flex:1;min-width:120px;width:180px}
+
+.next-schedule-rename-actions{position:absolute;right:4px;top:3px;display:flex;gap:4px;background:var(--surface)}
+.next-schedule-rename-actions[hidden]{display:none!important}
+.next-schedule-folder-branch>summary:has(.next-schedule-rename-actions:not([hidden]))>.next-schedule-folder-add,.next-schedule-folder-branch>summary:has(.next-schedule-rename-actions:not([hidden]))>.next-schedule-folder-remove{visibility:hidden}

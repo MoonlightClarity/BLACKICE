@@ -14,7 +14,7 @@ async function fixture(t,{compact=false}={}){
  render();
  const folder=id=>list.querySelector('[data-schedule-folder="'+id+'"]').querySelector('summary'),job=()=>list.querySelector('[data-schedule-id="job"]').querySelector('summary');
  async function drag(from,to){const dataTransfer={setData(){}};await from.dispatch('dragstart',{dataTransfer});await to.dispatch('drop',{dataTransfer});await settle();}
- return{manager,refresh:render,advance(){organization={...organization,revision:organization.revision+1};render();},component,calls,folder,job,drag,state:()=>organization,fail(){fail=true;},list};
+ return{mount:dom.mount,manager,refresh:render,advance(){organization={...organization,revision:organization.revision+1};render();},component,calls,folder,job,drag,state:()=>organization,fail(){fail=true;},list};
 }
 test('outline moves schedules and nested folders through CAS without changing jobs',async t=>{
  const f=await fixture(t);await f.drag(f.job(),f.folder('b'));assert.equal(f.state().assignments.job,'b');assert.equal(document.activeElement,f.job());assert.equal(f.calls[0].body.expectedRevision,1);
@@ -44,19 +44,8 @@ test('inline rename preserves edit-start revision across refresh',async t=>{
  const f=await fixture(t);await f.folder('a').querySelector('.next-schedule-folder-name').dispatch('click',{});let input=f.folder('a').querySelector('input');input.value='My draft';await input.dispatch('input',{});f.advance();input=f.folder('a').querySelector('input');assert.equal(input.value,'My draft');assert.equal(input.hidden,false);f.fail();await input.dispatch('keydown',{key:'Enter'});await settle();assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.expectedRevision,1);assert.equal(f.state().folders.find(row=>row.id==='a').name,'Alpha');assert.equal(f.folder('a').querySelector('input').value,'My draft');
 });
 
-test('compact outline creates folders directly without editing or filing dropdowns',async t=>{
- const f=await fixture(t,{compact:true});assert.equal(f.manager.querySelector('select'),null);assert.equal(f.list.querySelector('.next-schedule-folder-add'),null);assert.equal(f.list.querySelector('.next-status-pill'),null);
- await f.folder('a').querySelector('.next-schedule-folder-name').dispatch('click',{});await f.manager.querySelector('summary').dispatch('click',{});
- const form=f.manager.querySelector('form'),input=form.querySelector('input');input.value='Inside Alpha';await form.dispatch('submit',{});await settle();
- assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.action,'create');assert.equal(f.calls[0].body.parentId,'a');assert.equal(f.calls[0].body.expectedRevision,1);
- assert.ok(f.state().folders.some(folder=>folder.name==='Inside Alpha'&&folder.parentId==='a'));assert.equal(f.state().assignments.job,'a');
- await f.list.querySelector('h3').dispatch('click',{});await f.manager.querySelector('summary').dispatch('click',{});input.value='Root';await form.dispatch('submit',{});await settle();assert.equal(f.calls[1].body.parentId,null);
-});
-test('compact create conflict retains draft and does not replay or rebase silently',async t=>{
- const f=await fixture(t,{compact:true});await f.folder('a').querySelector('.next-schedule-folder-name').dispatch('click',{});await f.manager.querySelector('summary').dispatch('click',{});
- const form=f.manager.querySelector('form'),input=form.querySelector('input');input.value='Unsent child';f.advance();f.fail();await form.dispatch('submit',{});await settle();
- assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.expectedRevision,1);assert.equal(input.value,'Unsent child');assert.equal(f.calls[0].body.parentId,'a');
-});
+
+
 test('compact row navigation skips collapsed descendants and leaves inputs alone',async t=>{
  const f=await fixture(t,{compact:true});f.folder('a').parentElement.open=false;
  await f.folder('a').dispatch('keydown',{key:'ArrowDown'});assert.equal(document.activeElement,f.folder('b'));
@@ -66,35 +55,20 @@ test('compact row navigation skips collapsed descendants and leaves inputs alone
  const input=f.folder('a').querySelector('input');input.hidden=false;await input.dispatch('keydown',{key:'ArrowDown'},true);assert.equal(f.calls.length,0);
 });
 
-test('open create draft keeps its displayed target and revision when selection changes',async t=>{
- const f=await fixture(t,{compact:true});
- await f.folder('a').querySelector('.next-schedule-folder-name').dispatch('click',{});
- await f.manager.querySelector('summary').dispatch('click',{});
- const form=f.manager.querySelector('form'),input=form.querySelector('input');input.value='Frozen target';
- assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
- await f.folder('b').querySelector('.next-schedule-folder-name').dispatch('click',{});
- assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
- await f.list.querySelector('h3').dispatch('click',{});
- assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
- f.advance();assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
- await form.dispatch('submit',{});await settle();
- assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.parentId,'a');assert.equal(f.calls[0].body.expectedRevision,1);
- assert.equal(input.value,'Frozen target','conflict retains draft');
- assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
-});
 
-test('Escape clears creation draft and restores caption for next selected target',async t=>{
- const f=await fixture(t,{compact:true});
- await f.folder('a').querySelector('.next-schedule-folder-name').dispatch('click',{});
- await f.manager.querySelector('summary').dispatch('click',{});
- const input=f.manager.querySelector('form').querySelector('input');input.value='Discard this draft';
- await f.folder('b').querySelector('.next-schedule-folder-name').dispatch('click',{});
- assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
- await input.dispatch('keydown',{key:'Escape'});
- assert.equal(f.manager.open,false);assert.equal(input.value,'');assert.equal(f.calls.length,0);
- assert.equal(f.manager.querySelector('summary').textContent,'New folder in Beta');
- await f.manager.querySelector('summary').dispatch('click',{});
- await f.list.querySelector('h3').dispatch('keydown',{key:'Enter'});
- await input.dispatch('keydown',{key:'Escape'});
- assert.equal(f.manager.querySelector('summary').textContent,'New folder');assert.equal(f.calls.length,0);
+
+
+
+test('explicit inline child and root creation use pinned target without manager selectors',async t=>{
+ const f=await fixture(t,{compact:true});assert.equal(f.manager.querySelector('details'),null);assert.equal(f.manager.querySelector('select'),null);
+ await f.folder('a').querySelector('.next-schedule-folder-add').dispatch('click',{});
+ let form=f.mount.querySelector('form'),input=form.querySelector('input');assert.equal(form.getAttribute('aria-label'),'New folder in Alpha');assert.equal(form.hidden,false);
+ input.value='Child';await form.dispatch('submit',{});await settle();assert.equal(f.calls[0].body.parentId,'a');assert.equal(f.calls[0].body.expectedRevision,1);
+ await f.manager.querySelector('.next-schedule-new-folder').dispatch('click',{});form=f.mount.querySelector('form');input=form.querySelector('input');input.value='Root';await form.dispatch('submit',{});await settle();assert.equal(f.calls[1].body.parentId,null);
+});
+test('inline create conflict pins destination and preserves draft; Escape sends nothing',async t=>{
+ const f=await fixture(t,{compact:true});await f.folder('a').querySelector('.next-schedule-folder-add').dispatch('click',{});const form=f.mount.querySelector('form'),input=form.querySelector('input');input.value='Keep';f.advance();f.fail();await form.dispatch('submit',{});await settle();assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.expectedRevision,1);assert.equal(f.calls[0].body.parentId,'a');assert.equal(input.value,'Keep');await input.dispatch('keydown',{key:'Escape'});assert.equal(form.hidden,true);assert.equal(f.calls.length,1);
+});
+test('focused folder name supports keyboard nesting rather than summary-only shortcut',async t=>{
+ const f=await fixture(t,{compact:true});const label=f.folder('b').querySelector('.next-schedule-folder-name');await f.folder('b').dispatch('keydown',{key:'Enter',ctrlKey:true,target:label});await settle();assert.equal(f.state().folders.find(x=>x.id==='b').parentId,'a');
 });

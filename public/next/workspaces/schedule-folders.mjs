@@ -8,21 +8,24 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   let fileSelects = [], folderButtons = [], activeDrag = null;
   let knownDeployments = new Set(), outlineContainer = null;
   const add = (parent, tag, value, cls) => text(parent, value, tag, cls);
-  const manager = add(mount, 'details', '', 'next-card next-schedule-folder-manager');
-  const managerTitle=add(manager, 'summary', compact?'New folder':'Manage folders');
+
+  const icons={folder:'M3 7h6l2-3h10v16H3z M15 10v6 M12 13h6',check:'M5 12l4 4L19 6',close:'M6 6l12 12 M18 6L6 18'};
+  function icon(button,kind,label){button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="'+icons[kind]+'" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';button.setAttribute('aria-label',label);button.title=label;button.classList.add('next-folder-icon-action');}
+  const manager = add(mount, compact?'div':'details', '', compact?'next-schedule-folder-create':'next-card next-schedule-folder-manager');
+  const managerTitle=add(manager, compact?'button':'summary', compact?'New folder':'Manage folders');if(compact){managerTitle.type='button';managerTitle.className='next-schedule-new-folder';manager.open=false;icon(managerTitle,'folder','New top-level folder');}
   let createRevision=null, selectedParent=null;
   manager.classList.toggle('next-schedule-folder-create',compact);
   if(!compact)add(manager, 'p', 'Folders organize cronjobs. Moving or removing a folder does not change schedules or run jobs.', 'next-help');
-  const form = add(manager, 'form', '', 'next-schedule-folder-form');
+  const form = add(manager, 'form', '', 'next-schedule-folder-form');if(compact){form.hidden=true;form.classList.add('next-schedule-inline-create');}
   function field(label, tag, name) {
     const wrapper = add(form, 'label', label, 'next-label');
     const el = add(wrapper, tag, '', 'next-field'); el.name = name; return el;
   }
   const selected = compact?{value:'',disabled:false}:field('Folder to edit', 'select', 'folder');
-  const name = field('Folder name', 'input', 'name'); name.required = true; name.maxLength = 120;
+  const name = compact?add(form,'input','','next-field'):field('Folder name', 'input', 'name');name.setAttribute('aria-label','New folder name'); name.required = true; name.maxLength = 120;
   const parent = compact?{value:'',disabled:false}:field('Create inside', 'select', 'parent');
   const actions = add(form, 'div', '', 'next-row');
-  const save = add(actions, 'button', 'Create folder'); save.type = 'submit';
+  const save = add(actions, 'button', 'Create folder'); save.type = 'submit';if(compact)icon(save,'check','Create folder');
   const remove = add(actions, 'button', '\u00d7', 'next-schedule-folder-remove'); remove.type = 'button'; remove.hidden = true; remove.title = 'Remove selected folder only; keep every cronjob'; remove.setAttribute('aria-label','Remove selected folder only');
   const notice = add(manager, 'p', '', 'next-help'); notice.setAttribute('role', 'status');
   function path(id, seen = new Set()) {
@@ -41,12 +44,12 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   function editSelection() {
     const folder = organization.folders.find(item => item.id === selected.value);
     name.value = folder?.name || ''; parent.value = folder?.parentId || '';
-    save.textContent = folder ? 'Save folder' : 'Create folder'; remove.hidden = !folder;
+    if(!compact)save.textContent = folder ? 'Save folder' : 'Create folder'; remove.hidden = !folder;
     if(!compact)parent.parentElement.firstChild.textContent = folder ? 'Move inside' : 'Create inside';
   }
   if(!compact)selected.addEventListener('change', editSelection);
-  function beginCreate(parentId=null){if(pending)return;parent.value=parentId||'';createRevision=organization.revision;managerTitle.textContent=parentId?'New folder in '+path(parentId):'New folder';manager.open=true;name.focus();}
-  if(compact){managerTitle.addEventListener('click',event=>{if(!manager.open){event.preventDefault();beginCreate(selectedParent);}});const cancel=add(actions,'button','Cancel');cancel.type='button';cancel.addEventListener('click',()=>{if(pending)return;manager.open=false;name.value='';parent.value='';managerTitle.textContent=selectedParent?'New folder in '+path(selectedParent):'New folder';});name.addEventListener('keydown',event=>{if(event.key==='Escape'&&!pending){event.preventDefault();manager.open=false;name.value='';parent.value='';managerTitle.textContent=selectedParent?'New folder in '+path(selectedParent):'New folder';}});}
+  function beginCreate(parentId=null){if(pending||manager.open)return;if(compact&&renameDrafts.size){notice.textContent='Finish or cancel the folder rename first.';return;}parent.value=parentId||'';createRevision=organization.revision;if(!compact)managerTitle.textContent=parentId?'New folder in '+path(parentId):'New folder';form.setAttribute('aria-label',parentId?'New folder in '+path(parentId):'New top-level folder');manager.open=true;if(compact){closed.delete(parentId);placeDraft();form.hidden=false;}name.focus();}
+  if(compact){managerTitle.addEventListener('click',event=>{if(!manager.open){event.preventDefault();beginCreate();}});const cancel=add(actions,'button','Cancel');cancel.type='button';icon(cancel,'close','Cancel new folder');cancel.addEventListener('click',()=>{if(pending)return;manager.open=false;form.hidden=true;name.value='';parent.value='';});name.addEventListener('keydown',event=>{if(event.key==='Escape'&&!pending){event.preventDefault();manager.open=false;form.hidden=true;name.value='';parent.value='';}});}
   async function mutate(payload, expectedRevision = organization.revision) {
     if (pending) return false;
     for (const select of [...fileSelects,...folderButtons]) select.disabled = true;
@@ -64,7 +67,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (await mutate({ action: selected.value ? 'update' : 'create', id: selected.value, name: name.value, parentId: parent.value || null },compact?(createRevision??organization.revision):organization.revision)) {
-      selected.value = ''; editSelection();if(compact){manager.open=false;parent.value='';managerTitle.textContent=selectedParent?'New folder in '+path(selectedParent):'New folder';} notice.textContent = 'Folder saved.';
+      selected.value = ''; editSelection();if(compact){manager.open=false;form.hidden=true;parent.value='';} notice.textContent = 'Folder saved.';
     }
   });
   async function removeFolder(id) {
@@ -109,7 +112,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
     });
     element.addEventListener('dragend',()=>{activeDrag=null;});
     element.addEventListener('keydown',event=>{
-      if(event.target!==element)return;
+      if(event.target!==element&&!(item.kind==='folder'&&event.target?.classList?.contains('next-schedule-folder-name')&&(event.ctrlKey||event.metaKey)&&event.key==='Enter'))return;
       if(compact&&!event.ctrlKey&&!event.metaKey&&!event.altKey){
         const row=element.parentElement;let next=null;
         const visible=[...(outlineContainer?.querySelectorAll('summary')||[])].filter(value=>{if(!value.parentElement?.dataset.scheduleFolder&&!value.parentElement?.dataset.scheduleId)return false;for(let ancestor=value.parentElement?.parentElement;ancestor&&ancestor!==outlineContainer;ancestor=ancestor.parentElement)if(ancestor.tagName==='DETAILS'&&!ancestor.open)return false;return true;});const index=visible.indexOf(element);
@@ -142,12 +145,15 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
       const item=activeDrag;activeDrag=null;void move(item,parentId);
     });
   }
+
+  function paintSelection(){if(!compact)return;for(const row of outlineContainer?.querySelectorAll('[data-schedule-folder]')||[])row.classList.toggle('next-folder-selected',row.dataset.scheduleFolder===selectedParent);}
+  function placeDraft(){if(!compact||!outlineContainer)return;const row=[...outlineContainer.querySelectorAll('[data-schedule-folder]')].find(row=>row.dataset.scheduleFolder===parent.value);const host=row?.querySelector('.next-schedule-folder-children')||outlineContainer;if(row){row.open=true;closed.delete(parent.value);}host.insertBefore(form,host.firstChild);form.hidden=!manager.open;}
   return {
-    leave(){manager.open=false;activeDrag=null;},
+    leave(){manager.open=false;form.hidden=true;activeDrag=null;},
     group(container, deployments, value) {
       outlineContainer=container;
       organization = value || { revision: 0, folders: [], assignments: {} };
-      if(compact&&!manager.open){if(selectedParent&&!organization.folders.some(folder=>folder.id===selectedParent))selectedParent=null;managerTitle.textContent=selectedParent?'New folder in '+path(selectedParent):'New folder';}
+      if(compact&&!manager.open&&selectedParent&&!organization.folders.some(folder=>folder.id===selectedParent))selectedParent=null;
       if (!compact && lastRevision !== organization.revision) {
         const chosen = selected.value, chosenParent = parent.value;
         options(selected, 'New folder', chosen); options(parent, 'Top level', chosenParent);
@@ -162,11 +168,13 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
           const details = add(host, 'details', '', 'next-schedule-folder-branch');
           details.open = !closed.has(folder.id);
           details.dataset.scheduleFolder = folder.id;
-          const summary = add(details, 'summary', '');
+          const summary = add(details, 'summary', '');if(compact)summary.addEventListener('click',event=>{if(event.target!==summary)return;selectedParent=folder.id;paintSelection();});
           const label = add(summary,'button',folder.name,'next-schedule-folder-name');label.type='button';label.disabled=pending;folderButtons.push(label);label.title='Rename folder';
           const input = add(summary,'input','','next-field next-schedule-folder-name-input');input.maxLength=120;input.setAttribute('aria-label','Rename folder '+folder.name);input.hidden=!renameDrafts.has(folder.id);input.value=renameDrafts.get(folder.id)?.name??folder.name;label.hidden=!input.hidden;
-          function cancelRename(){renameDrafts.delete(folder.id);input.hidden=true;label.hidden=false;label.focus();}
-          label.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();if(pending)return;if(compact){selectedParent=folder.id;if(!manager.open)managerTitle.textContent='New folder in '+path(folder.id);}renameDrafts.set(folder.id,{name:folder.name,revision:organization.revision,parentId:folder.parentId||null});input.value=folder.name;label.hidden=true;input.hidden=false;input.focus();input.select?.();});
+          const renameActions=compact?add(summary,'span','','next-schedule-rename-actions'):null;
+          if(renameActions){renameActions.hidden=input.hidden;for(const [kind,key,label] of [['check','Enter','Save folder name'],['close','Escape','Cancel folder rename']]){const button=add(renameActions,'button','');button.type='button';icon(button,kind,label);button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();input.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));});}}
+          function cancelRename(){renameDrafts.delete(folder.id);input.hidden=true;label.hidden=false;if(renameActions)renameActions.hidden=true;label.focus();}
+          label.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();if(pending)return;if(compact){selectedParent=folder.id;paintSelection();}renameDrafts.set(folder.id,{name:folder.name,revision:organization.revision,parentId:folder.parentId||null});input.value=folder.name;label.hidden=true;input.hidden=false;if(renameActions)renameActions.hidden=false;input.focus();input.select?.();});
           input.addEventListener('input',()=>{const draft=renameDrafts.get(folder.id);if(draft)draft.name=input.value;});
           input.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();});
           input.addEventListener('dragstart',event=>{event.preventDefault();event.stopPropagation();});
@@ -189,7 +197,8 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
           for (let changed = true; changed;) { changed = false; for (const item of folders) if (descendants.has(item.parentId) && !descendants.has(item.id)) { descendants.add(item.id); changed = true; } }
           const count = deployments.filter(item => descendants.has(organization.assignments?.[item.id])).length;
           if(!compact){const badge = add(summary, 'span', String(count), 'next-status-pill'); badge.title = 'Cronjobs in this folder and subfolders';}
-          const deleteButton=add(summary,'button','\u00d7','next-schedule-folder-remove');deleteButton.type='button';deleteButton.disabled=pending;folderButtons.push(deleteButton);deleteButton.title='Remove folder only; keep every cronjob';deleteButton.setAttribute('aria-label','Remove folder '+path(folder.id));deleteButton.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void removeFolder(folder.id);});
+          if(compact){const child=add(summary,'button','','next-schedule-folder-add');child.type='button';icon(child,'folder','New subfolder in '+path(folder.id));child.disabled=pending;folderButtons.push(child);child.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();beginCreate(folder.id);});}
+          const deleteButton=add(summary,'button','\u00d7','next-schedule-folder-remove');deleteButton.type='button';if(compact)icon(deleteButton,'close','Remove folder '+path(folder.id));deleteButton.disabled=pending;folderButtons.push(deleteButton);deleteButton.title='Remove folder only; keep every cronjob';deleteButton.setAttribute('aria-label','Remove folder '+path(folder.id));deleteButton.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void removeFolder(folder.id);});
           details.addEventListener('toggle', () => details.open ? closed.delete(folder.id) : closed.add(folder.id));
           const children = add(details, 'div', '', 'next-schedule-folder-children');
           branch(folder.id, children, next);
@@ -197,8 +206,8 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
           if (!direct && !folders.some(item => item.parentId === folder.id)) add(cards, 'p', 'Empty folder', 'next-help');
         }
       }
-      branch(null, container);
-      const unfiled = add(container, 'section', '', 'next-schedule-unfiled'); const unfiledHeading=add(unfiled, 'h3', 'Unfiled');dropTarget(unfiledHeading,null);unfiledHeading.title='Drop here to move to the top level.';if(compact){unfiledHeading.tabIndex=0;unfiledHeading.setAttribute('role','button');unfiledHeading.setAttribute('aria-label','Select top level for new folders');const root=()=>{selectedParent=null;if(!manager.open)managerTitle.textContent='New folder';};unfiledHeading.addEventListener('click',root);unfiledHeading.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();root();}});}
+      branch(null, container);paintSelection();if(compact&&manager.open)placeDraft();
+      const unfiled = add(container, 'section', '', 'next-schedule-unfiled'); const unfiledHeading=add(unfiled, 'h3', 'Unfiled');dropTarget(unfiledHeading,null);unfiledHeading.title='Drop here to move to the top level.';if(compact){unfiledHeading.tabIndex=0;unfiledHeading.setAttribute('role','button');unfiledHeading.setAttribute('aria-label','Top level; drop folders or cronjobs here');const root=()=>{selectedParent=null;paintSelection();};unfiledHeading.addEventListener('click',root);unfiledHeading.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();root();}});}
       const cards = add(unfiled, 'div', '', 'next-grid'); targets.set('', cards);
       if (!deployments.some(item => !targets.has(organization.assignments?.[item.id]))) add(cards, 'p', 'No unfiled cronjobs.', 'next-help');
       return {
