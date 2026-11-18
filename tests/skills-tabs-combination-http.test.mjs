@@ -16,7 +16,7 @@ class NoModelRuntime extends EventEmitter {
   async runAgent(){this.inferences++;throw Error('HTTP acceptance must not start a model.');}
 }
 
-test('combined .98 server serves both Skills and scoped cleanup assets, and current saved Skills detail',async t=>{
+test('server delivers release-owned Skills without legacy contamination or model startup',async t=>{
   const root=await mkdtemp(path.join(tmpdir(),'blackice-combined-skills-tabs-http-'));
   const cwd=path.join(root,'work');await mkdir(cwd);
   const runtime=new NoModelRuntime();
@@ -54,19 +54,12 @@ test('combined .98 server serves both Skills and scoped cleanup assets, and curr
   const listResponse=await get('/api/skills?source=all');
   assert.equal(listResponse.status,200);
   const catalog=await listResponse.json();
-  assert.equal(catalog.sources.codex.status,'not_requested','No fake Codex availability or worker startup');
-  assert.ok(catalog.entries.some(entry=>entry.id==='saved:combined-fixture-skill'));
-  assert.ok(!catalog.entries.some(entry=>entry.id.startsWith('builtin:')));
-  const read=async()=>get('/api/skills/saved%3Acombined-fixture-skill');
-  const firstSkill=await read();assert.equal(firstSkill.status,200);
-  assert.equal((await firstSkill.json()).content,'# Saved\nLatest revision 1');
-  await app.knowledge.upsert({...saved,content:'# Saved\nLatest revision 2',expectedRevision:1});
-  const secondSkill=await read();assert.equal(secondSkill.status,200);
-  const current=await secondSkill.json();
-  assert.equal(current.revision,2);assert.equal(current.content,'# Saved\nLatest revision 2');
-  const builtIn=await get('/api/skills/builtin%3Aplanning-v5');
-  assert.equal(builtIn.status,404);
-  const invalid=await get('/api/skills/saved%3A..%2Fescape');
-  assert.equal(invalid.status,404);
+  assert.equal(catalog.sources.bundled.status,'available');
+  assert.ok(catalog.entries.some(entry=>entry.id==='builtin-browser'));
+  assert.ok(!catalog.entries.some(entry=>entry.id==='saved:combined-fixture-skill'));
+  const read=await get('/api/skills/builtin-browser');assert.equal(read.status,200);
+  const method=await read.json();assert.equal(method.immutable,true);assert.match(method.content,/When to use/);
+  assert.equal((await get('/api/skills/saved%3Acombined-fixture-skill')).status,404);
+  assert.equal((await get('/api/skills/builtin-..%2Fescape')).status,404);
   assert.equal(runtime.inferences,0);
 });
