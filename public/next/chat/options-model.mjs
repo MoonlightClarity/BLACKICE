@@ -4,15 +4,16 @@ import { UNKNOWN_CHAT_MODEL } from './model.mjs';
 import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
 
 export const DEFAULT_CHAT_OPTIONS=Object.freeze({
-  model:'default',effort:'default',serviceTier:'default',planningMode:'off',planningExecutionMode:'automatic',
+  model:'default',effort:'default',serviceTier:'default',verbosity:'balanced',planningMode:'off',planningExecutionMode:'automatic',
 });
 export function normalizeChatOptions(value={}){
   const model=typeof value?.model==='string'&&value.model.length<=400?value.model:'default';
   const effort=typeof value?.effort==='string'&&value.effort.length<=25?value.effort:'default';
   const serviceTier=['default','fast'].includes(value?.serviceTier)?value.serviceTier:'default';
+  const verbosity=['concise','balanced','detailed'].includes(value?.verbosity)?value.verbosity:'balanced';
   const planningMode='off';
   const planningExecutionMode=value?.planningExecutionMode??'automatic';
-  return {model,effort,serviceTier,planningMode,planningExecutionMode};
+  return {model,effort,serviceTier,verbosity,planningMode,planningExecutionMode};
 }
 /** Reading a saved run must not erase a no-execution constraint. */
 export function savedChatExecutionMode(run,fallback='automatic'){

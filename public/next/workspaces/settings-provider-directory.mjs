@@ -8,7 +8,7 @@ export function createProviderDirectoryUI({mount,api,onChoose}){
   mount.innerHTML=`<details id="next-provider-directory-directory" class="next-provider-directory-panel next-card">
     <summary>Find model API providers · keyed or keyless</summary>
     <div class="next-provider-directory-content">
-      <p class="next-help">Find independent AI providers by name, model ID or API address. Supported adapters are separated from external references. Checking a connection verifies its live catalog before saving.</p>
+      <p class="next-help">Find providers by name, model ID or API address. Verify a connection before saving.</p>
       <div class="next-provider-directory-filters">
         <label class="next-label">Search providers and models<input id="next-provider-directory-query" class="next-field" type="search" maxlength="160" placeholder="Nemotron, Groq, open models…"></label>
         <label class="next-label">Authentication<select id="next-provider-directory-auth" class="next-field"><option value="any">All</option><option value="keyless">Documented keyless</option><option value="keyed">Key documented</option><option value="optional">Optional</option><option value="unverified">Unknown</option></select></label>
@@ -17,7 +17,7 @@ export function createProviderDirectoryUI({mount,api,onChoose}){
       <div class="next-row"><label class="next-row"><input id="next-provider-directory-free" type="checkbox"> Free or zero-price models reported</label>
         <button type="button" id="next-provider-directory-search">Search providers</button>
         <button type="button" id="next-provider-directory-refresh">Refresh external index</button></div>
-      <p class="next-help">An external listing is not a working BLACKICE integration. Only endpoints reported as OpenAI-compatible can open a custom connection draft, and they still require live verification.</p>
+      <p class="next-help">External listings are not verified integrations. OpenAI-compatible endpoints still require a connection check.</p>
       <p id="next-provider-directory-status" class="next-help" role="status" aria-live="polite">Search independent model providers.</p>
       <ul id="next-provider-directory-results" class="next-provider-directory-results"></ul>
       <div class="next-row"><button type="button" id="next-provider-directory-prev" hidden>Previous</button><span id="next-provider-directory-page" class="next-help"></span><button type="button" id="next-provider-directory-next" hidden>Next</button></div>

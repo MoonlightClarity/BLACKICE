@@ -1,3 +1,4 @@
+import {submitChat} from '../public/next/chat/send.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -23,5 +24,19 @@ test('saved defaults traverse real engine and provider HTTP adapter, without cla
  const started=engine.startRun({workflow,input:'No external actions.',planningMode:'off'});
  let done;for(let i=0;i<1000;i++){done=engine.getRun(started.id);if(done.settled)break;await new Promise(r=>setTimeout(r,10));}
  assert.equal(done.status,'completed',done.error);assert.equal(requests.length,1);assert.equal(requests[0].reasoning_effort,'high');assert.equal(requests[0].service_tier,undefined);assert.match(JSON.stringify(requests[0].messages),/Be brief and direct/);
+
  assert.equal(done.nodes.agent.output,'Synthetic transport receipt.');
+ const api=async(route,method,body)=>route==='/api/workflows'?body:route==='/api/runs'?engine.startRun(body):engine.continueRun(route.split('/')[3],body);
+ const wait=async id=>{for(let i=0;i<1000;i++){const run=engine.getRun(id);if(run.settled)return run;await new Promise(r=>setTimeout(r,10));}throw Error('Chat did not settle');};
+ const chat=await submitChat({api,runs:[],task:'Explicit Chat choices.',model:'fixture::fixture',cwd:dir,effort:'default',serviceTier:'default',verbosity:'detailed'});
+ const first=await wait(chat.run.id);assert.equal(first.status,'completed',first.error);
+ assert.equal(requests[1].reasoning_effort,undefined);assert.equal(requests[1].service_tier,undefined);
+ assert.match(JSON.stringify(requests[1].messages),/Provide a well-organized, thorough response/);
+ assert.equal(first.workflow.nodes.find(n=>n.type==='agent').verbosity,'detailed');
+ const follow=await submitChat({api,runs:[first],task:'A concise follow-up.',model:'fixture::fixture',cwd:dir,verbosity:'concise'});
+ const second=await wait(follow.run.id);assert.equal(second.status,'completed',second.error);
+ assert.equal(second.workflow.nodes.find(n=>n.type==='agent').verbosity,'concise');
+ assert.match(JSON.stringify(requests.at(-1).messages),/Be brief and direct/);
+ assert.equal(settings.get().verbosity,'concise','Chat does not mutate global defaults.');
+
 });

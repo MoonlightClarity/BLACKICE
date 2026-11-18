@@ -18,7 +18,7 @@ test('chat exposes core task controls without hidden module or Directory control
 });
 test('old saved selections cannot reactivate modules or Directory and no-execution intent stays intact',()=>{
  const options=normalizeChatOptions({model:'fixture',planningMode:'ontology',planningOntology:{modules:{verification:true}},directoryMode:'on',subagentsMode:'off',planningExecutionMode:'plan_only'});
- assert.deepEqual(options,{model:'fixture',effort:'default',serviceTier:'default',planningMode:'off',planningExecutionMode:'plan_only'});
+ assert.deepEqual(options,{model:'fixture',effort:'default',serviceTier:'default',verbosity:'balanced',planningMode:'off',planningExecutionMode:'plan_only'});
  assert.equal(savedChatExecutionMode({workflow:{settings:{planningExecutionMode:'plan_only'}}}),'plan_only');
 });
 test('new send discards supplied module and Directory policies without changing the requested model or goal',async()=>{

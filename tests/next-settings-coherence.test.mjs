@@ -3,7 +3,7 @@ import {renderMcpApps} from '../public/next/workspaces/settings-mcp-apps.mjs';
 test('incoming app guidance does not point to removed Tools settings',()=>{assert.doesNotMatch(renderMcpApps(),/Settings → Tools/);});
 import assert from 'node:assert/strict';
 import {planningDOM} from './fixture-planning-dom.mjs';
-import {createSettingsWorkspace,responseDefaultCapabilities} from '../public/next/workspaces/settings.mjs';
+import {createSettingsWorkspace} from '../public/next/workspaces/settings.mjs';
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 async function fixture(t,requests=[],modelStatus={}){
  const d=planningDOM(t),calls=[],status={connected:true,authenticated:true,models:[],execution:{activeCount:0},...modelStatus};
@@ -12,10 +12,11 @@ async function fixture(t,requests=[],modelStatus={}){
 }
 test('everyday settings separate app connections and hide empty action review without changing saved controls',async t=>{
  const f=await fixture(t);assert.equal(f.$('#next-settings-section-recovery'),null);assert.equal(f.$('#next-review-notice').hidden,true);
- assert.equal(f.$('#next-settings-section-apps').textContent,'App connections');assert.match(f.$('#next-settings-general').textContent,/Response defaults/);assert.match(f.$('#next-settings-general').textContent,/Advanced task settings/);
+ assert.equal(f.$('#next-settings-section-apps').textContent,'App connections');assert.match(f.$('#next-settings-general').textContent,/Runtime/);assert.match(f.$('#next-settings-general').textContent,/Task limits and access/);
  assert.equal(f.$('#next-runtime-guardrails'),null);
+ for(const id of ['next-runtime-effort','next-runtime-tier','next-runtime-verbosity'])assert.equal(f.$('#'+id),null);
  assert.equal(f.$('#next-runtime-idle').closest('details').open,false);
- for(const id of ['next-runtime-effort','next-runtime-tier','next-runtime-verbosity','next-runtime-timeout','next-runtime-context'])assert.ok(f.$('#'+id),id+' remains available');
+ for(const id of ['next-runtime-timeout','next-runtime-context'])assert.ok(f.$('#'+id),id+' remains available');
  assert.equal(f.$('#next-execution-limit'),null);assert.equal(f.$('#next-execution-legacy'),null);
  assert.equal(f.calls.some(x=>x.route==='/api/execution/settings'),false);
  assert.equal(f.calls.some(x=>x.method!=='GET'),false);
@@ -35,7 +36,7 @@ test('keyboard navigation stays within the appropriate app or primary tab row',a
 
 test('app setup explains shared endpoint and independent app connections',async t=>{
  const f=await fixture(t);
- assert.match(f.$('#next-settings-apps').textContent,/Each app has its own authorization/);
+
  assert.match(f.$('#next-settings-apps').textContent,/Each app has a separate grant/);
  assert.equal(f.$('#next-settings-section-connections'),null);assert.equal(f.$('#next-settings-connections'),null);
  assert.equal(f.calls.some(x=>x.method!=='GET'),false);
@@ -43,14 +44,4 @@ test('app setup explains shared endpoint and independent app connections',async 
 
 test('Config keeps troubleshooting out of General and opens it read-only',async t=>{const f=await fixture(t);assert.equal(f.mount.querySelector('h1').textContent,'Config');assert.equal(f.$('#next-native-recovery').closest('#next-settings-general'),null);await f.click('#next-settings-section-troubleshooting');await settle();assert.equal(f.$('#next-settings-troubleshooting').hidden,false);assert.equal(f.$('#next-settings-general').hidden,true);await f.click('#next-settings-section-general');assert.equal(f.$('#next-settings-troubleshooting').hidden,true);assert.ok(f.calls.every(x=>x.method==='GET'));});
 
-test('response controls expose only advertised reasoning and Fast support without rewriting saved preferences',async t=>{
- const caps=responseDefaultCapabilities({defaultModel:'api::model',models:[{id:'api::model',providerId:'api',supportedReasoningEfforts:['low','high']}]},'ultra');
- assert.deepEqual(caps.reasoning.filter(x=>x.available).map(x=>x.value),['default','low','high']);assert.equal(caps.fast.available,false);
- const unknown=responseDefaultCapabilities({},'default');assert.deepEqual(unknown.reasoning.filter(x=>x.available).map(x=>x.value),['default']);
- const f=await fixture(t,[],{defaultModel:'native',models:[{id:'native',supportedReasoningEfforts:['high'],serviceTiers:['priority']}]});
- assert.equal(f.$('#next-runtime-tier').querySelector('[value="fast"]').disabled,false);
- assert.deepEqual([...f.$('#next-runtime-effort').children].filter(x=>!x.disabled).map(x=>x.value),['default','high']);
- assert.match(f.$('#next-runtime-capabilities').textContent,/prompt guidance, not a guaranteed/);assert.equal(f.calls.some(x=>x.method!=='GET'),false);
-});
-
-test('saved reasoning remains a disabled choice when selection is unsupported',()=>{const caps=responseDefaultCapabilities({defaultModel:'fixed',models:[{id:'fixed',supportsReasoningSelection:false}]},'high');assert.deepEqual(caps.reasoning.map(x=>[x.value,x.available]),[['default',true],['high',false]]);});
+test('runtime save cannot silently rewrite Chat response choices',async t=>{const f=await fixture(t);await f.$('#next-runtime-settings-form').dispatch('submit');await settle();const write=f.calls.find(x=>x.route==='/api/runtime/settings'&&x.method==='POST');assert.ok(write);for(const field of ['defaultEffort','defaultServiceTier','verbosity'])assert.equal(Object.hasOwn(write.body,field),false);});

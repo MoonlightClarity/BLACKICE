@@ -16,7 +16,7 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
   mount.innerHTML=[
     '<section class="next-card next-identity-settings" aria-labelledby="next-identity-title">',
     '<h2 id="next-identity-title">Agent behavior &amp; your profile</h2>',
-    '<p class="next-help">Instructions for how BLACKICE responds and works, plus facts and preferences about you. Shared across working folders. SOUL.md stays fixed during development and learning. You can edit it here or explicitly ask BLACKICE to revise it. Saved changes apply to the next agent turn; current turns keep their original snapshot.</p>',
+    '<p class="next-help">Instructions and profile shared across working folders. Saved changes apply to the next agent turn, not active work.</p>',
     '<div class="next-identity-tabs" role="tablist" aria-label="Identity files">',
     '<button id="next-identity-soul" type="button" role="tab" aria-controls="next-identity-editor">How BLACKICE works</button>',
     '<button id="next-identity-user" type="button" role="tab" aria-controls="next-identity-editor">About you</button></div>',

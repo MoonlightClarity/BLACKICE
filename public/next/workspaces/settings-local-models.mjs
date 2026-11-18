@@ -19,7 +19,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
   const card = node('section', '', 'next-card next-stack');
   card.setAttribute('aria-label', 'Local model loading');
   card.append(node('h2', 'Local models'),
-    node('p', 'Use the included llama.cpp engine with a downloaded model, or connect models you already run in Ollama or LM Studio. Loaded models appear in the BLACKICE model picker.', 'next-help'));
+    node('p', 'Use included llama.cpp, or connect Ollama or LM Studio. Loaded models appear in the model picker.', 'next-help'));
   const row = node('div', '', 'next-row');
   const engine = node('select', '', 'next-field');
   for (const [id, name] of [['ollama', 'Ollama'], ['lmstudio', 'LM Studio'], ['llamacpp', 'llama.cpp']]) {

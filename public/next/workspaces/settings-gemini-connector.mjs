@@ -49,7 +49,7 @@ export function createGeminiConnectorSettings({ mount, api, notify = () => {} } 
 
     mount.innerHTML = '<div class="next-stack gemini-connector-settings">'
       + '<section class="next-card"><h2>Gemini connector</h2>'
-      + '<p class="next-help">Gemini uses the existing BLACKICE MCP server, with its own independent OAuth grant. ChatGPT stays connected when Gemini is added or removed.</p>'
+      + '<p class="next-help">Gemini has a separate connection. ChatGPT stays connected.</p>'
       + '<div class="next-row"><strong>Google: ' + escape(status) + '</strong>'
       + '<button type="button" data-gemini-action="refresh"' + (locked ? ' disabled' : '') + '>Check status</button>'
       + '<button type="button" data-gemini-action="open"' + (locked ? ' disabled' : '') + '>Open Gemini connector setup in BLACKICE Browser</button></div>'
@@ -78,7 +78,7 @@ export function createGeminiConnectorSettings({ mount, api, notify = () => {} } 
           + '<button type="button" data-gemini-action="decline" data-gemini-request-id="' + escape(request.id) + '"' + (locked ? ' disabled' : '') + '>Decline Google request</button></div></form>';
       }).join('') : '') + '</section>'
       + '<section class="next-card"><h3>Test Gemini tool execution</h3>'
-      + '<p class="next-help">In a Gemini chat, ask the connected app to call a BLACKICE tool. A saved connector or an authorization grant alone does not prove tool execution.</p>'
+      + '<p class="next-help">Test a BLACKICE tool in Gemini to verify the connection.</p>'
       + '<p><code id="gemini-connector-probe">' + escape(PROBE) + '</code></p>'
       + '<div class="next-row"><button type="button" data-gemini-action="copy-test">Copy test prompt</button>'
       + '<button type="button" data-gemini-action="browser">Go to BLACKICE Browser</button></div></section>'

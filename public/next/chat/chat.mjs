@@ -95,7 +95,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     const choices=paintModels(view,status,state.options);
     modelPicker.update({models:choices.models,status,selected:choices.selected.model});
     state.options=normalizeChatOptions({model:view.model.value,effort:view.effort.value,
-      serviceTier:view.tier.value,planningExecutionMode:view.executionMode.value});
+      serviceTier:view.tier.value,verbosity:view.verbosity.value,planningExecutionMode:view.executionMode.value});
     if(!state.selected&&!contextControls.dirty)contextControls.reconcile(runtimeStatus.runtimeSettings?.defaultContext);
     syncContext();
   };
@@ -473,7 +473,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       const context=active?undefined:contextControls.read();
       const submittedContextRevision=contextControls.revision;
       const result=await submitChat({api,runs:current,task,model:previous&&!submittedModel.explicit?undefined:options.model,
-        effort:options.effort,serviceTier:options.serviceTier,context,goal,
+        effort:options.effort,serviceTier:options.serviceTier,verbosity:options.verbosity,context,goal,
         planningMode:options.planningMode,planningExecutionMode:options.planningExecutionMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
         cwd:(()=>{try{return localStorage.getItem('blackice.next.cwd')||status?.cwd||'';}catch{return status?.cwd||'';}})()});
       const unchanged=consumeDraft&&state.inputOwner===submittedOwner&&state.inputRevision===submittedRevision;
@@ -640,7 +640,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     }
   }
   for(const [element,key] of [[view.model,'model'],[view.effort,'effort'],
-    [view.tier,'serviceTier'],[view.executionMode,'planningExecutionMode']])element?.addEventListener('change',()=>{
+    [view.tier,'serviceTier'],[view.verbosity,'verbosity'],[view.executionMode,'planningExecutionMode']])element?.addEventListener('change',()=>{
       if(key==='model'){
         if(state.pending){refreshChoices(runtimeStatus);return;}
         try{state.options.model=modelSelections.choose(root(),element.value,runtimeStatus);}catch(error){refreshChoices();showError(error);return;}

@@ -49,7 +49,7 @@ export function createClaudeConnectorSettings({ mount, api, notify = () => {} } 
 
     mount.innerHTML = '<div class="next-stack claude-connector-settings">'
       + '<section class="next-card"><h2>Claude connector</h2>'
-      + '<p class="next-help">Claude uses the existing BLACKICE MCP server, with its own independent OAuth grant. ChatGPT stays connected when Claude is added or removed.</p>'
+      + '<p class="next-help">Claude has a separate connection. ChatGPT stays connected.</p>'
       + '<div class="next-row"><strong>Claude: ' + escape(status) + '</strong>'
       + '<button type="button" data-claude-action="refresh"' + (locked ? ' disabled' : '') + '>Check status</button>'
       + '<button type="button" data-claude-action="open"' + (locked ? ' disabled' : '') + '>Open Claude connector setup in BLACKICE Browser</button></div>'
@@ -78,7 +78,7 @@ export function createClaudeConnectorSettings({ mount, api, notify = () => {} } 
           + '<button type="button" data-claude-action="decline" data-claude-request-id="' + escape(request.id) + '"' + (locked ? ' disabled' : '') + '>Decline Claude request</button></div></form>';
       }).join('') : '') + '</section>'
       + '<section class="next-card"><h3>Test Claude tool execution</h3>'
-      + '<p class="next-help">In a Claude chat, ask the connected app to call a BLACKICE tool. A saved connector or an authorization grant alone does not prove tool execution.</p>'
+      + '<p class="next-help">Test a BLACKICE tool in Claude to verify the connection.</p>'
       + '<p><code id="claude-connector-probe">' + escape(PROBE) + '</code></p>'
       + '<div class="next-row"><button type="button" data-claude-action="copy-test">Copy test prompt</button>'
       + '<button type="button" data-claude-action="browser">Go to BLACKICE Browser</button></div></section>'

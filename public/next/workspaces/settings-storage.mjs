@@ -36,7 +36,7 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
   mount.innerHTML = [
     '<section class="next-card storage-overview" id="storage-overview">',
     '<div class="storage-heading"><div><h2>Storage usage</h2>',
-    '<p class="next-help">See how much space BLACKICE uses and manage saved data on this computer.</p></div>',
+    '<p class="next-help">Manage local storage.</p></div>',
     '<button type="button" id="storage-refresh">Refresh usage</button></div>',
     '<div class="storage-summary"><div><span class="storage-caption">Measured app storage</span>',
     '<strong id="storage-total">Measuring…</strong><span class="next-help" id="storage-measured"></span></div>',
@@ -54,7 +54,7 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     '<div id="storage-system" class="storage-usage-list"></div><p class="next-help" id="storage-count"></p>',
     '<p class="next-help" id="storage-external"></p></details></section>',
     '<section class="next-card" id="storage-workspace-panel"><div class="storage-heading"><div><h3>Workspace files</h3>',
-    '<p class="next-help">Review folder sizes and choose individual files or folders. Nothing is selected automatically. Linked and unsupported items stay protected; open their folders to select safe contents.</p></div>',
+    '<p class="next-help">Select files or folders to review. Nothing is preselected; linked and unsupported items stay protected.</p></div>',
     '<button type="button" id="storage-workspace-open">Review workspace files</button></div>',
     '<div id="storage-workspace-browser" hidden><nav id="storage-workspace-breadcrumbs" aria-label="Workspace folders"></nav>',
     '<p id="storage-workspace-status" class="next-help" role="status" aria-live="polite"></p>',

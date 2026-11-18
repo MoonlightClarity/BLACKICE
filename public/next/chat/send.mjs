@@ -5,7 +5,8 @@ import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
 /** Send once; the existing server executes and persists the real run.
  * Failures preserve unsent drafts, and no mutation is silently replayed.
  */
-export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', planningMode, planningExecutionMode = 'automatic', cwd = '', attachmentIds=[], context, goal }) {
+export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', verbosity = 'balanced', planningMode, planningExecutionMode = 'automatic', cwd = '', attachmentIds=[], context, goal }) {
+  if(!['concise','balanced','detailed'].includes(verbosity))throw Error('Choose valid answer detail guidance.');
   const chosenPlanningMode = 'off';
   const latest=replyTarget(runs);
   planningExecutionMode=assertExecutablePlanningMode(planningExecutionMode,latest.run?.planningExecutionMode,latest.run?.workflow?.settings?.planningExecutionMode);
@@ -23,15 +24,16 @@ export async function submitChat({ api, runs, task, model, effort = 'default', s
   if (latest.run && latest.nodeId && canContinueRun(latest.run)) {
     const requestId=stableId('chat');
     const result=await api('/api/runs/' + encodeURIComponent(latest.run.id) + '/continue','POST',
-      { nodeId:latest.nodeId,message:content,...(model&&model!=='default'?{model}:{}),effort,serviceTier,planningMode:chosenPlanningMode,planningExecutionMode,attachmentIds,requestId,...(context!==undefined?{context:structuredClone(context)}:{}) });
+      { nodeId:latest.nodeId,message:content,...(model&&model!=='default'?{model}:{}),effort,serviceTier,verbosity,planningMode:chosenPlanningMode,planningExecutionMode,attachmentIds,requestId,...(context!==undefined?{context:structuredClone(context)}:{}) });
     return { mode:'continued',run:result?.run||result,requestId };
   }
   if (latest.run) throw Error(latest.run.settled === false ? 'This response is still settling. Wait for it to finish before sending again.' : 'This conversation has no stopped agent to continue. Use Retry or start a new conversation.');
-  if (!cwd) throw Error('Choose a working folder in Settings before starting new work.');
+  if (!cwd) throw Error('Choose a working folder in Config before starting new work.');
   const requestId=stableId('chat');
   const { createMissionWorkflow }=await import('../../mission-model.mjs');
   const workflow=createMissionWorkflow({ task:content,model:model??'default',effort,serviceTier,cwd,planningMode:chosenPlanningMode,planningExecutionMode,
     id:'mission_' + requestId });
+  for(const node of workflow.nodes||[])if(node.type==='agent')node.verbosity=verbosity;
   workflow.settings={...workflow.settings,planningExecutionMode};
   if(context!==undefined){
     workflow.settings.context=structuredClone(context);
