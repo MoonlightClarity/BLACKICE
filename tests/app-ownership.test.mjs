@@ -272,9 +272,9 @@ test('palette keyboard activation respects a tabbed result and arrows follow its
 
 test('command search ranks titles before descriptive matches and preserves chat relevance and stable ties',async()=>{
   const f=await fixture(()=>({})),ids=query=>[...f.matchingCommands(query)].map(command=>command.id);
-  assert.equal(ids('learning')[0],'learning');assert.ok(ids('learning').indexOf('learning')<ids('learning').indexOf('agent-workspace'));
+  assert.deepEqual(ids('learning'),[],'retired learning commands are absent');assert.equal(f.commandCatalog().some(command=>command.id==='learning'||command.id==='knowledge'),false);
   assert.equal(ids('api')[0],'models-connections');assert.deepEqual(ids('cron'),['operations','schedule'],'the named cronjobs manager outranks a task-creation keyword match');
-  assert.equal(ids('file changes')[0],'file-patches');assert.equal(ids('history')[0],'learning','title substring outranks a description-only match');
+  assert.equal(ids('file changes')[0],'file-patches');assert.deepEqual(ids('history'),['history','operations','file-patches'],'title substring outranks descriptive matches, which retain catalog order on equal ranks');
   for(const query of ['learning','api','cron'])assert.equal(f.matchingCommands(query).some(command=>command.studio),false,query);
   assert.equal(f.matchingCommands().some(command=>command.studio),false);
   f.commandChats([{runId:'most-relevant',title:'Learning release notes',state:'active'},{runId:'next-relevant',title:'Learning checklist',state:'archived'}]);

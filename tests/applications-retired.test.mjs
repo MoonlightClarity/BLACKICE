@@ -17,8 +17,12 @@ test('no renderer or Electron IPC entry point can launch a native application', 
 
 test('unrelated workspace tabs stay registered', () => {
   const html = text('public/next/index.html');
-  // Retired Swarm and memory spaces have explicit owner-managed replacements.
-  for (const space of ['chat','todos','cronjobs','browser','skills','settings'])
+  // Removed spaces must not return as replacement tabs or lazy routes.
+  for (const space of ['chat','cronjobs','browser','skills','settings'])
     assert.match(html, new RegExp('data-space="' + space + '"'));
-  assert.doesNotMatch(html, /data-space="planning"|data-space="workbench"|data-space="swarm"|data-space="knowledge"/);
+  assert.doesNotMatch(html, /data-space="planning"|data-space="workbench"|data-space="swarm"|data-space="knowledge"|data-space="todos"|data-space="userWorkflows"/);
+});
+
+ test('removed TODO and user workflow workspaces have no lazy entry points', () => {
+  assert.doesNotMatch(text('public/next/app.mjs'), /createTodosWorkspace|createUserWorkflowsWorkspace|workspaces\/(?:todos|user-workflows)\.mjs/);
 });
