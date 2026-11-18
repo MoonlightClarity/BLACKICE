@@ -30,6 +30,7 @@ await win.reload();await until('!!document.querySelector(".next-chat-folder-new-
 for(const width of [1200,640]){win.setSize(width,900);await sleep(150);fs.writeFileSync(path.join(out,'chat-'+width+'.png'),(await win.webContents.capturePage()).toPNG());}
 
 
+win.setSize(1200,900);await sleep(180);
 await run('document.querySelector(".next-chat-folder-name").click();true');
 assert.equal(await run('getComputedStyle(document.querySelector(".next-chat-folder-name")).display'),'none');
 assert.equal(await run('document.activeElement.className'),'next-chat-folder-rename');
