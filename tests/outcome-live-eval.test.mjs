@@ -48,7 +48,7 @@ test('fresh candidate snapshots load the real server and tool modules without bu
   assert.equal(changedFiles, null);
   await assert.rejects(fs.stat(path.join(root, 'source-baseline')), { code: 'ENOENT' });
   const target = path.join(root, 'source-candidate');
-  for (const relative of ['lib/conversation-autonomy.mjs', 'desktop/browser-submission-observation.mjs']) {
+  for (const relative of ['lib/conversation-goals.mjs', 'desktop/browser-submission-observation.mjs']) {
     const original = await fs.readFile(path.join(source, relative));
     const copied = await fs.readFile(path.join(target, relative));
     assert.deepEqual(copied, original);
@@ -60,3 +60,4 @@ test('fresh candidate snapshots load the real server and tool modules without bu
   assert.equal(snapshots.candidate.fingerprint, hash(JSON.stringify(snapshots.candidate.files, null, 2) + '\n'));
   await assert.rejects(fs.stat(path.join(target,'skills','planning','SKILL.md')), {code:'ENOENT'});
 });
+
