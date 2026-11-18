@@ -10,8 +10,8 @@ import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
 import {createHarnessServer} from '../server.mjs';
 const temporary=async t=>{const dir=await mkdtemp(path.join(tmpdir(),'skill-delete-'));t.after(()=>rm(dir,{recursive:true,force:true}));return dir;};
 test('bundled deletion persists, excludes model access, restores unchanged default, and leaves unrelated files intact',async t=>{
- const root=await temporary(t),catalog=createSkillsCatalog({dataDir:root}),id='builtin-browser';
- const original=await catalog.detail({id}),other=await catalog.detail({id:'builtin-job-search'});
+ const root=await temporary(t),catalog=createSkillsCatalog({dataDir:root}),id='builtin-decomposition';
+ const original=await catalog.detail({id}),other=await catalog.detail({id:'builtin-structured-analysis'});
  await writeFile(path.join(root,'unrelated.txt'),'Untouched content');
  const deleted=await catalog.delete({id,value:{expectedRevision:original.revision}});
  assert.deepEqual(deleted,{id,revision:2,deleted:true});
@@ -38,7 +38,7 @@ test('bundled deletion persists, excludes model access, restores unchanged defau
  await assert.rejects(fresh.restore({id,value:{expectedRevision:3}}),{status:409});
 });
 test('edited document deletion restores exact saved bytes and concurrent stale saves cannot overwrite it',async t=>{
- const root=await temporary(t),a=createSkillsCatalog({dataDir:root}),b=createSkillsCatalog({dataDir:root}),id='builtin-browser';
+ const root=await temporary(t),a=createSkillsCatalog({dataDir:root}),b=createSkillsCatalog({dataDir:root}),id='builtin-decomposition';
  const text='# Human document\r\nExact text \u03c0\n';
  const saved=await a.save({id,value:{expectedRevision:1,content:text}});
  const outcomes=await Promise.allSettled([a.delete({id,value:{expectedRevision:saved.revision}}),b.save({id,value:{expectedRevision:saved.revision,content:'# Other edit'}})]);
@@ -60,13 +60,13 @@ test('human HTTP delete/restore enforces auth, local access, CAS and restart per
  const root=await mkdtemp(path.join(tmpdir(),'skill-delete-http-'));let app,base,cookie;t.after(async()=>{try{await app?.close();}finally{await rm(root,{recursive:true,force:true});}});
  const start=async()=>{app=await createHarnessServer({runtime:new Runtime(),dataDir:root,defaultCwd:root,port:0,remoteAccess:false});base=await app.listen();cookie=(await fetch(base)).headers.get('set-cookie').split(';')[0];};await start();
  const request=(route,method='GET',payload,headers={Cookie:cookie})=>fetch(new URL(route,base),{method,headers:{...headers,'Content-Type':'application/json'},...(payload?{body:JSON.stringify(payload)}:{})});
- const route='/api/skills/builtin-browser';
+ const route='/api/skills/builtin-decomposition';
  assert.equal((await request(route,'DELETE',{expectedRevision:1},{})).status,401);
  assert.equal((await request(route,'DELETE',{expectedRevision:1},{Cookie:cookie,'x-blackice-remote':'1'})).status,403);
  const response=await request(route,'DELETE',{expectedRevision:1});assert.equal(response.status,200);const deleted=await response.json();
  await app.close();await start();
  assert.equal((await request(route)).status,404);
- const trash=await(await request('/api/skills?source=deleted')).json();assert.equal(trash.entries[0].id,'builtin-browser');
+ const trash=await(await request('/api/skills?source=deleted')).json();assert.equal(trash.entries[0].id,'builtin-decomposition');
  assert.equal((await request(route,'POST',{expectedRevision:deleted.revision,content:'cannot restore by save'})).status,409);
  assert.equal((await request(route+'/restore','POST',{expectedRevision:deleted.revision},{})).status,401);
  assert.equal((await request(route+'/restore','POST',{expectedRevision:deleted.revision},{Cookie:cookie,'x-blackice-remote':'1'})).status,403);

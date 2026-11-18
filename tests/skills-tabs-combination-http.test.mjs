@@ -54,9 +54,9 @@ test('server delivers release-owned Skills without legacy contamination or model
   assert.equal(listResponse.status,200);
   const catalog=await listResponse.json();
   assert.equal(catalog.sources.bundled.status,'available');
-  assert.ok(catalog.entries.some(entry=>entry.id==='builtin-browser'));
+  assert.ok(catalog.entries.some(entry=>entry.id==='builtin-decomposition'));
   assert.ok(!catalog.entries.some(entry=>entry.id==='saved:combined-fixture-skill'));
-  const read=await get('/api/skills/builtin-browser');assert.equal(read.status,200);
+  const read=await get('/api/skills/builtin-decomposition');assert.equal(read.status,200);
   const method=await read.json();assert.equal(method.immutable,true);assert.match(method.content,/When to use/);
   assert.equal((await get('/api/skills/saved%3Acombined-fixture-skill')).status,404);
   assert.equal((await get('/api/skills/builtin-..%2Fescape')).status,404);

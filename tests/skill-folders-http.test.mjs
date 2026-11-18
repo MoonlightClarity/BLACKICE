@@ -6,7 +6,7 @@ test('Skills outline supports rename, keyboard nesting, drag, revision conflicts
  t.after(async()=>{await app?.close();await rm(root,{recursive:true,force:true});});
  const open=async()=>{app=await createHarnessServer({runtime:new Runtime(),dataDir:root,defaultCwd:root,port:0,remoteAccess:false});base=await app.listen();cookie=(await fetch(base)).headers.get('set-cookie').split(';')[0];};await open();
  const api=async(route,method='GET',payload)=>{const r=await fetch(new URL(route,base),{method,headers:{Cookie:cookie,'Content-Type':'application/json'},...(method==='GET'?{}:{body:JSON.stringify(payload)})});const result=await r.json();if(!r.ok)throw Object.assign(Error(result.error?.message||result.error||'Failed'),{status:r.status});return result;};
- const dom=planningDOM(t),ui=createSkillsWorkspace({mount:dom.mount,api});t.after(()=>ui.destroy());ui.enter();await until(()=>dom.$('[data-skill-id="builtin-browser"]'));
+ const dom=planningDOM(t),ui=createSkillsWorkspace({mount:dom.mount,api});t.after(()=>ui.destroy());ui.enter();await until(()=>dom.$('[data-skill-id="builtin-decomposition"]'));
  const state=()=>api('/api/skills/folders'),ready=()=>until(()=>!dom.$('#skills-folder-name').disabled);
  const create=async name=>{dom.$('#skills-folder-name').value=name;await dom.$('#skills-folder-form').dispatch('submit');await until(()=>dom.$('#skills-folder-name').value==='');await ready();return(await state()).folders.find(x=>x.name===name).id;};
  const parent=await create('Career'),child=await create('Research');
@@ -16,9 +16,9 @@ test('Skills outline supports rename, keyboard nesting, drag, revision conflicts
  const transfer={setData(){},effectAllowed:'',dropEffect:''};
  await row(child).dispatch('dragstart',{dataTransfer:transfer});await row(parent).dispatch('drop',{dataTransfer:transfer});
  await until(async()=> (await state()).folders.find(x=>x.id===child).parentId===parent);await ready();
- const before=await api('/api/skills/builtin-browser');
- await dom.$('[data-skill-id="builtin-browser"]').dispatch('dragstart',{dataTransfer:transfer});await row(child).dispatch('drop',{dataTransfer:transfer});
- await until(async()=> (await state()).assignments['builtin-browser']===child);await ready();assert.deepEqual(await api('/api/skills/builtin-browser'),before);
+ const before=await api('/api/skills/builtin-decomposition');
+ await dom.$('[data-skill-id="builtin-decomposition"]').dispatch('dragstart',{dataTransfer:transfer});await row(child).dispatch('drop',{dataTransfer:transfer});
+ await until(async()=> (await state()).assignments['builtin-decomposition']===child);await ready();assert.deepEqual(await api('/api/skills/builtin-decomposition'),before);
  // Cycle is refused without a write.
  const beforeCycle=await state();await row(parent).dispatch('dragstart',{dataTransfer:transfer});await row(child).dispatch('drop',{dataTransfer:transfer});assert.deepEqual(await state(),beforeCycle);
  // Name click is rename, not disclosure; Escape preserves the saved name.

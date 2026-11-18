@@ -4,7 +4,7 @@ test('authenticated local human skill edit persists through HTTP restart; remote
  const root=await mkdtemp(path.join(tmpdir(),'skill-edit-http-'));let app,base,cookie;
  t.after(async()=>{await app?.close();await rm(root,{recursive:true,force:true});});
  const open=async()=>{app=await createHarnessServer({runtime:new Runtime(),dataDir:root,defaultCwd:root,port:0,remoteAccess:false});base=await app.listen();cookie=(await fetch(base)).headers.get('set-cookie').split(';')[0];};await open();
- const request=(method,payload,headers={Cookie:cookie})=>fetch(new URL('/api/skills/builtin-browser',base),{method,headers:{...headers,'Content-Type':'application/json'},...(payload?{body:JSON.stringify(payload)}:{})});
+ const request=(method,payload,headers={Cookie:cookie})=>fetch(new URL('/api/skills/builtin-decomposition',base),{method,headers:{...headers,'Content-Type':'application/json'},...(payload?{body:JSON.stringify(payload)}:{})});
  const original=await(await request('GET')).json();assert.equal(original.userEditable,true);
  const edit={expectedRevision:original.revision,content:'# Custom browser\nHuman content\n'};
  assert.equal((await request('POST',edit,{})).status,401);

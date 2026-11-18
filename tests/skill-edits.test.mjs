@@ -10,7 +10,7 @@ import {managedContextPaths} from '../lib/managed-context-paths.mjs';
 const value=base=>({expectedRevision:base.revision,content:'# Human-authored method\ncustom discoverable wording.\n'});
 test('human edits persist, model sees effective content, originals stay immutable, CAS prevents lost edits',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'skill-edits-'));t.after(()=>rm(root,{recursive:true,force:true}));
- const catalog=createSkillsCatalog({dataDir:root}),base=await catalog.detail({id:'builtin-browser'}),edit=value(base);
+ const catalog=createSkillsCatalog({dataDir:root}),base=await catalog.detail({id:'builtin-decomposition'}),edit=value(base);
  assert.equal(base.userEditable,true);const saved=await catalog.save({id:base.id,value:edit});assert.equal(saved.revision,2);assert.equal(saved.source,'user');assert.equal(saved.title,'Human-authored method');assert.equal('summary' in saved,false);
  assert.equal(readReleaseSkill(base.id).content,base.content);
  const persisted=JSON.parse(await readFile(path.join(root,'skill-edits','skills.json'),'utf8')).entries[base.id];assert.deepEqual(Object.keys(persisted).sort(),['content','revision']);assert.equal(persisted.content,edit.content);
@@ -27,7 +27,7 @@ test('human edits persist, model sees effective content, originals stay immutabl
  assert.equal((await fresh.detail({id:base.id})).revision,3);
 });
 test('invalid edits and corrupt persistence fail rather than replacing original or discarding saved work',async t=>{
- const root=await mkdtemp(path.join(tmpdir(),'skill-invalid-'));t.after(()=>rm(root,{recursive:true,force:true}));const catalog=createSkillsCatalog({dataDir:root}),base=await catalog.detail({id:'builtin-browser'}),edit=value(base);
+ const root=await mkdtemp(path.join(tmpdir(),'skill-invalid-'));t.after(()=>rm(root,{recursive:true,force:true}));const catalog=createSkillsCatalog({dataDir:root}),base=await catalog.detail({id:'builtin-decomposition'}),edit=value(base);
  for(const bad of [{...edit,content:''},{...edit,expectedRevision:0},{...edit,extra:true},{...edit,title:44}])await assert.rejects(catalog.save({id:base.id,value:bad}),{status:400});
  await assert.rejects(catalog.save({id:'../escape',value:edit}),{status:404});await catalog.save({id:base.id,value:edit});
  const file=path.join(root,'skill-edits','skills.json');await writeFile(file,'{broken');await assert.rejects(catalog.detail({id:base.id}));await assert.rejects(catalog.save({id:base.id,value:{...edit,expectedRevision:2}}));assert.equal(await readFile(file,'utf8'),'{broken');
@@ -38,7 +38,7 @@ test('killed lock owner recovers without stealing a live lock or losing a concur
  const root=await mkdtemp(path.join(tmpdir(),'skill-crash-'));t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(path.join(root,'skill-edits'));
  const child=spawn(process.execPath,['--input-type=module','-e',`import {SkillEditStore} from ${JSON.stringify(new URL('../lib/skill-edits.mjs',import.meta.url).href)}; const store=new SkillEditStore({dataDir:${JSON.stringify(root)}});await store.acquireLock(store.file+'.lock','killed-owner');console.log('LOCKED');setInterval(()=>{},1000);`],{stdio:['ignore','pipe','pipe']});
  t.after(()=>{if(child.exitCode===null)child.kill();});await once(child.stdout,'data');
- const catalog=createSkillsCatalog({dataDir:root}),base=await catalog.detail({id:'builtin-browser'}),edit=value(base);
+ const catalog=createSkillsCatalog({dataDir:root}),base=await catalog.detail({id:'builtin-decomposition'}),edit=value(base);
  await assert.rejects(catalog.save({id:base.id,value:edit}),{status:409});
  const exited=once(child,'exit');child.kill();await exited;
  const other=createSkillsCatalog({dataDir:root});

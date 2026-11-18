@@ -6,7 +6,7 @@ class Runtime extends EventEmitter{status(){return{connected:true,authenticated:
  await app.whenReady();const {createHarnessServer}=await import(pathToFileURL(path.join(root,'server.mjs')));server=await createHarnessServer({runtime:new Runtime(),dataDir:path.join(out,'data'),defaultCwd:out,port:0});const base=await server.listen();
  win=new BrowserWindow({show:false,width:1200,height:900,webPreferences:{offscreen:true,backgroundThrottling:false}});await win.loadURL(base+'/#skills');await until('!!document.querySelector("[data-skill-id]")');
 
- const select=async()=>{await run('document.querySelector("[data-skill-id=builtin-browser]").click()');await until('!document.querySelector("#skills-editor").hidden');};
+ const select=async()=>{await run('document.querySelector("[data-skill-id=builtin-decomposition]").click()');await until('!document.querySelector("#skills-editor").hidden');};
  await select();
  const original=await run('document.querySelector("#skills-edit-content").value');
  if(await run('document.querySelectorAll("textarea").length')!==1||await run('!!document.querySelector("#skills-edit")'))throw Error('Expected one directly editable document');
@@ -24,11 +24,11 @@ class Runtime extends EventEmitter{status(){return{connected:true,authenticated:
  await win.loadURL(restarted+'/#skills');await until('!!document.querySelector("[data-skill-id]")');await select();
  if(await run('document.querySelector("#skills-edit-content").value')!==text)throw Error('Restart lost edit');
  checks.push('Server restart retains exact human text');
- const bundled=await import(pathToFileURL(path.join(root,'lib/release-skills.mjs')));if(bundled.readReleaseSkill('builtin-browser').content!==original)throw Error('Bundled original changed');
+ const bundled=await import(pathToFileURL(path.join(root,'lib/release-skills.mjs')));if(bundled.readReleaseSkill('builtin-decomposition').content!==original)throw Error('Bundled original changed');
  checks.push('Bundled original remains unchanged');
  // Another writer wins; stale UI draft must survive a conflict.
  await run('document.querySelector("#skills-edit-content").value="Keep conflicting draft";document.querySelector("#skills-edit-content").dispatchEvent(new Event("input",{bubbles:true}))');
- await run('(async()=>{const e=await fetch("/api/skills/builtin-browser").then(r=>r.json());const r=await fetch("/api/skills/builtin-browser",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({expectedRevision:e.revision,content:"Another human edit"})});if(!r.ok)throw Error(await r.text());})()');
+ await run('(async()=>{const e=await fetch("/api/skills/builtin-decomposition").then(r=>r.json());const r=await fetch("/api/skills/builtin-decomposition",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({expectedRevision:e.revision,content:"Another human edit"})});if(!r.ok)throw Error(await r.text());})()');
  await run('document.querySelector("#skills-editor").requestSubmit()');await until('document.querySelector("#skills-save-status").textContent.includes("changes are preserved")');
  if(await run('document.querySelector("#skills-edit-content").value')!=='Keep conflicting draft')throw Error('Conflict lost draft');
  await run('document.querySelector("#skills-discard").click()');await until('!document.querySelector("#skills-editor").hidden');
