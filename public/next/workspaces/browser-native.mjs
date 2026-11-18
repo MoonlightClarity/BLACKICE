@@ -1,7 +1,7 @@
 import {createBrowserFolders} from './browser-folders.mjs';
 import { text } from '../core/dom.mjs';
 import { normalizeBrowserAddress } from '../../browser-address.mjs';
-import { browserUsageMarkup, createBrowserUsageControls, browserTabUsageLabel } from './browser-usage-ui.mjs';
+import { browserUsageMarkup, createBrowserUsageControls, browserTabUsageLabel, browserIconButton } from './browser-usage-ui.mjs';
 
 export function nativePageBounds(rect,viewport) {
   if(!rect||!viewport||![rect.left,rect.top,rect.width,rect.height,viewport.width,viewport.height].every(Number.isFinite))return null;
@@ -158,6 +158,11 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
   toolsToggle.addEventListener('click',()=>showTools(toolsPanel.hidden));
   toolsPanel.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();showTools(false,true);}});
   toolsToggle.addEventListener('keydown',event=>{if(event.key==='Escape'&&!toolsPanel.hidden){event.preventDefault();showTools(false,true);}});
+  for(const [id,icon,label] of [
+    ['back','back','Back'],['forward','forward','Forward'],['reload','reload','Reload page'],['new','plus','New tab'],['passwords','key','Passwords'],
+    ['go','go','Go to address'],['tools-toggle','tools','Browser tools'],['downloads-toggle','download','Downloads'],['close-all','closeAll','Close unused tabs'],
+    ['close','close','Close tab'],['refresh','reload','Refresh tabs'],['inspect','read','Read page'],['shot','camera','Refresh view']
+  ]){const button=$('next-browser-'+id);if(button)browserIconButton(button,icon,label,button.title||label);}
   $('next-browser-passwords').hidden=typeof onNavigate!=='function';
   $('next-browser-passwords').addEventListener('click',()=>onNavigate?.('settings',{settingsSection:'passwords'}));
   let active=false,destroyed=false,selected=null,tabs=[],downloads=[],busy=false,openingBlank=null,
@@ -313,7 +318,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
       nodes.owner.title=nodes.owner.textContent;
       nodes.button.setAttribute('aria-selected',String(chosen));nodes.button.tabIndex=chosen?0:-1;
       nodes.button.disabled=busy;
-      nodes.close.dataset.closeTab=tab?.tabId||'';nodes.close.disabled=busy||!tab;nodes.close.setAttribute('aria-label','Close '+label);
+      nodes.close.dataset.closeTab=tab?.tabId||'';nodes.close.disabled=busy||!tab;browserIconButton(nodes.close,'close','Close '+label);
       if(ui.tabs.children[index]!==nodes.group)ui.tabs.insertBefore(nodes.group,ui.tabs.children[index]||null);
     }
     ui.tabs.querySelector('.next-native-more-tabs')?.remove();
@@ -326,7 +331,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
     folders.groupTabs(ui.tabs);restoreTabFocus();
   }
   function renderDownloads(){
-    ui.downloadsToggle.textContent='Downloads'+(downloads.length?' ('+downloads.length+')':'');
+    browserIconButton(ui.downloadsToggle,'download','Downloads'+(downloads.length?' ('+downloads.length+')':''));
     const key=JSON.stringify(downloads);
     if(key===downloadsKey)return;downloadsKey=key;ui.downloads.replaceChildren();
     text(ui.downloads,'Downloads','h2');

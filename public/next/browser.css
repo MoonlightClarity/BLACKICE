@@ -251,3 +251,10 @@
 
 .next-browser-usage{display:flex;align-items:center;justify-content:space-between;padding-bottom:7px;font-size:11px;color:var(--muted)}
 .next-browser-usage button{font-size:11px;min-height:28px}
+
+/* Browser chrome uses fixed SVG icons; page content and meaningful notices remain text. */
+.next-browser-icon-button{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:32px;min-height:32px;padding:6px!important;line-height:1}
+.next-browser-icon-button svg{display:block;width:18px;height:18px;pointer-events:none;flex:none}
+.next-browser-icon-button[aria-pressed="true"]{color:var(--next-accent,#b8dcff);background:rgba(100,160,210,.18);border-color:currentColor}
+.next-browser-icon-button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.next-browser-tab-move.next-browser-icon-button,.next-browser-tab-close.next-browser-icon-button{min-width:28px;min-height:28px;padding:4px!important}

@@ -1,3 +1,4 @@
+import {browserIconButton} from './browser-usage-ui.mjs';
 import {folderPath,descendants} from '../core/folder-tree.mjs';
 export function browserCollectionTree(collections,tabs){
  const map=new Map((collections||[]).map(f=>[f.id,{...f,children:[],tabs:[]}]));
@@ -90,11 +91,11 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   const transientRows=rows.filter(row=>!visible.has(row.querySelector('[data-tab-id]')?.dataset.tabId));
   const tree=browserCollectionTree(collections,getTabs());
   host.replaceChildren();host.classList.add('next-browser-folder-tree');host.setAttribute('role','region');host.setAttribute('aria-label','Browser folders and tabs');host.dataset.folderBusy=String(blocked());
-  const toolbar=el('div',null,'next-browser-folder-toolbar');toolbar.append(el('strong','Tabs'),button('+ Folder',()=>edit(), 'next-browser-folder-add'));if(editor?.hidden)toolbar.append(button('Resume folder edit',()=>{editor.hidden=false;paint();editor.querySelector('input,select')?.focus();},'next-browser-folder-resume'));host.append(toolbar);toolbar.title='Drop here to move to top level';dropTarget(toolbar,null);
+  const toolbar=el('div',null,'next-browser-folder-toolbar');toolbar.append(el('strong','Tabs'),button('+ Folder',()=>edit(), 'next-browser-folder-add'));if(editor?.hidden)toolbar.append(button('Resume folder edit',()=>{editor.hidden=false;paint();editor.querySelector('input,select')?.focus();},'next-browser-folder-resume'));browserIconButton(toolbar.querySelector('.next-browser-folder-add'),'folder','New folder');host.append(toolbar);toolbar.title='Drop here to move to top level';dropTarget(toolbar,null);
   const tabRow=tab=>{const row=byId.get(tab.tabId);if(!row)return null;
    row.draggable=!blocked();row.ondragstart=e=>{if(blocked()){e.preventDefault();return;}e.dataTransfer.setData('application/x-blackice-tab',tab.tabId);e.dataTransfer.effectAllowed='move';};
    row.onkeydown=e=>outlineKey(e,null,tab.tabId);row.oncontextmenu=e=>{e.preventDefault();edit(null,tab.tabId);};
-   row.querySelector('.next-browser-tab-move')?.remove();const move=button('Move',()=>edit(null,tab.tabId),'next-browser-tab-move');move.setAttribute('aria-label','Move '+(tab.title||tab.url||'tab')+' to folder');row.append(move);return row;};
+   row.querySelector('.next-browser-tab-move')?.remove();const move=button('Move',()=>edit(null,tab.tabId),'next-browser-tab-move');browserIconButton(move,'move','Move '+(tab.title||tab.url||'tab')+' to folder');row.append(move);return row;};
   const count=f=>f.tabs.length+f.children.reduce((n,c)=>n+count(c),0);
   function branch(f){
    const group=el('section',null,'next-browser-folder-group');group.dataset.collectionId=f.id;

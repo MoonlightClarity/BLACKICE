@@ -3,7 +3,7 @@ import { text } from '../core/dom.mjs';
 import { normalizeBrowserAddress } from '../../browser-address.mjs';
 import { browserFrame, pagePoint, browserInputGuard, wheelPixels, pendingDialog } from './browser-model.mjs';
 import { createNativeBrowserWorkspace } from './browser-native.mjs';
-import { browserUsageMarkup, createBrowserUsageControls, browserTabUsageLabel } from './browser-usage-ui.mjs';
+import { browserUsageMarkup, createBrowserUsageControls, browserTabUsageLabel, browserIconButton } from './browser-usage-ui.mjs';
 
 /** Interactive, contained Chromium surface. This is a native-browser capture,
  * not a copied webpage, iframe, or a separate foreground browser window.
@@ -58,6 +58,11 @@ export function createBrowserWorkspace(options) {
     key:$('next-browser-key'),keySend:$('next-browser-key-send'),
     auto:$('next-browser-auto'),dialog:$('next-browser-interaction'),readout:$('next-browser-readout'),
   };
+  for(const [id,icon,label] of [
+    ['back','back','Back'],['forward','forward','Forward'],['reload','reload','Reload page'],['new','plus','New tab'],['passwords','key','Passwords'],
+    ['go','go','Go to address'],['tools-toggle','tools','Browser tools'],['downloads-toggle','download','Downloads'],['close-all','closeAll','Close unused tabs'],
+    ['close','close','Close tab'],['refresh','reload','Refresh tabs'],['inspect','read','Read page'],['shot','camera','Refresh view']
+  ]){const button=$('next-browser-'+id);if(button)browserIconButton(button,icon,label,button.title||label);}
   $('next-browser-passwords').hidden=typeof onNavigate!=='function';
   $('next-browser-passwords').addEventListener('click',()=>onNavigate?.('settings',{settingsSection:'passwords'}));
   let active=false,destroyed=false,selected=null,tabs=[],frame=null,busy=false,sequence=0,lifecycle=0,
@@ -122,7 +127,7 @@ export function createBrowserWorkspace(options) {
         const owner=text(group,browserTabUsageLabel(tab),'span','next-browser-tab-owner');owner.title=owner.textContent;
       }
       const close=text(group,'×','button','next-browser-tab-close');
-      close.type='button';close.disabled=busy;close.title='Close tab';close.dataset.closeTab=tab.tabId;
+      close.type='button';close.disabled=busy;close.title='Close tab';close.dataset.closeTab=tab.tabId;browserIconButton(close,'close','Close '+(tab.title||tab.url||'tab'));
       close.setAttribute('aria-label','Close '+tabTitle(tab));
       close.addEventListener('click',()=>{if(!busy)void operate('close',{tabId:tab.tabId});});
     }
