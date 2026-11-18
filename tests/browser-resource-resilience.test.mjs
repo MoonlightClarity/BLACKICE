@@ -13,7 +13,7 @@ import { sameBrowserOwner, conversationBrowserNode } from '../lib/browser-conver
 import { NativePasswordManager, passwordManagerURL, passwordManagerPreload } from '../desktop/native-password-manager.mjs';
 import { decorateStoppedTabAdoption } from '../lib/browser-stopped-adoption.mjs';
 import { returnTerminalBrowserTab } from '../lib/browser-owner-recovery.mjs';
-import { loadBrowserCompatibility } from '../desktop/browser-compatibility.mjs';
+import { prepareBrowserCompatibility } from '../desktop/browser-compatibility.mjs';
 
 const source = await readFile(new URL('../desktop/browser-driver.mjs', import.meta.url), 'utf8');
 
@@ -66,7 +66,7 @@ function fixture({ writeFile = async () => {}, loadURL = async () => {} } = {}) 
   protection.status = protection.tabStatus = () => ({});
   protection.forgetTab = () => {};
   const context = vm.createContext({ BrowserWindow: Window, session: { fromPartition: () => session }, EventEmitter,
-    NativePasswordManager, passwordManagerURL, passwordManagerPreload, decorateStoppedTabAdoption, returnTerminalBrowserTab, createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserFillRequest, BrowserDiagnostics, BrowserTabDiagnostics, diagnosticText, ownershipAction, ownershipChange, sameBrowserOwner, conversationBrowserNode, loadBrowserCompatibility,
+    NativePasswordManager, passwordManagerURL, passwordManagerPreload, decorateStoppedTabAdoption, returnTerminalBrowserTab, createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserFillRequest, BrowserDiagnostics, BrowserTabDiagnostics, diagnosticText, ownershipAction, ownershipChange, sameBrowserOwner, conversationBrowserNode, prepareBrowserCompatibility,
     fs: { writeFile: async (file, value) => { writes.push(JSON.parse(value)); await writeFile(file, value); }, rename: async (...args) => { renames.push(args); } },
     setTimeout, clearTimeout, AbortSignal, structuredClone, URL,
   });
