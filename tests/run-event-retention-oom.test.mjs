@@ -8,7 +8,8 @@ import { compactRunEvent, compactRunHistory, retainRunEvent, RUN_EVENT_LIMITS } 
 import { archiveOversizedRuns } from '../lib/run-history-archive.mjs';
 import { AtomicJsonSnapshots } from '../lib/coalescing-persistence.mjs';
 import { HarnessEngine } from '../lib/engine.mjs';
-import { executionProjection, recordedExecutionOutputs } from '../lib/response-cycle.mjs';
+import { executionProjection } from '../lib/response-cycle.mjs';
+import { recordedExecutionOutputs } from '../lib/recorded-execution-outputs.mjs';
 
 const make = (type, state, at='2026-11-02T18:00:00Z') =>
   ({ type:'agent.event', runId:'run-one', nodeId:'agent', at, data:{type,taskId:'task-one',state} });
