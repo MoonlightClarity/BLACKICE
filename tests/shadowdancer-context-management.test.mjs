@@ -133,3 +133,52 @@ test('standalone audit pagination preserves history past the first page',async t
  const first=await contextAuditHistory({...f.scope('a'),offset:0,limit:80}),older=await contextAuditHistory({...f.scope('a'),offset:240,limit:80});
  assert.equal(first.nextOffset,80);assert.equal(first.items[0].id,'audit-259');assert.equal(older.items.length,20);assert.equal(older.items.at(-1).id,'audit-0');
 });
+
+test('standalone audit bookkeeping cannot be deleted',async t=>{
+ const f=await fixture(t),file='conversation/context/audit.json';
+ await put(path.join(f.root('a'),file),[{id:'retained-audit'}]);
+ const before=await readFile(path.join(f.root('a'),file));
+ await assert.rejects(deleteShadowdancerContext({...f.scope('a'),file,expectedHash:'a'.repeat(64),reason:'Attempt protected deletion'}),{code:'SHADOWDANCER_READ_ONLY'});
+ assert.deepEqual(await readFile(path.join(f.root('a'),file)),before);
+});
+test('standalone overlay ABA guard rejects stale revision and canonical equality still resets changed overlay',async t=>{
+ const f=await fixture(t),file=f.relative.summary,original=await readFile(path.join(f.root('a'),file));
+ let read=await readShadowdancerFile({...f.scope('a'),file});
+ await editShadowdancerContext({...f.scope('a'),file,expectedHash:read.hash,expectedManagedEditId:null,changes:{userSummary:'FIRST_CORRECTION'},reason:'First'});
+ await writeFile(path.join(f.root('a'),file),original);
+ read=await readShadowdancerFile({...f.scope('a'),file});
+ await editShadowdancerContext({...f.scope('a'),file,expectedHash:read.hash,expectedManagedEditId:read.managedEditId,changes:{userSummary:'SECOND_CORRECTION'},reason:'Second'});
+ await writeFile(path.join(f.root('a'),file),original);
+ await assert.rejects(editShadowdancerContext({...f.scope('a'),file,expectedHash:read.hash,expectedManagedEditId:read.managedEditId,changes:{userSummary:'LOST_UPDATE'},reason:'Stale'}),{code:'SHADOWDANCER_REVISION_CONFLICT'});
+ const current=await readShadowdancerFile({...f.scope('a'),file});
+ assert.equal(current.managedValue.userSummary,'SECOND_CORRECTION');
+ const reset=await editShadowdancerContext({...f.scope('a'),file,expectedHash:current.hash,expectedManagedEditId:current.managedEditId,value:current.value,reason:'Intentionally accept generated record'});
+ assert.equal(reset.updated,true,'canonical equality must not discard changed overlay');
+ assert.equal((await readShadowdancerFile({...f.scope('a'),file})).managedValue.userSummary,'Current conversation');
+});
+test('standalone import binds exact inspected managed-source revision and hashes',async t=>{
+ const f=await fixture(t),sourceFile='conversation/context/summary.json',scope=f.scope('b');
+ const prior=await readShadowdancerFile({...scope,file:sourceFile});
+ await editShadowdancerContext({...scope,file:sourceFile,expectedHash:prior.hash,changes:{userSummary:'VISIBLE_MANAGED_SOURCE'},reason:'Correct source'});
+ await put(path.join(f.root('b'),sourceFile),{currentRun:'run-b',userSummary:'OTHER_GENERATED_VALUE'});
+ const source=await readShadowdancerFile({...scope,file:sourceFile});
+ const args={...f.scope('a'),source:{...scope,runId:'run-b',file:sourceFile},expectedSourceHash:source.hash,expectedSourceManagedEditId:source.managedEditId,reason:'Import visible saved revision'};
+ const result=await importShadowdancerContext(args);
+ const copied=await readShadowdancerFile({...f.scope('a'),file:result.file});
+ assert.equal(copied.value.content.userSummary,'VISIBLE_MANAGED_SOURCE');
+ assert.equal(copied.importedFrom.managedEditId,source.managedEditId);
+ assert.equal(copied.importedFrom.canonicalHash,source.hash);
+ assert.equal(copied.importedFrom.managedHash,source.managedHash);
+ await assert.rejects(importShadowdancerContext({...args,expectedSourceManagedEditId:null}),{code:'SHADOWDANCER_REVISION_CONFLICT'});
+});
+test('standalone saved page edits preserve all 140 long source-supported items',async t=>{
+ const f=await fixture(t),sourceFile='runs/run-a/sources/page-0001/source.json',resultFile='runs/run-a/sources/page-0001/result.json';
+ const longValue='The full source claim. '.repeat(20),longQuote='The full attributed quote. '.repeat(30);
+ await put(path.join(f.root('a'),sourceFile),{content:longValue+longQuote});
+ await put(path.join(f.root('a'),resultFile),{summary:'Original',items:[]});
+ const prior=await readShadowdancerFile({...f.scope('a'),file:resultFile});
+ const items=Array.from({length:140},()=>({value:longValue,quote:longQuote}));
+ await editShadowdancerContext({...f.scope('a'),file:resultFile,expectedHash:prior.hash,changes:{items},reason:'Keep every source item'});
+ const read=await readShadowdancerFile({...f.scope('a'),file:resultFile});
+ assert.deepEqual(read.value.items,items);assert.deepEqual(read.managedValue.items,items);
+});
