@@ -648,3 +648,17 @@ test('filename find pages outside workspace through fresh direct jobs and isolat
   assert.ok(second.matches.every(x=>x.path.startsWith(other)));assert.notEqual(cwd,other);
   await assert.rejects(api.call('blackice_workspace_read',{requestId:'find-invalid-size',action:'find',query:'Resume',limit:101},client),/result|query|100/);
 });
+
+
+test('direct tab_mark exposes explicit owned metadata control without inspecting or replaying page work',async t=>{
+ const pages=[],effects=[];const {tabMarkChange}=await import('../lib/browser-in-use.mjs');
+ const driver={status:()=>({available:true,contained:true,tabs:pages,folders:[]}),async perform(args,context){const page=pages.find(x=>x.tabId===args.tabId);Object.assign(page,tabMarkChange(args,page,context));effects.push(args);return this.status();}};
+ const browser=new BrowserWorkspace({driver});t.after(()=>browser.close());
+ const {api}=await harness(t,{browser,inspectBrowserInteraction:()=>{throw Error('Mark must not inspect or activate page');}});
+ const owner=await api.browserOwner(client.id);pages.push({tabId:'marked',browser:'relay',url:'https://fixture.invalid/',owner,suspended:true});
+ const schema=api.tools(client).find(x=>x.name==='blackice_browser_action').inputSchema;assert.ok(schema.properties.action.enum.includes('tab_mark'));assert.equal(schema.properties.inUse.type,'boolean');
+ const args={requestId:'mark-owned-tab',action:'tab_mark',tabId:'marked',inUse:true};const admitted=await api.call('blackice_browser_action',args,client),done=await waitJob(api,admitted.jobId);assert.equal(done.status,'succeeded');assert.equal(pages[0].inUse,true);assert.equal(effects.length,1);
+ assert.equal((await api.call('blackice_browser_action',args,client)).existing,true);assert.equal(effects.length,1);
+ await assert.rejects(api.call('blackice_browser_action',{...args,requestId:'missing-in-use',inUse:undefined},client));
+ pages[0].inUseBy={kind:'user'};await assert.rejects(api.call('blackice_browser_action',{...args,requestId:'clear-human',inUse:false},client),{code:'BROWSER_TAB_IN_USE'});assert.equal(effects.length,1);
+});
