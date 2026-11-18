@@ -49,7 +49,9 @@ test('models page exposes optional API settings and retains native retirement co
   const picker=await readFile(new URL('../public/next/core/model-picker.mjs',import.meta.url),'utf8');
   assert.doesNotMatch(settings,/status\.subscriptionFocus===true\s*\?/);
   assert.match(settings,/focus\.createSubscriptionModelSettings/);
-  assert.match(focus,/Optional API connections/);
+  assert.match(focus,/advanced\.setAttribute\('aria-label','API connections'\)/);
+  assert.match(focus,/\['api','Add API'\]/);
+  assert.match(focus,/modelPanels\.get\('api'\)\.append\(advanced\)/);
   assert.match(providers,/<h2>API connections<\/h2>/);
   assert.match(providers,/id="next-provider-new"/);
   assert.match(picker,/\!\/\^\(\?:antigravity\|qwen_code\)::\//);
