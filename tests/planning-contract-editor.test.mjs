@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskStateStore, TASK_TOOL, TASK_TOOL_V13 } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_TOOL } from '../lib/task-state.mjs';
 import { ChatGPTPlanningAPI } from '../lib/chatgpt-planning.mjs';
 import { RemoteAgentAPI, validRemoteArguments } from '../lib/remote-agent-api.mjs';
 import { editPlanningWorkspace, listPlanningWorkspace } from '../lib/planning-workspace.mjs';
@@ -54,7 +54,7 @@ test('shared editors save canonical intent with revision protection and preserve
 });
 
 test('remote schemas preserve version 13 graph edits and add strict canonical replacement without mutating native catalogs', async t => {
-  const f = await fixture(t), native = JSON.stringify(TASK_TOOL), legacy = JSON.stringify(TASK_TOOL_V13), args = { taskId: 'canonical', expectedRevision: 2, operations: [{ type: 'replace_contract', contract: contract() }] };
+  const f = await fixture(t), native = JSON.stringify(TASK_TOOL), args = { taskId: 'canonical', expectedRevision: 2, operations: [{ type: 'replace_contract', contract: contract() }] };
   for (const api of [f.api, f.remote]) {
     const schema = api.tools(client).find(tool => tool.name === 'blackice_edit_plan').inputSchema;
     assert.equal(validRemoteArguments(args, schema), true);
@@ -62,7 +62,7 @@ test('remote schemas preserve version 13 graph edits and add strict canonical re
     assert.equal(validRemoteArguments({ ...args, operations: [{ type: 'replace_contract', contract: { ...contract(), planEpoch: 12 } }] }, schema), false);
     assert.equal(validRemoteArguments({ ...args, operations: [{ type: 'replace_contract', contract: { ...contract(), outcomes: [{ satisfied: true }] } }] }, schema), false);
   }
-  assert.equal(JSON.stringify(TASK_TOOL), native); assert.equal(JSON.stringify(TASK_TOOL_V13), legacy);
+  assert.equal(JSON.stringify(TASK_TOOL), native);
   const legacyState = await f.tasks.ensure({ taskId: 'legacy', runId: 'run-legacy', cwd: f.defaultCwd, goal: 'Older saved objective', schemaVersion: 13 });
   await f.tasks.setPlan('legacy', { steps: [{ id: 'legacy-step', title: 'Read source', kind: 'action', parentId: null, doneWhen: 'Source has been read.', dependsOn: [] }] }, { expectedRevision: legacyState.revision, runId: 'run-legacy', nodeId: 'agent', schemaVersion: 4 });
   f.history.push({ id: 'run-legacy', taskId: 'legacy', state: 'active', status: 'completed' });

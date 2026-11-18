@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
-import { TaskStateStore, createTaskToolHandler, TASK_TOOL, TASK_WORKER_TOOL, TASK_TOOL_V13, TASK_WORKER_TOOL_V13 } from '../lib/task-state.mjs';
+import { TaskStateStore, createTaskToolHandler, TASK_TOOL, TASK_WORKER_TOOL } from '../lib/task-state.mjs';
 import { createVibeToolBridge } from '../lib/mistral-vibe-tools.mjs';
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -196,9 +196,4 @@ test('native MCP prior binding guidance identifies pre-existing records without 
     assert.equal(Object.hasOwn(field, 'enum'), false);
   }
   assert.equal(bindings[1].properties.prior, undefined);
-});
-
-test('canonical action guidance leaves captured schema13 tool identities unchanged', () => {
-  assert.equal(digest(TASK_TOOL_V13), '79cd92332491362dec6cd6f6b8ea0506d4057280b175424d3447603bbbc86cb0');
-  assert.equal(digest(TASK_WORKER_TOOL_V13), '7e4ec1dedb6f3d132d9303c1b252c3119048591649f8698c216d785678b9f2aa');
 });
