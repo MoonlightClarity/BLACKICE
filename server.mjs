@@ -135,7 +135,7 @@ export async function createHarnessServer(options = {}) {
   const planningBrowserRuntime = options.planningBrowserRuntime || new PlanningBrowserRuntime({ store: planningBrowser, runtime, getSettings: () => runtimeSettings.get(), defaultCwd, onUpdated: event => sendEvent(event) });
   const prompts = options.prompts || new PromptTemplateStore({ dataDir }); await prompts.init();
   const identity = options.identity || new IdentityStore({ dataDir }); await identity.init();
-  const connections = options.connections || new ConnectionManager({ dataDir, ...options.secretStorage }); await connections.init();
+  const connections = options.connections || new ConnectionManager({ dataDir, ...options.secretStorage, persistenceDiagnostics:process.env.BLACKICE_PERSISTENCE_DIAGNOSTICS==='1'?event=>diagnostics.record(event):null }); await connections.init();
   const browserProfiles = options.browserProfiles || await new BrowserProfileStore({ dataDir: path.resolve(dataDir) }).init();
   let browserProfileState = { sources: [], imports: [], loaded: false };
   const refreshBrowserProfiles = async () => { browserProfileState = { ...await browserProfiles.discover(), loaded: true }; return browserProfileState; };
