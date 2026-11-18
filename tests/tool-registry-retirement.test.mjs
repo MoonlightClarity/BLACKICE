@@ -23,7 +23,7 @@ test('browser-only extraction preserves old bytes and never reloads generic regi
 test('concurrent initializers publish one complete browser-only store',async t=>{
  const dataDir=await directory(t);await writeFile(path.join(dataDir,'connections.json'),JSON.stringify({version:1,connections:[generic,chromeAutoConnectConnection()]}));
  const managers=[new ConnectionManager({dataDir}),new ConnectionManager({dataDir})];t.after(()=>Promise.all(managers.map(x=>x.close())));await Promise.all(managers.map(x=>x.init()));
- assert.ok(managers.every(x=>x.list().length===1));assert.equal(JSON.parse(await readFile(path.join(dataDir,'browser-connections.json'),'utf8')).connections[0].id,'chrome-live');
+ assert.ok(managers.every(x=>x.list().length===1));assert.equal(JSON.parse(await readFile(path.join(dataDir,'browser-connections', 'settings.json'),'utf8')).connections[0].id,'chrome-live');
 });
 class Runtime extends EventEmitter{calls=[];status(){return {connected:true,authenticated:true,defaultModel:'fixture'};}async start(){return this.status();}async close(){}async runAgent(o){this.calls.push(o);assert.ok(!o.dynamicTools.some(t=>t.name==='relay_connections'));return {output:'Current host tools remain',threadId:'current-fixture'};}}
 test('generic HTTP registry is absent; browser and model APIs remain independent',async t=>{
@@ -56,7 +56,7 @@ test('browser persistence retries only transient rename and preserves prior byte
  const rename=io.rename;let attempts=0;io.rename=async(...args)=>{attempts++;if(attempts===1)throw Object.assign(Error('sharing lock'),{code:'EPERM'});return rename(...args);};
  try { await manager.save({...browser,name:'After sharing lock'});assert.equal(attempts,2); }
  finally {io.rename=rename;}
- const file=path.join(dataDir,'browser-connections.json'),before=await readFile(file,'utf8');assert.equal(JSON.parse(before).connections[0].name,'After sharing lock');
+ const file=path.join(dataDir,'browser-connections', 'settings.json'),before=await readFile(file,'utf8');assert.equal(JSON.parse(before).connections[0].name,'After sharing lock');
  io.rename=async()=>{throw Object.assign(Error('disk failure'),{code:'EIO'});};
  try {await assert.rejects(manager.save({...browser,name:'Must not persist'}),{code:'EIO'});assert.equal(await readFile(file,'utf8'),before);}
  finally {io.rename=rename;await manager.close().catch(e=>assert.equal(e.code,'EIO'));}

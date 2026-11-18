@@ -13,5 +13,5 @@ test('one-time browser extraction preserves sealed credentials without unlocking
  t.after(async()=>{await manager.close();await rm(root,{recursive:true,force:true});});await manager.init();
  assert.deepEqual(decrypted,['sealed-browser-fixture']);assert.equal(manager.secrets.get('chrome-live').env.FIXTURE_KEY,'private-fixture');
  assert.doesNotMatch(JSON.stringify(manager.list()),/private-fixture|sealed-browser-fixture|must-not-decrypt/);
- assert.deepEqual(JSON.parse(await readFile(path.join(root,'browser-connections.json'),'utf8')).connections,[browser]);assert.equal(await readFile(archive,'utf8'),bytes);
+ assert.deepEqual(JSON.parse(await readFile(path.join(root,'browser-connections', 'settings.json'),'utf8')).connections,[browser]);assert.equal(await readFile(archive,'utf8'),bytes);
 });
