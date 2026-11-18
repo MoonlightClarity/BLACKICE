@@ -108,12 +108,13 @@ async function fixture(t, {native, currentConversation = 'a', extraTabs = false}
         }
         return {...structuredClone(chosen),width:1000,height:700,imageUrl:'data:image/png;base64,aGVsbG8='};
       }
+      if(body.action==='tab_mark'){if(failed)throw Error('Mark rejected');chosen.inUse=body.inUse;return snapshot();}
       if (body.action === 'tab_select') state.activeTab=chosen.tabId;
       return structuredClone(chosen);
     }});
   t.after(() => workspace.destroy());workspace.enter();
   const selected = () => dom.$('.next-browser-tab[aria-selected="true"]')?.dataset.tabId || null;
-  await until(() => selected() === 'a-tab' && !dom.$('#next-browser-move').disabled);
+  await until(() => selected() === 'b-tab' && !dom.$('#next-browser-in-use').disabled);
   const visible = () => dom.mount.querySelectorAll('.next-browser-tab').map(item => item.dataset.tabId);
   const change = async (selector,value) => {const select=dom.$(selector);select.value=value;await select.dispatch('change');await sleep(0);};
   return {...dom,state,calls,surfaces,workspace,storage,selected,visible,change,
@@ -121,155 +122,35 @@ async function fixture(t, {native, currentConversation = 'a', extraTabs = false}
     holdNextScreenshot(gate){nextScreenshotGate=gate;},
     holdNextAction(action,gate){nextActionGate={action,gate};},
     async refresh(){const before=calls.filter(call=>call.method==='GET').length;for(const handler of subscribers)handler({type:'browser.status'});await until(()=>calls.filter(call=>call.method==='GET').length>before);await sleep(10);},
-    async idle(){await until(()=>!dom.$('#next-browser-personal').disabled);},
+    async idle(){await until(()=>!dom.$('#next-browser-in-use').disabled);},
     transfers:() => calls.filter(call=>call.route==='/api/browser/ownership'),
     navigations:() => calls.filter(call=>['navigate','open','reload','close'].includes(call.body?.action)),
   };
 }
 
-for (const native of [true,false]) {
-  const mode = native ? 'native' : 'captured';
-  test(mode + ' browser defaults to the current conversation, keeps other owners separate, and never follows a foreign active tab', async t => {
-    const f = await fixture(t,{native,currentConversation:'run-a'});
-    assert.deepEqual(f.visible(),['a-tab']);
-    assert.equal(f.$('#next-browser-conversation').value,'conversation:a');
-    assert.equal(f.$('#next-browser-personal').textContent,'Personal (1)');
-    assert.equal(f.$('#next-browser-ai').textContent,'AI tabs (3)');
-    await f.refresh();assert.equal(f.selected(),'a-tab');
-    f.state.tabs.push(tab('orphan','deleted'));await f.refresh();
-    assert.equal(f.$('#next-browser-move').querySelectorAll('option').some(option=>option.value==='conversation:deleted'),false,
-      'A tab in a deleted conversation must not add that conversation to Move to.');
-    await f.change('#next-browser-conversation','all');await f.idle();
-    assert.deepEqual(f.visible(),['a-tab','b-tab','unassigned','orphan']);
-    await f.click('#next-browser-personal');await f.idle();
-    assert.deepEqual(f.visible(),['personal']);assert.equal(f.$('#next-browser-conversation-label').hidden,true);
-    assert.equal(f.transfers().length,0,'Filtering alone never changes ownership.');
-    assert.equal(f.navigations().length,0,'Filtering never opens, navigates, reloads or closes a page.');
-    f.workspace.leave();f.storage.set('blackice.next.selected','b');f.workspace.enter();
-    await until(()=>f.selected()==='b-tab');assert.deepEqual(f.visible(),['b-tab']);
-  });
 
-  test(mode + ' browser moves the same selected page to an empty conversation and back to Personal with no page reload', async t => {
-    const f = await fixture(t,{native});await sleep(20);
-    const before = structuredClone(f.state.tabs[1]);
-    const captures = f.calls.filter(call=>call.body?.action==='screenshot').length;
-    const attaches = f.surfaces.filter(call=>call.action==='attach').length;
-    await f.change('#next-browser-move','conversation:empty');await f.idle();
-    assert.equal(f.selected(),'a-tab');assert.deepEqual(f.visible(),['a-tab']);
-    assert.equal(f.$('#next-browser-conversation').value,'conversation:empty');
-    assert.equal(f.state.tabs[1].conversationId,'empty');
-    assert.equal(f.state.tabs[1].documentId,before.documentId);assert.equal(f.state.tabs[1].url,before.url);
-    assert.equal(f.state.tabs.length,4,'A move never duplicates the tab.');
-    assert.deepEqual(f.transfers()[0].body,{tabId:'a-tab',expectedUrl:before.url,expectedDocumentId:before.documentId,destination:'conversation',conversationId:'empty'});
-    await f.change('#next-browser-move','user');await f.idle();
-    assert.equal(f.selected(),'a-tab');assert.deepEqual(f.visible(),['personal','a-tab']);
-    assert.equal(f.state.tabs[1].ownershipKind,'user');assert.equal(f.state.tabs[1].conversationId,null);
-    assert.equal(f.$('#next-browser-personal').getAttribute('aria-pressed'),'true');
-    assert.equal(f.transfers().length,2);assert.equal(f.navigations().length,0);
-    assert.equal(f.calls.filter(call=>call.body?.action==='screenshot').length,captures,'The existing captured page remains valid across a move.');
-    await sleep(20);
-    assert.equal(f.surfaces.filter(call=>call.action==='attach').length,attaches,'The live native page stays attached across a move.');
-  });
-
-  test(mode + ' browser remembers a selected tab and its address draft independently in each ownership scope', async t => {
-    const f=await fixture(t,{native,extraTabs:true});
-    const choose=async id=>{await f.click('[data-tab-id="'+id+'"]');await f.idle();};
-    await choose('a-second');await f.input('#next-browser-url','Unsent A address');
-    await f.click('#next-browser-personal');await f.idle();await choose('personal-second');await f.input('#next-browser-url','Unsent Personal address');
-    await f.click('#next-browser-ai');await f.idle();assert.equal(f.selected(),'a-second');assert.equal(f.$('#next-browser-url').value,'Unsent A address');
-    await f.change('#next-browser-conversation','conversation:b');await f.idle();await choose('b-second');await f.input('#next-browser-url','Unsent B address');
-    await f.click('#next-browser-personal');await f.idle();assert.equal(f.selected(),'personal-second');assert.equal(f.$('#next-browser-url').value,'Unsent Personal address');
-    await f.click('#next-browser-ai');await f.idle();assert.equal(f.selected(),'b-second');assert.equal(f.$('#next-browser-url').value,'Unsent B address');
-    await f.change('#next-browser-conversation','conversation:a');await f.idle();assert.equal(f.selected(),'a-second');assert.equal(f.$('#next-browser-url').value,'Unsent A address');
-    await f.change('#next-browser-conversation','all');await f.idle();await choose('b-tab');
-    await f.change('#next-browser-conversation','conversation:a');await f.idle();assert.equal(f.selected(),'a-second');
-    await f.change('#next-browser-conversation','all');await f.idle();assert.equal(f.selected(),'b-tab','All AI remembers its own selection.');
-    await f.change('#next-browser-conversation','conversation:a');await f.idle();
-    await f.change('#next-browser-move','conversation:b');await f.idle();
-    assert.equal(f.selected(),'a-second','A moved tab overrides the destination’s previous selection.');assert.equal(f.$('#next-browser-url').value,'Unsent A address');
-    f.state.tabs=f.state.tabs.filter(item=>item.tabId!=='a-second');f.state.activeTab='personal';await f.refresh();await f.idle();
-    assert.equal(f.selected(),'b-tab','A removed remembered tab falls back to the first visible page.');
-    await f.change('#next-browser-conversation','conversation:a');await f.idle();assert.equal(f.selected(),'a-tab');
-    await f.click('#next-browser-personal');await f.idle();assert.equal(f.selected(),'personal-second');assert.equal(f.$('#next-browser-url').value,'Unsent Personal address');
-  });
-
-  test(mode + ' browser keeps a rejected move in its source conversation and creates manual new tabs as Personal', async t => {
-    const f = await fixture(t,{native});f.setFailure(true);
-    await f.change('#next-browser-move','conversation:b');await f.idle();
-    assert.equal(f.selected(),'a-tab');assert.equal(f.$('#next-browser-conversation').value,'conversation:a');
-    assert.match(f.$('#next-browser-status').textContent,/page changed/);
-    assert.equal(f.transfers().length,1,'The failed transfer is not replayed.');
-    f.setFailure(false);
-    await f.change('#next-browser-conversation','conversation:empty');await f.idle();
-    assert.equal(f.selected(),null);assert.equal(f.$('#next-browser-move').disabled,true);
-    assert.match(f.$('#next-browser-tabs').textContent,/No tabs in this conversation/);
-    assert.equal(f.navigations().length,0,'An empty conversation never implicitly opens a tab.');
-    await f.click('#next-browser-new');await until(()=>f.selected()==='opened-1');await f.idle();
-    assert.equal(f.state.tabs.at(-1).ownershipKind,'user');assert.equal(f.state.tabs.at(-1).conversationId,null);
-    assert.equal(f.$('#next-browser-personal').getAttribute('aria-pressed'),'true');
-    assert.deepEqual(f.navigations().map(call=>call.body),[{action:'open',browser:'relay',url:'about:blank'}]);
-  });
+for(const native of [true,false]){
+ const mode=native?'native':'captured';
+ test(mode+' lists all conversations together without transferring page ownership',async t=>{
+  const f=await fixture(t,{native});assert.deepEqual(new Set(f.visible()),new Set(['personal','a-tab','b-tab','unassigned']));
+  assert.equal(f.$('#next-browser-personal'),null);assert.equal(f.$('#next-browser-move'),null);
+  const owners=structuredClone(f.state.tabs.map(t=>t.owner));f.workspace.openConversationId('a');await f.refresh();
+  assert.equal(f.selected(),'b-tab');assert.deepEqual(f.state.tabs.map(t=>t.owner),owners);assert.equal(f.transfers().length,0);
+ });
+ test(mode+' explicit mark/release preserves page selection, address draft and ownership',async t=>{
+  const f=await fixture(t,{native});const owner=structuredClone(f.state.tabs.find(t=>t.tabId==='b-tab').owner);
+  await f.input('#next-browser-url','https://unsent.test/');await f.click('#next-browser-in-use');
+  assert.equal(f.state.tabs.find(t=>t.tabId==='b-tab').inUse,true);assert.equal(f.selected(),'b-tab');
+  assert.equal(f.$('#next-browser-url').value,'https://unsent.test/');assert.deepEqual(f.state.tabs.find(t=>t.tabId==='b-tab').owner,owner);
+  await f.click('#next-browser-in-use');assert.equal(f.state.tabs.find(t=>t.tabId==='b-tab').inUse,false);assert.equal(f.transfers().length,0);assert.equal(f.navigations().length,0);
+ });
+ test(mode+' rejected mark leaves current page and draft unchanged',async t=>{
+  const f=await fixture(t,{native});f.setFailure(true);await f.input('#next-browser-url','draft');await f.click('#next-browser-in-use');
+  assert.equal(f.selected(),'b-tab');assert.equal(f.state.tabs.find(t=>t.tabId==='b-tab').inUse,undefined);assert.equal(f.$('#next-browser-url').value,'draft');assert.equal(f.$('#next-browser-in-use').disabled,false);
+ });
+ test(mode+' pending mark disables repeated mutation and restores controls when settled',async t=>{
+  const f=await fixture(t,{native});let release;const promise=new Promise(r=>release=r);f.holdNextAction('tab_mark',{promise});
+  const pending=f.click('#next-browser-in-use');await until(()=>f.$('#next-browser-in-use').disabled);release();await pending;await f.idle();
+  assert.equal(f.calls.filter(c=>c.body?.action==='tab_mark').length,1);assert.equal(f.selected(),'b-tab');
+ });
 }
-
-test('captured Browser restores scoped Preview after a delayed screenshot settles without selection change',async t=>{
-  const f=await fixture(t,{native:false});await f.idle();
-  await f.click('#next-browser-cleanup-open');
-  await f.change('#next-browser-cleanup-conversation','a');
-  const button=f.$('#next-browser-cleanup-preview');
-  const conversation=f.$('#next-browser-cleanup-conversation');
-  const originalConversation=conversation.value;
-  assert.equal(originalConversation,'a');
-  assert.equal(button.disabled,false,'Exact conversation scope enables Preview when idle');
-  const beforeCaptures=f.calls.filter(call=>call.body?.action==='screenshot').length;
-  let release;
-  const gate={promise:new Promise(resolve=>{release=resolve;})};
-  f.holdNextScreenshot(gate);
-  try {
-    await f.click('#next-browser-shot');
-    await until(()=>f.calls.filter(call=>call.body?.action==='screenshot').length>beforeCaptures);
-    assert.equal(f.$('#next-browser-shot').disabled,true,'Screenshot is genuinely in flight');
-    assert.equal(button.disabled,true,'Cleanup Preview must remain disabled during the delayed screenshot');
-    await f.click('#next-browser-cleanup-preview');
-    assert.equal(f.calls.filter(call=>call.route==='/api/browser/cleanup-preview').length,0,
-      'Busy screenshot must never dispatch a cleanup preview');
-  } finally {release();}
-  await until(()=>!f.$('#next-browser-shot').disabled);
-  assert.equal(button.disabled,false,
-    'Screenshot completion must re-enable Preview without conversation-selection events or another status read');
-  assert.equal(conversation.value,originalConversation,'A busy transition must not rebuild or change the scope');
-  await f.click('#next-browser-cleanup-preview');
-  await until(()=>f.calls.filter(call=>call.route==='/api/browser/cleanup-preview').length===1);
-  assert.match(f.$('#next-browser-cleanup-summary').textContent,/protected/);
-  assert.equal(f.$('#next-browser-cleanup-execute').disabled,true,
-    'Read-only preview never authorizes closure of protected pages');
-  assert.equal(f.calls.filter(call=>call.route==='/api/browser/cleanup').length,0);
-});
-
-test('native Browser restores scoped Preview after a delayed action without changing its selection',async t=>{
-  const f=await fixture(t,{native:true});await f.idle();
-  await f.click('#next-browser-cleanup-open');
-  await f.change('#next-browser-cleanup-conversation','a');
-  const button=f.$('#next-browser-cleanup-preview');
-  const conversation=f.$('#next-browser-cleanup-conversation');
-  assert.equal(conversation.value,'a');
-  assert.equal(button.disabled,false);
-  const beforeReloads=f.calls.filter(call=>call.body?.action==='reload').length;
-  let release;
-  const gate={promise:new Promise(resolve=>{release=resolve;})};
-  f.holdNextAction('reload',gate);
-  try {
-    await f.click('#next-browser-reload');
-    await until(()=>f.calls.filter(call=>call.body?.action==='reload').length>beforeReloads);
-    assert.equal(f.$('#next-browser-reload').disabled,true,'Native Browser operation is actually awaiting the API');
-    assert.equal(button.disabled,true,'Scoped Preview stays disabled during the native in-flight action');
-    await f.click('#next-browser-cleanup-preview');
-    assert.equal(f.calls.filter(call=>call.route==='/api/browser/cleanup-preview').length,0);
-  } finally {release();}
-  await until(()=>!f.$('#next-browser-reload').disabled);
-  assert.equal(button.disabled,false,'Native render must release the Preview busy gate without another selection event');
-  assert.equal(conversation.value,'a','The exact conversation selector is retained after busy settles');
-  await f.click('#next-browser-cleanup-preview');
-  await until(()=>f.calls.filter(call=>call.route==='/api/browser/cleanup-preview').length===1);
-  assert.equal(f.$('#next-browser-cleanup-execute').disabled,true,'The preview still protects all pages');
-  assert.equal(f.calls.filter(call=>call.route==='/api/browser/cleanup').length,0);
-});
