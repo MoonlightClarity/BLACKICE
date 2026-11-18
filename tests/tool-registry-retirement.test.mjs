@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {promises as io} from 'node:fs';
 import {EventEmitter} from 'node:events';
 import {mkdtemp,rm,mkdir,readFile,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -47,4 +48,16 @@ test('generic HTTP registry is absent; browser and model APIs remain independent
  const normal=app.engine.continueRun(continued.id,{nodeId:'agent',message:'Continue current catalog'});await app.engine.executions.get(normal.id);
  assert.equal(normal.modelHandoff?.reason,undefined);
  assert.equal(app.engine.runtime.calls.at(-1).threadId,'current-fixture');
+});
+
+test('browser persistence retries only transient rename and preserves prior bytes on permanent failure',async t=>{
+ const dataDir=await directory(t),manager=new ConnectionManager({dataDir});await manager.init();
+ const browser=chromeAutoConnectConnection();await manager.save(browser);
+ const rename=io.rename;let attempts=0;io.rename=async(...args)=>{attempts++;if(attempts===1)throw Object.assign(Error('sharing lock'),{code:'EPERM'});return rename(...args);};
+ try { await manager.save({...browser,name:'After sharing lock'});assert.equal(attempts,2); }
+ finally {io.rename=rename;}
+ const file=path.join(dataDir,'browser-connections.json'),before=await readFile(file,'utf8');assert.equal(JSON.parse(before).connections[0].name,'After sharing lock');
+ io.rename=async()=>{throw Object.assign(Error('disk failure'),{code:'EIO'});};
+ try {await assert.rejects(manager.save({...browser,name:'Must not persist'}),{code:'EIO'});assert.equal(await readFile(file,'utf8'),before);}
+ finally {io.rename=rename;await manager.close().catch(e=>assert.equal(e.code,'EIO'));}
 });

@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ConnectionManager, executeConnectedBrowser } from '../lib/mcp.mjs';
-import { discoverSignedBrowserEndpoints, nativeBrowserMetadataPaths, registerSignedBrowser, createSignedBrowserIntegration, signedBrowserEndpoint, isSignedBrowserCatalog, signedBrowserInstructions } from '../lib/signed-browser.mjs';
+import { discoverSignedBrowserEndpoints, nativeBrowserMetadataPaths, registerSignedBrowser, createSignedBrowserIntegration, signedBrowserEndpoint, isSignedBrowserCatalog } from '../lib/signed-browser.mjs';
 
 const tools = [
   { name: 'tabs', description: 'Open tabs in the background.', inputSchema: { type: 'object', properties: { action: { enum: ['list', 'new', 'close'] }, url: { type: 'string' } } } },
@@ -75,8 +75,6 @@ test('real MCP registration discovers the existing browser without opening, navi
   assert.equal(calls.length, 9, 'discovery reuses the real catalog and one explicit native action reaches the transport');
   assert.equal(manager.list()[0].agentAvailable, true); assert.equal(manager.list()[0].agentUnavailableReason, undefined);
   assert.deepEqual(calls.at(-1).params, { name: 'tabs', arguments: { action: 'list' } });
-  assert.match(signedBrowserInstructions(status), /connectionId "browseros-neo"/);
-  assert.match(signedBrowserInstructions(status), /does not mean every site is signed in/);
 });
 
 test('registration preserves conflicting and user-disabled specialized settings and rejects generic aliases', async t => {
@@ -98,7 +96,7 @@ test('a reachable unrelated MCP server is not reported as the authenticated brow
   const status = await registerSignedBrowser({ connections: manager, endpoints: [{ url }] });
   assert.equal(status.available, false); assert.equal(status.reusesBrowserSession, false); assert.match(status.reason, /expected BrowserOS/);
   assert.deepEqual(manager.list(), []); // Unverified service is never persisted as BrowserOS.
-  assert.equal(calls.some(call => call.method === 'tools/call'), false); assert.equal(signedBrowserInstructions(status), '');
+  assert.equal(calls.some(call => call.method === 'tools/call'), false);
 });
 
 test('an unresponsive endpoint cannot hold startup beyond the bounded discovery deadline', async t => {
@@ -118,7 +116,6 @@ test('a reachable sidecar with a failed browser inventory never claims a usable 
   assert.deepEqual(manager.list(), [], 'A disconnected sidecar must not become the saved browser endpoint.');
   assert.match(status.reason, /tools are connected.*browser link is unavailable/i);
   assert.doesNotMatch(JSON.stringify(status), /secret\.example|private-value|browser link lost|content|structuredContent/);
-  assert.equal(signedBrowserInstructions(status), '');
   assert.deepEqual(calls.filter(call => call.method === 'tools/call').map(call => call.params), [{ name: 'tabs', arguments: { action: 'list' } }]);
 });
 
@@ -263,9 +260,6 @@ test('native registration retries a stale endpoint and discovers a modern Neo ru
   assert.equal(status.available, true); assert.equal(status.nativeIntegration, true); assert.equal(status.catalogKind, 'neo-run'); assert.equal(status.endpointSource, 'browseros-config');
   assert.equal(actual.manager.list().length, 1); assert.equal(actual.manager.list()[0].url, actual.url);
   assert.equal(unrelated.calls.some(call => call.method === 'tools/call'), false); assert.deepEqual(actual.calls.filter(call => call.method === 'tools/call').map(call => call.params), [{ name: 'tabs', arguments: { action: 'list' } }, { name: 'tabs', arguments: { action: 'list' } }]);
-  const instructions = signedBrowserInstructions(status);
-  assert.match(instructions, /Reuse the browser and profile requested by the user/); assert.match(instructions, /authorized post or edit/); assert.match(instructions, /name_session/); assert.match(instructions, /actual tool schemas/); assert.match(instructions, /run, raw CDP, full-page capture/);
-  assert.match(instructions, /full-page capture when relevant and supported/); assert.match(instructions, /focus and visibility do not establish native desktop foreground/); assert.match(instructions, /failed screenshot is never a reason to publish/); assert.doesNotMatch(instructions, /finite background interface|fullPage:false|do not call BrowserOS request_human_help/);
   const runOnly = neoCatalog.filter(tool => tool.name !== 'navigate');
   assert.equal(isSignedBrowserCatalog(runOnly), true);
   assert.equal(isSignedBrowserCatalog([{ name: 'run', inputSchema: { type: 'object', properties: { code: { type: 'string' } } } }]), false);

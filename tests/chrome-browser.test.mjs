@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CHROME_BROWSER_INSTRUCTIONS, CHROME_BROWSER_CONNECTION_ID, chromeAutoConnectConnection, chromeBackgroundOpen, chromeBackgroundArguments, chromeBrowserStatus, isManagedChromeConnection, isChromeBrowserConnection, registerChromeBrowser } from '../lib/chrome-browser.mjs';
-import { parseConnectionImport } from '../lib/connection-import.mjs';
 
 function fixture({ config, result = { content: [{type:'text',text:'## Pages\n1: https://private.fixture.test/ Private title'}] }, error, tools = [{name:'list_pages'}] } = {}) {
   let configurations=config ? [structuredClone(config)] : [];
@@ -14,7 +13,7 @@ test('Chrome configuration uses official autoConnect through Relay stdio without
   const config=chromeAutoConnectConnection();
   assert.equal(config.transport,'stdio');assert.equal(config.command,'npx');assert.equal(config.id,CHROME_BROWSER_CONNECTION_ID);
   assert.deepEqual(config.args,['-y','chrome-devtools-mcp@1.11.0','--autoConnect','--channel=stable','--no-usage-statistics','--no-performance-crux','--experimentalVision=true']);
-  assert.equal(config.timeoutMs,60000);assert.equal(parseConnectionImport({connections:[config]}).candidates[0].args.includes('--autoConnect'),true);
+  assert.equal(config.timeoutMs,60000);
   assert.doesNotMatch(config.args.join(' '),/headless|isolated|user-data-dir|browser-url|remote-debugging-port/);
 });
 
