@@ -19,3 +19,20 @@ Run the focused unit/HTTP suite with Node's test runner; run tests/skill-editor-
 Model skill tools expose search/read only. Structured model file mutations are blocked for the override directory. This is not an operating-system sandbox: arbitrary shell commands and localhost access retain their existing capabilities. Do not describe it as an absolute guarantee against model modification through unrestricted shell access.
 
 This commit is source work, not an installation or release receipt. No user-authored skill content was changed.
+
+## Combined source qualification
+
+Final tested code revision: c3c8fcd, on integrate/skills-browser-stability-20261118, based on 2.40.6 source257faf7.
+
+Combined changes include the human Skills editor, native browser folder rail and Tools disclosure, folder-management lifecycle cleanup, and compact Cronjobs folder removal.
+
+- Final full Node suite: 8,832 tests, 8,822 passed, zero failed, 10 skipped; 342.5 seconds. Required Python was supplied through PLANNING_BEHAVIOR_PYTHON using the existing Python3.12.16 interpreter.
+- Earlier full attempts are not claimed clean: the first lacked default Python; the second found a navigation fixture missing the DOM dialog query API. Both were addressed before the final complete rerun.
+- Combined real Electron tests passed for human skill save/reload/restart/conflict handling and folder navigation across four sections with unsaved drafts preserved.
+- Native browser frontend rendered at1200,780 and640px with matching IPC geometry. At780x560 the page retained562x356 pixels, excluding the218px folder rail. This uses an IPC test stub, not live website or native BrowserView validation.
+- Screenshots were inspected. A stale hidden-window screenshot fixture was corrected to use offscreen rendering and wait for rendered fonts/frames before verification.
+- Documentation classification and link checks passed.
+
+The original reported cross-section Cronjobs visual leak was not independently reproduced. The tested fix closes top-layer dialogs and suspends folder-management UI on navigation, preserving drafts. It should not be described as proof that every possible cause of that original report is resolved.
+
+This is source qualification only. No installer was built or installed here; live user drafts, saved skills and browser profiles were not changed.
