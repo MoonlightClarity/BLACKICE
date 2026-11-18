@@ -49,3 +49,23 @@ test('diagnostic filesystem failure never blocks actual browser settings save',a
  const dataDir=await directory(t),store=new DiagnosticsStore({dataDir,version:'2.40.8',io:{mkdir:async()=>{throw Object.assign(Error('disk'),{code:'EIO'});}}});const manager=await new ConnectionManager({dataDir,persistenceDiagnostics:e=>store.record(e)}).init();t.after(()=>manager.close());
  await manager.save({id:'browseros-neo',transport:'http',url:'http://127.0.0.1:12345/mcp'});await store.flush();assert.equal(store.status().healthy,false);assert.equal(JSON.parse(await readFile(manager.file,'utf8')).connections.length,1);
 });
+
+test('plain and aggregate failures remain unknown after diagnostic persistence round-trip',async t=>{
+ const dataDir=await directory(t),store=await new DiagnosticsStore({dataDir,version:'2.40.8'}).init();
+ const trace=createPersistenceTrace(e=>store.record(e),'browser-settings-save'),cause=Error('not a system error');
+ await assert.rejects(trace.run('write',async()=>{throw cause;}),e=>e===cause);
+ trace.emit({phase:'complete',outcome:'failed',commitOutcome:'unknown'});
+ await store.close();
+ const restored=await new DiagnosticsStore({dataDir,version:'2.40.8'}).init();t.after(()=>restored.close());
+ const failures=(await restored.snapshot()).events.filter(e=>e.outcome==='failed');assert.equal(failures.length,2);
+ for(const e of failures){assert.equal(e.errorSource,'unknown');assert.equal(e.nativeWin32Error,null);}
+ const partial=sanitizePersistenceDiagnostic({phase:'write',outcome:'failed',code:'EIO'});assert.equal(partial.errorSource,'unknown');
+ const full=sanitizePersistenceDiagnostic({phase:'write',outcome:'failed',code:'EIO',errno:-5,syscall:'write'});assert.equal(full.errorSource,'node-system-error');assert.equal(sanitizePersistenceDiagnostic(full).errorSource,'node-system-error');
+});
+test('expected absent cleanup is informational without swallowing the original error',async()=>{
+ const events=[],trace=createPersistenceTrace(e=>events.push(e),'browser-settings-save');
+ const cause=Object.assign(Error('gone'),{code:'ENOENT',errno:-2,syscall:'unlink'});
+ await assert.rejects(trace.run('cleanup',async()=>{throw cause;},{sourceRole:'temporary',commitOutcome:'rename-reported-success'}),e=>e===cause);
+ const e=events.at(-1);assert.equal(e.outcome,'already-absent');assert.equal(e.level,'info');assert.equal(e.commitOutcome,'rename-reported-success');assert.equal(sanitizePersistenceDiagnostic(e).outcome,'already-absent');
+ assert.equal(sanitizePersistenceDiagnostic({...e,phase:'write'}),null);
+});
