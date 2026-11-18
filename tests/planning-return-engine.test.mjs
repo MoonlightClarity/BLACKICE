@@ -1,4 +1,4 @@
-// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
+// Current engine execution with explicit manual task-store state; no historical model protocol.
 import test from 'node:test';
 import { fixtureDeferredUserAgency } from './fixture-user-agency.mjs';
 import assert from 'node:assert/strict';
@@ -6,8 +6,8 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
-import { TaskStateStore } from './fixture-legacy-task-state.mjs';
+import { HarnessEngine } from '../lib/engine.mjs';
+import { TaskStateStore } from '../lib/task-state.mjs';
 
 const graph = {
   id: 'planning-return-fixture', name: 'Return to planning fixture', settings: { maxParallel: 1 },
@@ -22,23 +22,18 @@ const leaf = (id = 'compare', extra = {}) => ({
   doneWhen: 'The selected option and nearest feasible alternative have their actual prices and timing checks recorded.',
   ...extra,
 });
-const unpack = receipt => JSON.parse(receipt.contentItems.find(item => item.type === 'inputText').text);
-async function task(options, args) {
-  const receipt = await options.onToolCall({ name: 'relay_task', arguments: args });
-  assert.equal(receipt.success, true, receipt.contentItems?.[0]?.text);
-  return unpack(receipt);
+const taskId = context => context.active().taskId;
+const readState = context => context.tasks.get(taskId(context));
+const actor = state => ({ expectedRevision: state.revision, source: 'human', schemaVersion: 14 });
+async function prepare(context, steps = [leaf()]) {
+  const state = await readState(context);
+  return context.tasks.setPlan(taskId(context), { plan: { layout: 'sequence' }, steps }, { expectedRevision: state.revision, source: 'human' });
 }
-async function prepare(options, steps = [leaf()]) {
-  const state = await task(options, { action: 'read' });
-  return task(options, { action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence' }, steps });
+async function complete(context, state, id = 'compare', evidence = 'Option B costs $155 and its workshop times touch without overlapping; the nearest feasible alternative costs $165.') {
+  return context.tasks.setStep(taskId(context), id, { status: 'done', evidence }, actor(state));
 }
-async function complete(options, state, id = 'compare', evidence = 'Option B costs $155 and its workshop times touch without overlapping; the nearest feasible alternative costs $165.') {
-  return task(options, { action: 'step', expectedRevision: state.revision, stepId: id, status: 'done', evidence });
-}
-async function review(options, state, decision = 'respond', summary = 'The supplied goal and constraints are covered by the saved comparison; no consequential question remains before answering.', nextStepId) {
-  return task(options, { action: 'review', expectedRevision: state.revision, review: { decision, summary, ...(nextStepId ? { nextStepId } : {}),
-    ...(decision === 'blocked' && options.dynamicTools?.find(item => item.name === 'relay_task')?.inputSchema?.properties?.review?.properties?.userAgency
-      ? { userAgency: fixtureDeferredUserAgency(summary) } : {}) } });
+async function review(context, state, decision = 'respond', summary = 'The supplied goal and constraints are covered by the saved comparison; no consequential question remains before answering.', nextStepId) {
+  return context.tasks.review(taskId(context), { decision, summary, ...(nextStepId ? { nextStepId } : {}), ...(decision === 'blocked' ? { userAgency: fixtureDeferredUserAgency(summary) } : {}) }, { ...actor(state), runId: context.active().id, nodeId: 'agent' });
 }
 const answer = (options, text, id) => {
   options.onEvent({ type: 'delta', itemId: id, delta: text });
@@ -100,7 +95,7 @@ async function fixture(t, execute) {
 for (const completedFirst of [false, true]) test('an optional ' + (completedFirst ? 'completed' : 'active') + ' leaf does not install a retired plan pass; ordinary execution has no automatic review', async t => {
   const f = await fixture(t, async (options, { pass, continuationPrompt }, context) => {
     assert.equal(typeof options.onBeforeFinal, 'undefined'); assert.equal(pass, 1); assert.equal(continuationPrompt, null);
-    let state = await prepare(options); if (completedFirst) state = await complete(options, state);
+    let state = await prepare(context); if (completedFirst) state = await complete(context, state);
     answer(options, 'The supplied comparison supports B at $155.', 'direct-answer');
     assert.equal(context.active().nodes.agent.output, 'The supplied comparison supports B at $155.');
     return { output: 'The supplied comparison supports B at $155.' };
@@ -113,10 +108,10 @@ for (const completedFirst of [false, true]) test('an optional ' + (completedFirs
   assert.equal(run.nodes.agent.planning.status, 'off'); assert.equal(run.nodes.agent.planning.review, undefined);
 });
 
-test('an explicit post-work review is saved without creating a ceremonial provider pass', async t => {
-  const f = await fixture(t, async options => {
+test('an explicit manual post-work review is saved without creating a ceremonial provider pass', async t => {
+  const f = await fixture(t, async (options, _pass, context) => {
     assert.equal(typeof options.onBeforeFinal, 'undefined');
-    await review(options, await complete(options, await prepare(options)));
+    await review(context, await complete(context, await prepare(context)));
     return { output: 'Choose B for $155; A costs $165.' };
   });
   const run = await f.settle(f.start().id); assert.equal(run.status, 'completed', run.error);
@@ -127,12 +122,12 @@ test('an explicit post-work review is saved without creating a ceremonial provid
 test('commentary and final output stream without automatic review', async t => {
   const progress = 'I am checking the supplied workshop totals and the enrollment fee.';
   const f = await fixture(t, async (options, _pass, context) => {
-    let state = await prepare(options);
+    let state = await prepare(context);
     options.onEvent({ type: 'delta', itemId: 'progress', delta: progress });
     assert.ok(answerEvents(context.active()).some(event=>event.data?.delta===progress),'Ordinary provider deltas stream without automatic review.');
     options.onEvent({ type: 'item', stage: 'completed', item: { id: 'progress', type: 'agentMessage', phase: 'commentary', text: progress } });
     assert.match(JSON.stringify(answerEvents(context.active())), /checking the supplied workshop totals/);
-    state = await complete(options, state); await review(options, state);
+    state = await complete(context, state); await review(context, state);
     answer(options, 'The checked result is B at $155.', 'checked-final');
     return { output: 'The checked result is B at $155.' };
   });
@@ -144,18 +139,18 @@ test('commentary and final output stream without automatic review', async t => {
 
 test('new optional work stays unfinished until an explicit same-session follow-up completes it', async t => {
   let original;
-  const f = await fixture(t, async (options, { invocation, pass }) => {
+  const f = await fixture(t, async (options, { invocation, pass }, context) => {
     assert.equal(pass, 1); assert.equal(typeof options.onBeforeFinal, 'undefined');
     if (invocation === 1) {
-      let state = await complete(options, await prepare(options)); original = structuredClone(state.steps[0]);
-      state = await review(options, state);
-      await task(options, { action: 'edit', expectedRevision: state.revision, operations: [{ type: 'add', step: leaf('discount_check') }] });
+      let state = await complete(context, await prepare(context)); original = structuredClone(state.steps[0]);
+      state = await review(context, state);
+      await context.tasks.editPlan(taskId(context), { operations: [{ type: 'add', step: leaf('discount_check') }] }, actor(state));
       return { output: 'The original comparison is checked; the added discount check is still unfinished.' };
     }
     assert.equal(options.threadId, 'planning-return-thread-1');
-    let state = await task(options, { action: 'read' }); assert.deepEqual(state.steps[0], original);
-    state = await complete(options, state, 'discount_check', 'The $30 discount applies to B only, and the total includes the one $10 fee.');
-    await review(options, state, 'respond', 'The additional discount question is resolved; the original comparison is preserved.');
+    let state = await readState(context); assert.deepEqual(state.steps[0], original);
+    state = await complete(context, state, 'discount_check', 'The $30 discount applies to B only, and the total includes the one $10 fee.');
+    await review(context, state, 'respond', 'The additional discount question is resolved; the original comparison is preserved.');
     return { output: 'The discount and one enrollment fee are included in the total.' };
   });
   const first = await f.settle(f.start().id); assert.equal(first.status, 'completed', first.error);
@@ -170,13 +165,13 @@ test('new optional work stays unfinished until an explicit same-session follow-u
 test('an accepted user direction is delivered to the active native session without a forced review turn', async t => {
   const f = await fixture(t, async (options, { pass }, context) => {
     assert.equal(pass, 1); assert.equal(typeof options.onBeforeFinal, 'undefined');
-    await review(options, await complete(options, await prepare(options)));
+    await review(context, await complete(context, await prepare(context)));
     const steered = await context.engine.steerRun(context.active().id, { nodeId: 'agent', message: 'Also check the bundle total if the enrollment fee is $20.' });
     assert.equal(steered.accepted, true);
-    let state = await task(options, { action: 'read' });
-    state = await task(options, { action: 'edit', expectedRevision: state.revision, operations: [{ type: 'add', step: leaf('updated_fee') }] });
-    state = await complete(options, state, 'updated_fee', 'With the $20 fee B totals $165; A totals $175 and exceeds the supplied $170 ceiling.');
-    await review(options, state, 'respond', 'The newly accepted fee request is included; B still wins and now costs $165.');
+    let state = await readState(context);
+    state = await context.tasks.editPlan(taskId(context), { operations: [{ type: 'add', step: leaf('updated_fee') }] }, actor(state));
+    state = await complete(context, state, 'updated_fee', 'With the $20 fee B totals $165; A totals $175 and exceeds the supplied $170 ceiling.');
+    await review(context, state, 'respond', 'The newly accepted fee request is included; B still wins and now costs $165.');
     return { output: 'With the $20 fee, choose B for $165.' };
   });
   const run = await f.settle(f.start().id); assert.equal(run.status, 'completed', run.error);
@@ -187,15 +182,15 @@ test('an accepted user direction is delivered to the active native session witho
 });
 
 test('ordinary execution does not repeat a confirmed file mutation or duplicate callbacks', async t => {
-  const f = await fixture(t, async options => {
-    const state = await prepare(options, [leaf('save', { operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target: 'result.txt' },
+  const f = await fixture(t, async (options, _pass, context) => {
+    const state = await prepare(context, [leaf('save', { operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target: 'result.txt' },
       result: 'The one fixture result is saved.', note: 'Write the supplied fixture text once to result.txt.', doneWhen: 'The workspace handler returns the written path and byte count.' })]);
     const call = { name: 'relay_workspace', arguments: { action: 'write', path: 'result.txt', text: 'B costs $155.' }, callId: 'one-save' };
     const [receipt, duplicate] = await Promise.all([options.onToolCall(call), options.onToolCall(structuredClone(call))]);
     assert.equal(receipt.success, true, receipt.contentItems[0].text); assert.deepEqual(duplicate, receipt);
     const conflict = await options.onToolCall({ ...call, arguments: { ...call.arguments, text: 'A changed write must not execute.' } });
     assert.equal(conflict.code, 'TOOL_CALL_ID_CONFLICT');
-    await complete(options, state, 'save', 'The successful write receipt identifies result.txt and its saved byte count.');
+    await complete(context, state, 'save', 'The successful write receipt identifies result.txt and its saved byte count.');
     return { output: 'Saved the result once.' };
   });
   const run = await f.settle(f.start().id); assert.equal(run.status, 'completed', run.error);
@@ -205,10 +200,10 @@ test('ordinary execution does not repeat a confirmed file mutation or duplicate 
 });
 
 test('an honest blocked reassessment returns a partial answer without inventing completion', async t => {
-  const f = await fixture(t, async options => {
-    let state = await prepare(options);
-    state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'compare', status: 'blocked', blockedReason: 'The supplied fixture omits H2 price, so the cheapest feasible pair cannot be established.' });
-    await review(options, state, 'blocked', 'The comparison is blocked on the missing H2 price; no independent ready work can resolve that supplied-input gap.');
+  const f = await fixture(t, async (options, _pass, context) => {
+    let state = await prepare(context);
+    state = await context.tasks.setStep(taskId(context), 'compare', { status: 'blocked', blockedReason: 'The supplied fixture omits H2 price, so the cheapest feasible pair cannot be established.' }, actor(state));
+    await review(context, state, 'blocked', 'The comparison is blocked on the missing H2 price; no independent ready work can resolve that supplied-input gap.');
     return { output: 'H2 price is missing, so the cheapest feasible pair remains unresolved.' };
   });
   const run = await f.settle(f.start().id); assert.equal(run.status, 'completed', run.error); assert.equal(f.runtime.passes.length, 1);
@@ -218,8 +213,8 @@ test('an honest blocked reassessment returns a partial answer without inventing 
 });
 
 test('ordinary response may settle while optional task notes remain explicitly unfinished', async t => {
-  const f = await fixture(t, async (options, { pass }) => {
-    if (pass === 1) await prepare(options);
+  const f = await fixture(t, async (options, { pass }, context) => {
+    if (pass === 1) await prepare(context);
     answer(options, 'The comparison remains unfinished; no completed result is claimed.', 'partial');
     return { output: 'The comparison remains unfinished; no completed result is claimed.' };
   });
@@ -233,8 +228,8 @@ test('ordinary response may settle while optional task notes remain explicitly u
 test('Stop aborts the active provider, admits no further pass and preserves its confirmed file effect', async t => {
   let active = false, aborted = false;
   const progress = 'The local result was saved; the remaining comparison is unfinished.';
-  const f = await fixture(t, async options => {
-    await prepare(options);
+  const f = await fixture(t, async (options, _pass, context) => {
+    await prepare(context);
     const written = await options.onToolCall({ name: 'relay_workspace', callId: 'before-stop', arguments: { action: 'write', path: 'before-stop.txt', text: 'Confirmed before Stop.' } });
     assert.equal(written.success, true);
     options.onEvent({ type: 'delta', itemId: 'partial', delta: progress }); options.onEvent({ type: 'usage', usage: { totalTokens: 20 } }); active = true;
@@ -255,7 +250,7 @@ test('Stop aborts the active provider, admits no further pass and preserves its 
 });
 
 test('a direct provider failure retains session identity with observed partial output and without retrying', async t => {
-  const f = await fixture(t, async options => {
+  const f = await fixture(t, async (options, _pass, context) => {
     options.onEvent({ type: 'delta', itemId: 'partial-failure', delta: 'The first supplied price is $145; the comparison is incomplete.' });
     throw Object.assign(Error('Synthetic direct transport failure.'), { code: 'FIXTURE_TRANSPORT_FAILURE' });
   });
@@ -267,23 +262,23 @@ test('a direct provider failure retains session identity with observed partial o
   assert.deepEqual(run.taskState.steps, []); assert.equal(run.nodes.agent.planning.status, 'off');
 });
 
-test('a continue reassessment can return to an earlier reasoning step and preserve its previous result', async t => {
+test('a manual continue reassessment can return to an earlier reasoning step and preserve its previous result', async t => {
   const transitions = [];
-  const f = await fixture(t, async options => {
-    let state = await task(options, { action: 'read' });
-    state = await task(options, { action: 'plan', expectedRevision: state.revision, plan: { layout: 'parallel' }, steps: [
+  const f = await fixture(t, async (options, _pass, context) => {
+    let state = await readState(context);
+    state = await context.tasks.setPlan(taskId(context), { plan: { layout: 'parallel' }, steps: [
       leaf('compare'), leaf('fee_check', { status: 'pending', operation: { kind: 'reasoning', target: 'Whether the supplied enrollment fee is included once in the bundle total.' }, result: 'The applicable one-time enrollment fee and its treatment in the total.', note: 'Read the fee clause in the supplied fixture and compare it with the provisional bundle arithmetic.', doneWhen: 'The fee amount and whether it appears in the provisional total are explicitly recorded.' }),
-    ] });
-    state = await complete(options, state, 'compare', 'The provisional subtotal for B is $145 before resolving the separate enrollment-fee clause.');
-    state = await review(options, state, 'continue', 'The workshop subtotal is known but the enrollment-fee treatment still needs its saved comparison before a final answer.', 'fee_check');
+    ] }, { expectedRevision: state.revision, source: 'human' });
+    state = await complete(context, state, 'compare', 'The provisional subtotal for B is $145 before resolving the separate enrollment-fee clause.');
+    state = await review(context, state, 'continue', 'The workshop subtotal is known but the enrollment-fee treatment still needs its saved comparison before a final answer.', 'fee_check');
     transitions.push('continue');
-    state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'fee_check', status: 'active' });
-    state = await complete(options, state, 'fee_check', 'The fee clause adds $10 once per bundle; the earlier $145 figure excludes it.');
-    state = await task(options, { action: 'edit', expectedRevision: state.revision, operations: [{ type: 'revisit', stepId: 'compare', reason: 'The completed fee check shows that the provisional workshop subtotal needs the one enrollment fee before answering.' }] });
+    state = await context.tasks.setStep(taskId(context), 'fee_check', { status: 'active' }, actor(state));
+    state = await complete(context, state, 'fee_check', 'The fee clause adds $10 once per bundle; the earlier $145 figure excludes it.');
+    state = await context.tasks.editPlan(taskId(context), { operations: [{ type: 'revisit', stepId: 'compare', reason: 'The completed fee check shows that the provisional workshop subtotal needs the one enrollment fee before answering.' }] }, actor(state));
     transitions.push('revisit');
-    state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'compare', status: 'active' });
-    state = await complete(options, state, 'compare', 'B costs $145 in workshops plus the single $10 enrollment fee, for $155; A’s comparable total is $165.');
-    await review(options, state, 'respond', 'The earlier comparison was revisited using the completed fee check; the corrected all-in totals support B and no question remains.');
+    state = await context.tasks.setStep(taskId(context), 'compare', { status: 'active' }, actor(state));
+    state = await complete(context, state, 'compare', 'B costs $145 in workshops plus the single $10 enrollment fee, for $155; A’s comparable total is $165.');
+    await review(context, state, 'respond', 'The earlier comparison was revisited using the completed fee check; the corrected all-in totals support B and no question remains.');
     transitions.push('respond');
     return { output: 'Choose B for the corrected all-in total of $155.' };
   });

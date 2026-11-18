@@ -1,16 +1,16 @@
 import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
-// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
+// Current engine scheduling and effects; manual notes never control runtime admission.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
-import { TaskStateStore, delegatedPlanNodeId } from './fixture-legacy-task-state.mjs';
+import { HarnessEngine } from '../lib/engine.mjs';
+import { TaskStateStore, delegatedPlanNodeId } from '../lib/task-state.mjs';
 import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
 import { AttachmentStore } from '../lib/attachments.mjs';
-import { finishFixturePlan } from './fixture-task-plan.mjs';
+
 
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const waitFor = async check => {
@@ -20,20 +20,6 @@ const waitFor = async check => {
 };
 const payload = returned => JSON.parse(returned.contentItems[0].text);
 const tool = (options, name, args) => options.onToolCall({ name, arguments: args });
-async function taskCall(options, args) {
-  const returned = await tool(options, 'relay_task', args); assert.equal(returned.success, true, returned.contentItems[0].text); return payload(returned);
-}
-async function revise(options, build) {
-  for (let attempt = 0; attempt < 50; attempt++) {
-    const state = await taskCall(options, { action: 'read' });
-    const returned = await tool(options, 'relay_task', { ...build(state), expectedRevision: state.revision });
-    if (returned.code === 'TASK_STATE_CONFLICT') continue;
-    assert.equal(returned.success, true, returned.contentItems[0].text); return payload(returned);
-  }
-  assert.fail('The fixture could not merge its own progress with other worker revisions.');
-}
-const acknowledge = (options, nodeId) => revise(options, () => ({ action: 'edit', operations: [{ type: 'update', stepId: `agent-${nodeId}-work`, patch: { status: 'active', operation: { kind: 'reasoning', target: `The supplied ${nodeId} fixture input` }, note: `Compare the supplied ${nodeId} fixture input with its assigned requirement.` } }] }));
-const complete = (options, stepId) => revise(options, () => ({ action: 'step', stepId, status: 'done', evidence: `The actual ${stepId} fixture result was checked.` }));
 const agent = (id, extra = {}) => ({ id, type: 'agent', name: id, prompt: `Complete the assigned ${id} work.`, model: 'fixture-planning', assignment: { scope: `Only ${id} fixture work.`, inputs: ['The original request.'], result: `Checked ${id} result.`, doneWhen: `The ${id} result passes its stated check.`, canWrite: true }, ...extra });
 const graph = (agents, edges, shared = true) => ({
   name: 'Live planning fixture',
@@ -63,13 +49,11 @@ async function fixture(t, workflow, execute, { holds = [], subagents = false, at
 }
 const who = options => options.prompt.match(/^You are ([a-z]+)\./)?.[1];
 
-test('legacy Planning On preserves authored workflow parallelism without serial planner admission', async t => {
+test('Current task execution preserves authored workflow parallelism without serial planner admission', async t => {
   const hold = deferred(), entered = [], workflow = graph([agent('coordinator'), agent('worker')], [['input', 'coordinator'], ['input', 'worker'], ['coordinator', 'output'], ['worker', 'output']]);
   const f = await fixture(t, workflow, async options => {
-    const id = who(options); entered.push(id); await acknowledge(options, id);
+    const id = who(options); entered.push(id);
     if (id === 'coordinator') await hold.promise;
-    const completed = await complete(options, `agent-${id}-work`);
-    await finishFixturePlan(options, { state: completed, summary: `The ${id} assignment has its actual result checked; this node can hand off while the other workflow assignment retains its own status.` });
     return { output: `Actual ${id} result.` };
   }, { holds: [hold] });
   const accepted = f.start();
@@ -81,10 +65,9 @@ test('legacy Planning On preserves authored workflow parallelism without serial 
   const finished = await f.settled(accepted.id);
   assert.equal(finished.status, 'completed', finished.error); assert.deepEqual(entered, ['coordinator', 'worker']);
   assert.equal(finished.workflow.settings.maxParallel, 2, 'Authored settings remain intact; a historical On value does not serialize independent work.');
-  assert.equal(finished.taskState.progress.done, 2);
-  const coordinatorReview = finished.taskState.planningReviews.find(review => review.nodeId === 'coordinator');
-  assert.equal(coordinatorReview.scopeStepId, 'agent-coordinator', 'Completing the coordinator assignment does not claim that the later worker has finished.');
-  assert.equal(finished.taskState.planningReviews.find(review => review.nodeId === 'worker').scopeStepId, 'agent-worker');
+  assert.equal(finished.nodes.coordinator.output, 'Actual coordinator result.');
+  assert.equal(finished.nodes.worker.output, 'Actual worker result.');
+  assert.equal(finished.planningContractVersion, 14);
 });
 
 test('Planning Off preserves shared workflow concurrency before an unrelated coordinator finishes', async t => {
@@ -93,72 +76,55 @@ test('Planning Off preserves shared workflow concurrency before an unrelated coo
   ]);
   workflow.settings.planningMode = 'off';
   const f = await fixture(t, workflow, async (options, context) => {
-    const id = who(options); entered.push(id); await acknowledge(options, id);
+    const id = who(options); entered.push(id);
     if (id === 'coordinator') await hold.promise;
     if (id === 'right') {
       const run = context.engine.listRuns()[0]; assert.equal(run.nodes.coordinator.status, 'running'); assert.equal(run.nodes.left.status, 'completed');
       assert.match(options.prompt, /UPSTREAM RESULTS[\s\S]*Actual left result/);
     }
-    await complete(options, `agent-${id}-work`); return { output: `Actual ${id} result.` };
+    return { output: `Actual ${id} result.` };
   }, { holds: [hold] });
   const accepted = f.start();
   await waitFor(() => f.engine.getRun(accepted.id).nodes.right.status === 'completed');
   assert.deepEqual(new Set(entered), new Set(['coordinator', 'left', 'right']));
   assert.equal(f.engine.getRun(accepted.id).settled, false);
-  const state = await f.tasks.get(accepted.taskId); assert.equal(state.execution.nodes.coordinator.status, 'running'); assert.equal(state.execution.nodes.right.status, 'completed');
-  hold.resolve(); const finished = await f.settled(accepted.id); assert.equal(finished.status, 'completed', finished.error); assert.equal(finished.taskState.progress.done, 3);
+  assert.equal(f.engine.getRun(accepted.id).nodes.coordinator.status, 'running');
+  assert.equal(f.engine.getRun(accepted.id).nodes.right.output, 'Actual right result.');
+  hold.resolve(); const finished = await f.settled(accepted.id); assert.equal(finished.status, 'completed', finished.error); assert.equal(finished.nodes.left.output, 'Actual left result.');
 });
 
-test('with Planning Off a human dependency edit wakes concurrent work while the coordinator awaits its result', async t => {
-  const hold = deferred(), workflow = graph([agent('coordinator'), agent('worker')], [['input', 'coordinator'], ['coordinator', 'worker'], ['worker', 'output']]);
+for (const edit of ['dependencies', 'completion']) test('a manual ' + edit + ' edit cannot finish a held runtime or release its dependent', async t => {
+  const hold = deferred(), entered = [], workflow = graph([agent('coordinator'), agent('worker')], [['input', 'coordinator'], ['coordinator', 'worker'], ['worker', 'output']]);
   workflow.settings.planningMode = 'off';
   const f = await fixture(t, workflow, async options => {
-    const id = who(options); await acknowledge(options, id); if (id === 'coordinator') await hold.promise;
-    await complete(options, `agent-${id}-work`); return { output: `Actual ${id} result.` };
+    const id = who(options); entered.push(id); if (id === 'coordinator') await hold.promise;
+    return { output: 'Actual ' + id + ' result.' };
   }, { holds: [hold] });
-  const accepted = f.start();
-  await waitFor(() => f.engine.getRun(accepted.id).taskState?.steps.find(step => step.id === 'agent-coordinator-work')?.status === 'active');
+  const accepted = f.start(); await waitFor(() => entered.includes('coordinator'));
   const previous = await f.tasks.get(accepted.taskId);
-  const human = await f.tasks.editPlan(accepted.taskId, { operations: [{ type: 'dependencies', stepId: 'agent-worker', dependsOn: [] }] }, { expectedRevision: previous.revision, source: 'human' });
-  assert.equal(human.provenance.source, 'human'); assert.equal(human.execution.nodes.worker.status, 'queued');
-  await waitFor(() => f.engine.getRun(accepted.id).nodes.worker.status === 'completed');
+  const notes = await f.tasks.setPlan(accepted.taskId, { plan: { layout: 'sequence' }, steps: [
+    { id: 'coordinator-note', kind: 'action', title: 'Coordinator observation', status: 'active', result: 'Observed coordinator result.', note: 'Compare the observed coordinator result with the requested result.', doneWhen: 'The actual result is checked.' },
+    { id: 'worker-note', kind: 'action', title: 'Worker observation', status: 'pending', dependsOn: ['coordinator-note'], result: 'Observed worker result.', note: 'Compare the worker observation with the coordinator result.', doneWhen: 'The actual worker result is checked.' }
+  ] }, { expectedRevision: previous.revision, source: 'human' });
+  const operations = edit === 'dependencies' ? [{ type: 'dependencies', stepId: 'worker-note', dependsOn: [] }] : [{ type: 'update', stepId: 'coordinator-note', patch: { status: 'done', evidence: 'A human supplied a separate observation while the runtime was still running.' } }];
+  const human = await f.tasks.editPlan(accepted.taskId, { operations }, { expectedRevision: notes.revision, source: 'human' });
+  assert.equal(human.provenance.source, 'human');
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.deepEqual(entered, ['coordinator']);
   assert.equal(f.engine.getRun(accepted.id).nodes.coordinator.status, 'running');
-  hold.resolve(); const finished = await f.settled(accepted.id); assert.equal(finished.status, 'completed', finished.error);
+  assert.equal(f.engine.getRun(accepted.id).nodes.worker.status, 'queued');
+  assert.equal(f.engine.getRun(accepted.id).settled, false);
+  hold.resolve(); const finished = await f.settled(accepted.id);
+  assert.equal(finished.status, 'completed', finished.error); assert.deepEqual(entered, ['coordinator', 'worker']);
+  assert.equal(finished.nodes.worker.output, 'Actual worker result.');
 });
 
-test('a human completion report cannot finish a held runtime or release its dependent prematurely', async t => {
-  const hold = deferred(), entered = [], workflow = graph([agent('coordinator'), agent('worker')], [['input', 'coordinator'], ['coordinator', 'worker'], ['worker', 'output']]);
-  const f = await fixture(t, workflow, async options => {
-    const id = who(options); entered.push(id); await acknowledge(options, id);
-    let completed;
-    if (id === 'coordinator') {
-      await hold.promise;
-      await revise(options, () => ({ action: 'edit', operations: [{ type: 'add', step: {
-        id: 'agent-coordinator-check', title: 'Check the human-reported result', kind: 'action', parentId: 'agent-coordinator', status: 'active',
-        operation: { kind: 'reasoning', target: 'The human-reported result against the coordinator assignment criterion.' },
-        result: 'The disposition of the human report against the assigned fixture criterion.',
-        note: 'Compare the actual human-reported observation with the saved coordinator requirement and preserve that report.',
-        doneWhen: 'The human report has a separate recorded check before this runtime hands off.'
-      } }] }));
-      completed = await complete(options, 'agent-coordinator-check');
-    } else completed = await complete(options, 'agent-worker-work');
-    await finishFixturePlan(options, { state: completed, summary: `The ${id} runtime has completed its own check and can hand off; a human status report did not itself finish the held runtime.` });
-    return { output: `Actual ${id} result.` };
-  }, { holds: [hold] });
-  const accepted = f.start(); await waitFor(() => f.engine.getRun(accepted.id).taskState?.steps.find(step => step.id === 'agent-coordinator-work')?.status === 'active');
-  const previous = await f.tasks.get(accepted.taskId), human = await f.tasks.editPlan(accepted.taskId, { operations: [{ type: 'update', stepId: 'agent-coordinator-work', patch: { status: 'done', evidence: 'A human supplied a separate observation while the worker was still running.' } }] }, { expectedRevision: previous.revision, source: 'human' });
-  await waitFor(() => f.engine.getRun(accepted.id).taskState.revision >= human.revision); await new Promise(resolve => setTimeout(resolve, 25));
-  assert.deepEqual(entered, ['coordinator']); assert.equal(f.engine.getRun(accepted.id).nodes.worker.status, 'queued');
-  assert.equal(human.execution.nodes.coordinator.status, 'running'); assert.equal(human.availableWork.byId['agent-worker-work'].state, 'waiting');
-  hold.resolve(); const finished = await f.settled(accepted.id); assert.equal(finished.status, 'completed', finished.error); assert.ok(entered.includes('worker'));
-});
-
-test('legacy assignment flags preserve normal execution while shared plan edits keep their saved ownership', async t => {
+test('assignment metadata preserves ordinary effects while historical model writes fail closed', async t => {
   const readonly = agent('worker'); readonly.assignment.canWrite = false; readonly.assignment.scope = 'Inspect input.txt only; report the observed content and do not change files.';
   const workflow = graph([readonly, agent('coordinator')], [['input', 'worker'], ['worker', 'coordinator'], ['coordinator', 'output']]);
   workflow.settings.planningMode = 'off';
   const f = await fixture(t, workflow, async (options, context) => {
-    const id = who(options); await acknowledge(options, id);
+    const id = who(options);
     if (id === 'worker') {
       assert.equal(options.sandbox, 'danger-full-access'); assert.match(options.prompt, /Inspect input\.txt only; report the observed content/);
       assert.doesNotMatch(options.prompt,/"canWrite"|This assignment is read-only/);
@@ -170,26 +136,33 @@ test('legacy assignment flags preserve normal execution while shared plan edits 
       assert.equal(read.success, true); assert.match(JSON.stringify(payload(read)), /Actual attached fixture input/);
       const exported = await tool(options, 'relay_files', { action: 'export', attachmentId: context.attachment.id });
       assert.equal(exported.success, true);assert.equal(await readFile(payload(exported).path,'utf8'),'Actual attached fixture input.');
-      const current = await taskCall(options, { action: 'read' });
-      const foreign = await tool(options, 'relay_task', { action: 'edit', expectedRevision: current.revision, operations: [{ type: 'update', stepId: 'agent-coordinator-work', patch: { title: 'Take another owner' } }] });
-      assert.equal(foreign.code, 'TASK_PLAN_OWNERSHIP');
-      const remote = await tool(options, 'relay_task', { action: 'external', expectedRevision: current.revision, external: { operation: 'attempt', receiptId: 'forbidden-send' } });
-      assert.equal(remote.code, 'TASK_PLAN_OWNERSHIP');
-      await revise(options, () => ({ action: 'plan', steps: [{ id: 'agent-worker-inspect', title: 'Inspect the assigned input', kind: 'action', parentId: null, status: 'active', result: 'The assigned input and its observed contents.', note: 'Read the attached input, inspect its contents and compare them with the fixture expectation.', doneWhen: 'The assigned content was inspected and its actual result recorded.' }] }));
-      await complete(options, 'agent-worker-inspect');
+      const current = payload(await tool(options, 'relay_task', { action: 'read' }));
+      for (const args of [
+        { action: 'edit', expectedRevision: current.revision, operations: [{ type: 'update', stepId: 'agent-coordinator-work', patch: { title: 'Take another owner' } }] },
+        { action: 'external', expectedRevision: current.revision, external: { operation: 'attempt', receiptId: 'forbidden-send' } },
+        { action: 'plan', expectedRevision: current.revision, steps: [] },
+        { action: 'step', stepId: 'agent-worker-work', status: 'done', evidence: 'Unsupported completion.' },
+        { action: 'review', expectedRevision: current.revision, review: { decision: 'respond', summary: 'Unsupported manual reassessment.' } }
+      ]) {
+        const rejected = await tool(options, 'relay_task', args);
+        assert.equal(rejected.success, false); assert.equal(rejected.code, 'TASK_CONTRACT_INVALID');
+      }
+      const unchanged = payload(await tool(options, 'relay_task', { action: 'read' }));
+      assert.equal(unchanged.revision, current.revision, 'Rejected historical writes cannot mutate the current task.');
     } else {
       assert.equal(options.sandbox, 'danger-full-access');
       const written = await tool(options, 'relay_workspace', { action: 'write', path: 'authorized.txt', text: 'An authorized fixture result.' }); assert.equal(written.success, true);
       const exported = await tool(options, 'relay_files', { action: 'export', attachmentId: context.attachment.id }); assert.equal(exported.success, true);
       assert.equal(await readFile(payload(exported).path, 'utf8'), 'Actual attached fixture input.');
-      await complete(options, 'agent-coordinator-work');
+
     }
     return { output: `Actual ${id} result.` };
   }, { attachmentText: 'Actual attached fixture input.' });
   const run = await f.settled(f.start().id); assert.equal(run.status, 'completed', JSON.stringify({ error: run.error, worker: run.nodes.worker.error, coordinator: run.nodes.coordinator.error }));
   await assert.rejects(readFile(path.join(f.cwd, 'forbidden.txt')), { code: 'ENOENT' });
   assert.equal(await readFile(path.join(f.cwd, 'authorized.txt'), 'utf8'), 'An authorized fixture result.');
-  assert.equal(run.taskState.steps.find(step => step.id === 'agent-coordinator-work').title, 'coordinator');
+  assert.equal(run.nodes.worker.output, 'Actual worker result.');
+  assert.equal(run.nodes.coordinator.output, 'Actual coordinator result.');
 });
 
 test('historical linked single-scope work is rejected before ownership transfer or a child provider turn', async t => {
@@ -216,7 +189,7 @@ test('a concurrent Planning Off worker failure preserves its cause and settles t
   const workflow = graph([agent('coordinator'), agent('worker')], [['input', 'coordinator'], ['input', 'worker'], ['coordinator', 'output'], ['worker', 'output']]);
   workflow.settings.planningMode = 'off';
   const f = await fixture(t, workflow, async options => {
-    const id = who(options); await acknowledge(options, id);
+    const id = who(options);
     if (id === 'coordinator') { await ready.promise; throw Error('The actual required fixture source is unavailable.'); }
     const stop = () => stopped.resolve(); options.signal.addEventListener('abort', stop, { once: true });
     if (options.signal.aborted) stop(); ready.resolve();
@@ -225,6 +198,6 @@ test('a concurrent Planning Off worker failure preserves its cause and settles t
   }, { holds: [ready, stopped] });
   const run = await f.settled(f.start().id);
   assert.equal(run.status, 'failed'); assert.equal(run.error, 'The actual required fixture source is unavailable.'); assert.equal(workerSettled, true);
-  assert.equal(run.nodes.worker.status, 'cancelled'); assert.equal(run.taskState.execution.nodes.worker.status, 'cancelled');
-  assert.equal(run.taskState.execution.nodes.coordinator.status, 'failed');
+  assert.equal(run.nodes.worker.status, 'cancelled');
+  assert.equal(run.nodes.coordinator.status, 'failed');
 });
