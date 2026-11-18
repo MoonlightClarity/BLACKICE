@@ -4,7 +4,7 @@ import {EventEmitter} from 'node:events';
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {createHarnessServer} from './fixture-legacy-harness-server.mjs';
+import {createHarnessServer} from '../server.mjs';
 
 const until=async(check,label='project condition')=>{const end=Date.now()+7000;while(Date.now()<end){const value=await check();if(value)return value;await new Promise(resolve=>setTimeout(resolve,10));}assert.fail(`${label} did not settle`);};
 class Desktop extends EventEmitter{status(){return{available:false,enabled:false};}async setEnabled(){return this.status();}}
@@ -21,34 +21,23 @@ async function fixture(t,{execute,externalReceipt=false}={}){
       if(execute)return execute(options,calls.length);
       const review=options.prompt.includes('You are Independent verifier.\n');
       options.onEvent({type:'thread',threadId:`project-fixture-${calls.length}`,model:'project-fixture-model'});
-      const taskCall=async args=>{const result=await options.onToolCall({name:'relay_task',arguments:args});assert.equal(result.success,true,JSON.stringify(result));return JSON.parse(result.contentItems[0].text);};
-      let taskState=await taskCall({action:'read'});
-      taskState=await taskCall({action:'plan',expectedRevision:taskState.revision,steps:[{
-        id:'assigned',title:review?'Inspect the saved proof against its criterion':'Write the requested proof file',status:'active',
-        operation:{kind:'tool',tool:'relay_workspace',action:review?'read':'write',target:'proof.txt'},
-        result:review?'An independent acceptance verdict with the observed proof content and any failed criterion.':'proof.txt saved with this fixture attempt\'s intended content and a write receipt.',
-        note:review?'Read proof.txt through relay_workspace, compare its actual content with the requirement that it contains accepted, and return the verdict with the observed content.':'Write the fixture\'s initial or repaired content to proof.txt through relay_workspace and inspect the returned write receipt; a separate reviewer will check acceptance.',
-        doneWhen:review?'The actual proof file is read and compared with the requested content.':'The intended file is written and its gateway receipt confirms the write.',
-      }]});
       if(!review){
         const repaired=options.prompt.includes('PREVIOUS VERIFICATION: REPAIR THESE FAILURES');
         const text=repaired&&!options.prompt.includes('FORCE_FAILURE')?'accepted\n':'draft\n';
         const saved=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'proof.txt',text}});assert.equal(saved.success,true);
         if(externalReceipt){
-          let state=await options.onToolCall({name:'relay_task',arguments:{action:'read'}});assert.equal(state.success,true);state=JSON.parse(state.contentItems[0].text);
-          for(const external of [{operation:'prepare',destination:'https://example.com/fixture-result',content:'Synthetic local receipt fixture; no remote action is performed.'},{operation:'attempt'},{operation:'confirm',url:'https://example.com/fixture-result/one',evidence:'Synthetic receipt fixture for project recovery; no website is contacted.'}]){
-            const recorded=await options.onToolCall({name:'relay_task',arguments:{action:'external',expectedRevision:state.revision,external:{receiptId:'http-recovery-fixture',...external}}});assert.equal(recorded.success,true,JSON.stringify(recorded));state=JSON.parse(recorded.contentItems[0].text);
+          // Seed an actual retained store receipt as recovery evidence, not a model tool success.
+          const run=[...app.engine.runs.values()].find(run=>run.status==='running'&&run.workflow.nodes.some(node=>node.name==='Project implementer'));
+          assert.ok(run,'Actual project implementation run exists');const node=run.workflow.nodes.find(node=>node.name==='Project implementer');let state=await app.tasks.get(run.taskId||run.id);
+          for(const external of [{operation:'prepare',destination:'https://example.com/fixture-result',content:'Synthetic retained fixture receipt; no remote action is performed.'},{operation:'attempt'},{operation:'confirm',url:'https://example.com/fixture-result/one',evidence:'Synthetic retained receipt for recovery; no website is contacted.'}]){
+            state=await app.tasks.externalAction(state.taskId,{receiptId:'http-recovery-fixture',...external},{expectedRevision:state.revision,runId:run.id,nodeId:node.id,source:'fixture'});
           }
-          taskState=state;
+          assert.equal(state.externalActions[0].status,'confirmed');assert.equal(state.externalActions[0].attempts,1);
         }
-        taskState=await taskCall({action:'step',expectedRevision:taskState.revision,stepId:'assigned',status:'done',evidence:`The workspace write returned success for proof.txt with intended content ${text.trim()}. Independent acceptance is checked by a separate reviewer.`});
-        await taskCall({action:'review',expectedRevision:taskState.revision,review:{decision:'respond',summary:`The assigned write returned success with content ${text.trim()}. This implementation step is complete; independent acceptance remains the separate verifier's task.`}});
         return{output:`Wrote proof.txt: ${text.trim()}.`,threadId:`project-fixture-${calls.length}`};
       }
       const read=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'proof.txt'}});assert.equal(read.success,true);
       const actual=JSON.parse(read.contentItems[0].text).content,passed=actual.includes('accepted');
-      taskState=await taskCall({action:'step',expectedRevision:taskState.revision,stepId:'assigned',status:'done',evidence:`Read the actual proof and compared it with the acceptance criterion. Observed ${actual.trim()}; criterion passed: ${passed}.`});
-      await taskCall({action:'review',expectedRevision:taskState.revision,review:{decision:'respond',summary:`The saved proof was read and assessed against the criterion. It ${passed?'passes':'fails'} because its observed content is ${actual.trim()}. Report this completed verification so the project controller can select its next action.`}});
       return{output:JSON.stringify({passed,summary:passed?'Read the saved file and confirmed accepted.':'Read the saved file; it still contains draft.',criteria:[{criterion:'proof.txt contains accepted',passed,evidence:`Observed ${actual.trim()}`}]}),threadId:`project-fixture-${calls.length}`};
     }
   }

@@ -5,26 +5,21 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createHarnessServer } from './fixture-legacy-harness-server.mjs';
+import { createHarnessServer } from '../server.mjs';
 import { AgentEmailStore } from '../lib/agent-email.mjs';
 import { RemoteAccessManager } from '../lib/remote-access.mjs';
 import { createRemoteTransportFixture } from './fixtures/remote-transport.mjs';
-import { recordFixturePlan, finishFixturePlan } from './fixture-task-plan.mjs';
 
 class Runtime extends EventEmitter {
   status() { return { connected: true, authenticated: true, models: [{ model: 'awareness-http-fixture' }], defaultModel: 'awareness-http-fixture' }; }
   async start() { return this.status(); }
   async close() {}
   async runAgent(options) {
-    let state = await recordFixturePlan(options, { title: 'Inspect the attached task gateway', doneWhen: 'The current relay_task schema and read response have been inspected.' });
-    const tool = options.dynamicTools.find(item => item.name === 'relay_task');
-    assert.ok(tool.inputSchema.properties.action.enum.includes('review'));
-    const active = state.steps.find(step => step.status === 'active' && step.kind === 'action');
-    assert.ok(active);
-    const saved = await options.onToolCall({ name: 'relay_task', arguments: { action: 'step', expectedRevision: state.revision, stepId: active.id, status: 'done', evidence: 'Inspected the attached relay_task schema, confirmed that review is supported, and read its actual current task state.' } });
-    assert.equal(saved.success, true, saved.contentItems?.[0]?.text);
-    state = JSON.parse(saved.contentItems[0].text);
-    await finishFixturePlan(options, { state, summary: 'The task gateway and its current state were inspected. The fixture preparation is complete; the HTTP test will independently exercise awareness without additional model work.' });
+    const tool=options.dynamicTools.find(item=>item.name==='relay_task');
+    assert.ok(tool.inputSchema.properties.view.enum.includes('contract'));
+    const result=await options.onToolCall({name:'relay_task',arguments:{action:'read'}});assert.equal(result.success,true);
+    assert.equal(JSON.parse(result.contentItems[0].text).taskSchemaVersion,14);
+    assert.equal(typeof options.onBeforeFinal,'undefined');
     return { output: 'The local HTTP fixture task completed.', threadId: 'awareness-http-thread' };
   }
 }
@@ -121,8 +116,10 @@ async function fixture(t, { remote = false, emailEnabled = true } = {}) {
   const run = await waitFor(() => { const current = app.engine.getRun(started.value.id); return current.settled ? current : null; }, 'The fixture run did not settle.', 7000);
   assert.equal(run.status, 'completed', run.error);
   await app.conversations.chain;
-  const taskId = run.taskId || run.id, state = await app.tasks.get(taskId), stepId = state.steps.find(step => step.kind === 'action')?.id;
-  assert.ok(stepId, 'The actual task tool should have created an actionable saved plan.');
+  const taskId=run.taskId||run.id, initial=await app.tasks.get(taskId);
+  // Human graph-editor state, independent of the current model task catalog.
+  const state=await app.tasks.setPlan(taskId,{plan:{layout:'sequence'},steps:[{id:'inspect',kind:'action',title:'Inspect task gateway',status:'pending',result:'Observed gateway state',note:'Inspect current gateway state',doneWhen:'State is read'}]},{expectedRevision:initial.revision,source:'human'});
+  const stepId=state.steps[0].id;assert.equal(state.provenance.source,'human');
   return { root, app, manager, local, remote: remoteRequest, browser, events, taskId, stepId, state, run, route: `/api/tasks/${taskId}/plan` };
 }
 

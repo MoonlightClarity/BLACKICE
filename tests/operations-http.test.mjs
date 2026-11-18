@@ -5,9 +5,8 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp,readFile,writeFile,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createHarnessServer } from './fixture-legacy-harness-server.mjs';
+import { createHarnessServer } from '../server.mjs';
 import { fixtureDeploymentReadiness } from './fixture-deployment-readiness.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 import {createScheduledChatWorkflow} from '../public/next/workspaces/schedule-inspection-model.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
@@ -30,18 +29,16 @@ async function fixture(t,{execute,readinessFailure,modelStatus,modelResolver,run
       }
       const index=calls.push(options);
       if(execute)return execute(options,index);
-      await recordFixturePlan(options,{title:'Write and verify the isolated operation result',doneWhen:'The actual operation-proof.txt file contains the requested fixture output.'});
       options.onEvent({type:'thread',threadId:options.threadId||'http-fixture-thread',model:options.model||'http-fixture-model'});
       const content=`Verified operation side effect ${index}.\n`,write=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'operation-proof.txt',text:content}});
       assert.equal(write.success,true);
       const read=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'operation-proof.txt'}});
       assert.equal(read.success,true);assert.match(read.contentItems[0].text,/Verified operation side effect/);
-      // These operations tests record task notes voluntarily with automatic Planning off.
-      // The checked local write/read, not a synthetic planning response, supplies the completion evidence.
-      const task=async arguments_=>{const response=await options.onToolCall({name:'relay_task',arguments:arguments_});assert.equal(response.success,true,response.contentItems?.[0]?.text);return JSON.parse(response.contentItems.find(item=>item.type==='inputText').text);};
-      let state=await task({action:'read'});
-      for(const step of state.steps.filter(step=>(step.kind||'action')==='action'&&!['done','skipped'].includes(step.status)))state=await task({action:'step',expectedRevision:state.revision,stepId:step.id,status:'done',evidence:'The actual workspace write succeeded and an independent read returned the expected operation-proof.txt content.'});
-      await task({action:'review',expectedRevision:state.revision,review:{decision:'respond',summary:'The actual operation-proof.txt write and independent read agreed. This occurrence has no remaining fixture work.'}});
+      // Voluntary current checkpoint records actual checked outcomes, not a retired plan review.
+      const prior=await options.onToolCall({name:'relay_task',arguments:{action:'read',view:'checkpoint'}});assert.equal(prior.success,true);
+      const continuity=JSON.parse(prior.contentItems[0].text);assert.match(continuity.context,/Historical task data/);
+      const checkpoint=await options.onToolCall({name:'relay_task',arguments:{action:'checkpoint',expectedRevision:continuity.revision,completed:[...(continuity.checkpoint?.completed||[]),content.trim()],decisions:continuity.checkpoint?.decisions||[],nextSteps:['Inspect the next scheduled request.']}});assert.equal(checkpoint.success,true,JSON.stringify(checkpoint));
+      assert.equal(typeof options.onBeforeFinal,'undefined','No retired automatic planning review runs.');
       return{output:content,threadId:options.threadId||'http-fixture-thread'};
     }
   }
@@ -181,7 +178,7 @@ for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences ret
   assert.equal(firstRun.taskId,firstRunId);
   const originalPlan=await f.app.tasks.get(firstRunId);
   assert.ok(originalPlan.taskId===firstRunId);
-  assert.equal(originalPlan.planningReviews.at(-1).runId,firstRunId);
+  assert.equal(originalPlan.checkpoint.provenance.runId,firstRunId);
   const originalPrompt=firstRun.workflow.nodes.find(node=>node.id==='agent').prompt;
   const currentInstructions='UPDATED_RECURRING_INSTRUCTIONS: Use current evidence to write and independently verify the isolated fixture result.';
   const updatedWorkflow=workflow();updatedWorkflow.nodes.find(node=>node.id==='agent').prompt=currentInstructions;
@@ -219,8 +216,9 @@ for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences ret
   assert.deepEqual(family.runs.map(run=>run.id),[firstRunId,secondRunId]);
   const shared=await f.app.tasks.get(secondRun.taskId);
   assert.equal(shared.taskId,originalPlan.taskId);
+  assert.deepEqual(shared.checkpoint.completed,[...originalPlan.checkpoint.completed,'Verified operation side effect 2.']);
   assert.ok(shared.revision>=originalPlan.revision,'the second occurrence keeps the original Planning continuity');
-  assert.equal(shared.planningReviews.at(-1).runId,secondRunId,'the continuation reassesses its own newly completed work');
+  assert.equal(shared.checkpoint.provenance.runId,secondRunId,'the continuation records its own actually checked outcome');
   assert.equal(f.app.conversations.list('active').filter(row=>row.rootId===firstRunId).length,1);
   assert.equal(f.calls.length,2,'no extra model run was started to stitch the conversation together');
   await f.restart();
@@ -229,7 +227,7 @@ for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences ret
   assert.equal(thirdRun.kind,'continuation');
   assert.equal(thirdRun.parentRunId,secondRunId,'the next scheduled turn continues the latest run');
   assert.equal(thirdRun.taskId,firstRunId,'subsequent occurrences keep the original Planning identity');
-  assert.equal((await f.app.tasks.get(thirdRun.taskId)).planningReviews.at(-1).runId,thirdRunId);
+  assert.equal((await f.app.tasks.get(thirdRun.taskId)).checkpoint.provenance.runId,thirdRunId);
   assert.equal(third.conversationRootId,firstRunId);
   assert.ok(f.calls[2].prompt.includes(currentInstructions),'later occurrences retain the revised instructions');
   assert.equal(f.calls[2].threadId,secondRun.nodes.agent.threadId);
