@@ -38,12 +38,13 @@ test('an agent creates the shared project through its attached tool without exec
   t.after(async()=>{await methods.close();await projects.close();await capabilities.close();await engine.close();assert.match(path.basename(root),/^blackice-project-tool-/);await rm(root,{recursive:true,force:true});});
   const first=engine.startRun({workflow:graph('ordinary-chat'),input:'Create a project draft.'});await engine.executions.get(first.id);
   const finished=engine.getRun(first.id);assert.equal(finished.status,'completed',finished.error);assert.equal(projects.get(finished.nodes.agent.output).status,'draft');assert.equal(calls.length,1,'draft creation does not launch any project workers');
-  // Simulate a native conversation created before relay_project was introduced.
+  // Tampering with a pinned native catalog must fail before another provider or project action.
   engine.runs.get(first.id).nodes.agent.toolNames=finished.nodes.agent.toolNames.filter(name=>name!==PROJECT_TOOL.name);
-  const continued=engine.continueRun(first.id,{nodeId:'agent',message:'Continue the older native session.'});await engine.executions.get(continued.id);
-  assert.equal(engine.getRun(continued.id).status,'completed');assert.equal(calls[1].threadId,'native-project-parent');
+  const before=structuredClone(engine.runs.get(first.id)), projectBefore=structuredClone(projects.get(finished.nodes.agent.output));
+  const continued=engine.continueRun(first.id,{nodeId:'agent',message:'Continue the saved session.'});await engine.executions.get(continued.id);
+  assert.equal(engine.getRun(continued.id).status,'failed');assert.match(engine.getRun(continued.id).error,/different execution contract or tool catalog/);assert.equal(calls.length,1);assert.deepEqual(engine.runs.get(first.id),before);assert.deepEqual(projects.get(finished.nodes.agent.output),projectBefore);
   const worker=engine.startRun({workflow:graph('project-worker-receipt'),input:'Do the assigned task without orchestration.'});await engine.executions.get(worker.id);
-  assert.equal(engine.getRun(worker.id).status,'completed');assert.equal(calls.length,3);
+  assert.equal(engine.getRun(worker.id).status,'completed');assert.equal(calls.length,2);
 });
 
 test('project tool reports bad arguments, unavailable records and stopped callers as failed outcomes',async()=>{

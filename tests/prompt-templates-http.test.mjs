@@ -87,22 +87,23 @@ test('rendered prompt text stays frozen through library edits, Retry, queue disp
   const exported = await app.conversations.export(first.id, { format: 'json', attachments: app.attachments }); const transcript = JSON.parse(exported.body); assert.ok(transcript.turns.some(turn => turn.messages.some(message => message.role === 'user' && message.text === rendered.text)));
 });
 
-test('real engine attaches relay_prompts while older native catalogs keep their original tools', async t => {
+test('real engine attaches relay_prompts and rejects unsupported saved native catalogs without effects', async t => {
   const seen = [], { app, settled } = await fixture(t, async (options, index) => {
     const names = options.dynamicTools.map(tool => tool.name); seen.push(names); options.onEvent({ type: 'thread', threadId: 'native-saved-prompt-thread', codexHistory: 'codex' });
     if (index === 1) { assert.ok(names.includes('relay_prompts')); assert.match(options.prompt, /OPTIONAL PROMPT OUTLINES/); const receipt = await options.onToolCall({ name: 'relay_prompts', arguments: { action: 'render', id: 'builtin_build', values: { task: 'A tool-rendered draft only' } } }); assert.equal(receipt.success, true); assert.match(receipt.contentItems[0].text, /A tool-rendered draft only/); }
-    else { assert.equal(names.includes('relay_prompts'), false); assert.doesNotMatch(options.prompt, /OPTIONAL PROMPT OUTLINES/); assert.match(options.prompt, /retains its original tools/); }
+    assert.equal(index,1,'Unsupported catalog must never dispatch another provider turn');
     return { output: 'Native catalog checked.', threadId: 'native-saved-prompt-thread' };
   });
   await app.runtimeSettings.update({ codexHistory: 'codex' }); const first = app.engine.startRun({ workflow: graph, input: 'Check optional prompt tooling' }); const firstRun = await settled(first.id); assert.equal(firstRun.status, 'completed', firstRun.error);
   const internal = app.engine.runs.get(first.id);
-  // This retained native catalog predates Planning14 and its host catalog hash.
+  // Synthetic obsolete saved metadata must be rejected, not adapted.
   assert.equal(internal.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
   assert.ok(!internal.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
   internal.planningContractVersion = 13;
   internal.nodes.agent.taskSchemaVersion = 13;
   delete internal.nodes.agent.providerExecutionContract;
   internal.nodes.agent.toolNames = internal.nodes.agent.toolNames.filter(name => name !== 'relay_prompts');
-  const continued = app.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue this older catalog' }); assert.equal((await settled(continued.id)).status, 'completed'); assert.equal(seen.length, 2);
-  assert.deepEqual(seen[1], seen[0].filter(name => name !== 'relay_prompts'), 'a successful continuation must not expand the saved native tool catalog');
+  const before=structuredClone(internal),count=app.engine.runs.size;
+  assert.throws(()=>app.engine.continueRun(first.id,{nodeId:'agent',message:'Continue this older catalog'}),{code:'NATIVE_CATALOG_UNSUPPORTED'});
+  assert.deepEqual(internal,before);assert.equal(app.engine.runs.size,count);assert.equal(seen.length,1);
 });

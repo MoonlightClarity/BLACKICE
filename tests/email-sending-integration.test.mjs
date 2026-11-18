@@ -127,10 +127,14 @@ for (const retry of [false,true]) test('old email catalog rejects '+(retry?'retr
  assert.deepEqual(old,before);assert.equal(f.engine.runs.size,count);assert.equal(f.runtime.calls.length,1);assert.deepEqual(f.email.calls,[]);
 });
 
-test('saved native catalogs that omit email never silently gain the sending tool', async t => {
-  const f = await engineFixture(t, async (options, index, context) => { if (index === 2) { assert.equal(options.dynamicTools.find(tool => tool.name === 'relay_email'), undefined); assert.ok(!options.prompt.includes(EMAIL_INSTRUCTIONS)); } return { output: 'Saved tool names preserved.', threadId: context.threadId }; });
-  const first = await f.settled(f.engine.startRun({ workflow: f.workflow, input: 'Inspect fixture tools.' })); f.engine.runs.get(first.id).nodes.agent.toolNames = first.nodes.agent.toolNames.filter(name => name !== 'relay_email');
-  const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue the saved tools.' })); assert.equal(next.status, 'completed', next.error); assert.equal(next.nodes.agent.emailSchemaVersion, undefined);
+test('tampering with saved native email tools rejects before any provider or send effects', async t => {
+  const f = await engineFixture(t, async (options, index, context) => { assert.equal(index,1); return { output: 'Saved tool names preserved.', threadId: context.threadId }; });
+  const first = await f.settled(f.engine.startRun({ workflow: f.workflow, input: 'Inspect fixture tools.' }));
+  const saved=f.engine.runs.get(first.id);saved.nodes.agent.toolNames=first.nodes.agent.toolNames.filter(name=>name!=='relay_email');
+  const before=structuredClone(saved);
+  const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'Continue the saved tools.'}));
+  assert.equal(next.status,'failed');assert.match(next.error,/different execution contract or tool catalog/);
+  assert.equal(f.runtime.calls.length,1);assert.deepEqual(f.email.calls,[]);assert.deepEqual(saved,before);
 });
 
 test('provider continuations use the current v2 catalog instead of native cache compatibility', async t => {
