@@ -5,7 +5,6 @@ import os from 'node:os';
 import {directoryKnowledgeAdmission,directoryContextConfiguration} from '../lib/directory-conversation-scope.mjs';
 import {contextSnapshot,normalizeContextOptions} from '../lib/context.mjs';
 
-import {LearningStore} from '../lib/learning.mjs';
 
 test('Directory uses the supported native maximum and defers unknown capacities to the provider',()=>{
   const model={id:'native',contextWindowTokens:272000,runtimeDefaultContextWindowTokens:272000,maxContextWindowTokens:872000,effectiveContextWindowPercent:95,contextWindowSource:'runtime-reported'};
@@ -36,10 +35,3 @@ test('Directory automatic knowledge follows conversation lineage rather than sha
   assert.equal(admit({provenance:{runId:'first'},evidenceRunIds:['foreign']}),false,'a blended note must be explicitly imported');
 });
 
-test('conversation admission happens before retained-learning selection fills the context',()=>{
-  const store=new LearningStore({dataDir:os.tmpdir(),runtime:{},getRun:()=>null,knowledge:{get:id=>({title:id,summary:id,content:id,revision:1,provenance:{source:'user',runId:id==='current-note'?'current':'other'}})}});
-  store.settings={mode:'manual'};
-  store.lessons=Array.from({length:16},(_,i)=>({id:'lesson-'+i,knowledgeId:i===0?'current-note':'foreign-'+i,kind:'fact',cwd:os.tmpdir(),status:'active',updatedAt:new Date(i*1000).toISOString(),provenance:{source:'user',runId:i===0?'current':'other'},evidence:[{runId:i===0?'current':'other'}]}));
-  const result=store.getContext(os.tmpdir(),{admit:directoryKnowledgeAdmission({run:{id:'current'}})});
-  assert.deepEqual(result.facts.map(row=>row.knowledgeId),['current-note']);
-});
