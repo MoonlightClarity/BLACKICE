@@ -9,7 +9,7 @@ export async function retireWithFixtureBackup(store, options = {}) {
   try {
     let complete = false;
     for (let iteration = 0; iteration < 64; iteration++) {
-      const result = await store.exportLegacyReceipts({ destination, maxRecords: 256 });
+      const result = await store.exportReceiptBackup({ destination, maxRecords: 256 });
       if (result.phase === 'complete') { complete = true; break; }
     }
     if (!complete) throw Error('Bounded fixture export did not fully verify.');

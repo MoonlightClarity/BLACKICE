@@ -70,7 +70,7 @@ test('relaunch keeps dev and unrelated arguments while replacing transient flags
 });
 
 test('native restart request and compatibility flags cannot replay through relaunch', () => {
-  const argv = ['electron', '.', '--restart', '--force', '--force=true', '--request-id', 'first', '--restart-status', '--cancel-restart', '--request-id=second', '--legacy-native-handoff', '--unrelated'];
+  const argv = ['electron', '.', '--restart', '--force', '--force=true', '--request-id', 'first', '--restart-status', '--cancel-restart', '--request-id=second', '--unrelated'];
   assert.deepEqual(buildDesktopRelaunchArgs({ argv, mode: 'background' }), ['.', '--unrelated', '--background']);
 });
 

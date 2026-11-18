@@ -92,14 +92,14 @@ async function runOld(dataDir, exportDir) {
 }
 async function completeExport(store, destination) {
   for (let i = 0; i < 30; i++) {
-    const result = await store.exportLegacyReceipts({ destination, maxRecords: 2 });
+    const result = await store.exportReceiptBackup({ destination, maxRecords: 2 });
     if (result.phase === 'complete') return;
   }
   assert.fail('Legacy export never completed.');
 }
 async function completeRestore(store, destination) {
   for (let i = 0; i < 30; i++) {
-    const result = await store.restoreLegacyReceipts({ destination, maxRecords: 2 });
+    const result = await store.restoreReceiptBackup({ destination, maxRecords: 2 });
     if (result.fullyRestored) return;
   }
   assert.fail('Legacy restore never completed.');
@@ -149,7 +149,7 @@ test('real disposable child termination between marker and duplicate unlink resu
   await recovery.close();
 });
 
-test('real process kills during export and restore resume exact backup; old source refuses until verified complete restoration', async t => {
+test('real process kills during export and restore resume exact backup; packed guard remains after verified complete restoration', async t => {
   const fx = await setup(t);
   const initial = fx.make(); await initial.init();
   await initial.packTerminalReceipts({ maxRecords: 6 }); await initial.close();
@@ -172,11 +172,10 @@ test('real process kills during export and restore resume exact backup; old sour
     assert.equal((await restoring.admit(job.request)).created, false);
   }
   assert.equal((await restoring.get(fx.uncertain.id)).effects.possible, true);
-  const completed = await restoring.finishLegacyDowngrade({ destination: fx.exportDir });
-  assert.equal(completed.markerRemoved, true);
-  assert.equal(completed.powerLossDurabilityProven, false);
+  assert.equal(typeof restoring.finishLegacyDowngrade, 'undefined');
+  assert.equal(restoring.packMarkerPresent, true);
   await restoring.close();
-  assert.match(await runOld(fx.dataDir, fx.exportDir), /OLD_ACCEPTED/);
+  assert.match(await runOld(fx.dataDir, fx.exportDir), /OLD_REFUSED DIRECT_JOB_STORAGE/);
   const verified = fx.make(); await verified.init();
   for (const job of fx.jobs) {
     assert.equal((await verified.admit(job.request)).created, false);

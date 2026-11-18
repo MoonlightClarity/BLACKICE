@@ -113,17 +113,9 @@ For an explicitly requested restart that should stop cancellable work, add `--fo
 
 The receipt saves `force: true`. After the scheduling acknowledgement and any originating command's durable success, BLACKICE blocks new starts, pauses automatic queues, cancels active runs and all unfinished direct actions through their owners, and waits for their executors and writes to settle. This includes saved actions waiting for input under older connections; cancellation retains their audit receipts and cannot undo previous effects. Automatic queues remain paused even if preparation later fails. Forced restart still refuses private application sessions, unresolved browser interactions or downloads, unhealthy storage, and work whose cancellation cannot be confirmed. It uses the same graceful native relaunch with the current profile and mode; it never kills the BLACKICE process.
 
-`--force` is valid only with `--restart`, and cannot accompany the legacy handoff. The force choice is part of the saved request identity: retry an uncertain request with the same ID and same force choice. Changing that choice behind an existing ID is rejected; use a new ID only for a deliberate new restart intent. Status and cancellation commands omit `--force`. Busy receipts include a fixed blocker category, such as `direct_actions`, without exporting job IDs, owners or action contents.
+`--force` is valid only with `--restart`. The force choice is part of the saved request identity: retry an uncertain request with the same ID and same force choice. Changing that choice behind an existing ID is rejected; use a new ID only for a deliberate new restart intent. Status and cancellation commands omit `--force`. Busy receipts include a fixed blocker category, such as `direct_actions`, without exporting job IDs, owners or action contents.
 
-After installing these files over a running older primary, start BLACKICE normally in a new process before using `--force`. Updating files or reloading the interface does not replace the primary's restart handler; the older running handler rejects the new force option. `--force` cannot bootstrap that upgrade.
-
-When installing this protocol over an older running primary, the new secondary executable cannot receive the new scheduling acknowledgement from the old process. The explicit, one-time compatibility command is:
-
-```powershell
-& $blackiceExe --restart --legacy-native-handoff --profile-dir=$profileDir
-```
-
-This uses Electron's original single-instance forwarding. It has no caller request ID or scheduling acknowledgement; its exit code does not prove restart completion. Verify the saved native restart receipt and replacement process afterward, then verify the normal stable-ID command. There is no automatic legacy fallback after an HTTP error or an uncertain reply. When the old primary is itself serving the launching direct command, let that launcher finish after forwarding; the compatibility path retains the old primary's readiness checks.
+Only the current durable restart protocol is supported. Verify the replacement process and the same request receipt after reconnecting; replacing files or reloading the interface does not by itself restart the running application.
 
 ## Find the failing step
 

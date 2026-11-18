@@ -34,7 +34,7 @@ export function buildDesktopRelaunchArgs({ argv = process.argv, profileDir = nul
   const args = [];
   for (let index = 1; index < argv.length; index++) {
     const argument = argv[index];
-    if (/^--(?:restart|restart-status|cancel-restart|legacy-native-handoff|force|quit|headless|background|show-inactive)(?:=|$)/.test(argument)) continue;
+    if (/^--(?:restart|restart-status|cancel-restart|force|quit|headless|background|show-inactive)(?:=|$)/.test(argument)) continue;
     if (argument === '--request-id') { index++; continue; }
     if (argument.startsWith('--request-id=')) continue;
     if (argument === '--profile-dir' || argument === '--profile') { index++; continue; }

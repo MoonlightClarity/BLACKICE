@@ -90,17 +90,4 @@ test('malformed or missing existing secrets are never exposed or silently regene
   assert.equal(await fs.readFile(tokenFile, 'utf8'), malformed);
 });
 
-test('older installations load scoped approval defaults without rewriting their saved settings', async t => {
-  const { directory, file, store } = await fixture(t); await store.close();
-  const { approvalMode, ...legacy } = { ...defaults, revision: 7, connectorName: 'Team connector', mode: 'connector' };
-  const original = JSON.stringify(legacy, null, 2); await fs.writeFile(file, original);
-  const loaded = await new ChatGPTBridgeSettings({ dataDir: directory }).init(); t.after(() => loaded.close());
-  assert.equal(loaded.status().healthy, true); assert.deepEqual(loaded.get(), { ...legacy, approvalMode: 'reuse' });
-  assert.equal(await fs.readFile(file, 'utf8'), original);
-  const saved = await loaded.update({ revision: 7, approvalMode: 'confirm' });
-  assert.equal(saved.revision, 8); assert.equal(saved.approvalMode, 'confirm');
-  assert.deepEqual(await loaded.update({ revision: 8, approvalMode: 'confirm' }), saved);
-  await assert.rejects(loaded.update({ revision: 7, approvalMode: 'reuse' }), error => error.status === 409);
-  const reopened = await new ChatGPTBridgeSettings({ dataDir: directory }).init(); t.after(() => reopened.close());
-  assert.deepEqual(reopened.get(), saved);
-});
+test('incomplete approval settings fail closed and preserve disk bytes',async t=>{const {directory,file,store}=await fixture(t);await store.close();const {approvalMode,...incomplete}={...defaults,revision:7,enabled:true};const original=JSON.stringify(incomplete,null,2);await fs.writeFile(file,original);const loaded=await new ChatGPTBridgeSettings({dataDir:directory}).init();t.after(()=>loaded.close());assert.equal(loaded.status().healthy,false);assert.equal(loaded.get().enabled,false);assert.match(loaded.status().error,/incomplete.*preserved/i);await assert.rejects(loaded.update({revision:7,approvalMode:'confirm'}),{code:'CHATGPT_BRIDGE_SETTINGS_STORAGE'});assert.equal(await fs.readFile(file,'utf8'),original);});

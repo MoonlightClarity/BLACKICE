@@ -213,31 +213,4 @@ test('CLI exit status reports saved refusal and cancellation without rewriting t
   }
 });
 
-test('legacy handoff is explicit, cannot claim a caller ID, and invokes only the verified native callback', async () => {
-  assert.deepEqual(parseDesktopRestartArgs(['--restart', '--legacy-native-handoff']), { action: 'restart', legacy: true });
-  for (const args of [
-    ['--restart', '--legacy-native-handoff', '--request-id=unsupported'],
-    ['--restart-status', '--legacy-native-handoff', '--request-id=saved'],
-    ['--cancel-restart', '--legacy-native-handoff', '--request-id=saved'],
-    ['--restart', '--legacy-native-handoff', '--legacy-native-handoff'],
-  ]) assert.throws(() => parseDesktopRestartArgs(args), { code: 'DESKTOP_RESTART_ARGUMENTS' });
-  const runtime = { pid: 34567, startedAt: '2026-10-22T02:00:00.000Z', profile: '/verified-profile' }, events = [];
-  const result = await invoke(['--restart', '--legacy-native-handoff'], {
-    connect: async () => { events.push('verified-session'); return { runtime, request: async () => { events.push('http-restart'); throw new Error('Legacy must not submit the new protocol.'); } }; },
-    legacyHandoff: async observed => { assert.equal(observed, runtime); events.push('native-forward'); },
-  });
-  assert.equal(result.code, 0); assert.equal(result.result.protocol, 'legacy-single-instance'); assert.equal(result.result.acknowledged, false);
-  assert.equal(result.result.status, 'forwarded'); assert.equal(result.result.receipt, undefined); assert.deepEqual(result.result.primary, { pid: runtime.pid, startedAt: runtime.startedAt });
-  assert.match(result.result.message, /do not infer success/); assert.deepEqual(events, ['verified-session', 'native-forward']);
-});
-
-test('legacy dispatch requires a verified connection and an actual native callback', async () => {
-  let calls = 0;
-  const blocked = await invoke(['--restart', '--legacy-native-handoff'], {
-    connect: async () => { throw Object.assign(new Error('The runtime owner differs.'), { code: 'ACCESS_RUNTIME_OWNERSHIP' }); }, legacyHandoff: () => { calls++; },
-  });
-  assert.equal(blocked.code, 1); assert.equal(blocked.error.code, 'ACCESS_RUNTIME_OWNERSHIP'); assert.equal(calls, 0);
-  await assert.rejects(executeDesktopRestartCLI(parseDesktopRestartArgs(['--restart', '--legacy-native-handoff']), { env: {}, connect: async () => ({ runtime: {}, request: async () => {} }) }), { code: 'DESKTOP_RESTART_LEGACY_UNAVAILABLE' });
-  const failed = await invoke(['--restart', '--legacy-native-handoff'], { connect: async () => ({ runtime: {}, request: async () => {} }), legacyHandoff: () => { calls++; throw Object.assign(new Error('The primary exited before forwarding.'), { code: 'DESKTOP_RESTART_LEGACY_UNAVAILABLE' }); } });
-  assert.equal(failed.code, 1); assert.equal(failed.error.code, 'DESKTOP_RESTART_LEGACY_UNAVAILABLE'); assert.equal(failed.stdout, ''); assert.equal(calls, 1);
-});
+test('removed handoff rejects before connecting',async()=>{let calls=0;const result=await invoke(['--restart','--legacy-native-handoff'],{connect:async()=>{calls++;throw Error('unexpected')}});assert.equal(result.code,1);assert.equal(result.error.code,'DESKTOP_RESTART_ARGUMENTS');assert.equal(calls,0);});

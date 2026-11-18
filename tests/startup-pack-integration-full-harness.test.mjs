@@ -66,7 +66,7 @@ async function seed(profile, total, { terminal = total - 3 } = {}) {
 async function exportAll(store, destination, maxRecords = 16) {
   let complete = false, calls = 0;
   for (; calls < 64; calls++) {
-    const result = await store.exportLegacyReceipts({ destination, maxRecords, maxBytes: 1024 * 1024 });
+    const result = await store.exportReceiptBackup({ destination, maxRecords, maxBytes: 1024 * 1024 });
     if (result.phase === 'complete') { complete = true; break; }
   }
   assert.equal(complete, true, 'Independent export did not finish copy + verify');
@@ -75,7 +75,7 @@ async function exportAll(store, destination, maxRecords = 16) {
 async function retireAll(store, destination, maxRecords = 16) {
   let total = 0;
   for (let i = 0; i < 64; i++) {
-    const result = await store.retirePackedDuplicatesWithVerifiedExport({ destination, maxRecords });
+    const result = await store.retirePackedDuplicates({ destination, maxRecords });
     if (!result.removed) return total;
     assert.equal(result.verifiedBackup.checked, result.removed);
     total += result.removed;
@@ -95,7 +95,7 @@ async function stageAll(store, maxRecords = 16) {
 async function restoreAll(store, destination) {
   let count = 0;
   for (let i = 0; i < 64; i++) {
-    const result = await store.restoreLegacyReceipts({ destination, maxRecords: 16, maxBytes: 1024 * 1024 });
+    const result = await store.restoreReceiptBackup({ destination, maxRecords: 16, maxBytes: 1024 * 1024 });
     count += result.copiedOrChecked;
     if (result.fullyRestored) return count;
   }
@@ -212,7 +212,7 @@ test('integrated full direct host: packed validation, idempotency, no replay, ex
     exportBatches, oldReaderRestored: true, installedStartupProof: false }));
 });
 
-test('integrated offline archive-aware downgrade requires re-export after a newer loose revision', async t => {
+test('integrated receipt restoration requires a fresh backup after a newer loose revision', async t => {
   const f = await fixture(t);
   const jobs = await seed(f.profile, 6, { terminal: 3 });
   const first = new DirectExecutionJobs({ dataDir: f.profile });
@@ -226,14 +226,13 @@ test('integrated offline archive-aware downgrade requires re-export after a newe
   const latest = await second.update(jobs[0].id, () => ({
     result: { success: true, latest: 'newer-loose-103-revision' },
   }));
-  await assert.rejects(second.finishLegacyDowngrade({ destination: f.exportDir }), { code: 'DIRECT_JOB_STORAGE' });
+  await assert.rejects(second.restoreReceiptBackup({ destination: f.exportDir }), { code: 'DIRECT_JOB_STORAGE' });
   const newerExport = path.join(f.root, 'independent-newer-export');
   await exportAll(second, newerExport, 3);
   await restoreAll(second, newerExport);
-  assert.equal((await second.finishLegacyDowngrade({ destination: newerExport })).markerRemoved, true);
+  assert.equal(second.packMarkerPresent, true);
   await second.close();
-  const reader = await loadPinnedLegacyReader();
-  const old = new reader.DirectExecutionJobs({ dataDir: f.profile });
+  const old = new DirectExecutionJobs({ dataDir: f.profile });
   try {
     await old.init();
     assert.equal((await old.get(jobs[0].id)).revision, latest.revision);

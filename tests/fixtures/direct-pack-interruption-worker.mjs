@@ -52,8 +52,8 @@ async function run() {
   };
   if (mode === 'stage-link') await store.packTerminalReceipts({ maxRecords: 2 });
   if (mode === 'retire-unlink') await store.retirePackedDuplicates({ maxRecords: 2, destination });
-  if (mode === 'export-link') await store.exportLegacyReceipts({ destination, maxRecords: 2 });
-  if (mode === 'restore-link') await store.restoreLegacyReceipts({ destination, maxRecords: 2 });
+  if (mode === 'export-link') await store.exportReceiptBackup({ destination, maxRecords: 2 });
+  if (mode === 'restore-link') await store.restoreReceiptBackup({ destination, maxRecords: 2 });
   await store.close();
   process.stdout.write('UNEXPECTED_COMPLETION ' + mode + '\n');
 }

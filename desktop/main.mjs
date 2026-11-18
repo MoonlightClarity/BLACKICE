@@ -49,15 +49,6 @@ if (accessArgs || browserArgs || chatGPTArgs || restartArgs) {
     defaultProfile: path.join(app.getPath('appData'), 'Relay'), expectedExecutable: process.execPath,
     appDirectory: app.isPackaged ? undefined : path.dirname(path.dirname(fileURLToPath(import.meta.url))),
     forceFallback: forceWindowsRestart,
-    legacyHandoff: runtime => {
-      // Explicit compatibility bootstrap only. The already-verified old primary
-      // owns the actual restart; this secondary never launches a replacement.
-      app.setName('BLACKICE'); app.setPath('userData', runtime.profile);
-      if (app.requestSingleInstanceLock({ headless: false, background: false, quit: false, restart: true })) {
-        app.releaseSingleInstanceLock();
-        throw Object.assign(new Error('The verified primary stopped before the legacy handoff. No restart was scheduled.'), { code: 'DESKTOP_RESTART_LEGACY_UNAVAILABLE' });
-      }
-    },
   });
   app.exit(exitCode);
 } else {

@@ -153,18 +153,4 @@ test('retired subagent preferences load as defaults while explicit internal cont
   }
 });
 
-test('retired opportunity preferences load without rewriting disk or reviving model-based scoring', async t => {
-  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-retired-opportunity-'));
-  const file = path.join(dataDir, 'runtime-settings.json');
-  const original = JSON.stringify({ maxSubagents: 2, subagentOpportunity: { enabled: true, threshold: 0.9 } }, null, 2);
-  await fs.writeFile(file, original);
-  const store = await new RuntimeSettingsStore({ dataDir }).init();
-  t.after(async () => { await store.close(); await fs.rm(dataDir, { recursive: true, force: true }); });
-  assert.equal(store.get().maxSubagents, 3);
-  assert.equal(store.get().subagentOpportunity, undefined);
-  assert.equal(await fs.readFile(file, 'utf8'), original);
-  assert.deepEqual(validateRuntimeSettings({ subagentOpportunity: { enabled: true } }), {});
-  await store.update({ verbosity: 'detailed' });
-  assert.equal(JSON.parse(await fs.readFile(file, 'utf8')).subagentOpportunity, undefined);
-  assert.equal(store.get().maxSubagents, 3);
-});
+test('retired opportunity input rejects without rewriting saved bytes',async t=>{const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'blackice-retired-opportunity-'));t.after(()=>fs.rm(dataDir,{recursive:true,force:true}));const file=path.join(dataDir,'runtime-settings.json'),original=JSON.stringify({maxSubagents:2,subagentOpportunity:{enabled:true}},null,2);await fs.writeFile(file,original);await assert.rejects(new RuntimeSettingsStore({dataDir}).init(),/existing file was preserved/i);assert.throws(()=>validateRuntimeSettings({subagentOpportunity:{enabled:true}}),{code:'RUNTIME_SETTINGS_INVALID'});assert.equal(await fs.readFile(file,'utf8'),original);});

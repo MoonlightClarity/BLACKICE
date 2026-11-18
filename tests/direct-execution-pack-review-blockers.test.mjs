@@ -41,7 +41,7 @@ async function fixture(t) {
 }
 async function fullExport(store, destination) {
   for (let i = 0; i < 20; i++) {
-    const result = await store.exportLegacyReceipts({ destination, maxRecords: 2 });
+    const result = await store.exportReceiptBackup({ destination, maxRecords: 2 });
     if (result.phase === 'complete') return;
   }
   assert.fail('Independent export did not complete its copy and verify phases');
@@ -73,7 +73,7 @@ test('pinned legacy reader contains exact checked Git blobs with no sibling chec
 test('the public direct method and exported low-level function cannot delete without an independent export', async t => {
   const fx = await fixture(t);
   await assert.rejects(fx.store.retirePackedDuplicates(), { code: 'DIRECT_JOB_STORAGE' });
-  await assert.rejects(fx.store.retirePackedDuplicatesWithVerifiedExport({ maxRecords: 1 }), { code: 'DIRECT_JOB_STORAGE' });
+  await assert.rejects(fx.store.retirePackedDuplicates({ maxRecords: 1 }), { code: 'DIRECT_JOB_STORAGE' });
   await assert.rejects(retirePackedCopies(fx.store, () => {}), { code: 'DIRECT_JOB_STORAGE' });
   assert.equal(fx.store.storageError, null);
   assert.equal((await looseNames(fx.directory)).length, 3);
@@ -108,14 +108,14 @@ test('missing, stale and corrupted independent exports fail before unlinking any
 
 test('existing source ancestors, Windows case aliases and a link with missing descendant cannot masquerade as export storage', async t => {
   const fx = await fixture(t);
-  await assert.rejects(fx.store.exportLegacyReceipts({ destination: fx.profile }), { code: 'DIRECT_JOB_STORAGE' });
-  await assert.rejects(fx.store.exportLegacyReceipts({ destination: fx.root }), { code: 'DIRECT_JOB_STORAGE' });
+  await assert.rejects(fx.store.exportReceiptBackup({ destination: fx.profile }), { code: 'DIRECT_JOB_STORAGE' });
+  await assert.rejects(fx.store.exportReceiptBackup({ destination: fx.root }), { code: 'DIRECT_JOB_STORAGE' });
   if (process.platform === 'win32')
-    await assert.rejects(fx.store.exportLegacyReceipts({ destination: fx.profile.toUpperCase() }), { code: 'DIRECT_JOB_STORAGE' });
+    await assert.rejects(fx.store.exportReceiptBackup({ destination: fx.profile.toUpperCase() }), { code: 'DIRECT_JOB_STORAGE' });
   const alias = path.join(fx.root, 'looks-external');
   if (!(await actualDirectoryAlias(t, alias, fx.profile))) return;
   const nonexistent = path.join(alias, 'not-yet-created', 'export');
-  await assert.rejects(fx.store.exportLegacyReceipts({ destination: nonexistent }),
+  await assert.rejects(fx.store.exportReceiptBackup({ destination: nonexistent }),
     { code: 'DIRECT_JOB_STORAGE' });
   assert.equal(await exists(path.join(fx.profile, 'not-yet-created')), false);
   assert.equal(await exists(path.join(fx.directory, PACK_MARKER)), false);
@@ -152,7 +152,7 @@ test('swapped external junction after backup verification is caught before the f
   }
 });
 
-test('backup-link topology changes before full downgrade cannot remove old-version refusal marker', async t => {
+test('backup-link topology changes refuse restoration without removing the packed guard', async t => {
   const fx = await fixture(t);
   const safeRoot = path.join(fx.root, 'separate-backup');
   await fs.mkdir(safeRoot);
@@ -162,12 +162,12 @@ test('backup-link topology changes before full downgrade cannot remove old-versi
   await fullExport(fx.store, destination);
   await fx.store.retirePackedDuplicates({ destination });
   for (let n = 0; n < 20; n++) {
-    const result = await fx.store.restoreLegacyReceipts({ destination, maxRecords: 2 });
+    const result = await fx.store.restoreReceiptBackup({ destination, maxRecords: 2 });
     if (result.fullyRestored) break;
   }
   assert.equal((await looseNames(fx.directory)).length, 3);
   await fs.unlink(alias);
   await fs.symlink(fx.profile, alias, linkType);
-  await assert.rejects(fx.store.finishLegacyDowngrade({ destination }), { code: 'DIRECT_JOB_STORAGE' });
+  await assert.rejects(fx.store.restoreReceiptBackup({ destination }), { code: 'DIRECT_JOB_STORAGE' });
   assert.equal(await exists(path.join(fx.directory, PACK_MARKER)), true);
 });
