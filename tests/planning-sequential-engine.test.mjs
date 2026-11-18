@@ -1,31 +1,18 @@
 import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
-// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
-import { TaskStateStore } from './fixture-legacy-task-state.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
-import { fixtureDeferredUserAgency } from './fixture-user-agency.mjs';
+import { HarnessEngine } from '../lib/engine.mjs';
+import { TaskStateStore } from '../lib/task-state.mjs';
 
 const payload = receipt => JSON.parse(receipt.contentItems[0].text);
 const tool = (options, name, args, callId) => options.onToolCall({ name, arguments: args, callId });
 async function task(options, args) {
   const receipt = await tool(options, 'relay_task', args);
   assert.equal(receipt.success, true, receipt.contentItems[0].text); return payload(receipt);
-}
-async function reviewCurrent(options, decision = 'respond') {
-  const current = await task(options, { action: 'read' });
-  return task(options, { action: 'review', expectedRevision: current.revision, review: {
-    decision, summary: decision === 'blocked'
-      ? 'The fixture compared all actual responses: the recorded missing-file action remains blocked, independent checks are complete, and no ready work remains.'
-      : 'The actual saved receipts and separate assertions cover this fixture request; no further operation is needed before the final handoff.',
-    ...(decision === 'blocked' && options.dynamicTools?.find(item => item.name === 'relay_task')?.inputSchema?.properties?.review?.properties?.userAgency
-      ? { userAgency: fixtureDeferredUserAgency('The actual missing-file read returned a missing-file error; independent write and read checks are complete.') } : {})
-  } });
 }
 const leaf = (id, status, action = 'write') => ({ id, title: `Perform ${id}`, kind: 'action', status,
   result: `The ${id} work product.`, note: `Perform the one ${action} operation against fixture.txt.`,
@@ -63,7 +50,7 @@ test('ordinary engine tools are independent of optional bookkeeping while callba
   const f = await fixture(t, async (options, count, context) => {
     assert.equal((await tool(options, 'relay_workspace', { action: 'list' }, 'before-plan')).success, true);
     let state = await task(options, { action: 'read' });
-    state = await task(options, { action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence' }, steps: [leaf('write', 'active'), leaf('inspect', 'pending', 'read')] });
+    state = await context.tasks.setPlan(state.taskId, { plan: { layout: 'sequence' }, steps: [leaf('write', 'active'), leaf('inspect', 'pending', 'read')] }, { expectedRevision: state.revision, source: 'human' });
     const write = { action: 'write', path: 'fixture.txt', text: 'The actual fixture value.' };
     const first = await tool(options, 'relay_workspace', write, 'first-write');
     assert.equal(first.success, true);
@@ -73,9 +60,8 @@ test('ordinary engine tools are independent of optional bookkeeping while callba
     const observed = await tool(options, 'relay_workspace', { action: 'read', path: 'fixture.txt' }, 'second-read');
     assert.equal(observed.success, true); assert.match(observed.contentItems[0].text, /actual fixture value/);
     assert.equal(await readFile(path.join(context.cwd, 'fixture.txt'), 'utf8'), write.text);
-    state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'write', status: 'done', evidence: 'The write receipt and separate read identify the exact saved bytes.' });
-    await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'inspect', status: 'done', evidence: 'The file read returned The actual fixture value.' });
-    await reviewCurrent(options);
+    state = await context.tasks.setStep(state.taskId, 'write', { status: 'done', evidence: 'The write receipt and separate read identify the exact saved bytes.' }, { expectedRevision: state.revision, source: 'human' });
+    await context.tasks.setStep(state.taskId, 'inspect', { status: 'done', evidence: 'The file read returned The actual fixture value.' }, { expectedRevision: state.revision, source: 'human' });
     return { output: 'Wrote once and separately checked the fixture value.' };
   });
   const run = await f.settle(f.start('on').id); assert.equal(run.status, 'completed', run.error);
@@ -83,40 +69,33 @@ test('ordinary engine tools are independent of optional bookkeeping while callba
   assert.equal(run.nodes.agent.planning.status, 'off');
 });
 
-test('shared tool fixtures save and settle separate actual calls, preserving failed outcomes', async t => {
+test('independent calls preserve actual failures and saved dispatch evidence without inventing plan completion', async t => {
   const f = await fixture(t, async options => {
-    await recordFixturePlan(options, { title: 'Check actual independent workspace responses' });
     assert.equal((await tool(options, 'relay_workspace', { action: 'write', path: 'fixture.txt', text: 'Actual written fixture.' }, 'fixture-write')).success, true);
     const missing = await tool(options, 'relay_workspace', { action: 'read', path: 'missing.txt' }, 'fixture-missing');
     assert.equal(missing.success, false); assert.match(missing.contentItems[0].text, /ENOENT|not found|does not exist/i);
     const read = await tool(options, 'relay_workspace', { action: 'read', path: 'fixture.txt' }, 'fixture-read');
     assert.equal(read.success, true); assert.match(read.contentItems[0].text, /Actual written fixture/);
-    await reviewCurrent(options, 'blocked');
     return { output: 'The independent actual responses were checked.' };
   });
   const run = await f.settle(f.start('on').id);
   assert.equal(run.status, 'completed', run.error);
-  const actions = run.taskState.steps.filter(step => step.operation?.kind === 'tool');
-  assert.equal(actions.length, 3); assert.deepEqual(actions.map(step => step.status), ['done', 'blocked', 'done']);
-  assert.match(actions[1].blockedReason, /returned success:false/); assert.equal(run.nodes.agent.planning.status, 'off');
+  const actions = run.events.filter(event => event.data?.type === 'workspace.action').map(event => event.data);
+  assert.deepEqual(actions.map(item => [item.action, path.basename(item.path)]), [['write', 'fixture.txt'], ['read', 'missing.txt'], ['read', 'fixture.txt']]);
+  assert.equal(run.events.filter(event => event.data?.type === 'operational.effect' && event.data.state === 'confirmed').length, 1);
+  assert.equal(await readFile(path.join(f.cwd, 'fixture.txt'), 'utf8'), 'Actual written fixture.');
+  assert.deepEqual(run.taskState.steps, [], 'Actual dispatch must not manufacture authored plan steps or outcome completion.');
+  assert.equal(run.nodes.agent.planning.status, 'off');
 });
 
-test('native schema 9 continuation preserves its cached session and tool catalog without automatic upgrade', async t => {
-  const f = await fixture(t, async (options, count) => {
-    if (count === 1) return { output: 'The saved conversation already contains this prior context.' };
-    assert.equal(options.threadId, 'native-fixture-1');
-    assert.equal(options.onBeforeFinal, undefined);
-    const currentTool = options.dynamicTools.find(spec => spec.name === 'relay_task');
-    assert.ok(!currentTool.inputSchema.properties.action.enum.includes('review'), 'Schema 9 remains the captured schema.');
-    assert.equal((await tool(options, 'relay_workspace', { action: 'list' }, 'historical-list')).success, true);
-    return { output: 'The same conversation continued without a forced upgrade.' };
-  });
-  const original = await f.settle(f.start('off').id); assert.equal(original.status, 'completed', original.error);
+test('unsupported native task schema rejects continuation before provider work', async t => {
+  const f = await fixture(t, async () => ({ output: 'Prior current task context.' }));
+  const original = await f.settle(f.start('off').id);
+  assert.equal(original.status, 'completed', original.error);
   f.engine.runs.get(original.id).nodes.agent.taskSchemaVersion = 9;
-  const accepted = f.engine.continueRun(original.id, { nodeId: 'agent', message: 'Continue the same task.', planningMode: 'on' });
-  assert.equal(accepted.taskId, original.taskId); assert.equal(accepted.parentRunId, original.id); assert.equal(accepted.modelHandoff, undefined);
-  const continued = await f.settle(accepted.id); assert.equal(continued.status, 'completed', continued.error);
-  assert.equal(continued.nodes.agent.taskSchemaVersion, 9); assert.equal(f.runtime.calls.length, 2);
+  assert.throws(() => f.engine.continueRun(original.id, { nodeId: 'agent', message: 'Continue the same task.' }), { code: 'NATIVE_CATALOG_UNSUPPORTED' });
+  assert.equal(f.runtime.calls.length, 1);
+  assert.equal(f.engine.getRun(original.id).nodes.agent.output, 'Prior current task context.');
 });
 
 test('Planning Off continuation keeps its existing native session and unrestricted operation flow', async t => {
@@ -127,7 +106,7 @@ test('Planning Off continuation keeps its existing native session and unrestrict
     }
     return { output: 'The Off fixture continued.' };
   });
-  const original = await f.settle(f.start('off').id); f.engine.runs.get(original.id).nodes.agent.taskSchemaVersion = 8;
+  const original = await f.settle(f.start('off').id);
   const continued = await f.settle(f.engine.continueRun(original.id, { nodeId: 'agent', message: 'Continue without automatic planning.', planningMode: 'off' }).id);
   assert.equal(continued.status, 'completed', continued.error); assert.equal(continued.modelHandoff, undefined);
   assert.equal(continued.taskId, original.taskId);
@@ -146,11 +125,10 @@ test('retry preserves an interrupted native catalog, task identity and saved par
   });
   const original = await f.settle(f.start('off').id); assert.equal(original.status, 'failed');
   assert.equal(original.nodes.agent.output, 'An actual partial finding before interruption.');
-  f.engine.runs.get(original.id).nodes.agent.taskSchemaVersion = 8;
   const accepted = f.engine.retryRun(original.id, { planningMode: 'on' });
   assert.equal(accepted.taskId, original.taskId); assert.equal(accepted.retryOf, original.id); assert.equal(accepted.nodeHandoffs, undefined);
   const retried = await f.settle(accepted.id); assert.equal(retried.status, 'completed', retried.error);
-  assert.equal(retried.nodes.agent.taskSchemaVersion, 8);
+  assert.equal(retried.nodes.agent.taskSchemaVersion, 14);
   assert.equal(f.engine.getRun(original.id).nodes.agent.output, 'An actual partial finding before interruption.');
 });
 
