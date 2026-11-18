@@ -3,8 +3,9 @@ import {folderRows,descendants} from '../core/folder-tree.mjs';
 export function createSkillsWorkspace({mount,api}) {
  mount.innerHTML='<div class="next-panel next-skills-root"><div class="next-panel-inner"><header class="next-panel-head"><div><h1>Skills</h1><p>Write directly in the document, then save. Model skill tools are read-only.</p></div><button id="skills-refresh" type="button">Refresh</button></header><label class="next-label">Find a skill<input id="skills-query" class="next-field" type="search" maxlength="256"></label><p id="skills-status" role="status" aria-live="polite"></p><div class="next-skills-layout"><aside class="next-skills-aside" aria-label="Skills and folders"><form id="skills-folder-form" class="next-skills-folder-form"><label class="next-label">New folder<input id="skills-folder-name" class="next-field" maxlength="60" required></label><p id="skills-create-location"></p><button type="submit">Create folder</button></form><button id="skills-root" type="button" class="skills-root-drop">All skills · top level</button><p class="next-help">Drag folders or skills to a folder. Ctrl+Enter indents a folder; Ctrl+Shift+Enter moves it out.</p><ul id="skills-list" class="next-skills-list"></ul><details id="skills-trash"><summary>Deleted skills</summary><p class="next-help">Deleted skills are excluded from future skill lookups. Restore brings back your last saved edit, or the current bundled default. Discarded unsaved changes are not restored. Deleted skills keep their folder placement; restore and move them before deleting that folder.</p><ul id="skills-trash-list" class="next-skills-list"></ul></details></aside><section class="next-card next-skills-inspector" aria-label="Skill document"><h2 id="skills-heading">Select a skill</h2><p id="skills-detail-status" role="status" aria-live="polite"></p><form id="skills-editor" hidden><div class="next-skills-actions"><button id="skills-save" type="submit">Save</button><button id="skills-discard" type="button">Discard changes</button><button id="skills-delete" type="button">Delete skill</button></div><p id="skills-save-status" role="status" aria-live="polite"></p><label class="next-label">Skill document<textarea id="skills-edit-content" maxlength="200000" class="next-field" rows="24" required spellcheck="false"></textarea></label></form><section id="skills-delete-confirm" class="skills-delete-confirm" hidden role="alert"><p id="skills-delete-message"></p><button id="skills-delete-yes" type="button">Delete skill</button><button id="skills-delete-cancel" type="button">Cancel</button></section></section></div></div></div>';
  const el=id=>mount.querySelector('#skills-'+id),add=(parent,tag,text)=>{const node=mount.ownerDocument.createElement(tag);if(text!==undefined)node.textContent=String(text);parent.append(node);return node;};
- const hostWindow=window,open=new Set(),drafts=new Map();
+ const hostWindow=window,open=new Set(),drafts=new Map(),pages=new Map();
  let active=false,destroyed=false,listEpoch=0,detailEpoch=0,controller,detailController,timer,selected=null,items=[],organization=null,busy=false,saving=false,uncertain=false,folder=null,entry=null,rename=null,dragging=null,deleteTarget=null,trashItems=[];
+ const pageSize=10;
  const blocked=()=>busy||saving||!!deleteTarget||uncertain||!organization;
  function controls(){
   for(const node of mount.querySelectorAll('button,input,textarea'))node.disabled=busy||saving||!!deleteTarget;
@@ -12,6 +13,7 @@ export function createSkillsWorkspace({mount,api}) {
   for(const node of el('list').querySelectorAll('button,input'))node.disabled=blocked();
   el('save').disabled=busy||saving||!!deleteTarget||!entry?.userEditable||!drafts.has(selected);
   el('discard').disabled=busy||saving||!!deleteTarget||!drafts.has(selected);
+  for(const node of mount.querySelectorAll('[data-boundary]'))node.disabled=blocked()||node.dataset.boundary==='true';
   el('edit-content').readOnly=!entry?.userEditable;el('delete').disabled=busy||saving||!!deleteTarget||!entry?.userEditable;el('delete-yes').disabled=el('delete-cancel').disabled=busy||saving;
  }
  function clear(){entry=null;deleteTarget=null;el('delete-confirm').hidden=true;el('editor').hidden=true;el('heading').textContent='Select a skill';el('detail-status').textContent='Select a skill to read or edit its document.';}
@@ -51,12 +53,31 @@ export function createSkillsWorkspace({mount,api}) {
   if(!rename||blocked())return;const current=rename;
   void mutate({action:'update',id:current.id,name:current.value},{expectedRevision:current.revision,onSaved:()=>{rename=null;},afterPaint:()=>focusFolder(current.id)});
  }
+ function focusPage(key,direction){[...mount.querySelectorAll('[data-page-key]')].find(node=>node.dataset.pageKey===(key??'root')&&node.dataset.pageDirection===direction&&!node.disabled)?.focus?.();}
+ function pageRows(rows,key,parent){
+  const count=Math.max(1,Math.ceil(rows.length/pageSize)),page=Math.min(pages.get(key)||0,count-1);pages.set(key,page);
+  if(count>1){const li=add(parent,'li'),nav=add(li,'nav');nav.className='skills-pagination';nav.setAttribute('aria-label',key==='trash'?'Deleted skills pages':key===null?'All skills pages':'Folder pages');
+   const prev=add(nav,'button','Previous');prev.type='button';prev.dataset.pageKey=key??'root';prev.dataset.pageDirection='previous';prev.dataset.boundary=String(page===0);prev.addEventListener('click',()=>{if(blocked()||page===0)return;pages.set(key,page-1);paint();focusPage(key,'previous');});
+   add(nav,'span',(page+1)+' / '+count+' · '+rows.length+' items');
+   const next=add(nav,'button','Next');next.type='button';next.dataset.pageKey=key??'root';next.dataset.pageDirection='next';next.dataset.boundary=String(page===count-1);next.addEventListener('click',()=>{if(blocked()||page===count-1)return;pages.set(key,page+1);paint();focusPage(key,'next');});
+  }
+  return rows.slice(page*pageSize,(page+1)*pageSize);
+ }
  function paint(){
-  const list=el('list');list.replaceChildren();const containers=new Map([[null,list]]);
-  for(const row of folderRows(organization?.folders||[])){
+  const list=el('list');list.replaceChildren();const containers=new Map([[null,list]]),allRows=folderRows(organization?.folders||[]),matchingFolders=new Set();
+  if(el('query').value.trim())for(const item of items){let id=organization?.assignments[item.id];while(id&&!matchingFolders.has(id)){matchingFolders.add(id);id=allRows.find(row=>row.id===id)?.parentId;}}
+  const rows=el('query').value.trim()?allRows.filter(row=>matchingFolders.has(row.id)):allRows;
+  function renderChildren(parentId,parent){
+   const children=[...rows.filter(row=>row.parentId===parentId).map(row=>({row})),...items.filter(item=>(organization?.assignments[item.id]??null)===parentId).map(item=>({item}))];
+   for(const child of pageRows(children,parentId,parent)){
+    if(child.item){const item=child.item,li=add(parent,'li');li.className='skills-document-line';
+     const button=add(li,'button',item.title);button.type='button';button.className='skills-document-row';button.dataset.skillId=item.id;button.setAttribute('aria-pressed',String(selected===item.id));button.addEventListener('click',()=>void select(item.id));drag(button,'skill',item.id);
+     const remove=add(li,'button','Delete');remove.type='button';remove.className='skills-document-delete';remove.dataset.deleteSkill=item.id;remove.setAttribute('aria-label','Delete '+item.title);remove.addEventListener('click',()=>requestDelete(item));continue;
+    }
+    const row=child.row;
    const li=add(containers.get(row.parentId)||list,'li');li.className='skills-folder-branch';
    const line=add(li,'div');line.className='skills-folder-row';line.dataset.folderId=row.id;drag(line,'folder',row.id);drop(line,row.id);
-   const arrow=add(line,'button',open.has(row.id)?'▾':'▸');arrow.type='button';arrow.className='skills-folder-arrow';arrow.setAttribute('aria-label',(open.has(row.id)?'Collapse ':'Expand ')+row.name);arrow.setAttribute('aria-expanded',String(open.has(row.id)));arrow.addEventListener('click',()=>{open.has(row.id)?open.delete(row.id):open.add(row.id);paint();});
+   const arrow=add(line,'button',open.has(row.id)?'▾':'▸');arrow.type='button';arrow.dataset.folderToggle=row.id;arrow.className='skills-folder-arrow';arrow.setAttribute('aria-label',(open.has(row.id)?'Collapse ':'Expand ')+row.name);arrow.setAttribute('aria-expanded',String(open.has(row.id)));arrow.addEventListener('click',()=>{open.has(row.id)?open.delete(row.id):open.add(row.id);paint();[...el('list').querySelectorAll('[data-folder-toggle]')].find(node=>node.dataset.folderToggle===row.id)?.focus?.();});
    const icon=add(line,'span');icon.className='skills-folder-icon';icon.setAttribute('aria-hidden','true');
    if(rename?.id===row.id){
     const input=add(line,'input');input.value=rename.value;input.maxLength=60;input.dataset.folderRename=row.id;input.setAttribute('aria-label','Folder name');input.addEventListener('input',()=>{rename.value=input.value;});input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();saveRename();}if(event.key==='Escape'){event.preventDefault();rename=null;paint();focusFolder(row.id);}});
@@ -67,13 +88,13 @@ export function createSkillsWorkspace({mount,api}) {
     name.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();indent(row.id,event.shiftKey);}});
     const remove=add(line,'button','×');remove.type='button';remove.className='skills-folder-remove';remove.title='Delete empty folder';remove.setAttribute('aria-label','Delete empty folder '+row.name);remove.addEventListener('click',()=>void mutate({action:'remove',id:row.id}));
    }
-   const children=add(li,'ul');children.className='next-skills-list';children.hidden=!open.has(row.id);containers.set(row.id,children);
+   const children=add(li,'ul');children.className='next-skills-list';children.hidden=!open.has(row.id);containers.set(row.id,children);if(open.has(row.id))renderChildren(row.id,children);
+   }
   }
-  for(const item of items){
-   const parent=containers.get(organization?.assignments[item.id]??null)||list,li=add(parent,'li'),button=add(li,'button',item.title);button.type='button';button.className='skills-document-row';button.dataset.skillId=item.id;button.setAttribute('aria-pressed',String(selected===item.id));button.addEventListener('click',()=>void select(item.id));drag(button,'skill',item.id);
-  }
+  renderChildren(null,list);
+
   if(!items.length)add(list,'li','No matching skills.');
-  el('trash-list').replaceChildren();for(const item of trashItems){const li=add(el('trash-list'),'li'),assigned=organization?.assignments?.[item.id],location=folderRows(organization?.folders||[]).find(row=>row.id===assigned)?.path;add(li,'span',item.title+(location?' · '+location:''));const restore=add(li,'button','Restore');restore.type='button';restore.dataset.restoreSkill=item.id;restore.setAttribute('aria-label','Restore '+item.title);restore.addEventListener('click',()=>void restoreSkill(item));}if(!trashItems.length)add(el('trash-list'),'li','No deleted skills.');
+  el('trash-list').replaceChildren();for(const item of pageRows(trashItems,'trash',el('trash-list'))){const li=add(el('trash-list'),'li'),assigned=organization?.assignments?.[item.id],location=folderRows(organization?.folders||[]).find(row=>row.id===assigned)?.path;add(li,'span',item.title+(location?' · '+location:''));const restore=add(li,'button','Restore');restore.type='button';restore.dataset.restoreSkill=item.id;restore.setAttribute('aria-label','Restore '+item.title);restore.addEventListener('click',()=>void restoreSkill(item));}if(!trashItems.length)add(el('trash-list'),'li','No deleted skills.');
   if(folder&&!organization?.folders.some(x=>x.id===folder))folder=null;
   el('create-location').textContent=folder?'Inside '+folderRows(organization.folders).find(x=>x.id===folder).path:'At top level';
   controls();
@@ -102,6 +123,7 @@ export function createSkillsWorkspace({mount,api}) {
   try{const[result,folders,deleted]=await Promise.all([api('/api/skills?query='+encodeURIComponent(el('query').value),'GET',undefined,{signal:controller.signal}),api('/api/skills/folders','GET',undefined,{signal:controller.signal}),api('/api/skills?source=deleted','GET',undefined,{signal:controller.signal})]);if(!active||destroyed||epoch!==listEpoch)return false;
    if(!Array.isArray(result.entries)||!Array.isArray(folders.folders)||!Array.isArray(deleted.entries))throw Error('Unreadable skills or folder catalog.');
    items=result.entries;trashItems=deleted.entries;organization=folders;uncertain=false;
+   if(el('query').value.trim()){for(const item of items){let id=organization.assignments[item.id],seen=new Set();while(id&&!seen.has(id)){seen.add(id);open.add(id);id=organization.folders.find(row=>row.id===id)?.parentId;}}}
    if(selected&&!items.some(x=>x.id===selected)){selected=null;++detailEpoch;detailController?.abort();clear();}
    paint();el('status').textContent=items.length+' skills.';return true;
   }catch(error){if(active&&epoch===listEpoch&&error.name!=='AbortError')el('status').textContent=error.message;return false;}
@@ -114,7 +136,7 @@ export function createSkillsWorkspace({mount,api}) {
  }
  el('folder-form').addEventListener('submit',event=>{event.preventDefault();const name=el('folder-name').value.trim();if(!name)return;const parentId=folder;void mutate({action:'create',id:globalThis.crypto.randomUUID(),name,parentId},{onSaved:()=>{el('folder-name').value='';if(parentId)open.add(parentId);}});});
  el('root').addEventListener('click',()=>{folder=null;paint();});drop(el('root'),null);
- el('query').addEventListener('input',()=>{clearTimeout(timer);++listEpoch;controller?.abort();if(active)timer=setTimeout(()=>void load(),150);});
+ el('query').addEventListener('input',()=>{clearTimeout(timer);pages.clear();++listEpoch;controller?.abort();if(active)timer=setTimeout(()=>void load(),150);});
  el('refresh').addEventListener('click',()=>{clearTimeout(timer);if(active&&!busy&&!saving&&!deleteTarget)void load().then(ok=>{if(ok&&selected)void select(selected);});});
  el('edit-content').addEventListener('input',()=>{
   if(!entry?.userEditable||saving||deleteTarget)return;
@@ -124,10 +146,10 @@ export function createSkillsWorkspace({mount,api}) {
  el('discard').addEventListener('click',()=>{if(saving||deleteTarget)return;drafts.delete(selected);void select(selected);});
 
  function cancelDelete(){deleteTarget=null;el('delete-confirm').hidden=true;controls();el('delete').focus?.();}
- function requestDelete(){
-  if(saving||busy||!entry?.userEditable)return;
-  deleteTarget={id:entry.id,title:entry.title,revision:drafts.get(entry.id)?.expectedRevision??entry.revision};
-  el('delete-message').textContent='Delete "'+entry.title+'"? It will be removed from Skills and future skill lookups. '+(drafts.has(entry.id)?'Your unsaved changes will be discarded. ':'')+'You can restore your last saved edit, or the current bundled default, from Deleted skills.';
+ function requestDelete(target=entry){
+  if(saving||busy||deleteTarget||!target?.userEditable)return;
+  deleteTarget={id:target.id,title:target.title,revision:drafts.get(target.id)?.expectedRevision??target.revision};
+  el('delete-message').textContent='Delete "'+target.title+'"? It will be removed from Skills and future skill lookups. '+(drafts.has(target.id)?'Your unsaved changes will be discarded. ':'')+'You can restore your last saved edit, or the current bundled default, from Deleted skills.';
   el('delete-confirm').hidden=false;controls();el('delete-cancel').focus?.();
  }
  async function deleteSkill(){
@@ -147,7 +169,7 @@ export function createSkillsWorkspace({mount,api}) {
   catch(error){if(active&&!destroyed)el('status').textContent=error.message+' Restore was not confirmed. Refresh to inspect the saved state.';}
   finally{saving=false;if(active&&!destroyed)controls();}
  }
- el('delete').addEventListener('click',requestDelete);
+ el('delete').addEventListener('click',()=>requestDelete());
  el('delete-yes').addEventListener('click',()=>void deleteSkill());
  el('delete-cancel').addEventListener('click',cancelDelete);
  el('delete-confirm').addEventListener('keydown',event=>{if(event.key==='Escape'&&!saving){event.preventDefault();cancelDelete();}});

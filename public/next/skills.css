@@ -42,3 +42,5 @@
 #skills-trash-list button{width:auto}
 .skills-delete-confirm{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:5px}
 .skills-delete-confirm button{margin-right:8px}
+
+.skills-pagination{display:flex;align-items:center;gap:6px;justify-content:space-between;padding:6px 0;font-size:11px}.skills-pagination button{width:auto;min-height:28px}.skills-document-line{display:flex;align-items:center;gap:4px}.skills-document-line>.skills-document-row{flex:1;min-width:0}.skills-document-line>.skills-document-delete{flex:none;width:auto;font-size:11px;padding:4px}
