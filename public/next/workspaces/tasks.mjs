@@ -652,7 +652,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       const meta=add(card,'p','','next-help');
       const trigger=task.trigger||{};
       meta.textContent=scheduleTriggerLabel(trigger)+' · '+(task.overdue?'Overdue since: '+humanTime(task.overdueSince):'Next: '+humanTime(task.nextAt));
-      groups.fileControl(card,task);
+      if(cronjobsOnly)groups.outlineControl(row,task);else groups.fileControl(card,task);
       const controls=add(card,'div','','next-row');
       const inspect=add(controls,'button',selectedScheduleId===task.id?'Hide inspection':'Inspect / edit');
       inspect.type='button';inspect.dataset.scheduleInspect=task.id;inspect.disabled=busy;
