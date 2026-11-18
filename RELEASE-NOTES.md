@@ -1,8 +1,12 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.7 candidate source, not an installation or publication receipt.** Package version is **2.40.7**. Start with the [2.40.7 notes](RELEASE-NOTES-2.40.7.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.8 candidate source, not an installation or publication receipt.** Package version is **2.40.8**. Start with the [2.40.8 notes](RELEASE-NOTES-2.40.8.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.8](RELEASE-NOTES-2.40.8.md) - direct skill documents, inline nested outlines and explicit browser in-use marks
+
+- [2.40.7](RELEASE-NOTES-2.40.7.md) - human skill editing and native browser sidebar
 
 - [2.40.6](RELEASE-NOTES-2.40.6.md) - simplified context, nested folders and SVG rendering
 
