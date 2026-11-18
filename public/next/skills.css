@@ -44,3 +44,16 @@
 .skills-delete-confirm button{margin-right:8px}
 
 .skills-pagination{display:flex;align-items:center;gap:6px;justify-content:space-between;padding:6px 0;font-size:11px}.skills-pagination button{width:auto;min-height:28px}.skills-document-line{display:flex;align-items:center;gap:4px}.skills-document-line>.skills-document-row{flex:1;min-width:0}.skills-document-line>.skills-document-delete{flex:none;width:auto;font-size:11px;padding:4px}
+
+/* One inline tree: explicit root/child creation and SVG-only row actions. */
+.skills-tree-root{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:5px 0}
+.skills-icon-action{display:inline-flex!important;align-items:center;justify-content:center;flex:none!important;width:30px!important;min-width:30px;min-height:30px;padding:5px!important}
+.skills-icon-action svg,.skills-folder-icon svg{display:block;width:18px;height:18px;flex:none}
+.skills-folder-icon{border:0;background:none;width:18px;height:18px;color:#c6ad70}
+.skills-folder-icon::before{display:none}
+.skills-folder-arrow.is-open svg{transform:rotate(90deg)}
+.skills-inline-create{display:flex;align-items:end;gap:5px;min-width:0;padding:4px 0}
+.skills-inline-create>.next-label{flex:1;min-width:0;margin:0}
+.skills-inline-create input{min-width:0;width:100%}
+.skills-drop-target{outline:1px solid var(--accent);background:var(--next-selection-background)}
+.skills-folder-row>input{flex:1;min-width:40px;width:0}

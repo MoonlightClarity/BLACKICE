@@ -7,9 +7,9 @@ test('Skills outline supports rename, keyboard nesting, drag, revision conflicts
  const open=async()=>{app=await createHarnessServer({runtime:new Runtime(),dataDir:root,defaultCwd:root,port:0,remoteAccess:false});base=await app.listen();cookie=(await fetch(base)).headers.get('set-cookie').split(';')[0];};await open();
  const api=async(route,method='GET',payload)=>{const r=await fetch(new URL(route,base),{method,headers:{Cookie:cookie,'Content-Type':'application/json'},...(method==='GET'?{}:{body:JSON.stringify(payload)})});const result=await r.json();if(!r.ok)throw Object.assign(Error(result.error?.message||result.error||'Failed'),{status:r.status});return result;};
  const dom=planningDOM(t),ui=createSkillsWorkspace({mount:dom.mount,api});t.after(()=>ui.destroy());ui.enter();await until(()=>dom.$('[data-skill-id="builtin-decomposition"]'));
- const state=()=>api('/api/skills/folders'),ready=()=>until(()=>!dom.$('#skills-folder-name').disabled);
- const create=async name=>{dom.$('#skills-folder-name').value=name;await dom.$('#skills-folder-form').dispatch('submit');await until(()=>dom.$('#skills-folder-name').value==='');await ready();return(await state()).folders.find(x=>x.name===name).id;};
- const parent=await create('Career'),child=await create('Research');
+ const state=()=>api('/api/skills/folders'),ready=()=>until(()=>!dom.$('#skills-refresh').disabled&&!dom.$('#skills-status').textContent.startsWith('Loading'));
+ const create=async(name,parentId=null)=>{await dom.click(parentId?'[data-new-subfolder="'+parentId+'"]':'#skills-new-folder');dom.$('#skills-folder-name').value=name;await dom.$('#skills-folder-form').dispatch('submit');await until(()=>!dom.$('#skills-folder-name'));await ready();return(await state()).folders.find(x=>x.name===name).id;};
+ const parent=await create('Career'),child=await create('Research');const explicit=await create('Direct child',parent);assert.equal((await state()).folders.find(x=>x.id===explicit).parentId,parent);await dom.click('[data-new-subfolder="'+explicit+'"]');dom.$('#skills-folder-name').value='Cancelled';await dom.$('#skills-folder-form').dispatch('keydown',{key:'Escape'});assert.equal(dom.$('#skills-folder-form'),null);assert.equal((await state()).folders.some(x=>x.name==='Cancelled'),false);
  const label=id=>dom.$('[data-folder-name="'+id+'"]'),row=id=>dom.$('[data-folder-id="'+id+'"]');
  await label(child).dispatch('keydown',{key:'Enter',ctrlKey:true});await until(async()=> (await state()).folders.find(x=>x.id===child).parentId===parent);await ready();
  await label(child).dispatch('keydown',{key:'Enter',ctrlKey:true,shiftKey:true});await until(async()=> (await state()).folders.find(x=>x.id===child).parentId===null);await ready();
@@ -32,6 +32,14 @@ test('Skills outline supports rename, keyboard nesting, drag, revision conflicts
  assert.equal((await state()).folders.find(x=>x.id===parent).name,'Newer title');
  await dom.click('#skills-refresh');await ready();await dom.$('[data-folder-rename]').dispatch('keydown',{key:'Escape'});
  await dom.click(label(parent));await dom.input('[data-folder-rename]','Final title');await dom.$('[data-folder-rename]').dispatch('keydown',{key:'Enter'});await until(async()=> (await state()).folders.find(x=>x.id===parent).name==='Final title');await ready();
+ // Inline creation keeps its original parent and revision across refresh; no duplicate submit.
+ await dom.click('[data-new-subfolder="'+parent+'"]');dom.$('#skills-folder-name').value='Stale child';
+ const priorCreate=await state();await api('/api/skills/folders','POST',{action:'update',id:parent,name:'Final title',expectedRevision:priorCreate.revision});
+ await dom.$('#skills-folder-form').dispatch('submit');await dom.$('#skills-folder-form').dispatch('submit');
+ await until(()=>dom.$('#skills-status').textContent.includes('Refresh before'));assert.equal(dom.$('#skills-folder-name').value,'Stale child');
+ await dom.click('#skills-refresh');await ready();await dom.$('#skills-folder-form').dispatch('submit');
+ await until(()=>dom.$('#skills-status').textContent.includes('Refresh before'));assert.equal((await state()).folders.some(x=>x.name==='Stale child'),false);
+ await dom.click('#skills-refresh');await ready();await dom.click('#skills-create-cancel');assert.equal(dom.$('#skills-folder-form'),null);
  const persisted=await state();await app.close();await open();assert.deepEqual(await state(),persisted);
  const denied=await fetch(new URL('/api/skills/folders',base),{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json','x-blackice-remote':'1'},body:JSON.stringify({action:'remove',id:parent,expectedRevision:persisted.revision})});assert.equal(denied.status,403);
 });
