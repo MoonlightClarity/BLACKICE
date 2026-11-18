@@ -152,7 +152,7 @@ export function createPlanningWorkspace({ mount, api, events, notify = () => {},
       let chosen=rows.find(row=>[row.id,row.runId,row.latestRunId].includes(pendingId||selectedId));
       if(!chosen)chosen=rows.find(row=>row.activity.running)||rows.find(row=>row.state!=='archived')||rows[0];
       if(chosen){if(selectedId!==chosen.id)state=null;selectedId=chosen.id;pendingId='';}
-      else{selectedId='';state=null;}
+      else{selectedId='';state=null;++detailEpoch;detailController?.abort();inspector.refresh(null);}
       renderRail();renderDetail();await loadSelected();
     }catch(error){if(!destroyed&&active&&epoch===catalogEpoch){catalogError=message(error);noticeText('Conversations could not be refreshed. '+catalogError);renderRail();}}
     finally{if(epoch===catalogEpoch)refreshButton.disabled=false;}

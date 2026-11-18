@@ -120,8 +120,8 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   let catalogLoaded = false, catalogUnavailable = false;
   let creatingRequest = false, pendingConversation = null, pendingRequest = null;
   const sessions = new Map(), selectedRequests = new Map(), requestDrafts = new Map();
-  const activityInspector = createActivityInspector({frame:shell,api,events,
-    getRunId:()=>catalog.conversations.find(row=>conversationKey(row)===conversationId)?.runId||conversationId});
+  const activityRunId = () => catalog.conversations.find(row=>conversationKey(row)===conversationId)?.runId||conversationId;
+  const activityInspector = createActivityInspector({frame:shell,api,events,getRunId:activityRunId});
   const session = id => {
     if (!sessions.has(id)) sessions.set(id, { document: null, selectedId: '', presentation: 'outline', page: 'overview', collapsed: new Set(), drafts: new Map(), xmlDrafts: new Map(), programDraft: null, creations: new Map(), sourceDraft: { title: '', text: '', url: '' }, pending: new Set(), error: '', notice: '', readGeneration: 0, controller: null, intentOpen: false, originalRequestOpen: false });
     return sessions.get(id);
@@ -977,7 +977,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
       previousState.inspectorSessions ||= new Map(); previousState.inspectorSessions.set(previousInspector.dataset.selectedNodeId, { top: previousInspector.scrollTop, open: new Set([...previousInspector.querySelectorAll('[data-disclosure-key]')].filter(element => element.open).map(element => element.dataset.disclosureKey)) });
     }
     detail.replaceChildren(); detail.dataset.requestId = requestId; const state = current(); notice.textContent = [catalogError, state?.error || state?.notice].filter(Boolean).join('\n');
-    activityInspector.refresh(conversationId);
+    activityInspector.refresh(activityRunId());
     if (!requestId) {
       const empty = add(detail, 'div', '', 'pb-empty'); add(empty, 'h2', 'Give each request a place to develop.');
       add(empty, 'p', 'Start with a question or desired outcome. Add modules that test alternatives, inspect evidence, make a decision, or record an action and its result. Expand a module when it contains a further consequential question.');
@@ -1044,7 +1044,7 @@ export function createPlanningBrowser({ mount, api, events, notify = () => {}, o
   renderRail(); renderDetail();
   return {
     enter() { if (active || destroyed) return; active = true; unsubscribe = events.subscribe(event => { if (!active || !/^(planning_browser\.|planning-browser\.|planning\.browser\.|conversations\.)/.test(event.type || '')) return; const changedId = event.data?.requestId || event.requestId; if (changedId && changedId !== requestId && sessions.has(changedId)) void readRequest(changedId); clearTimeout(timer); timer = setTimeout(() => void loadCatalog(), 160); }); void loadCatalog(); },
-    leave() { active = false; stopReads(); unsubscribe?.(); unsubscribe = null; clearTimeout(timer); },
+    leave() { active = false; activityInspector.refresh(null); stopReads(); unsubscribe?.(); unsubscribe = null; clearTimeout(timer); },
     destroy() { this.leave(); destroyed = true; activityInspector.destroy(); sessions.clear(); requestDrafts.clear(); mount.replaceChildren(); },
     openConversationId(id) { if (!id) return; pendingRequest = null; pendingConversation = id; if (active) void loadCatalog(); },
     openRequestId(id, { nodeId } = {}) { if (!id) return; pendingConversation = null; pendingRequest = { id, nodeId }; if (active) void loadCatalog(); },

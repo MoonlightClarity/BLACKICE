@@ -22,8 +22,8 @@ async function fixture(t, { hook, empty = false, status = {}, initialNodeId = 'f
   if (empty) documents.clear();
   const calls = [], listeners = new Set(), navigation = [], legacyCalls = [];
   let serial = 0;
-  const api = async (route, method = 'GET', body) => {
-    const call = { route, method, body: copy(body) }; calls.push(call);
+  const api = async (route, method = 'GET', body, options) => {
+    const call = { route, method, body: copy(body), signal: options?.signal }; calls.push(call);
     if (hook) { const result = await hook(call, documents); if (result !== undefined) return result; }
     if (route === '/api/planning-browser' && method === 'GET') return { conversations: empty ? [] : [{ id: 'conversation-a', title: 'Synthetic first conversation', state: 'active' }, { id: 'conversation-c', title: 'Synthetic archive', state: 'archived' }], requests: [...documents.values()].map(row => ({ id: row.id, title: row.title, conversationId: row.conversationId, revision: row.revision })), templates: PLANNING_MODULE_TEMPLATES };
     if (route === '/api/planning-browser/requests' && method === 'POST') { const saved = request('created-' + (++serial), body.conversationId || 'planning_generated'); saved.title = body.title; saved.objective = body.objective; saved.nodes = []; documents.set(saved.id, saved); return projectPlanningRequest(saved); }
@@ -800,4 +800,25 @@ test('archived XML is read-only, has no Save action and cannot dispatch from a s
  assert.equal(f.$('[data-action="save-program-xml"]'),null);
  code.value='Forged stale input';await code.dispatch('input');await f.refresh();
  assert.equal(f.$('.pb-program-xml').value,saved);assert.equal(f.mutations().length,0);
+});
+
+
+test('graph Activity retains latest-run identity across rerender and aborts on leave',async t=>{
+ const pending=deferred();let activityCall;
+ const f=await fixture(t,{hook:async(call,documents)=>{
+  if(call.route==='/api/planning-browser')return {conversations:[{id:'conversation-a',runId:'latest-run',title:'Synthetic first conversation',state:'active'}],requests:[...documents.values()].filter(r=>r.conversationId==='conversation-a').map(r=>({id:r.id,title:r.title,conversationId:r.conversationId,revision:r.revision})),templates:PLANNING_MODULE_TEMPLATES};
+  if(call.route.includes('/activity?')){activityCall=call;return pending.promise;}
+ }});
+ const opening=f.click('.next-activity-open');await waitFor(()=>activityCall);
+ assert.ok(activityCall.route.startsWith('/api/conversations/latest-run/activity?'));
+ await f.click('[data-view="graph"]');
+ assert.equal(f.$('.next-activity-inspector').open,true,'Same latest run survives graph rerender');
+ assert.equal(activityCall.signal.aborted,false);
+ f.workspace.leave();
+ assert.equal(f.$('.next-activity-inspector').open,false);
+ assert.equal(activityCall.signal.aborted,true);
+ assert.equal(f.$('.next-activity-open').hidden,true);
+ pending.resolve({revision:'late',nextOffset:null,items:[{id:'late',title:'Late',text:'Must not return after leave',source:'run event'}]});
+ await opening;assert.doesNotMatch(f.$('.next-activity-results').textContent,/Must not return/);
+ f.workspace.enter();await waitFor(()=>!f.$('.next-activity-open').hidden);
 });

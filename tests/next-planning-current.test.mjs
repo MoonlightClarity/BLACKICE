@@ -11,7 +11,7 @@ async function fixture(t,{hook}={}){
  };
  const workspace=createPlanningWorkspace({mount:dom.mount,api,events:{subscribe(){subscriptions++;return()=>subscriptions--;}},onNavigate:(...args)=>navigation.push(args),loadHistoryWorkspace:async()=>()=>({enter(){historyCalls.push('enter');},leave(){},destroy(){},openRequestId(id){historyCalls.push(id);},openConversationId(id){historyCalls.push(id);}})});
  t.after(()=>workspace.destroy());workspace.enter();await until(()=>dom.mount.textContent.includes('Beta objective'));
- return{...dom,workspace,calls,navigation,historyCalls,get subscriptions(){return subscriptions;}};
+ return{...dom,workspace,calls,rows,navigation,historyCalls,get subscriptions(){return subscriptions;}};
 }
 test('current Planning reads goals and selected retained Activity without Directory requests or automatic work',async t=>{
  const f=await fixture(t);assert.equal(f.$('.next-directory-open'),null);assert.ok(!f.calls.some(x=>x.route.includes('/activity')));
@@ -29,4 +29,14 @@ test('running filter uses observed run state and goal failures remain recoverabl
 test('late goal results cannot overwrite a different selection and leave releases subscriptions',async t=>{
  let resolve,block=false;const pending=new Promise(r=>resolve=r);const f=await fixture(t,{hook:route=>block&&route.endsWith('/a/goal')?pending:undefined});
  block=true;const first=f.workspace.openConversationId('a');await f.workspace.openConversationId('b');resolve({goal:{objective:'STALE',status:'active'}});await first;assert.ok(!f.mount.textContent.includes('STALE'));assert.ok(f.mount.textContent.includes('Beta objective'));f.workspace.leave();assert.equal(f.subscriptions,1);f.workspace.destroy();assert.equal(f.subscriptions,0);
+});
+
+
+test('removing the selected conversation closes Activity and hides its launcher',async t=>{
+ const f=await fixture(t);await f.click('.next-activity-open');
+ assert.equal(f.$('.next-activity-inspector').open,true);
+ f.rows.splice(0);await f.workspace.refresh();
+ assert.equal(f.$('.next-activity-inspector').open,false);
+ assert.equal(f.$('.next-activity-open').hidden,true);
+ assert.equal(f.$('.next-activity-results').children.length,0);
 });
