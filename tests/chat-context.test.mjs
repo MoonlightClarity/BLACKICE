@@ -161,14 +161,14 @@ test('automatic private continuity archives every saved byte and keeps one Relay
   assert.equal(next.status,'completed',next.error);assert.equal(next.taskId,first.taskId);assert.equal(next.nodes.agent.continuity.method,'automatic-compaction');assert.equal(next.nodes.agent.continuity.truncated,false);assert.equal(next.nodes.agent.continuity.omittedChars,0);assert.equal(next.modelHandoff.context,undefined);assert.equal(runtime.calls[1].threadId,undefined);assert.match(runtime.calls[1].continuity.text,/MIDDLE_EVIDENCE/);assert.match(runtime.calls[1].continuity.text,/LATEST/);const{readFile}=await import('node:fs/promises');assert.equal(await readFile(next.nodes.agent.continuity.transcriptPath,'utf8'),runtime.calls[1].continuity.text);assert.deepEqual(engine.getRun(first.id),first);
 });
 
-test('pre-defaults version-two start receipts retain their original normalized medium identity after upgrade',async t=>{
+test('old normalized start-receipt hashes reject without dispatching new work',async t=>{
   const {engine,runtime,cwd}=await harness(t),workflow=graph({effort:undefined}),request={requestId:'old-medium-receipt',workflow,input:'Already admitted before the upgrade.'},first=await settle(engine,engine.startRun(request));
   const{validateWorkflow}=await import('../lib/engine.mjs'),{createHash}=await import('node:crypto'),normalized=validateWorkflow(workflow);delete normalized.id;
   for(const node of normalized.nodes)if(node.effort===undefined)node.effort='medium';
   const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().filter(key=>value[key]!==undefined).map(key=>[key,canonical(value[key])])):value;
   const stored=engine.runs.get(first.id);stored.metadata.clientRequestHashVersion=2;stored.metadata.clientRequestHash=createHash('sha256').update(JSON.stringify(canonical({kind:'start',workflow:normalized,task:request.input,cwd,attachmentIds:[],planningMode:'off'}))).digest('hex');engine.clientRequests.delete(request.requestId);engine.rememberClientRequest(stored);
   engine.runtimeSettings={get:()=>({defaultEffort:'ultra',defaultContext:{preset:'900k'}})};
-  assert.equal(engine.startRun(request).id,first.id);assert.equal(runtime.calls.length,1);assert.throws(()=>engine.startRun({...request,input:'Changed task.'}),{code:'RUN_REQUEST_CONFLICT'});
+  assert.throws(()=>engine.startRun(request),{code:'RUN_REQUEST_CONFLICT'});assert.equal(runtime.calls.length,1);assert.throws(()=>engine.startRun({...request,input:'Changed task.'}),{code:'RUN_REQUEST_CONFLICT'});
   for(const planningMode of ['forced','advisory']) assert.throws(()=>engine.startRun({...request,planningMode}),{code:'RUN_REQUEST_CONFLICT'});
 });
 

@@ -385,7 +385,7 @@ test('pinned admission and authored request receipts survive reconstruction afte
   const restored=await new HarnessEngine({runtime,dataDir,defaultCwd:cwd}).init();engines.push(restored);const replay=restored.startRun(request);assert.equal(replay.id,first.id);assert.equal(replay.workflow.nodes.find(node=>node.type==='agent').model,'original-model');assert.equal(runtime.calls.length,1);
 });
 
-test('an upgraded legacy start receipt replays its original admission using saved model evidence only', async t => {
+test('old start-receipt hashes cannot replay or re-admit work after restart', async t => {
   const runtime = new FakeRuntime(async options => { options.onEvent({ type: 'thread', model: 'primary::vendor/original', threadId: 'provider_legacy' }); return { output: 'Legacy fixture reply', threadId: 'provider_legacy' }; });
   runtime.resolveModel = value => ({ providerId: 'primary', model: value === 'default' ? 'vendor/original' : value.split('::')[1], available: true });
   const { engine, dataDir, cwd, engines } = await harness(t, runtime);
@@ -400,17 +400,17 @@ test('an upgraded legacy start receipt replays its original admission using save
   await engine.close();
   runtime.resolveModel = () => { throw new Error('Legacy replay must not consult the current provider/default.'); };
   const restored = await new HarnessEngine({ runtime, dataDir, defaultCwd: cwd }).init(); engines.push(restored);
-  assert.equal(restored.startRun(request).id, first.id); assert.equal(runtime.calls.length, 1);
+  assert.throws(()=>restored.startRun(request),{code:'RUN_REQUEST_CONFLICT'}); assert.equal(runtime.calls.length, 1);
   for (const planningMode of ['forced', 'advisory']) assert.throws(() => restored.startRun({ ...request, planningMode }), { code: 'RUN_REQUEST_CONFLICT' });
   for (const changed of [{ input: 'A different send.' }, { metadata: { inboxId: 'different-inbox' } }, { workflow: workflow({ nodes: [node('input', 'input'), { ...node('agent', 'agent', 'AGENT_MARKER'), model: 'primary::vendor/original' }, node('output', 'output')] }) }]) assert.throws(() => restored.startRun({ ...request, ...changed }), { code: 'RUN_REQUEST_CONFLICT' });
   const saved = restored.runs.get(first.id), resolved = saved.nodes.agent.resolvedModel;
   delete saved.nodes.agent.resolvedModel; saved.events = [];
   assert.throws(() => restored.startRun(request), { code: 'RUN_REQUEST_CONFLICT' }, 'missing historical model evidence cannot resolve from the current default');
   saved.nodes.agent.resolvedModel = resolved;
-  assert.equal(restored.startRun(request).id, first.id); assert.equal(runtime.calls.length, 1);
+  assert.throws(()=>restored.startRun(request),{code:'RUN_REQUEST_CONFLICT'}); assert.equal(runtime.calls.length, 1);
 });
 
-test('legacy continuation receipts survive restart and default changes without changing symbolic model intent', async t => {
+test('old continuation-receipt hashes reject after restart without re-admitting work', async t => {
   for (const explicitDefault of [false, true]) await t.test(explicitDefault ? 'explicit default' : 'omitted saved model', async t => {
     let selected = 'model-a';
     const runtime = new FakeRuntime(async options => { options.onEvent({ type: 'thread', model: options.model, threadId: options.threadId || 'legacy-native-thread' }); return { output: 'Legacy continuation fixture', threadId: options.threadId || 'legacy-native-thread' }; });
@@ -427,7 +427,7 @@ test('legacy continuation receipts survive restart and default changes without c
     await engine.close(); selected = 'model-c';
     runtime.resolveModel = () => { throw new Error('Recovered continuation cannot resolve a new default.'); };
     const restored = await new HarnessEngine({ runtime, dataDir, defaultCwd: cwd }).init(); engines.push(restored);
-    assert.equal(restored.continueRun(first.id, request).id, next.id);
+    assert.throws(()=>restored.continueRun(first.id, request),{code:'RUN_REQUEST_CONFLICT'});
     for (const planningMode of ['forced', 'advisory']) assert.throws(() => restored.continueRun(first.id, { ...request, planningMode }), { code: 'RUN_REQUEST_CONFLICT' });
     for (const changed of [{ message: 'Changed follow-up.' }, { model: 'model-c' }, { prompt: 'Changed agent instructions.' }]) assert.throws(() => restored.continueRun(first.id, { ...request, ...changed }), { code: 'RUN_REQUEST_CONFLICT' });
     if (explicitDefault) assert.throws(() => restored.continueRun(first.id, { ...request, model: 'model-b' }), { code: 'RUN_REQUEST_CONFLICT' }, 'explicit default remains part of the legacy authored intent');
