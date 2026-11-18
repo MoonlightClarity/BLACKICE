@@ -25,7 +25,7 @@ test('find callable advertises one required query and exact host ranges without 
   assert.equal(s.properties.query.minLength, 1); assert.equal(s.properties.query.maxLength, 256);
   assert.deepEqual([s.properties.limit.minimum, s.properties.limit.maximum], [1, 100]);
   assert.deepEqual([s.properties.timeoutMs.minimum, s.properties.timeoutMs.maximum], [100, 10000]);
-  assert.deepEqual([s.properties.roots.minItems, s.properties.roots.maxItems], [1, 8]);
+  assert.deepEqual([s.properties.roots.minItems, s.properties.roots.maxItems], [1, 64]);
   assert.equal(s.properties.extensions.maxItems, 16);
   assert.equal(s.properties.depth, undefined); assert.equal(s.properties.action, undefined);
   assert.ok(!WORKSPACE_TOOL.inputSchema.properties.action.enum.includes('find'));
@@ -48,7 +48,7 @@ test('unknown fields and invalid bounds produce field-specific errors before fil
   const cases = [
     ['pattern', { pattern: '*.txt' }], ['depth', { depth: 999 }], ['limit', { limit: 101 }],
     ['limit', { limit: 0 }], ['limit', { limit: 1.5 }], ['timeoutMs', { timeoutMs: 10001 }],
-    ['timeoutMs', { timeoutMs: 99 }], ['roots', { roots: [] }], ['roots', { roots: Array(9).fill(cwd) }],
+    ['timeoutMs', { timeoutMs: 99 }], ['roots', { roots: [] }], ['roots', { roots: Array(65).fill(cwd) }],
     ['match', { match: 'regex' }], ['caseSensitive', { caseSensitive: 'false' }],
   ];
   for (const [field, extra] of cases) {
