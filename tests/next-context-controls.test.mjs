@@ -389,7 +389,11 @@ test('saved default context round-trips only on explicit runtime Save and keeps 
   await dom.$('#next-runtime-settings-form').dispatch('submit');await until(()=>dom.$('#next-runtime-feedback').textContent==='Saved.');
   const writes=calls.filter(call=>call.method==='POST');assert.equal(writes.length,1);
   assert.deepEqual(writes[0].body.defaultContext,{preset:'extended',windowTokens:null,autoCompact:false,headroomTokens:2048});
-  assert.equal(writes[0].body.connectedGmail,true);assert.equal(writes[0].body.defaultEffort,'high');
+  assert.equal(writes[0].body.connectedGmail,true);
+  for(const key of ['defaultEffort','defaultServiceTier','verbosity'])assert.equal(Object.hasOwn(writes[0].body,key),false,'Config omits response choice '+key);
+  assert.equal(runtime.defaultEffort,'high');assert.equal(runtime.defaultServiceTier,'default');assert.equal(runtime.verbosity,'balanced');
+  assert.equal(runtime.maxSubagents,3);assert.equal(runtime.subagentsEnabled,false);
+  assert.deepEqual(runtime.defaultContext,{preset:'extended',windowTokens:null,autoCompact:false,headroomTokens:2048});
   workspace.leave();workspace.enter();await tick();await tick();assert.equal(preset.value,'extended');
   assert.equal(calls.filter(call=>call.method!=='GET').length,1);
 });
