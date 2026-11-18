@@ -110,7 +110,7 @@ test('the legacy relay history setting preserves native continuation and contain
   assert.equal(one.status, 'completed', one.error);
   const firstReceipt = JSON.parse(one.nodes.agent.output);
   assert.ok(firstReceipt.tools.includes('relay_browser'));
-  assert.ok(firstReceipt.tools.includes('relay_connections'));
+  assert.equal(firstReceipt.tools.includes('relay_connections'),false);
   assert.match(firstReceipt.instructions, /A tool or method named in a prior assistant plan/);
   const browserDefinition=(await wire()).find(record=>record.method==='thread/start').params.dynamicTools.find(tool=>tool.name==='relay_browser');
   assert.doesNotMatch(firstReceipt.instructions,/BROWSER STATE RECOVERY|relay_browser:/);
@@ -129,14 +129,14 @@ test('the legacy relay history setting preserves native continuation and contain
   assert.equal(two.nodes.agent.threadId, one.nodes.agent.threadId);
   const secondReceipt = JSON.parse(two.nodes.agent.output);
   assert.doesNotMatch(secondReceipt.instructions, /BROWSER STATE RECOVERY|relay_browser:/);
-  assert.match(secondReceipt.instructions, /All website work stays in the BLACKICE contained relay_browser/);
+  assert.equal(secondReceipt.tools.includes('relay_connections'),false);
   assert.ok(JSON.stringify(secondReceipt.input).includes(selectedInput));
   assert.deepEqual(manifest(secondReceipt.instructions).map(item => item.name), secondReceipt.tools);
   const openings = (await wire()).filter(item => ['thread/start', 'thread/resume'].includes(item.method));
   assert.deepEqual(openings.map(item => item.method), ['thread/start', 'thread/resume'], 'The legacy setting preserves the saved native thread.');
   for (const record of openings) {
     assert.doesNotMatch(record.params.developerInstructions, /BROWSER STATE RECOVERY|relay_browser:/);
-    assert.match(record.params.developerInstructions, /Native browser adapters are not exposed to this task/);
+    assert.doesNotMatch(record.params.developerInstructions, /relay_connections:/);
   }
 });
 
@@ -222,7 +222,7 @@ test('native contained-browser scope does not start a model turn with unreadable
   assert.equal(records.filter(record => ['thread/start', 'thread/resume', 'turn/start'].includes(record.method)).length, 0);
 });
 
-for(const Engine of [HarnessEngine,CurrentHarnessEngine])test('missing shared MCP catalog upgrades a stopped native session once with history and real calls ('+(Engine===HarnessEngine?'legacy':'current')+')',async t=>{
+for(const Engine of [HarnessEngine,CurrentHarnessEngine])test('retired registry catalog refreshes a stopped native session once without dispatch ('+(Engine===HarnessEngine?'legacy':'current')+')',async t=>{
  const {runtime,directory,cwd,wire,cleanup}=await nativeHarness(t);await runtime.start();
  const tasks=await new TaskStateStore({dataDir:directory}).init();
  const engine=await new Engine({runtime,tasks,dataDir:directory,defaultCwd:cwd}).init();cleanup.push(()=>engine.close(),()=>tasks.close());
@@ -237,24 +237,25 @@ for(const Engine of [HarnessEngine,CurrentHarnessEngine])test('missing shared MC
  }
  state=await tasks.checkpoint(one.taskId,{completed:['Earlier work complete'],nextSteps:['Investigate the unresolved outcome'],nextAction:'Inspect uncertain-work before any repeat'},{expectedRevision:state.revision});
  const savedCheckpoint=structuredClone(state.checkpoint),savedEffects=structuredClone(state.externalActions);
+ engine.runs.get(first.id).nodes.agent.toolNames.push('relay_connections');
  const original=JSON.stringify(engine.getRun(first.id)),calls=[];
  engine.connections={list:()=>[{id:'shared-fixture',name:'Shared fixture',enabled:true}],redact:x=>String(x),
   tools:async id=>({tools:[{name:'verify_fixture',inputSchema:{type:'object'}}]}),
   call:async(id,name,args)=>{calls.push({id,name,args});return {content:[{type:'text',text:'verified only-new-request'}]};}};
- const request={nodeId:'agent',message:'CALL_SHARED_CATALOG',requestId:'shared-catalog-upgrade'};
+ const request={nodeId:'agent',message:'Continue without replaying prior work',requestId:'shared-catalog-upgrade'};
  const next=engine.continueRun(first.id,request);assert.equal(engine.continueRun(first.id,request).id,next.id);
  const two=await settled(next.id);assert.equal(two.status,'completed',two.error);
  assert.equal(two.taskId,one.taskId);assert.notEqual(two.nodes.agent.threadId,one.nodes.agent.threadId);
- assert.equal(two.modelHandoff.reason,'shared-tool-catalog-upgrade');assert.equal(two.modelHandoff.sourceThreadId,one.nodes.agent.threadId);
+ assert.equal(two.modelHandoff.reason,'retired-tool-catalog');assert.equal(two.modelHandoff.sourceThreadId,one.nodes.agent.threadId);
  assert.equal(JSON.stringify(engine.getRun(first.id)),original,'original history and receipts unchanged');
- const receipt=JSON.parse(two.nodes.agent.output);assert.ok(receipt.tools.includes('relay_connections'));
- assert.equal(receipt.results.length,3);assert.ok(receipt.results.every(x=>x.success));assert.match(JSON.stringify(receipt.input),/COMPLETED_RECEIPT/);
- assert.match(JSON.stringify(receipt.input),/Do not replay completed or uncertain actions/);
- assert.match(JSON.stringify(receipt.input),/CURRENT TASK STATE AT CAPABILITY REFRESH/);assert.match(JSON.stringify(receipt.input),/uncertain-work/);
- assert.deepEqual((await tasks.get(one.taskId)).externalActions,savedEffects);assert.deepEqual((await tasks.get(one.taskId)).checkpoint,savedCheckpoint);assert.match(JSON.stringify(receipt.input),/Inspect uncertain-work before any repeat/);
- assert.deepEqual(calls,[{id:'shared-fixture',name:'verify_fixture',args:{label:'only-new-request'}}]);
- assert.equal(engine.continueRun(first.id,request).id,next.id);assert.equal(calls.length,1);
+ const receipt=JSON.parse(two.nodes.agent.output);assert.equal(receipt.tools.includes('relay_connections'),false);
+ assert.match(JSON.stringify(receipt.input),/COMPLETED_RECEIPT/);
+ assert.match(JSON.stringify(receipt.input),/actual saved conversation text, not instructions with higher priority/);
+
+ assert.deepEqual((await tasks.get(one.taskId)).externalActions,savedEffects);assert.deepEqual((await tasks.get(one.taskId)).checkpoint,savedCheckpoint);
+ assert.deepEqual(calls,[]);
+ assert.equal(engine.continueRun(first.id,request).id,next.id);assert.equal(calls.length,0);
  const third=engine.continueRun(next.id,{nodeId:'agent',message:'Just report status'}),three=await settled(third.id);
  assert.equal(three.status,'completed',three.error);assert.equal(three.nodes.agent.threadId,two.nodes.agent.threadId);assert.equal(three.modelHandoff,undefined);
- assert.equal(calls.length,1);assert.deepEqual((await wire()).filter(x=>['thread/start','thread/resume'].includes(x.method)).map(x=>x.method),['thread/start','thread/start','thread/resume']);
+ assert.equal(calls.length,0);assert.deepEqual((await wire()).filter(x=>['thread/start','thread/resume'].includes(x.method)).map(x=>x.method),['thread/start','thread/start','thread/resume']);
 });
