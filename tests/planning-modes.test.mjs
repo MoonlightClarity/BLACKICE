@@ -1,14 +1,12 @@
-import {fixtureOutcomeReview,finishFixtureCandidate} from './fixture-modular-provider.mjs';
-// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
+// Current engine modes and explicit owner task state. No historical model catalog adapters.
 import test from 'node:test';
-import { fixtureDeferredUserAgency } from './fixture-user-agency.mjs';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { HarnessEngine, validateWorkflow } from './fixture-legacy-planning-engine.mjs';
-import { TaskStateStore, taskToolForVersion } from './fixture-legacy-task-state.mjs';
+import { HarnessEngine, validateWorkflow } from '../lib/engine.mjs';
+import { TaskStateStore, currentTaskTool } from '../lib/task-state.mjs';
 import { MethodStore } from '../lib/methods.mjs';
 import { TaskInbox } from '../lib/inbox.mjs';
 import { OperationsStore } from '../lib/operations.mjs';
@@ -27,31 +25,8 @@ const until = async check => {
 };
 const unpack = response => JSON.parse(response.contentItems.find(item => item.type === 'inputText').text);
 const call = (options, name, args) => options.onToolCall({ name, arguments: args });
-async function task(options, args) { const result = await call(options, 'relay_task', args); assert.equal(result.success, true, result.contentItems?.[0]?.text); return unpack(result); }
 const action = (id = 'answer', status = 'active') => ({ id, kind: 'action', parentId: null, title: 'Answer the current request', status, operation: { kind: 'reasoning', target: `The ${id} fixture question and supplied input` }, doneWhen: 'The response contains the requested result and any relevant limits.', result: 'A direct answer to the supplied fixture inputs.', note: 'Use the supplied fixture input to construct the answer and compare it with the explicit request constraints.' });
 const detailedAction = (id = 'answer', status = 'active') => ({ ...action(id, status), result: 'A direct answer to the actual user request.', note: 'Use the supplied inputs, check that the response answers the request, and report only performed work.' });
-async function plan(options, { steps, detail, previous } = {}) {
-  const state = previous || await task(options, { action: 'read' });
-  if (!steps) {
-    steps = state.steps;
-    if (!steps.some(step => (step.kind || 'action') === 'action' && !['done', 'skipped'].includes(step.status))) {
-      let id = 'answer'; while (steps.some(step => step.id === id)) id += '-next';
-      steps = [...steps, detailedAction(id)];
-    }
-  }
-  return task(options, { action: 'plan', expectedRevision: state.revision, steps, plan: { layout: 'sequence', ...(detail ? { detail } : {}) } });
-}
-async function completeAndReview(options, state, decision = 'respond') {
-  state ||= await task(options, { action: 'read' });
-  const active = state.steps.find(step => (step.kind || 'action') === 'action' && step.status === 'active');
-  if (active) state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: active.id, status: 'done', evidence: 'The supplied fixture request was compared with the saved prospective criterion and the result is ready for this turn.' });
-  const summary = decision === 'blocked'
-    ? 'The supplied input gap remains a real blocker and there is no independent ready action that can resolve it.'
-    : 'The actual result covers this fixture request; completed history is preserved and no further work is needed before the answer.';
-  return task(options, { action: 'review', expectedRevision: state.revision, review: { decision, summary,
-    ...(decision === 'blocked' && options.dynamicTools?.find(item => item.name === 'relay_task')?.inputSchema?.properties?.review?.properties?.userAgency
-      ? { userAgency: fixtureDeferredUserAgency(summary) } : {}) } });
-}
 const finished = run => assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
 async function fixture(t, execute) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-planning-mode-')), cwd = path.join(directory, 'workspace'); await mkdir(cwd);
@@ -64,11 +39,11 @@ async function fixture(t, execute) {
       assert.notEqual(options.responseOnly,true,'No automatic reviewer turn is admitted.');
       this.calls.push(options);
       options.onEvent({ type: 'thread', threadId: options.threadId || 'planning-mode-thread', model: options.model || 'fixture-model' });
-      return finishFixtureCandidate(options,await execute(options, this.calls.length, context));
+      return execute(options, this.calls.length, context);
     }
     async close() {}
   }
-  // This suite varies inert legacy aliases with explicit authoring and review modules; it is not a default-policy fixture.
+  // Historical mode values normalize through the actual current engine; no legacy schema is stamped.
   const runtime = new Runtime(), settings = { executionGuardrails: true, planningOntology:{version:2,modules:{decomposition:true,verification:true}} }, engine = await new HarnessEngine({ runtime, tasks, dataDir: directory, defaultCwd: cwd }).init();
   engine.methods = methods; engine.runtimeSettings = { get: () => ({ ...settings }) };
   context = { engine, tasks, methods, runtime, settings, directory, cwd, workflow: graph(),
@@ -80,7 +55,7 @@ async function fixture(t, execute) {
   return context;
 }
 
-for (const mode of ['auto', 'on', 'maximal', 'forced', 'advisory']) test(mode + ' migrates to explicit modules without legacy operation gates or model effort changes', async t => {
+for (const mode of ['auto', 'on', 'maximal', 'forced', 'advisory']) test(mode + ' normalizes without retired operation gates or model effort changes', async t => {
   const f = await fixture(t, async options => {
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS));
     assert.doesNotMatch(options.developerInstructions, /BLACKICE PLANNING MODULES/);
@@ -148,11 +123,11 @@ test('a historical On request does not attach the retired mandatory skill', asyn
   assert.equal(run.nodes.agent.output, 'The fixture answered without a sequence guard.');
 });
 
-test('coordinator and independent read-only workers omit the retired skill without inventing a shared plan tool', async t => {
+test('coordinator and independent read-only workers use the current catalog without the retired skill', async t => {
   const f = await fixture(t, async options => {
     assert.doesNotMatch(options.developerInstructions, /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL/);
     if (options.prompt.includes('YOUR ASSIGNED TASK:')) {
-      assert.equal(options.dynamicTools.some(tool => tool.name === 'relay_task'), false);
+      assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_task'));
       return { output: 'The supplied fixture contains no external action or guest operation.' };
     }
     const delegated = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'inspect-input', prompt: 'Read the supplied fixture only and report its scope; do not execute commands or edit files.', readOnly: true }, { id: 'inspect-tools', prompt: 'Independently inspect the supplied worker tool catalog; do not execute commands or edit files.', readOnly: true }] } });
@@ -176,21 +151,16 @@ test('a legacy On alias does not reject a tool-less model or invoke a planner', 
   assert.equal(f.runtime.calls.length, 1); assert.equal(run.nodes.agent.output, 'A direct model answer.');
 });
 
-test('a legacy On continuation preserves the exact native catalog and provider session', async t => {
-  const f = await fixture(t, async (options, number) => {
-    assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
-    if (number === 2) {
-      assert.equal(options.threadId, 'planning-mode-thread');
-      assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_task'));
-    }
-    return { output: 'Legacy notes remain readable.', threadId: 'planning-mode-thread' };
-  });
-  const previous = await f.settle(f.start({ planningMode: 'off' }).id); finished(previous);
-  const state = f.engine.runs.get(previous.id); state.nodes.agent.toolNames = ['relay_workspace']; state.nodes.agent.taskSchemaVersion = 1;
-  const continuation = await f.settle(f.engine.continueRun(previous.id, { nodeId: 'agent', message: 'Continue the historical request.', planningMode: 'on' }).id);
-  finished(continuation); assert.equal(continuation.taskId, previous.taskId); assert.equal(continuation.conversationId, previous.conversationId);
-  assert.equal(continuation.modelHandoff, undefined); assert.deepEqual(continuation.nodes.agent.toolNames, ['relay_workspace']);
-  assert.equal(f.runtime.calls.length, 2); assert.equal(previous.status, 'completed');
+test('a current native session keeps its exact task catalog across an inert mode alias',async t=>{
+ let catalog;
+ const f=await fixture(t,async(options,number)=>{
+  if(number===1)catalog=structuredClone(options.dynamicTools);
+  else {assert.equal(options.threadId,'planning-mode-thread');assert.deepEqual(options.dynamicTools,catalog);}
+  return {output:'Current native catalog retained.',threadId:'planning-mode-thread'};
+ });
+ const first=await f.settle(f.start({planningMode:'off'}).id);finished(first);
+ const next=await f.settle(f.engine.continueRun(first.id,{nodeId:'agent',message:'Continue current work.',planningMode:'on'}).id);finished(next);
+ assert.equal(next.taskId,first.taskId);assert.equal(next.conversationId,first.conversationId);assert.equal(next.modelHandoff,undefined);assert.equal(f.runtime.calls.length,2);
 });
 
 test('Off permits normal operations and final output without creating an automatic outline or method lookup', async t => {
@@ -214,90 +184,10 @@ test('Off permits normal operations and final output without creating an automat
   assert.equal(await readFile(path.join(f.cwd, 'off.txt'), 'utf8'), 'actual off-mode result');
 });
 
-test('optional authored detail remains explicit instead of being inflated by legacy aliases', async t => {
-  const f = await fixture(t, async (options, number) => {
-    const detail = number === 1 ? 'compact' : 'detailed';
-    const state = await plan(options, { steps: [action()], detail });
-    assert.equal(state.plan.detail, 'compact', 'The explicit request detail takes precedence over a later tool hint.'); await completeAndReview(options, state);
-    return { output: 'The chosen detail was recorded.', threadId: 'detail-' + number };
-  });
-  const first = await f.settle(f.start({ planningMode: 'on' }).id); finished(first);
-  const second = await f.settle(f.start({ planningMode: 'maximal', planDetail: 'compact' }).id); finished(second);
-  assert.equal(first.taskState.plan.detail, 'compact'); assert.equal(second.taskState.plan.detail, 'compact');
-  assert.equal(second.planDetail, 'compact'); assert.equal(second.planningMode, 'off');
-});
-
-test('legacy Maximal retains explicit user-authored task evidence without automatically reviewing final output', async t => {
-  const f = await fixture(t, async (options, number, context) => {
-    options.onEvent({ type: 'delta', delta: 'The current observed result.' });
-    assert.equal(context.engine.listRuns()[0].nodes.agent.output,'The current observed result.');
-    const state = await plan(options, { steps: [action()], detail: 'compact' });
-    assert.equal(state.plan.detail, 'compact');
-    await completeAndReview(options, state);
-    return { output: 'A sufficient optional plan was recorded.', threadId: 'planning-mode-thread' };
-  });
-  const run = await f.settle(f.start({ planningMode: 'maximal', planDetail: 'compact' }).id); finished(run);
-  assert.equal(run.planningMode, 'off'); assert.equal(run.taskState.plan.detail, 'compact');
-  assert.equal(run.taskState.steps[0].status, 'done'); assert.ok(run.taskState.steps[0].evidence);
-});
-
-test('continuation preserves the exact prior tree, evidence, notes and native schema across inert aliases', async t => {
-  let saved, oldTools;
-  const f = await fixture(t, async (options, number) => {
-    if (number === 1) {
-      let state = await plan(options, { steps: [action()] });
-      state = await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'answer', status: 'done', evidence: 'Checked the original fixture answer.' });
-      saved = await task(options, { action: 'checkpoint', expectedRevision: state.revision, goal: 'Keep useful context.', decisions: ['Keep the original observed result.'], completed: ['Original reply checked.'], nextSteps: ['Wait for the actual follow-up.'], nextAction: 'Use the next user request.' });
-      saved = await completeAndReview(options, saved);
-      oldTools = options.dynamicTools;
-    } else if (number === 2) {
-      assert.equal(options.threadId, 'planning-mode-thread'); assert.deepEqual(options.dynamicTools.map(item => item.name), oldTools.map(item => item.name));
-      assert.deepEqual(options.dynamicTools, oldTools, 'Historical aliases do not replace the existing optional catalog.');
-      assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
-      assert.equal((await call(options, 'relay_workspace', { action: 'write', path: 'continued.txt', text: 'continued without automatic plan' })).success, true);
-    } else {
-      assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
-      const written = await call(options, 'relay_workspace', { action: 'write', path: 'on.txt', text: 'Authorized optional work.' }); assert.equal(written.success, true);
-      const current = await task(options, { action: 'read' }); assert.deepEqual(current.steps, saved.steps);
-      const expanded = await plan(options, { previous: current, steps: [...current.steps, action('follow-up')] }); assert.deepEqual(expanded.steps[0], saved.steps[0]);
-      await completeAndReview(options, expanded);
-    }
-    return { output: `Actual turn ${number}.`, threadId: 'planning-mode-thread' };
-  });
-  const initial = await f.settle(f.start().id); finished(initial);
-  const off = await f.settle(f.engine.continueRun(initial.id, { nodeId: 'agent', message: 'Continue with automatic planning off.', planningMode: 'off' }).id); finished(off);
-  assert.deepEqual(await f.tasks.get(initial.taskId), saved); assert.deepEqual(off.taskState, saved); assert.equal(initial.planningMode, 'off'); assert.equal(off.planningMode, 'off');
-  const on = await f.settle(f.engine.continueRun(off.id, { nodeId: 'agent', message: 'Continue with a visible plan.', planningMode: 'on' }).id); finished(on);
-  assert.equal(on.planningMode, 'off'); assert.equal(on.taskState.plan.authoredBy.runId, on.id); assert.equal(on.taskState.steps[0].evidence, 'Checked the original fixture answer.');
-});
-
-test('legacy Maximal follow-up preserves earlier completed evidence and adds fully specified current work', async t => {
-  let original;
-  const f = await fixture(t, async (options, number) => {
-    if (number === 1) {
-      const state = await plan(options, { steps: [action()] });
-      original = (await task(options, { action: 'step', expectedRevision: state.revision, stepId: 'answer', status: 'done', evidence: 'Original response checked.' })).steps[0];
-    } else {
-      const previous = await task(options, { action: 'read' });
-      const state = await plan(options, { previous, steps: [...previous.steps, action('expanded')] });
-      assert.deepEqual(state.steps[0], original);
-      assert.equal(state.plan.detail, 'balanced');
-      assert.ok(state.steps[1].result); assert.ok(state.steps[1].note);
-    }
-    await completeAndReview(options);
-    return { output: 'Observed work preserved.', threadId: 'planning-mode-thread' };
-  });
-  const first = await f.settle(f.start().id); finished(first);
-  const next = await f.settle(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Add only useful new work.', planningMode: 'maximal' }).id); finished(next);
-  assert.equal(next.planningMode, 'off');
-  assert.equal(next.taskState.steps[0].result, original.result);
-  assert.equal(next.taskState.steps[0].note, original.note);
-});
-
 test('Retry inherits the accepted mode and an explicit override changes only the new recovery turn', async t => {
   const f = await fixture(t, async (options, number) => {
     if (number < 3) { assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/); throw Error('Observed fixture transport failure.'); }
-    assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/); await completeAndReview(options, await plan(options)); return { output: 'Recovered in the selected mode.', threadId: 'planning-mode-thread' };
+    assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);  return { output: 'Recovered in the selected mode.', threadId: 'planning-mode-thread' };
   });
   const first = await f.settle(f.start({ planningMode: 'off' }).id); assert.equal(first.status, 'failed');
   assert.throws(() => f.engine.retryRun(first.id, { planningMode: 'invalid' }), { code: 'PLANNING_MODE_INVALID' });
@@ -307,7 +197,7 @@ test('Retry inherits the accepted mode and an explicit override changes only the
 });
 
 test('mode admission is strict, has explicit precedence, and is bound into start and continuation receipts across restart', async t => {
-  const f = await fixture(t, async options => { await completeAndReview(options, await plan(options)); return { output: 'Request accepted once.', threadId: 'planning-mode-thread' }; });
+  const f = await fixture(t, async options => {  return { output: 'Request accepted once.', threadId: 'planning-mode-thread' }; });
   assert.equal(Object.hasOwn(validateWorkflow(f.workflow).settings, 'planningMode'), false, 'Omitted legacy settings retain their receipt identity');
   for (const invalid of ['always', 'OFF', null, false, 4, {}]) {
     assert.throws(() => f.start({ planningMode: invalid }), { code: 'PLANNING_MODE_INVALID' });
@@ -328,7 +218,7 @@ test('mode admission is strict, has explicit precedence, and is bound into start
 });
 
 test('missing-mode receipts remain recoverable without permitting a changed authored Off request', async t => {
-  const f = await fixture(t, async options => { await completeAndReview(options, await plan(options)); return { output: 'Legacy-compatible default.', threadId: 'planning-mode-thread' }; });
+  const f = await fixture(t, async options => {  return { output: 'Legacy-compatible default.', threadId: 'planning-mode-thread' }; });
   const request = { requestId: 'old-start-receipt' }, first = await f.settle(f.start(request).id); finished(first);
   delete f.engine.runs.get(first.id).planningMode;
   delete f.engine.runs.get(first.id).nodes.agent.planning.mode;
@@ -344,7 +234,7 @@ for (const scenario of [
   { label: 'unknown provider support', advertised: [], defaultEffort: 'medium', expected: 'medium', source: 'application-default' },
   { label: 'unknown advertised token', advertised: ['unlimited'], requested: 'default', expected: 'default', source: 'request' },
 ]) test(`Planning aliases never select model effort: ${scenario.label}`, async t => {
-  const f = await fixture(t, async options => { assert.equal(options.effort, scenario.expected); await completeAndReview(options, await plan(options)); return { output: 'Actual fixture result.', threadId: 'planning-mode-thread' }; });
+  const f = await fixture(t, async options => { assert.equal(options.effort, scenario.expected);  return { output: 'Actual fixture result.', threadId: 'planning-mode-thread' }; });
   f.runtime.models[0].supportedReasoningEfforts = scenario.advertised; f.settings.defaultEffort = scenario.defaultEffort || 'low';
   if (scenario.requested) f.workflow.nodes[1].effort = scenario.requested;
   const run = await f.settle(f.start({ planningMode: 'maximal' }).id); finished(run);
@@ -356,7 +246,6 @@ test('planning stays independent of model effort while concrete user overrides r
   const expected = ['default', 'default', 'default', 'low', 'low'];
   const f = await fixture(t, async (options, number) => {
     assert.equal(options.effort, expected[number - 1]);
-    if (number !== 3) await completeAndReview(options, await plan(options));
     return { output: 'Effort selection follows this turn.', threadId: 'planning-mode-thread' };
   });
   f.runtime.models.push({ id: 'narrow-model', supportsTools: true, supportedReasoningEfforts: ['low'] });
@@ -371,7 +260,7 @@ test('planning stays independent of model effort while concrete user overrides r
 test('a saved Inbox workflow keeps each selected mode across restart and real engine dispatch', async t => {
   const f = await fixture(t, async (options, number, context) => {
     const mode = context.engine.listRuns().find(run => run.status === 'running').planningMode;
-    if (mode === 'off') assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/); else await completeAndReview(options, await plan(options));
+    if (mode === 'off') assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
     return { output: 'Queued mode honored.', threadId: `queued-mode-${number}` };
   });
   const options = { dataDir: f.directory, engine: f.engine, delayMs: 0 }; let inbox = await new TaskInbox(options).init();
@@ -389,7 +278,7 @@ test('a saved Inbox workflow keeps each selected mode across restart and real en
 });
 
 test('a saved cron Maximal alias migrates to nonblocking execution across restart', async t => {
-  const f = await fixture(t, async options => { await completeAndReview(options, await plan(options)); return { output: 'The scheduled workflow kept its mode.', threadId: 'scheduled-mode-thread' }; });
+  const f = await fixture(t, async options => {  return { output: 'The scheduled workflow kept its mode.', threadId: 'scheduled-mode-thread' }; });
   let now = Date.parse('2026-10-19T12:00:00Z');
   const inbox = await new TaskInbox({ dataDir: f.directory, engine: f.engine }).init(), options = { dataDir: f.directory, inbox, engine: f.engine, clock: () => now, pollMs: 100000 };
   let operations = await new OperationsStore(options).init(); operations.kick = () => {};
@@ -405,26 +294,27 @@ test('a saved cron Maximal alias migrates to nonblocking execution across restar
   } finally { await operations.close(); await inbox.close(); }
 });
 
-test('Off keeps optional legacy task tools and external recovery guidance without importing default plan playbooks', () => {
-  for (const version of [1, 2, 3, 4, 5]) {
-    const instructions = capabilityGuidance([taskToolForVersion(version, { executionGuardrails: true })], { planningMode: 'off', executionGuardrails: true });
+test('Off keeps the current optional task tool and external recovery guidance without importing default plan playbooks', () => {
+  for (const executionGuardrails of [false, true]) {
+    const instructions = capabilityGuidance([currentTaskTool({ executionGuardrails })], { planningMode: 'off', executionGuardrails: true });
     assert.match(instructions, /Automatic planning is off/);
     assert.doesNotMatch(instructions, /before operational work or the final answer|save this turn's plan|form a brief operational plan|For substantive work, discover relevant methods/);
-    if (version >= 3) assert.match(instructions, /Reconcile uncertain effects before retry/);
+    assert.match(instructions, /Reconcile any uncertain dispatched effect before retrying/);
   }
   assert.doesNotMatch(capabilityGuidance([], { planningMode: 'off' }), /form a brief operational plan/);
 });
 
-test('Off identity and disabled automatic planning apply to delegated workers without changing coordinator ownership', async t => {
+test('Off identity and disabled automatic planning apply to delegated workers within current assigned scope', async t => {
   const f = await fixture(t, async options => {
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS)); assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
     if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
-      assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_task')); assert.doesNotMatch(options.developerInstructions, /form a brief operational plan/);
-      assert.match(options.developerInstructions, /The coordinator owns the final remote send/);
+      assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_task')); assert.doesNotMatch(options.developerInstructions, /form a brief operational plan/);
+      assert.match(options.developerInstructions, /Maintain the exact assigned canonical work-item IDs/);
+      assert.ok(!options.dynamicTools.some(tool=>['relay_delegate','relay_control'].includes(tool.name)));
       return { output: 'Observed independent fixture result.' };
     }
     const result = await call(options, 'relay_delegate', { tasks: [{ id: 'inspect', prompt: 'Inspect the supplied fixture request without external actions.' }, { id: 'inspect-tools', prompt: 'Independently inspect the supplied worker tool catalog without external actions.' }] });
-    assert.equal(result.success, true); assert.equal(unpack(result).allCompleted, true);
+    assert.equal(result.success, true,JSON.stringify(result)); assert.equal(unpack(result).allCompleted, true,JSON.stringify(unpack(result)));
     return { output: 'Worker result received.', threadId: 'planning-mode-thread' };
   });
   f.settings.subagentsEnabled = true;
@@ -453,9 +343,9 @@ test('archived run restoration rejects invalid saved planning modes before admit
 test('inherited application effort keeps its origin across ordinary follow-ups and Retry before a later Maximal turn', async t => {
   const expected = ['medium', 'medium', 'medium', 'medium'];
   const f = await fixture(t, async (options, number) => {
-    assert.equal(options.effort, expected[number - 1]); await plan(options);
+    assert.equal(options.effort, expected[number - 1]);
     if (number === 2) throw Error('Observed fixture failure after a recorded plan.');
-    await completeAndReview(options);
+
     return { output: 'Saved effort origin preserved.', threadId: 'planning-mode-thread' };
   });
   f.settings.defaultEffort = 'medium';
@@ -467,84 +357,26 @@ test('inherited application effort keeps its origin across ordinary follow-ups a
   assert.notEqual(maximal.nodes.agent.effortSelection.source, 'maximal-model-catalog'); assert.equal(maximal.nodes.agent.planning.mode, 'off');
 });
 
-for (const limitation of ['tool-less model', 'legacy catalog']) test(`Off reports task capability accurately for a ${limitation}`, async t => {
-  const f = await fixture(t, async options => ({ output: 'Ordinary Off reply.', threadId: 'planning-mode-thread' }));
-  if (limitation === 'tool-less model') f.runtime.models[0].supportsTools = false;
-  let run = await f.settle(f.start({ planningMode: 'off' }).id); finished(run);
-  if (limitation === 'legacy catalog') {
-    const previous = f.engine.runs.get(run.id); previous.nodes.agent.toolNames = ['relay_workspace']; previous.nodes.agent.taskSchemaVersion = 1;
-    run = await f.settle(f.engine.continueRun(run.id, { nodeId: 'agent', message: 'Continue without changing the saved catalog.' }).id); finished(run);
-  }
-  assert.equal(run.nodes.agent.planning.mode, 'off'); assert.equal(run.nodes.agent.planning.status, 'off');
-  assert.match(run.nodes.agent.planning.message, /does not expose task-state tools/); assert.doesNotMatch(run.nodes.agent.planning.message, /planning tools remain available/);
-  assert.ok(!(f.runtime.calls.at(-1).dynamicTools || []).some(tool => tool.name === 'relay_task'));
+test('Off reports unavailable task tools accurately for a tool-less model',async t=>{
+ const f=await fixture(t,async()=>({output:'Ordinary Off reply.',threadId:'planning-mode-thread'}));f.runtime.models[0].supportsTools=false;
+ const run=await f.settle(f.start({planningMode:'off'}).id);finished(run);
+ assert.equal(run.nodes.agent.planning.status,'off');assert.match(run.nodes.agent.planning.message,/does not expose task-state tools/);
+ assert.ok(!(f.runtime.calls.at(-1).dynamicTools||[]).some(tool=>tool.name==='relay_task'));
 });
-
-test('optional authoring requires a correct revision but no mandatory fresh-read checkpoint', async t => {
-  const f = await fixture(t, async options => {
-    const accepted = await call(options, 'relay_task', { action: 'plan', expectedRevision: 1, plan: { layout: 'sequence' }, steps: [detailedAction()] });
-    assert.equal(accepted.success, true); const state = unpack(accepted);
-    const stale = await call(options, 'relay_task', { action: 'plan', expectedRevision: 1, steps: [] });
-    assert.equal(stale.code, 'TASK_STATE_CONFLICT');
-    await completeAndReview(options, state);
-    return { output: 'The explicit revision was respected.', threadId: 'planning-mode-thread' };
-  });
-  finished(await f.settle(f.start().id));
-});
-
-test('republishing completed history preserves its evidence without gating new authorized operations',async t=>{
-  let previousEvidence;
-  const f=await fixture(t,async (options,number)=>{
-    if(number===1){
-      const planned=await plan(options);
-      const done=await task(options,{action:'step',expectedRevision:planned.revision,stepId:'answer',status:'done',evidence:'The original fixture input and constraints were checked.'});
-      previousEvidence=done.steps[0].evidence;
-      await completeAndReview(options, done);
-      return {output:'The original task is complete.',threadId:'planning-mode-thread'};
-    }
-    const current=await task(options,{action:'read'});
-    const history=await task(options,{action:'plan',expectedRevision:current.revision,steps:current.steps,plan:{layout:'sequence'}});
-    assert.equal(history.steps[0].evidence,previousEvidence);
-    const denied=await call(options,'relay_workspace',{action:'write',path:'history-only.txt',text:'current authorized work'});
-    assert.equal(denied.success,true);
-    return {output:'A new answer without new work.',threadId:'planning-mode-thread'};
-  });
-  const original=await f.settle(f.start().id);finished(original);
-  const next=await f.settle(f.engine.continueRun(original.id,{nodeId:'agent',message:'A different current request.'}).id);
-  finished(next);assert.equal(next.nodes.agent.planning.status,'off');
-  assert.equal(next.nodes.agent.output,'A new answer without new work.');assert.equal(next.taskState.steps[0].evidence,previousEvidence);
-  assert.equal(await readFile(path.join(f.cwd,'history-only.txt'),'utf8'),'current authorized work');
-});
-
-test('current prospective work can be added beside completed history without rewriting it',async t=>{
-  let originalStep;
-  const f=await fixture(t,async (options,number)=>{
-    if(number===1){
-      const planned=await plan(options);
-      originalStep=(await task(options,{action:'step',expectedRevision:planned.revision,stepId:'answer',status:'done',evidence:'The first request was checked against its supplied input.'})).steps[0];
-    }else{
-      const current=await task(options,{action:'read'});
-      const planned=await plan(options,{previous:current,steps:[...current.steps,{...detailedAction('current'),operation:{kind:'tool',tool:'relay_workspace',action:'write',target:'current.txt'},note:'Write current.txt once with the current fixture result.'}]});
-      assert.deepEqual(planned.steps[0],originalStep);
-      const written=await call(options,'relay_workspace',{action:'write',path:'current.txt',text:'current turn effect'});
-      assert.equal(written.success,true);
-      await task(options,{action:'step',expectedRevision:planned.revision,stepId:'current',status:'done',evidence:'The write receipt reports current.txt containing the current-turn result.'});
-    }
-    await completeAndReview(options);
-    return {output:'The actual current work was handled.',threadId:'planning-mode-thread'};
-  });
-  const first=await f.settle(f.start().id);finished(first);
-  const next=await f.settle(f.engine.continueRun(first.id,{nodeId:'agent',message:'Perform the current fixture work.'}).id);finished(next);
-  assert.deepEqual(next.taskState.steps[0],originalStep);
-  assert.equal(next.taskState.progress.complete,true);
-  assert.equal(await readFile(path.join(f.cwd,'current.txt'),'utf8'),'current turn effect');
+test('a manually altered pinned catalog cannot silently resume with a different contract',async t=>{
+ const f=await fixture(t,async()=>({output:'Original current reply.',threadId:'planning-mode-thread'}));
+ const first=await f.settle(f.start().id);finished(first);
+ const saved=f.engine.runs.get(first.id);saved.nodes.agent.toolNames=['relay_workspace'];
+ const next=await f.settle(f.engine.continueRun(first.id,{nodeId:'agent',message:'Resume altered catalog.'}).id);
+ assert.equal(next.status,'failed');assert.match(next.error||next.nodes.agent.error,/different execution contract or tool catalog/);assert.equal(f.runtime.calls.length,1);
+ assert.equal(f.engine.getRun(first.id).output,first.output);
 });
 
 test('ordinary deltas stream and final response replaces provisional text without an automatic review',async t=>{
   const f=await fixture(t,async (options,number,context)=>{
     options.onEvent({type:'delta',itemId:'premature',delta:'Provisional current observation.'});
     options.onEvent({type:'message',text:'A later provisional observation.'});
-    await completeAndReview(options, await plan(options));
+
     assert.equal(context.engine.listRuns()[0].nodes.agent.output,'Provisional current observation.','Ordinary deltas stream without hidden review.');
     options.onEvent({type:'delta',itemId:'grounded',delta:'The answer produced after the prospective plan.'});
     return {output:'The answer produced after the prospective plan.',threadId:'planning-mode-thread'};
@@ -554,16 +386,47 @@ test('ordinary deltas stream and final response replaces provisional text withou
   assert.doesNotMatch(run.output,/Provisional current observation|later provisional observation/);
 });
 
-test('a legacy On alias permits truthful partial results without marking unresolved work complete',async t=>{
-  const f=await fixture(t,async options=>{
-    const planned=await plan(options,{steps:[detailedAction()]});
-    const current=await task(options,{action:'step',expectedRevision:planned.revision,stepId:'answer',status:'blocked',blockedReason:'The fixture input omits the values needed for the comparison.'});
-    assert.equal(current.steps[0].status,'blocked');
-    await completeAndReview(options, current, 'blocked');
-    return {output:'The supplied inputs do not establish the requested comparison. The unresolved action remains blocked.',threadId:'planning-mode-thread'};
-  });
-  const run=await f.settle(f.start().id);finished(run);
-  assert.equal(run.taskState.steps[0].status,'blocked');
-  assert.equal(run.taskState.progress.complete,false);
-  assert.equal(run.nodes.agent.planning.status,'off');
+
+const canonicalContract=()=>({contractVersion:2,goal:'Answer the supplied request',criteria:[{id:'answer',kind:'judgment',description:'Answer matches supplied inputs'}],workItems:[{id:'answer',title:'Inspect supplied input',objective:'Derive an answer from the supplied input',owner:'agent',resourceKeys:['fixture'],effects:['observe'],dependsOn:[],criterionIds:['answer']}],instructions:[]});
+test('optional current model authoring uses exact revision without a mandatory preliminary read',async t=>{
+ const f=await fixture(t,async options=>{
+  const accepted=await call(options,'relay_task',{action:'plan',expectedRevision:1,contract:canonicalContract()});assert.equal(accepted.success,true,accepted.contentItems?.[0]?.text);
+  const stale=await call(options,'relay_task',{action:'plan',expectedRevision:1,contract:canonicalContract()});assert.equal(stale.code,'TASK_STATE_CONFLICT');
+  const unsupported=await call(options,'relay_task',{action:'step',expectedRevision:2,stepId:'answer',status:'done',evidence:'Unverified claim'});assert.equal(unsupported.success,false);
+  return {output:'Authored intent is not completion evidence.',threadId:'planning-mode-thread'};
+ });
+ const run=await f.settle(f.start({planDetail:'compact',planningMode:'maximal'}).id);finished(run);
+ const state=await f.tasks.get(run.taskId);assert.equal(state.contract.workItems[0].id,'answer');assert.equal(state.contract.workItems[0].status,undefined);assert.equal(run.planDetail,'compact');assert.equal(run.planningMode,'off');
+});
+
+test('human-authored tree, completed evidence and checkpoint survive current continuation, expansion and restart',async t=>{
+ let catalog;
+ const f=await fixture(t,async(options,number)=>{
+  if(number===1)catalog=structuredClone(options.dynamicTools);else assert.deepEqual(options.dynamicTools,catalog);
+  const receipt=await call(options,'relay_workspace',{action:'write',path:'continued.txt',text:'current authorized effect'});assert.equal(receipt.success,true);
+  return {output:'Actual effect completed without automatic planning.',threadId:'planning-mode-thread'};
+ });
+ const first=await f.settle(f.start().id);finished(first);
+ let state=await f.tasks.get(first.taskId);
+ state=await f.tasks.setPlan(first.taskId,{steps:[detailedAction()],plan:{layout:'sequence',detail:'compact'}},{expectedRevision:state.revision});
+ state=await f.tasks.setStep(first.taskId,'answer',{status:'done',evidence:'Owner checked original fixture input.'},{expectedRevision:state.revision});
+ state=await f.tasks.checkpoint(first.taskId,{goal:state.goal,decisions:['Keep checked evidence'],completed:['Original check'],nextSteps:['Await current request'],nextAction:'Inspect the new request'},{expectedRevision:state.revision});
+ const original=await f.tasks.get(first.taskId);await f.reopen();
+ const next=await f.settle(f.engine.continueRun(first.id,{nodeId:'agent',message:'Perform new authorized work.',planningMode:'maximal'}).id);finished(next);
+ const retained=await f.tasks.get(first.taskId);assert.deepEqual(retained,original);
+ for(const key of ['steps','checkpoint','plan','revision','goal'])assert.deepEqual(next.taskState[key],original[key]);
+ state=await f.tasks.setPlan(first.taskId,{steps:[...original.steps,detailedAction('current','pending')],plan:{layout:'sequence',detail:'compact'}},{expectedRevision:original.revision});
+ assert.deepEqual(state.steps[0],original.steps[0]);const {nextAction,...priorCheckpoint}=original.checkpoint;assert.deepEqual(state.checkpoint,{...priorCheckpoint,supersededNextAction:{text:nextAction,previousStepId:null,currentStepId:'current',reason:'plan-focus-changed'}});assert.equal(state.steps[1].status,'pending');assert.equal(state.plan.detail,'compact');
+ const last=await f.settle(f.engine.continueRun(next.id,{nodeId:'agent',message:'Report current progress.',planningMode:'off'}).id);finished(last);
+ const after=await f.tasks.get(first.taskId);assert.deepEqual(after.steps,state.steps);assert.deepEqual(after.checkpoint,state.checkpoint);assert.equal(after.progress.complete,false);
+ assert.equal(await readFile(path.join(f.cwd,'continued.txt'),'utf8'),'current authorized effect');
+});
+
+test('a partial response preserves owner-recorded blocked work without automatically completing it',async t=>{
+ const f=await fixture(t,async()=>({output:'Missing fixture values remain unresolved.',threadId:'planning-mode-thread'}));
+ const first=await f.settle(f.start().id);finished(first);let state=await f.tasks.get(first.taskId);
+ state=await f.tasks.setPlan(first.taskId,{steps:[detailedAction()],plan:{layout:'sequence'}},{expectedRevision:state.revision});
+ state=await f.tasks.setStep(first.taskId,'answer',{status:'blocked',blockedReason:'Fixture values are absent.'},{expectedRevision:state.revision});
+ const next=await f.settle(f.engine.continueRun(first.id,{nodeId:'agent',message:'Report the missing inputs.',planningMode:'on'}).id);finished(next);
+ const after=await f.tasks.get(first.taskId);assert.deepEqual(after.steps,state.steps);assert.equal(after.progress.complete,false);assert.equal(next.nodes.agent.planning.status,'off');
 });
