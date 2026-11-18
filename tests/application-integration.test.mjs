@@ -161,33 +161,27 @@ test('an engine agent opens, observes, edits, verifies, captures and ends the sa
   const history = JSON.parse(await readFile(path.join(dataDir, 'application-sessions.json'), 'utf8')); assert.equal(history.sessions.find(item => item.id === sessionId).state, 'closed'); assert.ok(!JSON.stringify(history).includes(PIXEL), 'captured pixels are not persisted in session history');
 });
 
-test('a saved native conversation keeps its original tools while a new chat receives private application access', async t => {
+test('unsupported saved native catalogs reject unchanged while fresh chats expose private application access', async t => {
   const {app, model, privateRuntime} = await fixture(t);
   await app.runtimeSettings.update({codexHistory: 'codex'});
   model.execute = async options => {
-    const continued = model.calls.length === 2;
-    assert.equal(options.dynamicTools.some(tool => tool.name === APPLICATION_TOOL.name), !continued);
-    if (continued) {
-      assert.equal(options.threadId, 'saved-app-fixture-thread');
-      assert.ok(!options.prompt.includes('PRIVATE APPLICATION SESSIONS'), 'an older native tool catalog must not receive instructions for an unattached app tool');
-      assert.ok(!options.developerInstructions.includes('"name":"relay_apps"'));
-    }
+    assert.ok(options.dynamicTools.some(tool => tool.name === APPLICATION_TOOL.name));
     return {output: 'Reported the actual attached application capabilities.', threadId: 'saved-app-fixture-thread', codexHistory: 'codex'};
   };
   const first = app.engine.startRun({workflow: graph, input: 'Inspect the available tool catalog.'}); await app.engine.executions.get(first.id);
   const original = app.engine.getRun(first.id); assert.equal(original.status, 'completed', original.error);
-  // Model an existing native conversation whose saved catalog predates relay_apps.
-  // This simulated retained catalog predates Planning14 and its host catalog hash.
-  const legacyRun = app.engine.runs.get(first.id);
-  assert.equal(legacyRun.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
-  assert.ok(!legacyRun.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
-  legacyRun.planningContractVersion = 13; legacyRun.nodes.agent.taskSchemaVersion = 13;
-  delete legacyRun.nodes.agent.providerExecutionContract;
-  legacyRun.nodes.agent.toolNames = original.nodes.agent.toolNames.filter(name => name !== APPLICATION_TOOL.name);
-  const next = app.engine.continueRun(first.id, {nodeId: 'agent', message: 'Continue with the tools this native session originally had.'}); await app.engine.executions.get(next.id);
-  assert.equal(app.engine.getRun(next.id).status, 'completed', app.engine.getRun(next.id).error);
-  const fresh = app.engine.startRun({workflow: graph, input: 'A fresh chat may use the new application tool.'}); await app.engine.executions.get(fresh.id);
-  assert.equal(app.engine.getRun(fresh.id).status, 'completed', app.engine.getRun(fresh.id).error); assert.equal(model.calls.length, 3); assert.equal(privateRuntime.calls.length, 0);
+  const unsupported = app.engine.runs.get(first.id);
+  assert.equal(unsupported.planningContractVersion, 14);
+  unsupported.planningContractVersion = 13; unsupported.nodes.agent.taskSchemaVersion = 13;
+  delete unsupported.nodes.agent.providerExecutionContract;
+  unsupported.nodes.agent.toolNames = original.nodes.agent.toolNames.filter(name => name !== APPLICATION_TOOL.name);
+  const before = JSON.stringify(unsupported), calls = model.calls.length;
+  assert.throws(() => app.engine.continueRun(first.id, {nodeId: 'agent', message: 'Continue the old session.'}), {code: 'NATIVE_CATALOG_UNSUPPORTED'});
+  assert.equal(JSON.stringify(app.engine.runs.get(first.id)), before, 'Rejected continuation preserves saved evidence exactly.');
+  assert.equal(model.calls.length, calls); assert.equal(privateRuntime.calls.length, 0);
+  const fresh = app.engine.startRun({workflow: graph, input: 'A fresh chat may use the application tool.'}); await app.engine.executions.get(fresh.id);
+  assert.equal(app.engine.getRun(fresh.id).status, 'completed', app.engine.getRun(fresh.id).error);
+  assert.equal(model.calls.length, 2); assert.equal(privateRuntime.calls.length, 0);
 });
 
 test('retired module activation stays absent from new turns and readable history', async t=>{
