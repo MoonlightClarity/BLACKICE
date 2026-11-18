@@ -172,10 +172,10 @@ test('profile maintenance accounts for active module workers', async t => {
     async start() { assert.fail('Maintenance must not start a worker.'); }, async cancel() { assert.fail('Maintenance must not cancel an individual worker.'); },
     async cancelAll() { activeCount = 0; }, async close() { activeCount = 0; }
   };
-  const { app } = await fixture(t, { planningBrowserRuntime: runner, taskViability: false });
+  const { app } = await fixture(t, { planningBrowserRuntime: runner });
   await assert.rejects(app.beginMaintenance(), error => error.status === 409 && /active work/i.test(error.message));
   assert.equal(activeCount, 1, 'ordinary maintenance admission must not silently cancel a module');
-  assert.equal(app.learning.status().retired,true,'maintenance does not need a background learning scheduler');
+  assert.equal(app.learning,undefined,'maintenance does not need a background learning scheduler');
   activeCount = 0;
   await app.beginMaintenance();assert.equal(app.engine.maintenanceRequested,true,'settled modules release maintenance admission');app.endMaintenance();
 });

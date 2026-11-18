@@ -47,8 +47,9 @@ test('assembled authenticated HTTP retires automatic cycles, answers and diagnos
  await store.addNode('archive',{id:'frame',kind:'frame',title:'Saved frame'});
  const raw=JSON.parse(await readFile(store.file('archive'),'utf8'));raw.responseCycle={version:1,rootCycleId:'old-cycle',cycles:[]};store._validate(raw);
  await writeFile(store.file('archive'),JSON.stringify(raw));const original=await readFile(store.file('archive'),'utf8');
+ assert.equal(f.app.taskViability,undefined);assert.equal(f.app.engine.taskViability,undefined);assert.equal(f.app.operations.taskViability,undefined);
  const called=[];
- for(const [service,names]of [[f.app.responseCycle,['createCycle','runCycle','editPlan','continueCycle','answerQuestion']],[f.app.taskViability,['answer','answerCurrent']],[f.app.engine,['startRun','resumePlannedRun','resumeViabilityRun']]]){
+ for(const [service,names]of [[f.app.responseCycle,['createCycle','runCycle','editPlan','continueCycle','answerQuestion']],[f.app.engine,['startRun','resumePlannedRun','resumeViabilityRun']]]){
   for(const name of names)service[name]=()=>{called.push(name);throw Error('Retired handler reached '+name);};
  }
  const routes=[BASE+'/archive/cycles',BASE+'/archive/cycles/old-cycle/run',BASE+'/archive/cycles/old-cycle/plan',BASE+'/archive/cycles/old-cycle/continue',BASE+'/archive/viability/answer','/api/planning-diagnostics/capture','/api/planning-diagnostics/saved/run'];

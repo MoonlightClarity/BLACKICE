@@ -33,7 +33,6 @@ import { PlanningBrowserRuntime } from './lib/planning-browser-runtime.mjs';
 import { PlanningDiagnostics } from './lib/planning-diagnostics.mjs';
 import { handlePlanningDiagnosticsHttp } from './lib/planning-diagnostics-api.mjs';
 import { handlePlanningBrowserHttp, planningBrowserCatalog } from './lib/planning-browser-http.mjs';
-import { TaskViability } from './lib/task-viability.mjs';
 import { ResponseCycleService } from './lib/response-cycle.mjs';
 import { assertExecutablePlanningMode } from './public/response-cycle-model.mjs';
 import { createDirectProviderSetupTools } from './lib/provider-setup-tools.mjs';
@@ -202,13 +201,11 @@ export async function createHarnessServer(options = {}) {
     if (id && !engine.runs.has(id)) engine.restoreArchivedRun(await conversations.get(id));
   };
   const inbox = options.inbox || new TaskInbox({ dataDir, engine, createWorkflow: item => createMissionWorkflow({ id: `inbox-${item.id}`, task: item.input, cwd: item.cwd }) });
-  const taskViability=options.taskViability===false?null:options.taskViability||new TaskViability({store:planningBrowser,runner:planningBrowserRuntime,engine,attachments,identity,conversations,getSettings:()=>runtimeSettings.get(),onUpdated:event=>sendEvent(event)});
-  engine.taskViability=taskViability;
-  const responseCycle=options.responseCycle===false||!taskViability?null:options.responseCycle||new ResponseCycleService({store:planningBrowser,runner:planningBrowserRuntime,taskViability,engine,conversations,getSettings:()=>runtimeSettings.get(),onUpdated:event=>sendEvent(event)});
+  const responseCycle=options.responseCycle===false?null:options.responseCycle||new ResponseCycleService({store:planningBrowser,runner:planningBrowserRuntime,engine,conversations,getSettings:()=>runtimeSettings.get(),onUpdated:event=>sendEvent(event)});
   engine.responseCycle=responseCycle;
   const planningDiagnostics=responseCycle?new PlanningDiagnostics({store:planningBrowser,cycles:responseCycle,runner:planningBrowserRuntime,getSettings:()=>runtimeSettings.get(),readRun:async id=>{try{return engine.getRun(id);}catch{return conversations.get(id);}}}):null;
   let providerStartupPending=true;
-  const operations=options.operations||new OperationsStore({dataDir,inbox,engine,conversationArchive:conversations,taskViability,providerStartupPending:()=>providerStartupPending});
+  const operations=options.operations||new OperationsStore({dataDir,inbox,engine,conversationArchive:conversations,providerStartupPending:()=>providerStartupPending});
   // Restore an intentionally unpaused scheduler after a clean host restart.
   // OperationsStore still fails closed on conflicting, interrupted or uncertain receipts,
   // preserves explicit Stop, and journals overdue occurrences instead of replaying them.
@@ -634,7 +631,7 @@ export async function createHarnessServer(options = {}) {
         const client = remoteAccess?.authorizeForward?.(req);
         const actor = client?.kind === 'browser' ? { type: 'human', id: client.id, name: client.label } : { type: 'human', id: 'local' };
         if (await handlePlanningBrowserHttp({
-          req, res, pathname, store: planningBrowser, runner: planningBrowserRuntime, conversations, runtime, runtimeSettings, taskViability, operations, responseCycle,
+          req, res, pathname, store: planningBrowser, runner: planningBrowserRuntime, conversations, runtime, runtimeSettings, operations, responseCycle,
           defaultCwd, body, json, fileMutations, onUpdated: sendEvent, isClosing: () => Boolean(maintenanceRequested || closePromise), actor
         })) return;
       }
@@ -1468,7 +1465,7 @@ export async function createHarnessServer(options = {}) {
   const heartbeat = setInterval(() => { for (const res of clients) if(!writeEventStream(res,': heartbeat\n\n'))clients.delete(res); }, 15000);
   heartbeat.unref();
   return {
-    server, engine, goals, ownerRecovery, runtime, runtimeSettings, desktop, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace,nativeWindows, identity, connections, tasks, planningOrganization, planningBrowser, planningBrowserRuntime, taskViability, responseCycle, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
+    server, engine, goals, ownerRecovery, runtime, runtimeSettings, desktop, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace,nativeWindows, identity, connections, tasks, planningOrganization, planningBrowser, planningBrowserRuntime, responseCycle, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
     async listen({ waitForRemote = true } = {}) {
       if (typeof waitForRemote !== 'boolean') throw new TypeError('Choose whether to wait for remote startup.');
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
@@ -1528,7 +1525,6 @@ export async function createHarnessServer(options = {}) {
         await cleanup(() => Promise.all([...fileMutations]));
         await cleanup(() => planningOrganization.close());
         await cleanup(() => responseCycle?.close?.());
-        await cleanup(() => taskViability?.close());
         await cleanup(() => planningBrowser.close());
         await cleanup(() => runtimeSettings.close());
         await cleanup(() => prompts.close());
