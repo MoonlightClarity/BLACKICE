@@ -130,7 +130,7 @@ test('a force timeout records an in-flight private cleanup as uncertain in the r
     // Allow the real durable-intent write to finish under concurrent suite load;
     // the held close still guarantees timeout before cleanup completion.
     timeoutMs: 2000, isClosing: () => false, isMaintenance: () => maintenance,
-    getEngineStatus: () => ({ activeCount: 0 }), getLearningActive: () => false,
+    getEngineStatus: () => ({ activeCount: 0 }),
     getApplicationSessions: () => f.workspace.status().sessions,
     getBrowserStatus: () => ({ busy: false, tabs: [], downloads: [], persistence: { healthy: true } }),
     getDirectJobs: async () => [], getPendingActions: () => false,

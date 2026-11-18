@@ -69,7 +69,7 @@ test('an outer controller deadline retires force cancellation work before reopen
   const entered = deferred(), pause = deferred(); let maintenance = false, stopSignal, lateCancels = 0;
   const barrier = createDesktopRestartBarrier({
     isClosing: () => false, isMaintenance: () => maintenance, getEngineStatus: () => ({ activeCount: 0 }),
-    getLearningActive: () => false, getApplicationSessions: () => [], getBrowserStatus: () => ({ available: false }),
+     getApplicationSessions: () => [], getBrowserStatus: () => ({ available: false }),
     getDirectJobs: async () => [], getPendingActions: () => false, setMaintenance: value => { maintenance = value; }, drain: async () => {},
     stopWork: async ({ signal }) => { stopSignal = signal; entered.resolve(); await pause.promise; if (!signal.aborted) lateCancels++; },
     timeoutMs: 10000,

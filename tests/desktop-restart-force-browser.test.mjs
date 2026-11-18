@@ -139,7 +139,7 @@ test('failed forced handoff retains already interrupted private-session effects 
   let maintenance = false;
   const barrier = createDesktopRestartBarrier({
     isClosing: () => false, isMaintenance: () => maintenance,
-    getEngineStatus: () => ({ activeCount: 0 }), getLearningActive: () => false,
+    getEngineStatus: () => ({ activeCount: 0 }),
     getApplicationSessions: () => [], getBrowserStatus: () => ({ busy: false, tabs: [], downloads: [], persistence: { healthy: true } }),
     getDirectJobs: async () => [], getPendingActions: () => false,
     setMaintenance: value => { maintenance = value; }, drain: async () => {},

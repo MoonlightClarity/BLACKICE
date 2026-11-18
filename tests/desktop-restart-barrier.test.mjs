@@ -4,13 +4,12 @@ import { createDesktopRestartBarrier } from '../lib/desktop-restart-barrier.mjs'
 
 const held = () => { let resolve, reject; const promise = new Promise((done, failed) => { resolve = done; reject = failed; }); return { promise, resolve, reject }; };
 function fixture(overrides = {}) {
-  const state = { closing: false, maintenance: false, engine: { activeCount: 0 }, learning: false, sessions: [], jobs: [], pending: false, browser: { available: true, busy: false, lifecycle: 'ready', persistence: { healthy: true }, tabs: [], downloads: [] } };
+  const state = { closing: false, maintenance: false, engine: { activeCount: 0 }, sessions: [], jobs: [], pending: false, browser: { available: true, busy: false, lifecycle: 'ready', persistence: { healthy: true }, tabs: [], downloads: [] } };
   const gates = []; let drains = 0, jobReads = 0;
   const callbacks = {
     isClosing: () => state.closing,
     isMaintenance: () => state.maintenance,
     getEngineStatus: () => state.engine,
-    getLearningActive: () => state.learning,
     getApplicationSessions: () => state.sessions,
     getBrowserStatus: () => state.browser,
     getDirectJobs: async () => { jobReads++; return state.jobs; },
@@ -36,10 +35,10 @@ test('force readiness is read-only and force preparation gates before stopping a
   const f = fixture({ stopWork: async ({ signal }) => {
     stops++; assert.equal(f.state.maintenance, true); assert.equal(signal.aborted, false);
     entered.resolve(); await settle.promise;
-    f.state.engine.activeCount = 0; f.state.learning = false; f.state.pending = false;
+    f.state.engine.activeCount = 0; f.state.pending = false;
     f.state.jobs[0].status = 'cancelled';
   } });
-  f.state.engine.activeCount = 1; f.state.learning = true; f.state.pending = true;
+  f.state.engine.activeCount = 1; f.state.pending = true;
   f.state.jobs = [{ id: 'other-owner-input', status: 'awaiting_input' }];
   const before = structuredClone(f.state);
   await f.barrier.assertReady({ force: true }); assert.deepEqual(f.state, before); assert.equal(stops, 0);
@@ -266,7 +265,6 @@ test('closing, maintenance, active work, private sessions, and pending sign-ins 
     state => { state.closing = true; },
     state => { state.maintenance = true; },
     state => { state.engine.activeCount = 1; },
-    state => { state.learning = true; },
     ...['starting', 'running', 'needs_attention'].map(value => state => { state.sessions = [{ state: value }]; }),
     state => { state.pending = true; },
   ];
@@ -382,7 +380,6 @@ test('activity that starts while readiness reads jobs prevents acquiring the gat
 test('activity admitted before the gate is detected after drain and leaves the app open', async () => {
   const races = [
     state => { state.engine.activeCount = 1; },
-    state => { state.learning = true; },
     state => { state.sessions = [{ state: 'needs_attention' }]; },
     state => { state.jobs.push({ id: 'late-job', ownerId: 'another-owner', status: 'queued' }); },
     state => { state.pending = true; },

@@ -11,7 +11,7 @@ test('managed stores include active snapshots, approval queue, backups and ident
  const dataDir=path.join(root,'data'),cwd=path.join(root,'project');await mkdir(dataDir);await mkdir(cwd);
  const protectedPaths=managedContextPaths({dataDir});const patchStore=new FilePatchStore({dataDir:path.join(root,'patches')});t.after(()=>patchStore.close());
  const h=createWorkspaceToolHandler({cwd,patchStore,protectedPaths});let count=0;
- for(const file of ['skills-folders.json','skills-folders.json.lock','knowledge.json','knowledge.json.bak','knowledge.json.12345678-1234-1234-1234-123456789abc.tmp','knowledge.json.12345678-1234-1234-1234-123456789abc.bak.tmp','knowledge-approvals.json.12345678-1234-1234-1234-123456789abc.tmp','learning.json.12345678-1234-1234-1234-123456789abc.tmp','knowledge-approvals.json','knowledge-folders.json','learning.json','learning.json.bak','identity/USER.md','identity/history/user-1.json']) {
+ for(const file of ['skills-folders.json','skills-folders.json.lock','knowledge.json','knowledge.json.bak','knowledge.json.12345678-1234-1234-1234-123456789abc.tmp','knowledge.json.12345678-1234-1234-1234-123456789abc.bak.tmp','knowledge-approvals.json.12345678-1234-1234-1234-123456789abc.tmp','knowledge-approvals.json','knowledge-folders.json','identity/USER.md','identity/history/user-1.json']) {
   const target=path.join(dataDir,file);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,'owner text');
   for(const args of [{action:'write',path:target,text:'changed'},{action:'patch',path:target,oldText:'owner',newText:'model'}]) {
    const result=await h({name:'relay_workspace',arguments:args},{onOperationDispatch:()=>count++});assert.equal(result.success,false);assert.equal(parse(result).code,'WORKSPACE_PROTECTED_PATH');assert.equal(parse(result).actionDispatched,false);
@@ -24,9 +24,9 @@ test('managed stores include active snapshots, approval queue, backups and ident
  assert.equal((await h({name:'relay_workspace',arguments:{action:'write',path:path.join(cwd,'knowledge.json'),text:'ordinary project artifact'}})).success,true);
 });
 test('custom store locations override defaults and do not protect the whole workspace',()=>{
- const root=path.resolve('fixture'),identity={directory:path.join(root,'custom-identity')},knowledge={file:path.join(root,'custom-k.json'),approvalsFile:path.join(root,'queue.json'),organizationFile:path.join(root,'folders.json'),lockDirectory:path.join(root,'lock')},learning={file:path.join(root,'learn.json')};
- const paths=managedContextPaths({dataDir:root,identity,knowledge,learning});
- for(const file of [identity.directory,knowledge.file,knowledge.approvalsFile,knowledge.organizationFile,knowledge.lockDirectory,learning.file,learning.file+'.bak'])assert.ok(paths.includes(file));
+ const root=path.resolve('fixture'),identity={directory:path.join(root,'custom-identity')},knowledge={file:path.join(root,'custom-k.json'),approvalsFile:path.join(root,'queue.json'),organizationFile:path.join(root,'folders.json'),lockDirectory:path.join(root,'lock')};
+ const paths=managedContextPaths({dataDir:root,identity,knowledge});
+ for(const file of [identity.directory,knowledge.file,knowledge.approvalsFile,knowledge.organizationFile,knowledge.lockDirectory])assert.ok(paths.includes(file));
  assert.ok(!paths.includes(root));assert.ok(!paths.includes(path.join(root,'knowledge.json')));
 });
 
