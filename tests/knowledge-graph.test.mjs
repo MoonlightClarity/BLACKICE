@@ -93,24 +93,20 @@ test('stale writers cannot overwrite semantic metadata and incompatible restores
   assert.equal(store.get('source').memoryType, 'assumption'); assert.deepEqual(store.get('source').relations, []);
 });
 
-test('relay_memory exposes and saves typed metadata while tool scope and revision guards remain effective', async t => {
-  const { store, cwd, other } = await fixture(t), events = [];
-  await store.upsert(note('target', { cwd, memoryType: 'fact' })); await store.upsert(note('private', { cwd: other }));
-  const handler = createKnowledgeToolHandler({ store, cwd, runId: 'run', nodeId: 'worker', onEvent: event => events.push(event) });
-  const invoke = async arguments_ => JSON.parse((await handler({ name: 'relay_memory', arguments: arguments_ })).contentItems[0].text);
-  const pending = await invoke({ action: 'remember', title: 'Working assumption', content: 'An uncertain premise.', memoryType: 'assumption', sources: ['brief.md section 2'], relations: [{ type: 'contradicts', targetId: 'target' }] });
-  assert.equal(pending.pendingApproval,true);assert.equal(pending.applied,false);
-  assert.equal((await invoke({action:'search',memoryType:'assumption'})).entries.length,0);
-  const proposal=store.listApprovals().find(item=>item.id===pending.approvalId);assert.equal(proposal.after.memoryType,'assumption');assert.deepEqual(proposal.after.sources,['brief.md section 2']);assert.deepEqual(proposal.after.relations,[{type:'contradicts',targetId:'target'}]);
-  const decision=await store.decideApproval(pending.approvalId,{decision:'approve'});assert.equal(decision.status,'approved');const saved=decision.entry;
-  assert.equal(saved.memoryType, 'assumption'); assert.equal(saved.provenance.runId, 'run');
-  const found = await invoke({ action: 'search', memoryType: 'assumption' }); assert.equal(found.entries.length, 1); assert.equal(found.entries[0].id, saved.id);
-  const invalid=await invoke({ action: 'remember', title: 'Leak', content: 'Never saved.', relations: [{ type: 'informs', targetId: 'private' }] });
-  assert.equal(invalid.pendingApproval,true);assert.equal(invalid.applied,false);
-  const before=store.list({includeDeleted:true});
-  await assert.rejects(store.decideApproval(invalid.approvalId,{decision:'approve'}),/same working folder/);
-  assert.deepEqual(store.list({includeDeleted:true}),before);assert.ok(!store.list().some(item=>item.title==='Leak'));
-  await store.decideApproval(invalid.approvalId,{decision:'reject'});
-  const spec = KNOWLEDGE_TOOLS.find(item => item.name === 'relay_memory'); assert.equal(spec.inputSchema.properties.relations.items.additionalProperties, false);
-  assert.ok(events.some(event => event.action === 'remember' && event.status === 'pending_approval' && event.approvalId === pending.approvalId));
+test('retired memory tools cannot expose or mutate typed records; legacy graph validation remains effective',async t=>{
+ const{store,cwd,other}=await fixture(t);
+ await store.upsert(note('target',{cwd,memoryType:'fact'}));await store.upsert(note('private',{cwd:other}));
+ const handler=createKnowledgeToolHandler({store,cwd,runId:'run',nodeId:'worker'}),before=store.list({includeDeleted:true});
+ for(const action of ['remember','search','read','patch','forget'])await assert.rejects(handler({name:'relay_memory',arguments:{action,id:'target'}}),/Unknown knowledge tool/);
+ assert.equal(KNOWLEDGE_TOOLS.some(item=>item.name==='relay_memory'),false);
+ assert.deepEqual(store.list({includeDeleted:true}),before);assert.equal(store.listApprovals().length,0);
+ const provenance={source:'agent',runId:'run',nodeId:'worker'};
+ let id;await assert.rejects(store.upsert({kind:'memory',cwd,title:'Working assumption',content:'An uncertain premise.',memoryType:'assumption',sources:['brief.md section 2'],relations:[{type:'contradicts',targetId:'target'}]},provenance),error=>{id=error.approvalId;return error.code==='KNOWLEDGE_APPROVAL_REQUIRED';});
+ assert.equal(store.list({memoryType:'assumption'}).length,0);
+ const proposal=store.listApprovals().find(item=>item.id===id);assert.equal(proposal.after.memoryType,'assumption');assert.deepEqual(proposal.after.sources,['brief.md section 2']);assert.deepEqual(proposal.after.relations,[{type:'contradicts',targetId:'target'}]);
+ const decision=await store.decideApproval(id,{decision:'approve'});assert.equal(decision.status,'approved');
+ assert.equal(decision.entry.provenance.runId,'run');assert.equal(store.list({memoryType:'assumption'})[0].id,decision.entry.id);
+ await assert.rejects(store.upsert({kind:'memory',cwd,title:'Leak',content:'Never saved.',relations:[{type:'informs',targetId:'private'}]},provenance),error=>{id=error.approvalId;return error.code==='KNOWLEDGE_APPROVAL_REQUIRED';});
+ const snapshot=store.list({includeDeleted:true});await assert.rejects(store.decideApproval(id,{decision:'approve'}),/same working folder/);
+ assert.deepEqual(store.list({includeDeleted:true}),snapshot);await store.decideApproval(id,{decision:'reject'});
 });

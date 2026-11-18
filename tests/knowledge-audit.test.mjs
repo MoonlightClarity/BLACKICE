@@ -17,24 +17,17 @@ async function approveMutation(store, operation) {
  assert.deepEqual(store.list({includeDeleted:true,limit:300}),before,'proposal has no effect before approval');
  const result=await store.decideApproval(approvalId,{decision:'approve'});assert.equal(result.status,'approved');return result.entry;
 }
-async function approveTool(store,result) {
- const pending=JSON.parse(result.contentItems[0].text);assert.equal(pending.pendingApproval,true);assert.equal(pending.applied,false);
- const proposal=store.listApprovals().find(item=>item.id===pending.approvalId);assert.ok(proposal);
- if(proposal.before)assert.equal(store.get(proposal.before.id).revision,proposal.before.revision);else assert.throws(()=>store.get(proposal.value.id),{status:404});
- return (await store.decideApproval(pending.approvalId,{decision:'approve'})).entry;
-}
-
 const note = (content, extra = {}) => ({ kind: 'memory', title: 'Project preference', content, ...extra });
 const call = (name, arguments_) => ({ name, arguments: arguments_ });
 const unpack = result => { assert.equal(result.success, true); return JSON.parse(result.contentItems[0].text); };
 
-test('direct agent saves, patches and removals all retain auditable source revisions and reversible deletion after restart', async t => {
-  const { store, dataDir, cwd } = await fixture(t), events = [], agent = createKnowledgeToolHandler({ store, cwd, runId: 'source-chat', nodeId: 'agent-one', onEvent: value => events.push(value) });
-  const created = await approveTool(store, await agent(call('relay_memory', { action: 'remember', title: 'Theme preference', content: 'Use a black background.' })));
-  const patched = await approveTool(store, await agent(call('relay_memory', { action: 'patch', id: created.id, oldText: 'black background', newText: 'black background with clear contrast', expectedRevision: created.revision })));
+test('legacy store agent revisions retain auditable provenance and reversible deletion after restart', async t => {
+  const { store, dataDir, cwd } = await fixture(t), agent = {source:'agent',runId:'source-chat',nodeId:'agent-one'};
+  const created = await approveMutation(store, store.upsert({kind:'memory',cwd,title:'Theme preference',content:'Use a black background.'},agent));
+  const patched = await approveMutation(store, store.patch(created.id,{oldText:'black background',newText:'black background with clear contrast',expectedRevision:created.revision},agent));
   assert.equal(patched.revision, 2); assert.equal(patched.summary, 'Use a black background with clear contrast.');
   assert.equal(patched.history, undefined, 'full agent reads contain one current entry, not its audit history');
-  const deletion = await approveTool(store, await agent(call('relay_memory', { action: 'forget', id: created.id, expectedRevision: patched.revision })));
+  const deletion = await approveMutation(store, store.remove(created.id,{expectedRevision:patched.revision,provenance:agent}));
   assert.equal(deletion.revision, 3); assert.equal(deletion.deleted, true);
   assert.throws(() => store.get(created.id), { status: 404 }); assert.equal(store.list().length, 0); assert.deepEqual(store.context(cwd).memories, []);
   const restarted = await new KnowledgeStore({ dataDir }).init(), audit = restarted.history(created.id);
@@ -46,7 +39,6 @@ test('direct agent saves, patches and removals all retain auditable source revis
   const restored = await restarted.restore(created.id, 2, { source: 'user', reason: 'Undo deletion' }, { expectedRevision: 3 });
   assert.equal(restored.revision, 4); assert.equal(restored.content, patched.content); assert.equal(restored.deleted, undefined); assert.equal(restored.provenance.source, 'user'); assert.equal(restored.restoredFromRevision, 2);
   const durable = await new KnowledgeStore({ dataDir }).init(); assert.equal(durable.get(created.id).content, patched.content); assert.equal(durable.history(created.id).history.length, 4);
-  assert.ok(events.some(event => event.action === 'forget' && event.status === 'pending_approval' && event.approvalId)); assert.ok(events.every(event => !Object.hasOwn(event, 'content')));
 });
 
 test('old version-one entries gain history on their next write without inventing earlier content', async t => {
@@ -102,15 +94,16 @@ test('history retention is bounded, snapshots are immutable and deleted IDs cann
   await store.restore(initial.id, 15); assert.throws(() => store.get(initial.id), { status: 404 }); assert.equal(store.history(initial.id).history[0].action, 'restore', 'restoring a deletion is also auditable');
 });
 
-test('agent patching keeps memory kind and workspace boundaries and requires deliberate global scope', async t => {
-  const { store, cwd, dataDir } = await fixture(t), other = await store.upsert(note('Other private note.', { cwd: path.join(dataDir, 'other') })), global = await store.upsert(note('Shared preference.')), skill = await store.upsert({ kind: 'skill', title: 'Method', content: 'Read and verify.', cwd });
-  const agent = createKnowledgeToolHandler({ store, cwd, runId: 'current-run', nodeId: 'agent' });
-  for (const id of [other.id, skill.id]) await assert.rejects(agent(call('relay_memory', { action: 'patch', id, oldText: 'note', newText: 'text' })), /selected scope/);
-  await assert.rejects(agent(call('relay_memory', { action: 'patch', id: global.id, oldText: 'Shared', newText: 'Changed' })), /global scope explicitly/);
-  const patched = await approveTool(store, await agent(call('relay_memory', { action: 'patch', id: global.id, oldText: 'Shared', newText: 'Changed', scope: 'global', expectedRevision: 1 })));
-  assert.equal(patched.content, 'Changed preference.'); assert.equal(patched.cwd, null);
-  const patchedSkill = await approveTool(store, await agent(call('relay_skills', { action: 'patch', id: skill.id, oldText: 'Read and verify.', newText: 'Read, verify, report.', expectedRevision: 1 }))); assert.equal(patchedSkill.kind, 'skill');
-  assert.match(KNOWLEDGE_INSTRUCTIONS, /owner approval/); assert.match(KNOWLEDGE_INSTRUCTIONS, /expectedRevision/); assert.match(KNOWLEDGE_INSTRUCTIONS, /pending proposal is not saved knowledge/);
+test('retired model memory and mutable skill actions cannot change local, global or other-workspace records',async t=>{
+ const{store,cwd,dataDir}=await fixture(t);
+ const other=await store.upsert(note('Other private note.',{cwd:path.join(dataDir,'other')}));
+ const global=await store.upsert(note('Shared preference.'));
+ const skill=await store.upsert({kind:'skill',title:'Method',content:'Read and verify.',cwd});
+ const before=await readFile(path.join(dataDir,'knowledge.json'),'utf8'),agent=createKnowledgeToolHandler({store,cwd,runId:'current-run',nodeId:'agent'});
+ for(const id of [other.id,global.id,skill.id])for(const scope of ['workspace','global'])await assert.rejects(agent(call('relay_memory',{action:'patch',id,scope,oldText:'note',newText:'changed'})),/Unknown knowledge tool/);
+ for(const action of ['save','patch','remove'])await assert.rejects(agent(call('relay_skills',{action,id:skill.id})),/Unknown knowledge action/);
+ assert.equal(KNOWLEDGE_INSTRUCTIONS,'');assert.equal(store.listApprovals().length,0);
+ assert.equal(await readFile(path.join(dataDir,'knowledge.json'),'utf8'),before);
 });
 
 test('a cancelled queued patch never appears in revision history', async t => {

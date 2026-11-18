@@ -149,164 +149,96 @@ test('HTTP directions target the working agent and capacity one retains cancella
   assert.ok(app.engine.getRun(start.data.id).events.some(event => event.data.type === 'steer'));
 });
 
-test('HTTP knowledge CRUD is authenticated, workspace-filtered, durable and records trusted user provenance', async t => {
-  const { api, request, cwd, otherCwd, close, dataDir } = await application(t);
-  const note = { id: 'project-note', kind: 'memory', title: 'Project convention', content: 'Use meaningful regression checks.', cwd, provenance: { source: 'agent', runId: 'spoofed-run' } };
-  assert.equal((await request('/api/knowledge')).status, 401);
-  assert.equal((await request('/api/knowledge', { method: 'POST', body: note })).status, 401);
-  const saved = await api('/api/knowledge', { method: 'POST', body: note });
-  assert.equal(saved.status, 200);
-  assert.equal(saved.data.revision, 1);
-  assert.equal(saved.data.provenance.source, 'user');
-  assert.equal(saved.data.provenance.runId, undefined, 'request body cannot forge agent provenance');
-  await api('/api/knowledge', { method: 'POST', body: { kind: 'skill', title: 'Shared procedure', content: '# Verify\nRead before writing.', cwd: null } });
-  await api('/api/knowledge', { method: 'POST', body: { kind: 'memory', title: 'Other project', content: 'Other project specific fact.', cwd: otherCwd } });
-  const list = await api(`/api/knowledge?cwd=${encodeURIComponent(cwd)}`);
-  assert.deepEqual(list.data.map(entry => entry.title).sort(), ['Project convention', 'Shared procedure']);
-  assert.ok(list.data.every(entry => !Object.hasOwn(entry, 'content')));
-  assert.equal((await api(`/api/knowledge?cwd=${encodeURIComponent(otherCwd)}&kind=memory`)).data.length, 1);
-  const updated = await api('/api/knowledge', { method: 'POST', body: { ...note, content: 'Run focused checks before packaging.' } });
-  assert.equal(updated.data.revision, 2);
-  assert.equal(updated.data.createdAt, saved.data.createdAt);
-  assert.equal((await api('/api/knowledge/project-note')).data.content, 'Run focused checks before packaging.');
-  assert.equal((await api('/api/knowledge?limit=301')).status, 400);
-  assert.equal((await api('/api/knowledge', { method: 'POST', body: { ...note, cwd: 'relative-workspace' } })).status, 400);
-  await close();
-  // Restart uses the same persisted store, not an in-memory fixture.
-  const { KnowledgeStore } = await import('../lib/knowledge.mjs');
-  const restarted = await new KnowledgeStore({ dataDir }).init();
-  assert.equal(restarted.get('project-note').revision, 2);
-  assert.equal(restarted.get('project-note').cwd, cwd);
-  await restarted.remove('project-note');
-  assert.throws(() => restarted.get('project-note'), { status: 404 });
+test('retired knowledge HTTP is authenticated and cannot mutate durable legacy records',async t=>{
+ const{api,request,app,cwd,otherCwd,close,dataDir}=await application(t);
+ const records=[{id:'project-note',cwd},{id:'other-note',cwd:otherCwd},{id:'global-note',cwd:null}];
+ for(const value of records)await app.knowledge.upsert({...value,kind:'memory',title:value.id,content:'Preserved legacy content.'});
+ const before=app.knowledge.list({includeDeleted:true});
+ assert.equal((await request('/api/knowledge')).status,401);
+ assert.equal((await request('/api/knowledge',{method:'POST',body:{kind:'memory',title:'Denied',content:'No'}})).status,401);
+ for(const [route,method,body] of [
+ ['/api/knowledge','POST',{id:'project-note',kind:'memory',title:'Changed',content:'No',cwd,provenance:{source:'agent',runId:'forged'}}],
+ ['/api/knowledge?cwd='+encodeURIComponent(cwd),'GET'],['/api/knowledge?cwd='+encodeURIComponent(otherCwd),'GET'],
+ ['/api/knowledge/project-note','GET'],['/api/knowledge/project-note','DELETE',{}],
+ ['/api/knowledge/project-note/restore','POST',{revision:1}],['/api/knowledge?limit=301','GET']
+ ]){
+  const result=await api(route,{method,body});assert.equal(result.status,410);assert.equal(result.data.code,'KNOWLEDGE_RETIRED');
+ }
+ assert.deepEqual(app.knowledge.list({includeDeleted:true}),before);await close();
+ const{KnowledgeStore}=await import('../lib/knowledge.mjs'),restarted=await new KnowledgeStore({dataDir}).init();
+ assert.deepEqual(restarted.list({includeDeleted:true}),before);assert.equal(restarted.get('project-note').revision,1);
 });
 
-test('attached agent tools read and write the actual scoped store with run provenance and bounded history', async t => {
-  const observations = [];
-  const runtime = new FakeRuntime(async options => {
-    const attached = new Set(options.dynamicTools.map(spec => spec.name));
-    for (const name of ['relay_history', 'relay_memory', 'relay_skills', 'relay_workspace']) assert.ok(attached.has(name), `${name} is attached to the agent`);
-    const found = decode(await options.onToolCall(tool('relay_memory', { action: 'search', query: 'convention' })));
-    observations.push(found);
-    assert.equal(found.entries.length, 2, 'workspace search combines local and shared facts');
-    assert.ok(found.entries.every(entry => !Object.hasOwn(entry, 'content')));
-    const read = decode(await options.onToolCall(tool('relay_memory', { action: 'read', id: 'local-note' })));
-    assert.equal(read.entry.content, 'Local convention body.');
-    const remembered = decode(await options.onToolCall(tool('relay_memory', { action: 'remember', title: 'Verified fact', content: 'Checked from this workspace.' })));
-    assert.equal(remembered.pendingApproval,true);assert.equal(remembered.applied,false);assert.equal(remembered.entry,undefined);
-    observations.push(remembered.approvalId);
-    const skill = decode(await options.onToolCall(tool('relay_skills', { action: 'save', title: 'Check and package', content: '# Steps\nRun checks, inspect, package.' })));
-    assert.equal(skill.pendingApproval,true);assert.equal(skill.applied,false);assert.equal(skill.entry,undefined);observations.push(skill.approvalId);
-    const history = decode(await options.onToolCall(tool('relay_history', { action: 'search' })));
-    assert.equal(history.results.length, 0, 'active run is excluded from its own history');
-    // A thrown mutation has no confirmed runtime receipt. Keep the expected
-    // scope-denial checks after the intended writes; only read-only inspection
-    // follows an uncertain dispatched attempt.
-    await assert.rejects(options.onToolCall(tool('relay_memory', { action: 'forget', id: 'global-note' })), /global scope explicitly/);
-    await assert.rejects(options.onToolCall(tool('relay_memory', { action: 'read', id: 'other-note' })), { status: 404 });
-    return { output: 'Remembered and verified', threadId: 'knowledge-thread' };
+test('attached tools retain read-only release skills and scoped history without exposing legacy memory',async t=>{
+ const runtime=new FakeRuntime(async options=>{
+  const attached=new Map(options.dynamicTools.map(spec=>[spec.name,spec]));
+  for(const name of ['relay_history','relay_skills','relay_workspace'])assert.ok(attached.has(name));
+  assert.equal(attached.has('relay_memory'),false);assert.equal(attached.has('relay_learn'),false);
+  assert.deepEqual(attached.get('relay_skills').inputSchema.properties.action.enum,['search','read']);
+  assert.doesNotMatch(options.prompt,/LOCAL_LEGACY_SECRET|OTHER_LEGACY_SECRET/);
+  const skills=decode(await options.onToolCall(tool('relay_skills',{action:'search'})));
+  assert.ok(Array.isArray(skills.entries));assert.ok(!JSON.stringify(skills).includes('legacy-skill-secret'));
+  const history=decode(await options.onToolCall(tool('relay_history',{action:'search'})));
+  assert.equal(history.results.length,0,'active run excluded');
+  await assert.rejects(options.onToolCall(tool('relay_memory',{action:'remember',title:'No',content:'No'})),/Unknown knowledge tool/);
+  await assert.rejects(options.onToolCall(tool('relay_skills',{action:'save'})),/Unknown knowledge action/);
+  return{output:'Read-only catalog inspected',threadId:'knowledge-thread'};
+ });
+ const{api,app,cwd,otherCwd,settled}=await application(t,{runtime});
+ await app.knowledge.upsert({id:'local-note',kind:'memory',title:'LOCAL_LEGACY_SECRET',content:'LOCAL_LEGACY_SECRET',cwd});
+ await app.knowledge.upsert({id:'other-note',kind:'memory',title:'OTHER_LEGACY_SECRET',content:'OTHER_LEGACY_SECRET',cwd:otherCwd});
+ await app.knowledge.upsert({kind:'skill',title:'legacy-skill-secret',content:'Legacy mutable method',cwd});
+ const before=app.knowledge.list({includeDeleted:true});
+ const started=await api('/api/runs',{method:'POST',body:{workflow:singleAgentGraph(),input:'Inspect the available release methods.'}});
+ assert.equal(started.status,201);const run=await settled(started.data.id);assert.equal(run.status,'completed',run.error);
+ assert.deepEqual(app.knowledge.list({includeDeleted:true}),before);assert.equal(app.knowledge.listApprovals().length,0);
+ assert.equal(runtime.calls.length,1);assert.equal(run.events.some(event=>event.data?.status==='pending_approval'),false);
+});
+
+test('cancellation blocks late tools and cancels a queued legacy proposal without mutation',async t=>{
+ const entered=deferred(),release=deferred(),runtime=new FakeRuntime(async options=>{entered.resolve(options);return release.promise;});
+ const{api,app,settled}=await application(t,{runtime});
+ await app.knowledge.upsert({id:'queued-agent-note',kind:'memory',title:'Prior fact',content:'Must remain unchanged.',cwd:app.engine.defaultCwd});
+ const started=await api('/api/runs',{method:'POST',body:{workflow:singleAgentGraph(),input:'Await cancellation.'}}),active=await entered.promise;
+ const blocker=deferred();app.knowledge.approvalChain=app.knowledge.approvalChain.then(()=>blocker.promise);
+ const pending=app.knowledge.upsert({id:'queued-agent-note',kind:'memory',title:'Queued fact',content:'Must not commit.'},{source:'agent',runId:started.data.id},{signal:active.signal});pending.catch(()=>{});
+ try{
+  await api('/api/runs/'+started.data.id+'/cancel',{method:'POST',body:{}});blocker.resolve();
+  await assert.rejects(pending,{name:'AbortError'});
+  await assert.rejects(active.onToolCall(tool('relay_workspace',{action:'write',path:'late.txt',text:'Must not persist.'})),{name:'AbortError'});
+  assert.equal(app.knowledge.get('queued-agent-note').content,'Must remain unchanged.');assert.equal(app.knowledge.get('queued-agent-note').revision,1);
+  assert.equal(app.knowledge.list().length,1);assert.equal(app.knowledge.listApprovals().length,0);
+ }finally{blocker.resolve();release.resolve({output:'Late output',threadId:'cancelled-knowledge-thread'});}
+ assert.equal((await settled(started.data.id)).status,'cancelled');
+});
+
+test('shutdown drains an admitted legacy storage write while retired HTTP never admits a new save',async t=>{
+ const{api,app,cwd,dataDir,close}=await application(t),entered=deferred(),release=deferred();
+ const writeSnapshot=app.knowledge.writeSnapshot.bind(app.knowledge);
+ app.knowledge.writeSnapshot=async(...args)=>{entered.resolve();await release.promise;return writeSnapshot(...args);};
+ const denied=await api('/api/knowledge',{method:'POST',body:{id:'http-note',kind:'memory',title:'Retired',content:'No',cwd}});
+ assert.equal(denied.status,410);assert.equal(denied.data.code,'KNOWLEDGE_RETIRED');
+ const pending=app.knowledge.upsert({id:'closing-note',kind:'memory',title:'Closing fact',content:'Legacy storage finishes before shutdown.',cwd});pending.catch(()=>{});
+ await entered.promise;let finished=false;const closing=close().then(()=>{finished=true;});
+ try{
+  const late=await api('/api/knowledge',{method:'POST',body:{kind:'memory',title:'Late save',content:'No'}});
+  assert.equal(late.status,503);assert.equal(finished,false);
+ }finally{release.resolve();}
+ await pending;await closing;
+ const{KnowledgeStore}=await import('../lib/knowledge.mjs'),restored=await new KnowledgeStore({dataDir}).init();
+ assert.equal(restored.get('closing-note').content,'Legacy storage finishes before shutdown.');assert.equal(restored.list().length,1);
+});
+
+test('retired knowledge rejects incomplete mutation bodies without waiting for or writing their contents',async t=>{
+ const{app,auth,close}=await application(t),payload=JSON.stringify({id:'late-body-note',kind:'memory',title:'Late body',content:'Never consumed'});
+ let pendingRequest;
+ const response=new Promise((resolve,reject)=>{
+  pendingRequest=http.request({hostname:'127.0.0.1',port:app.server.address().port,path:'/api/knowledge',method:'POST',headers:{...auth,'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload)}},res=>{
+   const parts=[];res.on('data',part=>parts.push(part));res.on('end',()=>resolve({status:res.statusCode,data:JSON.parse(Buffer.concat(parts).toString())}));res.on('error',reject);
   });
-  const { api, app, cwd, otherCwd, settled } = await application(t, { runtime });
-  for (const [id, selectedCwd, content] of [['local-note', cwd, 'Local convention body.'], ['global-note', null, 'Shared convention body.'], ['other-note', otherCwd, 'Other convention body.']]) {
-    assert.equal((await api('/api/knowledge', { method: 'POST', body: { id, kind: 'memory', title: `${id} convention`, summary: 'A concise project convention.', content, cwd: selectedCwd } })).status, 200);
-  }
-  const started = await api('/api/runs', { method: 'POST', body: { workflow: singleAgentGraph(), input: 'Remember a checked fact and save a procedure.' } });
-  const run = await settled(started.data.id);
-  assert.equal(run.status, 'completed', run.error);
-  assert.equal(observations.length, 3);
-  assert.equal((await api('/api/knowledge')).data.filter(entry=>entry.provenance.source==='agent').length,0);
-  const proposals=(await api('/api/knowledge/approvals')).data.approvals;assert.equal(proposals.length,2);
-  for(const id of observations.slice(1)){const proposal=proposals.find(item=>item.id===id);assert.equal(proposal.provenance.source,'agent');assert.equal(proposal.provenance.nodeId,'alpha');assert.equal(proposal.provenance.runId,run.id);const decision=await api('/api/knowledge/approvals/'+id,{method:'POST',body:{decision:'approve'}});assert.equal(decision.status,200);assert.equal(decision.data.status,'approved');assert.equal(decision.data.entry.kind,id===observations[1]?'memory':'skill');assert.equal(decision.data.entry.title,id===observations[1]?'Verified fact':'Check and package');}
-  const agentEntries = (await api('/api/knowledge')).data.filter(entry => entry.provenance.source === 'agent');
-  assert.equal(agentEntries.length, 2);
-  for (const metadata of agentEntries) {
-    const entry = (await api(`/api/knowledge/${metadata.id}`)).data;
-    assert.equal(entry.cwd, cwd);
-    assert.equal(entry.provenance.runId, run.id);
-    assert.equal(entry.provenance.nodeId, 'alpha');
-    assert.equal(entry.provenance.source, 'agent');
-  }
-  assert.ok(runtime.calls[0].prompt.includes('local-note'));
-  assert.ok(!runtime.calls[0].prompt.includes('other-note'));
-  assert.ok(!runtime.calls[0].prompt.includes('Local convention body.'), 'catalog inserts metadata, full content requires a read');
-  assert.deepEqual(app.engine.getRun(run.id).nodes.alpha.knowledgeCatalog.memories.map(entry => entry.id).sort(), ['global-note', 'local-note']);
-  assert.ok(run.events.some(event => event.data.type === 'knowledge' && event.data.status === 'pending_approval' && event.data.approvalId === observations[1]));
-});
-
-test('cancellation blocks late agent knowledge writes and queued proposals before admission', async t => {
-  const entered = deferred(), release = deferred();
-  const runtime = new FakeRuntime(async options => { entered.resolve(options); return release.promise; });
-  const { api, app, settled } = await application(t, { runtime });
-  await api('/api/knowledge', { method: 'POST', body: { id: 'queued-agent-note', kind: 'memory', title: 'Prior fact', content: 'Must remain unchanged.', cwd: app.engine.defaultCwd } });
-  const started = await api('/api/runs', { method: 'POST', body: { workflow: singleAgentGraph(), input: 'Await cancellation.' } });
-  const active = await entered.promise;
-  const blocker = deferred();
-  // Hold the agent approval queue to exercise the cancellation check at execution time,
-  // after the callback accepted a valid request but before any storage mutation.
-  const originalChain = app.knowledge.approvalChain;
-  app.knowledge.approvalChain = originalChain.then(() => blocker.promise);
-  const pending = active.onToolCall(tool('relay_memory', { action: 'remember', id: 'queued-agent-note', title: 'Queued fact', content: 'Must not commit.' }));
-  pending.catch(() => {});
-  try {
-    await api(`/api/runs/${started.data.id}/cancel`, { method: 'POST', body: {} });
-    blocker.resolve();
-    await assert.rejects(pending, { name: 'AbortError' });
-    await assert.rejects(active.onToolCall(tool('relay_memory', { action: 'remember', title: 'Late fact', content: 'Must not persist.' })), { name: 'AbortError' });
-    assert.equal(app.knowledge.get('queued-agent-note').content, 'Must remain unchanged.');
-    assert.equal(app.knowledge.get('queued-agent-note').revision, 1);
-    assert.equal(app.knowledge.list().length, 1);
-    assert.equal(app.knowledge.listApprovals().length,0,'cancelled proposals never become actionable');
-  } finally { blocker.resolve(); release.resolve({ output: 'Late output', threadId: 'cancelled-knowledge-thread' }); }
-  assert.equal((await settled(started.data.id)).status, 'cancelled');
-});
-
-test('shutdown drains an admitted HTTP knowledge save and rejects new mutations while storage settles', async t => {
-  const { api, app, cwd, dataDir, close } = await application(t);
-  const entered = deferred(), release = deferred();
-  const writeSnapshot = app.knowledge.writeSnapshot.bind(app.knowledge);
-  app.knowledge.writeSnapshot = async (...args) => { entered.resolve(); await release.promise; return writeSnapshot(...args); };
-  const pending = api('/api/knowledge', { method: 'POST', body: { id: 'closing-note', kind: 'memory', title: 'Closing fact', content: 'Save finishes before shutdown.', cwd } });
-  pending.catch(() => {});
-  await entered.promise;
-  let finished = false;
-  const closing = close().then(() => { finished = true; });
-  try {
-    const denied = await api('/api/knowledge', { method: 'POST', body: { kind: 'memory', title: 'Late save', content: 'Must not be admitted.' } });
-    assert.equal(denied.status, 503);
-    assert.equal(finished, false, 'shutdown must wait until the existing knowledge snapshot is durable');
-  } finally { release.resolve(); }
-  assert.equal((await pending).status, 200);
-  await closing;
-  const { KnowledgeStore } = await import('../lib/knowledge.mjs');
-  const restored = await new KnowledgeStore({ dataDir }).init();
-  assert.equal(restored.get('closing-note').content, 'Save finishes before shutdown.');
-  assert.equal(restored.list().length, 1);
-});
-
-test('a mutation body opened before shutdown cannot enqueue a late knowledge write after shutdown begins', async t => {
-  const { app, auth, close } = await application(t);
-  const received = deferred(), closingEntered = deferred(), releaseClose = deferred();
-  const engineClose = app.engine.close.bind(app.engine);
-  app.engine.close = async () => { closingEntered.resolve(); await releaseClose.promise; return engineClose(); };
-  const payload = JSON.stringify({ id: 'late-body-note', kind: 'memory', title: 'Late body', content: 'This body completes during shutdown.' });
-  let pendingRequest;
-  app.server.once('request', () => received.resolve());
-  const response = new Promise((resolve, reject) => {
-    pendingRequest = http.request({ hostname: '127.0.0.1', port: app.server.address().port, path: '/api/knowledge', method: 'POST', headers: { ...auth, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, res => {
-      res.resume(); res.on('end', () => resolve(res.statusCode)); res.on('error', reject);
-    });
-    pendingRequest.setTimeout(4000, () => pendingRequest.destroy(new Error('Delayed body timed out')));
-    pendingRequest.on('error', reject);
-    pendingRequest.write(payload.slice(0, 1));
-  });
-  response.catch(() => {});
-  await received.promise;
-  const closing = close();
-  await closingEntered.promise;
-  try {
-    pendingRequest.end(payload.slice(1));
-    assert.equal(await response, 503, 'shutdown must be checked after body parsing, not only when headers arrive');
-    assert.throws(() => app.knowledge.get('late-body-note'), { status: 404 });
-  } finally { releaseClose.resolve(); }
-  await closing;
+  pendingRequest.setTimeout(4000,()=>pendingRequest.destroy(new Error('Retired endpoint waited for a body')));pendingRequest.on('error',reject);pendingRequest.write(payload.slice(0,1));
+ });
+ try{const result=await response;assert.equal(result.status,410);assert.equal(result.data.code,'KNOWLEDGE_RETIRED');assert.throws(()=>app.knowledge.get('late-body-note'),{status:404});}
+ finally{pendingRequest.destroy();}
+ await close();
 });

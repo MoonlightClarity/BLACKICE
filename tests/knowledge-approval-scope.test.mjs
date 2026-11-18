@@ -10,12 +10,13 @@ const proposal=async promise=>{try{await promise;assert.fail('must require appro
 const agent={source:'agent',runId:'task-a',nodeId:'worker'};
 const value={kind:'memory',title:'Task A format',content:'Use this format for task A.',memoryType:'fact'};
 const decode=r=>JSON.parse(r.contentItems[0].text);
-test('actual model tool stages global fact, restart preserves prompt, approval does not widen task applicability',async t=>{
+test('legacy staging survives restart without widening applicability; retired memory tool cannot stage',async t=>{
  const {store,dataDir,cwd}=await setup(t);const handler=createKnowledgeToolHandler({store,cwd,runId:'task-a',nodeId:'worker'});
- const result=decode(await handler({name:'relay_memory',arguments:{action:'remember',scope:'global',title:value.title,content:value.content,memoryType:'fact'}}));
- assert.equal(result.pendingApproval,true);assert.equal(result.applied,false);assert.equal(store.list().length,0);
+ await assert.rejects(handler({name:'relay_memory',arguments:{action:'remember',scope:'global',title:value.title,content:value.content,memoryType:'fact'}}),/Unknown knowledge tool/);
+ assert.equal(store.listApprovals().length,0);
+ const approvalId=await proposal(store.upsert({...value,cwd:null},agent));assert.equal(store.list().length,0);
  const reloaded=await new KnowledgeStore({dataDir}).init();assert.equal(reloaded.listApprovals().length,1);
- const {entry}=await reloaded.decideApproval(result.approvalId,{decision:'approve'});assert.equal(entry.cwd,null);assert.equal(entry.provenance.source,'agent');
+ const {entry}=await reloaded.decideApproval(approvalId,{decision:'approve'});assert.equal(entry.cwd,null);assert.equal(entry.provenance.source,'agent');
  assert.equal(createAutomaticKnowledgeAdmission([],{runIds:['task-a']})(entry),true);
  const admitB=createAutomaticKnowledgeAdmission([],{runIds:['task-b']});assert.equal(admitB(entry),false);assert.equal(reloaded.context(cwd,{admit:admitB}).memories.length,0);
  assert.equal(reloaded.list({cwd,query:'format'}).length,1,'explicit recall remains available');
