@@ -1,7 +1,7 @@
 import {createActivityInspector} from './activity-inspector.mjs';
 import {createVisualWorkspace} from './visuals.mjs';
 import { createChatFrame, paintIndex, paintIntroduction, paintHistory, paintModels, captureChatScroll, restoreChatScroll } from './render.mjs';
-import { createConversationFolderUI } from './folders.mjs';
+import { createConversationFolderUI, placeNewConversation } from './folders.mjs';
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
 import { enableProviderForModel } from '../../provider-availability.mjs';
 import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate, chatHeaderStatus, projectConversationGoal } from './model.mjs';
@@ -47,6 +47,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     onChanged:()=>indexPaint(),onRefresh:()=>{if(state.active)void loadList();},onError:()=>{}});
   let goalControls=null;
   const activityInspector=createActivityInspector({frame:view.shell,api,events,getRunId:()=>state.runs.at(-1)?.id||null});
+  let newFolderId=(()=>{try{return localStorage.getItem('blackice.next.newChatFolder')||null;}catch{return null;}})();
   let newPlanningExecutionMode=state.options.planningExecutionMode;
   const executionNotice=mount.ownerDocument.createElement('section');
   executionNotice.setAttribute('id','next-chat-execution-notice');
@@ -130,7 +131,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     goalControls?.update({conversationId:root(),running:state.runs.some(run=>run.status==='running'&&run.settled!==true),readonly:bucket!=='active',busy:state.pending||state.managing||state.loading});
     executionNotice.hidden=Boolean(item)||root()!=='new'||bucket!=='active'||state.options.planningExecutionMode!=='plan_only';
     enableAutomatic.disabled=busy||state.loading||state.attachmentsPending;
-    view.title.textContent=item?.rootTitle||item?.title||'New conversation';
+    view.title.textContent=item?.rootTitle||item?.title||(newFolderId?'New chat in '+(folderUI.folderNames().get(newFolderId)||'removed folder'):'New conversation · Unfiled');
+    view.closeChat.hidden=!item;view.closeChat.disabled=busy;view.closeChat.title='Close this view without deleting history or stopping work';
     const planningProgress=planningProgressForRun(latest);
     view.subtitle.textContent=(item&&bucket!=='active'?(bucket==='deleted'?'In Trash':bucket==='archived'?'Archived':'History state unavailable')+' · ':'')+chatHeaderStatus(latest,goalControls?.getGoal()||item?.goal);
     const cycle=latest?.responseCycle;
@@ -194,7 +196,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       limit:state.indexLimit,
       onMore:()=>{state.indexLimit+=CHAT_INDEX_BATCH;indexPaint();},
       selecting:state.selecting,selection:state.selection,busy:state.managing||state.pending,
-      folderNames:folderUI.folderNames(),groupFolders:true,onFolderManage:id=>folderUI.manage(id),onFolderRename:id=>folderUI.beginRename(id),expandFolders:Boolean(query),showEmptyFolders:!query&&folderUI.selected==='all',onFolderToggle:visible=>{state.visible=visible;drawManagement();},
+      folderNames:folderUI.folderNames(),groupFolders:true,onFolderManage:id=>folderUI.manage(id),onFolderRename:id=>folderUI.beginRename(id),onFolderNew:id=>startNew(id),expandFolders:Boolean(query),showEmptyFolders:!query&&folderUI.selected==='all',onFolderToggle:visible=>{state.visible=visible;drawManagement();},
       onToggle:(item,checked)=>{if(state.managing)return;if(checked){const target=managementTarget(rootId(item));state.selection.set(target.id,{runId:target.runId,state:target.state});}else state.selection.delete(rootId(item));managementMessage('');drawManagement();},
       onAction:(item,action)=>['move_folder','reset_folder_auto'].includes(action)?folderUI.onRowAction(item,action):action==='rename'?startRename(item):void requestManagement(action,selectionFor(item)),
     });
@@ -462,7 +464,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     }
     const submittedOwner=state.inputOwner,submittedRevision=state.inputRevision,submittedContextOwner=root();
     state.pending=true;updateHead();hint('Sending your message…');
-    const previous=state.selected,current=state.runs;
+    const previous=state.selected,current=state.runs,submittedFolder=newFolderId;
     try {
       let status=getStatus?.();
       if(!status?.cwd)status=await api('/api/status');
@@ -488,10 +490,13 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
           : {id:run.taskId||run.id,taskId:run.taskId||run.id,runId:run.id,title:task,updatedAt:new Date().toISOString(),status:run.status};
         if(!previous&&!unchanged&&state.inputOwner===submittedOwner){state.drafts.set(rootId(item),view.input.value);state.drafts.set(submittedOwner,'');state.inputOwner=rootId(item);saveDraft();}
         if(state.bucket!=='active'){state.bucket='active';view.bucket.value='active';state.list=[];state.selection.clear();state.selecting=false;}
+        let placementError=null;
+        if(!previous){try{const placed=await placeNewConversation(api,rootId(item),submittedFolder);folderUI.accept(placed.folderOrganization);item.folderId=submittedFolder;item.folderSource='manual';}catch(error){placementError=error;}}
         item.state='active';state.list=summaries([item,...state.list.filter(entry=>rootId(entry)!==rootId(item))]);
         state.pending=false;
         await open(item);
-        hint('Message sent. BLACKICE is working.');
+        if(placementError){hint('Message sent, but folder placement failed: '+placementError.message+' Use Move to folder; do not resend.');notify('Message sent; folder placement needs attention.',true);}
+        else hint('Message sent. BLACKICE is working.');
       }else hint('Message accepted. Open the saved conversation to inspect the result.');
       void loadList();
       return result;
@@ -649,7 +654,9 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     hint('Automatic enabled for this new draft. Send to start work.');
   });
   view.openPlan.addEventListener('click',()=>{const cycle=state.runs.at(-1)?.responseCycle;if(cycle?.requestId)onNavigate?.('planning',{requestId:cycle.requestId,nodeId:cycle.planRef?.nodeId});});
-  view.newButton.addEventListener('click',()=>{if(state.pending||state.managing)return;const changed=state.bucket!=='active';state.bucket='active';view.bucket.value='active';state.selection.clear();state.selecting=false;if(changed){state.list=[];state.indexLimit=CHAT_INDEX_BATCH;}showNew();if(changed)void loadList();});
+  function startNew(folderId=null){if(state.pending||state.managing||contextControls.isCompacting())return;newFolderId=folderId;try{if(folderId)localStorage.setItem('blackice.next.newChatFolder',folderId);else localStorage.removeItem('blackice.next.newChatFolder');}catch{}const changed=state.bucket!=='active';state.bucket='active';view.bucket.value='active';state.selection.clear();state.selecting=false;if(changed){state.list=[];state.indexLimit=CHAT_INDEX_BATCH;}showNew();if(changed)void loadList();}
+  view.newButton.addEventListener('click',()=>startNew(null));
+  view.closeChat.addEventListener('click',()=>startNew(null));
   // Search the full lightweight catalog after typing settles, but paint only
   // a bounded batch. A keystroke never synchronously rebuilds the sidebar.
   let searchTimer=null;

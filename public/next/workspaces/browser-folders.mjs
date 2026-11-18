@@ -64,7 +64,8 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   if(blocked())return;
   editor?.remove();const form=el('form',null,'next-browser-folder-editor');editor=form;
   form.setAttribute('aria-label',tabId?'Move tab to folder':folder?'Edit tab folder':'New tab folder');
-  const heading=el('strong',tabId?'Move tab':folder?'Edit folder':'New folder');form.append(heading);
+  const heading=el('strong',tabId?'Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab') :folder?'Edit folder':'New folder');form.append(heading);
+  if(tabId)form.setAttribute('role','dialog');
   const parent=el('select');parent.setAttribute('aria-label',tabId?'Folder':'Parent folder');
   const none=el('option',tabId?'Unfiled':'Top level');none.value='';parent.append(none);
   const excluded=folder?descendants(collections,folder.id):new Set();
@@ -75,7 +76,7 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   if(folder)form.append(button('Remove folder, keep tabs',async()=>{if(await request('collection_remove',{collectionId:folder.id}))dismiss();}));
   form.addEventListener('submit',async e=>{e.preventDefault();const action=tabId?'tab_collect':folder?'collection_rename':'collection_create';const args=tabId?{tabId,collectionId:parent.value||null}:{...(folder?{collectionId:folder.id,expectedName:folder.name}:{}),name:name.value,parentCollectionId:parent.value||null};if(await request(action,args))dismiss();});
   form.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(!pending)dismiss();}});
-  paint();(name||parent).focus();
+  paint();form.scrollIntoView?.({block:'nearest'});(name||parent).focus();
  }
  function paint(){
   if(!host||destroyed)return;
@@ -113,7 +114,7 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   for(const f of tree.roots)host.append(branch(f));
   host.append(branch({id:'',name:'Unfiled',tabs:tree.loose,children:[]}));
   host.append(...transientRows,...extras);
-  if(editor){host.append(editor);for(const n of editor.querySelectorAll('button,input,select'))n.disabled=blocked();}
+  if(editor){host.insertBefore(editor,toolbar.nextSibling||host.children[1]||null);for(const n of editor.querySelectorAll('button,input,select'))n.disabled=blocked();}
   if(renaming&&renameDrafts.get(renaming)===focus)focus.focus({preventScroll:true});
   else if(editor&&!editor.hidden&&editor.contains(focus))focus.focus({preventScroll:true});
   else if(focusKey)[...host.querySelectorAll('[data-folder-control]')].find(n=>n.dataset.folderControl===focusKey)?.focus({preventScroll:true});

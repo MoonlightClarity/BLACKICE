@@ -282,3 +282,12 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
   return {beginRename,manage,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
     get selected(){return selected;},get organization(){return organization;}};
 }
+
+/** Assign only after a real accepted run exists. Never replay a send to fix placement. */
+export async function placeNewConversation(api,rootId,folderId=null){
+ const snapshot=await api('/api/conversation-folders?state=active','GET');
+ const organization=snapshot?.folderOrganization;
+ if(!organization||organization.healthy===false)throw Error('Folder metadata could not be read.');
+ if(folderId&&!organization.folders.some(folder=>folder.id===folderId))throw Error('The selected folder no longer exists.');
+ return api('/api/conversation-folders/edit','POST',{expectedRevision:organization.revision,operations:[{type:'assign',rootId,folderId}]});
+}

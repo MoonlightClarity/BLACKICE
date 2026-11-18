@@ -31,6 +31,7 @@ export function createBrowserWorkspace(options) {
     '<button type="button" id="next-browser-inspect">Read page</button>',
     '<button type="button" id="next-browser-shot" class="next-primary">Refresh view</button>',
     '<button type="button" id="next-browser-close">Close tab</button>',
+    '<button type="button" id="next-browser-close-all">Close all unused tabs</button>',
     '<label class="next-browser-auto-label"><input type="checkbox" id="next-browser-auto"> Live preview</label></div>',
     '<p class="next-help" id="next-browser-status" role="status" aria-live="polite">Choose a contained page.</p>',
     '<section class="next-browser-dialog" id="next-browser-interaction" hidden aria-live="polite"></section>',
@@ -50,7 +51,7 @@ export function createBrowserWorkspace(options) {
   const $=id=>mount.querySelector('#'+id),ui={
     tabs:$('next-browser-tabs'),status:$('next-browser-status'),preview:$('next-browser-preview'),
     url:$('next-browser-url'),inspect:$('next-browser-inspect'),shot:$('next-browser-shot'),
-    close:$('next-browser-close'),refresh:$('next-browser-refresh'),newTab:$('next-browser-new'),
+    close:$('next-browser-close'),closeAll:$('next-browser-close-all'),refresh:$('next-browser-refresh'),newTab:$('next-browser-new'),
     back:$('next-browser-back'),forward:$('next-browser-forward'),reload:$('next-browser-reload'),
     form:$('next-browser-form'),typeForm:$('next-browser-type-form'),
     typeInput:$('next-browser-type'),typeSend:$('next-browser-type-send'),
@@ -186,7 +187,7 @@ export function createBrowserWorkspace(options) {
     for(const button of [ui.inspect,ui.shot,ui.close])button.disabled=busy||!ready;
     for(const button of [ui.typeSend,ui.keySend])button.disabled=busy||!hasFrame||awaitingDialog();
     ui.typeInput.disabled=busy||!hasFrame||awaitingDialog();
-    ui.newTab.disabled=busy;
+    ui.newTab.disabled=busy;ui.closeAll.disabled=busy||!tabs.length;
     for(const button of [ui.back,ui.forward,ui.reload])button.disabled=busy||!ready;
     ui.auto.disabled=busy&&!watch;
     const image=ui.preview.querySelector('.next-browser-page');
@@ -320,6 +321,24 @@ export function createBrowserWorkspace(options) {
         if(selected&&((succeeded&&action!=='read')||needCapture)){needCapture=false;void screenshot();}}
     }
   }
+  async function closeAllTabs(){
+    if(!active||destroyed||busy||!tabs.length)return;
+    const candidates=tabs.filter(tab=>!tab.inUse);
+    if(!candidates.length){notice('All tabs are marked in use. Release a mark before bulk closing.');return;}
+    if(typeof window.confirm!=='function'||!window.confirm('Close '+candidates.length+' unused tabs? Tabs marked in use will stay open.'))return;
+    sequence++;busy=true;render();
+    try{
+      const result=await api('/api/browser/close-all','POST',{}, {deadlineMs:30000});
+      if(destroyed)return;
+      const data=await api('/api/browser/status?view=contained');
+      if(destroyed)return;
+      applyStatus(data);
+      for(const id of addressDrafts.keys())if(!tabs.some(tab=>tab.tabId===id))addressDrafts.delete(id);
+      if(result.failedTabs?.length)notice('Closed '+result.closed+' tabs; some could not be closed. Refresh before retrying.',true);
+      else notify?.('Closed '+result.closed+' browser tabs; in-use tabs retained.');
+    }catch(error){if(active&&!destroyed)notice(error.message,true);}
+    finally{busy=false;if(active&&!destroyed)render();}
+  }
   async function decide(interaction,decision,promptText) {
     if(!active||busy||!awaitingDialog()||pending.id!==interaction.id)return;
     if(decision==='upload'){
@@ -356,6 +375,7 @@ export function createBrowserWorkspace(options) {
   ui.inspect.addEventListener('click',()=>void operate('read'));
   ui.shot.addEventListener('click',()=>void screenshot());
   ui.close.addEventListener('click',()=>void operate('close'));
+  ui.closeAll.addEventListener('click',()=>void closeAllTabs());
   ui.typeForm.addEventListener('submit',event=>{
     event.preventDefault();
     const value=ui.typeInput.value;

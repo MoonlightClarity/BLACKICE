@@ -68,6 +68,7 @@ async function tabFixture(t,{initial,activeTab='page-a',hook}={}){
     if(route.startsWith('/api/browser/status')){
       const captured=snapshot();if(hook){const result=await hook(call,state,captured);if(result!==undefined)return result;}return captured;
     }
+    if(route==='/api/browser/close-all'&&hook)return hook(call,state);
     assert.equal(route,'/api/browser/action');
     if(hook){const result=await hook(call,state);if(result!==undefined)return result;}
     if(body.action==='open'){
@@ -210,4 +211,23 @@ test('a genuinely pending file request retains Choose files and Dismiss without 
   await f.click(buttons[1]);await until(()=>f.action('interaction').length===1);
   assert.deepEqual(f.action('interaction')[0].body,{action:'interaction',browser:'relay',...guard,
     interactionId:'browser_input_fixture',decision:'dismiss'});
+});
+
+
+test('fallback close all requires confirmation, retains protected tabs and never repeats uncertain close',async t=>{
+ let closes=0;const f=await tabFixture(t,{hook:async(call,state)=>{
+  if(call.route!=='/api/browser/close-all')return;
+  closes++;state.tabs=state.tabs.filter(tab=>tab.inUse);state.activeTab=state.tabs[0]?.tabId||null;
+  return{closed:1,failedTabs:[]};
+ }});f.state.tabs[1].inUse=true;f.emit();await f.idle();
+ window.confirm=()=>false;await f.click('#next-browser-close-all');await settle();assert.equal(closes,0);
+ let prompt='';window.confirm=message=>{prompt=message;return true;};
+ await f.click('#next-browser-close-all');await until(()=>closes===1&&!f.$('#next-browser-close-all').disabled);
+ assert.match(prompt,/marked in use will stay open/);assert.deepEqual(f.state.tabs.map(tab=>tab.tabId),['page-b']);
+ await f.click('#next-browser-close-all');await settle();assert.equal(closes,1,'Protected-only tabs do not dispatch another bulk close');
+});
+test('fallback failed close all is reported without automatic replay',async t=>{
+ let attempts=0;const f=await tabFixture(t,{hook:async call=>{if(call.route==='/api/browser/close-all'){attempts++;throw Error('Close receipt uncertain');}}});
+ window.confirm=()=>true;await f.click('#next-browser-close-all');await until(()=>f.$('#next-browser-status').textContent.includes('receipt uncertain'));
+ assert.equal(attempts,1);assert.equal(f.state.tabs.length,2);assert.equal(f.$('#next-browser-status').dataset.error,'true');
 });
