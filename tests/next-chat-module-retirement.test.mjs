@@ -4,11 +4,16 @@ import {planningDOM} from './fixture-planning-dom.mjs';
 import {createChatFrame} from '../public/next/chat/render.mjs';
 import {normalizeChatOptions,savedChatExecutionMode} from '../public/next/chat/options-model.mjs';
 import {submitChat} from '../public/next/chat/send.mjs';
+import {displayChatRequest} from '../public/next/chat/model.mjs';
+test('past synthetic requests never become attributed to the human after Autonomy removal',()=>{
+ assert.equal(displayChatRequest({input:'Synthetic instruction',autonomy:{automatic:true}}),'');
+ assert.equal(displayChatRequest({input:'Actual user request'}),'Actual user request');
+});
 import {scheduleChatOptionsMarkup} from '../public/next/workspaces/schedule-inspection-model.mjs';
 test('chat exposes core task controls without hidden module or Directory controls',t=>{
  const dom=planningDOM(t),view=createChatFrame(dom.mount);
- for(const id of ['next-chat-plan','next-chat-directory-mode','next-chat-ontology-inline','next-chat-ontology-modules','next-chat-ontology-default'])assert.equal(dom.$('#'+id),null,id);
- for(const field of ['model','effort','tier','goalToggle','autonomyToggle','send','stop','input','attachments'])assert.ok(view[field],field);
+ for(const id of ['next-chat-plan','next-chat-directory-mode','next-chat-ontology-inline','next-chat-ontology-modules','next-chat-ontology-default','next-chat-autonomy-toggle','next-chat-autonomy-settings','next-chat-autonomy-dialog'])assert.equal(dom.$('#'+id),null,id);
+ for(const field of ['model','effort','tier','goalToggle','send','stop','input','attachments'])assert.ok(view[field],field);
  assert.doesNotMatch(scheduleChatOptionsMarkup(),/name="planningMode"|>Modules<|value="ontology"/);
 });
 test('old saved selections cannot reactivate modules or Directory and no-execution intent stays intact',()=>{

@@ -2,7 +2,7 @@ import {stableId} from '../core/dom.mjs';
 
 const ACTIONS=new Set(['set','update','pause','resume','clear']);
 const RESUMABLE=new Set(['paused','blocked','interrupted','budget_exhausted']);
-const ACTIVE_AUTONOMY=new Set(['active','waiting']);
+const ACTIVE_GOAL=new Set(['active','waiting']);
 const toComputerDateTime=iso=>{if(!iso)return '';const d=new Date(iso);if(!Number.isFinite(d.getTime()))return '';const two=v=>String(v).padStart(2,'0');return [d.getFullYear(),two(d.getMonth()+1),two(d.getDate())].join('-')+'T'+two(d.getHours())+':'+two(d.getMinutes())+':'+two(d.getSeconds());};
 export const computerDeadlineInput=value=>{
   const match=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)(?::(\d\d))?$/.exec(value);
@@ -24,7 +24,7 @@ export const computerDeadlineInput=value=>{
 };
 
 /** The proposed objective is editable; only saved chat history, never inferred facts, supplies calibration. */
-export function autonomyCalibrationObjective({draft='',firstTask='',turns=0}={}) {
+export function goalDraftObjective({draft='',firstTask='',turns=0}={}) {
   const task=String(firstTask||'').trim();
   const initial=task || String(draft||'').trim();
   if(!initial)return '';
@@ -83,7 +83,7 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     if(destroyed)return;
     const current=goalPresentation(goal,{running:working});
     view.goalCard.hidden=!current;
-    const enabled=Boolean(goal&&ACTIVE_AUTONOMY.has(goal.status));
+    const enabled=Boolean(goal&&ACTIVE_GOAL.has(goal.status));
     const pausePending=goal?.status==='paused'&&goal.pauseRequest&&goal.pauseRequest.settled!==true;
     view.goalToggle.disabled=busy||locked||loading||readonly||Boolean(pausePending);
     view.goalToggle.setAttribute('aria-checked',String(enabled));
@@ -148,7 +148,7 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     if(destroyed||busy||locked||loading||readonly)return;
     editorOwner=owner;
     const context=getContext()||{},turns=Math.max(0,Number(context.calibration?.turns)||0);
-    view.goalInput.value=goal?.objective||autonomyCalibrationObjective({draft:context.draft,firstTask:context.calibration?.firstTask,turns});
+    view.goalInput.value=goal?.objective||goalDraftObjective({draft:context.draft,firstTask:context.calibration?.firstTask,turns});
     view.goalLimit.value=goal?.maxTurns==null?'':String(goal.maxTurns);
     view.goalDeadlineInput.value=toComputerDateTime(goal?.deadlineAt);
     view.goalDeadlineInput.dataset.original=view.goalDeadlineInput.value;
@@ -179,7 +179,7 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
   }
   view.goalToggle.addEventListener('click',async()=>{
     if(destroyed||busy||locked||loading||readonly)return;
-    if(goal&&ACTIVE_AUTONOMY.has(goal.status))await act('pause').catch(()=>{});
+    if(goal&&ACTIVE_GOAL.has(goal.status))await act('pause').catch(()=>{});
     else if(goal&&RESUMABLE.has(goal.status)&&!goal.deadlineExpiredAt)await act('resume').catch(()=>{});
     else if(goal?.deadlineExpiredAt)showEditor();
     else showEditor();

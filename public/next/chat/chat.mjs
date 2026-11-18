@@ -7,7 +7,6 @@ import { enableProviderForModel } from '../../provider-availability.mjs';
 import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate, chatHeaderStatus, projectConversationGoal } from './model.mjs';
 import { submitChat, replyState } from './send.mjs';
 import {createGoalControls,parseGoalCommand} from './goals.mjs';
-import {createAutonomyControls} from './autonomy.mjs';
 import { createConversationReader } from './reader-client.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML } from '../core/dom.mjs';
@@ -46,7 +45,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     getItems:()=>state.list,getBucket:()=>state.bucket,getSelectedRoot:()=>root(),
     isBusy:()=>state.managing||state.pending,isActive:()=>state.active&&!state.destroyed,
     onChanged:()=>indexPaint(),onRefresh:()=>{if(state.active)void loadList();},onError:()=>{}});
-  let goalControls=null,autonomyControls=null;
+  let goalControls=null;
   const activityInspector=createActivityInspector({frame:view.shell,api,events,getRunId:()=>state.runs.at(-1)?.id||null});
   let newPlanningExecutionMode=state.options.planningExecutionMode;
   const executionNotice=mount.ownerDocument.createElement('section');
@@ -127,9 +126,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(view.model.disabled!==state.pending){view.model.disabled=state.pending;refreshChoices(runtimeStatus);}
     syncContext();
     activityInspector.refresh(state.selected?state.runs.at(-1)?.id:null);
-    const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting()||goalControls?.isBusy()||autonomyControls?.isBusy();
+    const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting()||goalControls?.isBusy();
     goalControls?.update({conversationId:root(),running:state.runs.some(run=>run.status==='running'&&run.settled!==true),readonly:bucket!=='active',busy:state.pending||state.managing||state.loading});
-    autonomyControls?.update({conversationId:root(),readonly:bucket!=='active',busy:state.pending||state.managing||state.loading});
     executionNotice.hidden=Boolean(item)||root()!=='new'||bucket!=='active'||state.options.planningExecutionMode!=='plan_only';
     enableAutomatic.disabled=busy||state.loading||state.attachmentsPending;
     view.title.textContent=item?.rootTitle||item?.title||'New conversation';
@@ -171,14 +169,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       executionOptions:{...state.options,...(modelSelections.read(root(),state.runs).explicit?{}:{model:undefined}),
         ...(!state.runs.some(running)?{context:contextControls.read()}:{})}}),
     onStart:async(goal,options)=>{const result=await send({goal,taskOverride:goal.objective,consumeDraft:options.consumeDraft});if(!result)throw Error(view.hint.textContent||'Could not start the goal.');return result;},
-    onResult:async(result,owner)=>{
-      if(state.destroyed||!state.active||root()!==owner||state.pending||!state.selected)return;
-      const item=result?.run?.id?{...state.selected,runId:result.run.id,latestRunId:result.run.id}:state.selected;
-      await open(item,{refresh:true});
-    }});
-  autonomyControls=createAutonomyControls({view,api,notify,onError:showError,onChange:updateHead,
-    getStatus:()=>runtimeStatus,
-    getContext:()=>({runId:state.runs.at(-1)?.id,model:state.options.model}),
     onResult:async(result,owner)=>{
       if(state.destroyed||!state.active||root()!==owner||state.pending||!state.selected)return;
       const item=result?.run?.id?{...state.selected,runId:result.run.id,latestRunId:result.run.id}:state.selected;
@@ -535,7 +525,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     visuals.onEvent(event);
     if(!state.active)return;
     if(goalControls.handleEvent(event))return;
-    if(autonomyControls.handleEvent(event))return;
     if(event.type==='goal.updated'){
       const {conversationId,goal}=event.data||{};
       state.list=state.list.map(item=>rootId(item)===conversationId?{...item,goal:projectConversationGoal(goal)}:item);
@@ -718,7 +707,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     },
     leave() {
 
-      goalControls.close();autonomyControls.close();
+      goalControls.close();
       modelPicker.close({restoreFocus:false});
       state.active=false;folderUI.stop();state.generation++;state.listRead++;state.unsubscribe?.();state.unsubscribe=null;
       listRequested=false;listInitialize=null;listController?.abort();
@@ -732,6 +721,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     updateStatus(status) {if(status&&typeof status==='object'&&!Array.isArray(status)){runtimeStatus=status;if(root()==='new')restoreExecution('new');refreshChoices(status);updateHead();}},
     openConversationId(id){if(!id)return;const item=state.list.find(row=>rootId(row)===id||lastRunId(row)===id)||{id,runId:id,title:'Conversation'};void open(item);},
     getState() {return {active:state.active,selected:root(),runCount:state.runs.length,listing:state.list.length,selectionCount:state.selection.size,managing:state.managing};},
-    destroy(){this.leave();state.destroyed=true;folderUI.destroy();goalControls.destroy();autonomyControls.destroy();contextControls.destroy();activityInspector.destroy();modelPicker.destroy();reader.close();artifacts.destroy();visuals.destroy();attachmentsUI.destroy();mount.innerHTML='';}
+    destroy(){this.leave();state.destroyed=true;folderUI.destroy();goalControls.destroy();contextControls.destroy();activityInspector.destroy();modelPicker.destroy();reader.close();artifacts.destroy();visuals.destroy();attachmentsUI.destroy();mount.innerHTML='';}
   };
 }
