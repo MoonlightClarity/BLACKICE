@@ -23,7 +23,7 @@ const watchdog=setTimeout(()=>{fs.mkdir(out,{recursive:true}).then(()=>fs.writeF
  await until(()=>js("!!window.__nativeBrowser?.status().attached"));
  await until(()=>js("!!document.querySelector('[data-collection-id=companies]')"));
  assert.equal(await js("document.querySelector('[data-collection-id=companies]').parentElement.closest('[data-collection-id]').dataset.collectionId"),'research');
- report.checks.push('Nested folders and native-surface attachment preserved');
+ report.checks.push('Nested folders and native-surface attachment preserved');await js("document.querySelector('[data-folder-control=\"edit:research\"]').click()");assert.equal(await js("document.querySelector('[aria-label=\"Folder name\"]').value"),'Research');await js("document.querySelector('.next-browser-folder-editor').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");report.checks.push('Folder text starts rename without expanding or changing tabs');
  const click=s=>js('document.querySelector('+JSON.stringify(s)+').click()');
  assert.equal(await js("document.querySelector('#next-browser-tools').hidden"),true);
  await click('#next-browser-tools-toggle');

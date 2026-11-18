@@ -30,7 +30,7 @@ app.whenReady().then(async()=>{
   const idle=()=>until(()=>js("document.querySelector('#tabs').dataset.folderBusy==='false'"));
   report.checks.push('App-owned folder controller loaded without extension; remote native-tab session unchanged');
   await idle();await js("document.querySelector('.next-browser-folder-add').click();document.querySelector('[aria-label=\"Folder name\"]').value='Research';document.querySelector('.next-browser-folder-editor').requestSubmit()");
-  await until(()=>driver.status().collections?.some(f=>f.name==='Research'));await until(()=>js("!![...document.querySelectorAll('.next-browser-folder-toggle')].find(n=>n.textContent.includes('Research'))"));
+  await until(()=>driver.status().collections?.some(f=>f.name==='Research'));await until(()=>js("!![...document.querySelectorAll('.next-browser-folder-name')].find(n=>n.textContent.includes('Research'))"));
   const parent=driver.status().collections.find(f=>f.name==='Research').id;
   await idle();await js("document.querySelector('.next-browser-folder-add').click();document.querySelector('[aria-label=\"Folder name\"]').value='Companies';document.querySelector('[aria-label=\"Parent folder\"]').value="+JSON.stringify(parent)+";document.querySelector('.next-browser-folder-editor').requestSubmit()");
   await until(()=>driver.status().collections?.some(f=>f.name==='Companies'));const child=driver.status().collections.find(f=>f.name==='Companies').id;await until(()=>js("document.querySelector('#tabs').dataset.folderBusy==='false'"));
@@ -40,8 +40,8 @@ app.whenReady().then(async()=>{
   await until(()=>js("!!document.querySelector('[data-collection-id="+JSON.stringify(child)+"] [data-tab-id="+JSON.stringify(first.tabId)+"]')"));
   report.checks.push('App creates nested folders and moves real native tab through existing host collection action');
   assert.equal(await js(`document.querySelector('[data-collection-id="${child}"]').parentElement.closest('[data-collection-id]').dataset.collectionId`),parent);
-  assert.equal(await js(`document.querySelector('[data-collection-id="${child}"] > .next-browser-folder-heading > .next-browser-folder-toggle').textContent`),'\u25be Companies (1)');
-  assert.equal(await js(`document.querySelector('[data-collection-id="${parent}"] > .next-browser-folder-heading > .next-browser-folder-toggle').textContent`),'\u25be Research (1)');
+  assert.equal(await js(`document.querySelector('[data-collection-id="${child}"] > .next-browser-folder-heading > .next-browser-folder-name').textContent`),'Companies');
+  assert.equal(await js(`document.querySelector('[data-collection-id="${parent}"] > .next-browser-folder-heading > .next-browser-folder-name').textContent`),'Research');
   assert.equal(await js("document.querySelectorAll('.next-browser-folder-group').length"),3);
   await js(`document.querySelector('[data-collection-id="${parent}"] > .next-browser-folder-heading > .next-browser-folder-toggle').click()`);
   assert.equal(await js(`document.querySelector('[data-collection-id="${child}"]').closest('[hidden]')!==null`),true);

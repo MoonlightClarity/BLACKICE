@@ -224,3 +224,20 @@
 .next-native-browser-content .next-browser-cleanup-panel{margin:8px;border-radius:6px}
 @media(max-width:900px){.next-native-browser-sidebar{flex-basis:218px}.next-native-browser .next-browser-address button{padding:6px 7px;font-size:11px}}
 @media(max-width:650px){.next-native-browser .next-browser-address{flex-wrap:wrap}.next-native-browser .next-browser-address #next-browser-url{order:-1;flex-basis:100%}.next-native-browser-body{flex-direction:column}.next-native-browser-sidebar{flex:0 0 auto;max-height:180px;border-right:0;border-bottom:1px solid var(--line)}.next-native-browser-sidebar .next-browser-folder-tree{max-height:none}.next-native-browser-content{min-height:120px}}
+
+
+/* Folder/tab outline: indentation carries hierarchy, not nested button cards. */
+.next-browser-folder-tree .next-browser-folder-heading{gap:2px;min-height:30px}
+.next-browser-folder-tree .next-browser-folder-heading button{background:transparent;border:0;box-shadow:none;border-radius:3px}
+.next-browser-folder-tree .next-browser-folder-toggle{flex:0 0 24px;width:24px;padding:4px;text-align:center}
+.next-browser-folder-name{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.next-browser-folder-count{flex:none;padding:0 7px;color:var(--muted);font-size:10px}
+.next-browser-folder-tree .next-browser-folder-children{margin-left:11px;padding-left:12px;border:0;gap:1px}
+.next-native-browser-sidebar .next-browser-tab-group{border:0;border-radius:3px;background:transparent;min-height:30px;box-shadow:none}
+.next-native-browser-sidebar .next-browser-tab-group .next-browser-tab{background:transparent;border:0;box-shadow:none;padding:6px}
+.next-native-browser-sidebar .next-browser-tab-group:hover,.next-browser-folder-heading:hover{background:var(--raised)}
+.next-native-browser-sidebar .next-browser-tab-group:has(.next-browser-tab[aria-selected=true]){background:var(--next-selection-background,var(--raised));box-shadow:inset 2px 0 var(--accent)}
+.next-native-browser-sidebar .next-browser-folder-heading button{font-size:12px;min-height:30px}
+.next-native-browser-sidebar .next-browser-folder-heading button:focus-visible,.next-native-browser-sidebar .next-browser-tab-group button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.next-native-browser-sidebar .next-browser-tab-move{background:transparent;border:0;box-shadow:none;padding:4px;font-size:10px}
+@media(hover:hover){.next-native-browser-sidebar .next-browser-tab-move{opacity:0}.next-native-browser-sidebar .next-browser-tab-group:hover .next-browser-tab-move,.next-native-browser-sidebar .next-browser-tab-group:focus-within .next-browser-tab-move{opacity:1}}

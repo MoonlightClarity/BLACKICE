@@ -59,8 +59,11 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   function branch(f){
    const group=el('section',null,'next-browser-folder-group');group.dataset.collectionId=f.id;
    const heading=el('div',null,'next-browser-folder-heading'),content=el('div',null,'next-browser-folder-children');content.hidden=collapsed.has(f.id);
-   const toggle=button((content.hidden?'\u25b8 ':'\u25be ')+f.name+' ('+count(f)+')',()=>{collapsed.has(f.id)?collapsed.delete(f.id):collapsed.add(f.id);paint();},'next-browser-folder-toggle');toggle.dataset.folderControl='toggle:'+f.id;toggle.setAttribute('aria-expanded',String(!content.hidden));
-   const menu=button('Edit',()=>edit(f),'next-browser-folder-menu');menu.setAttribute('aria-label','Edit '+folderPath(collections,f.id));menu.dataset.folderControl='edit:'+f.id;heading.append(toggle);if(f.id)heading.append(menu);group.append(heading,content);
+   const toggle=button(content.hidden?'\u25b8':'\u25be',()=>{collapsed.has(f.id)?collapsed.delete(f.id):collapsed.add(f.id);paint();},'next-browser-folder-toggle');toggle.dataset.folderControl='toggle:'+f.id;toggle.setAttribute('aria-expanded',String(!content.hidden));toggle.setAttribute('aria-label',(content.hidden?'Expand ':'Collapse ')+f.name);
+   const label=f.id?button(f.name,()=>edit(f),'next-browser-folder-name next-browser-folder-menu'):el('span',f.name,'next-browser-folder-name');
+   if(f.id){label.setAttribute('aria-label','Rename '+folderPath(collections,f.id));label.title='Rename folder';label.dataset.folderControl='edit:'+f.id;}
+   const total=el('span',String(count(f)),'next-browser-folder-count');total.setAttribute('aria-label',count(f)+' tabs');
+   heading.append(toggle,label,total);group.append(heading,content);
    for(const tab of f.tabs){const row=tabRow(tab);if(row)content.append(row);}for(const child of f.children)content.append(branch(child));
    group.addEventListener('dragover',e=>{if(!blocked()&&[...e.dataTransfer.types].includes('application/x-blackice-tab'))e.preventDefault();});
    group.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();void request('tab_collect',{tabId:e.dataTransfer.getData('application/x-blackice-tab'),collectionId:f.id||null});});

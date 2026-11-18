@@ -59,3 +59,15 @@ test('leaving hides the folder editor and explicit resume preserves its unsaved 
  assert.equal(f.calls.length,0);assert.ok(f.$('.next-browser-folder-resume'));
  await f.click('.next-browser-folder-resume');assert.equal(form.hidden,false);assert.equal(name.value,'Unsent folder');assert.equal(f.calls.length,0);
 });
+
+test('folder name opens rename while its disclosure alone changes expansion',async t=>{
+ const f=fixture(t);const toggle=f.$('[data-folder-control="toggle:p"]');
+ assert.equal(toggle.getAttribute('aria-label'),'Collapse Projects');assert.equal(toggle.textContent,'\u25be');
+ await f.click('[data-folder-control="edit:p"]');
+ assert.equal(f.$('.next-browser-folder-editor input').value,'Projects');
+ assert.equal(f.$('[data-collection-id="p"] .next-browser-folder-children').hidden,false);
+ f.$('.next-browser-folder-editor input').value='Renamed';
+ await f.$('.next-browser-folder-editor').dispatch('submit');
+ assert.deepEqual(f.calls,[{browser:'relay',action:'collection_rename',collectionId:'p',name:'Renamed',parentCollectionId:null}]);
+ await f.click('[data-folder-control="toggle:p"]');assert.equal(f.$('[data-collection-id="p"] .next-browser-folder-children').hidden,true);
+});
