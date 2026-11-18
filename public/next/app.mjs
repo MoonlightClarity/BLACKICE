@@ -1,4 +1,3 @@
-import { createKnowledgeApprovals } from './core/knowledge-approvals.mjs';
 import { createApi } from './core/api.mjs';
 import { createEventBus } from './core/events.mjs';
 import { updateWorkspaceTabs } from './core/workspace-navigation.mjs';
@@ -13,11 +12,10 @@ const spaces=new Map(), notifications=new Set();
 const modules={
   chat:()=>import('./chat/chat.mjs').then(m=>m.createChatWorkspace),
   planning:()=>import('./workspaces/planning-current.mjs').then(m=>m.createPlanningWorkspace),
-  swarm:()=>import('./workspaces/swarm.mjs').then(m=>m.createSwarmWorkspace),
   cronjobs:()=>import('./workspaces/tasks.mjs').then(m=>m.createCronjobsWorkspace),
   workflows:()=>import('./workspaces/workflow-execution.mjs').then(m=>m.createWorkflowWorkspace),
   browser:()=>import('./workspaces/browser.mjs').then(m=>m.createBrowserWorkspace),
-  knowledge:()=>import('./workspaces/knowledge.mjs').then(m=>m.createKnowledgeWorkspace),
+  userWorkflows:()=>import('./workspaces/user-workflows.mjs').then(m=>m.createUserWorkflowsWorkspace),
   skills:()=>import('./workspaces/skills.mjs').then(m=>m.createSkillsWorkspace),
   settings:()=>import('./workspaces/settings.mjs').then(m=>m.createSettingsWorkspace),
 };
@@ -35,7 +33,6 @@ const connection=(state)=>{
   health.dataset.status=state==='connected'?'ready':'error';
 };
 const events=createEventBus({onConnection:connection});
-const knowledgeApprovals=createKnowledgeApprovals({mount:document.querySelector('.next-topbar-right'),api,events,notify});
 events.subscribe(receipt=>{
   if(receipt.type!=='runtime.status'||!receipt.data)return;
   status=receipt.data;
@@ -115,7 +112,6 @@ window.addEventListener('hashchange',()=>{
 window.addEventListener('beforeunload',()=>{
   for(const {instance} of spaces.values())instance?.leave?.();
   for(const timer of notifications)clearTimeout(timer);
-  knowledgeApprovals.destroy();
   events.close();
 });
 // Painting the shell never waits for a full history parse or an external provider.

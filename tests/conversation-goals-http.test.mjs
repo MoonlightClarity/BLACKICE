@@ -37,7 +37,7 @@ async function fixture(t, runtime = new Runtime()) {
   const options = { runtime, port: 0, dataDir: path.join(directory, 'data'), defaultCwd: path.join(directory, 'workspace'), remoteAccess: false };
   const app = await createHarnessServer(options);
   const url = await app.listen();
-  await app.learning.updateSettings({ mode: 'manual' });
+  assert.equal(app.learning.status().retired,true,'No background learning runs alongside Goal tests.');
   const home = await fetch(url);
   const cookie = home.headers.get('set-cookie').split(';')[0];
   const request = async (route, body, authenticated = true, method = body === undefined ? 'GET' : 'POST') => {
