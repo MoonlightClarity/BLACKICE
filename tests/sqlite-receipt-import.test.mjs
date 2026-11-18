@@ -6,7 +6,15 @@ test('offline import preserves source bytes, publishes dedup state, and refuses 
  const record=(await original.admit({ownerId:'owner',requestId:'once',tool:'tool',arguments:{},requiredScopes:[],client:{id:'owner',scopes:[]},mutating:true})).job;await original.close();
  await fs.mkdir(path.join(source,'direct-execution-jobs'));const file=path.join(source,'direct-execution-jobs',record.id+'.json'),bytes=JSON.stringify(record);await fs.writeFile(file,bytes);
  const report=await importReceipts({dataDir:source,stagingDir:path.join(root,'stage'),publish:true});assert.equal(report.count,1);assert.equal(await fs.readFile(file,'utf8'),bytes);
- const live=new DirectExecutionJobs({dataDir:source});await live.init();assert.equal((await live.get(record.id)).status,'interrupted');assert.equal((await live.admit({ownerId:'owner',requestId:'once',tool:'tool',arguments:{},requiredScopes:[],client:{id:'owner',scopes:[]},mutating:true})).created,false);
- await assert.rejects(importReceipts({dataDir:source,stagingDir:path.join(root,'locked')}),{code:'DIRECT_JOB_LOCKED'});await live.close();
+ const publishedInfo=await fs.stat(path.join(source,'direct-execution.sqlite')),stagedInfo=await fs.stat(path.join(root,'stage','direct-execution.sqlite'));
+ assert.notEqual(publishedInfo.ino,stagedInfo.ino,'published database must not alias the retained staging database');
+ const live=new DirectExecutionJobs({dataDir:source});t.after(()=>live.close());await live.init();assert.equal((await live.get(record.id)).status,'interrupted');assert.equal((await live.admit({ownerId:'owner',requestId:'once',tool:'tool',arguments:{},requiredScopes:[],client:{id:'owner',scopes:[]},mutating:true})).created,false);
+ await assert.rejects(importReceipts({dataDir:source,stagingDir:path.join(root,'locked')}),{code:'DIRECT_JOB_LOCKED'});
+ const staged=new DirectExecutionJobs({dataDir:path.join(root,'stage')});t.after(()=>staged.close());await staged.init();
+ const input=requestId=>({ownerId:'owner',requestId,tool:'tool',arguments:{},requiredScopes:[],client:{id:'owner',scopes:[]},mutating:false});
+ const liveOnly=await live.admit(input('live-only')),stageOnly=await staged.admit(input('stage-only'));
+ await assert.rejects(live.get(stageOnly.job.id),{code:'DIRECT_JOB_NOT_FOUND'});await assert.rejects(staged.get(liveOnly.job.id),{code:'DIRECT_JOB_NOT_FOUND'});
+ assert.equal((await live.counts()).total,2);assert.equal((await staged.counts()).total,2);
+ await staged.close();await live.close();
  await assert.rejects(importReceipts({dataDir:source,stagingDir:path.join(root,'again')}),/already exists/);
 });

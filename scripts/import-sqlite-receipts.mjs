@@ -1,4 +1,5 @@
-import {promises as fs} from 'node:fs';
+import {promises as fs, constants} from 'node:fs';
+import {randomUUID} from 'node:crypto';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {DirectExecutionJobs} from '../lib/direct-execution-jobs.mjs';
@@ -9,7 +10,7 @@ export async function importReceipts({dataDir,stagingDir,publish=false}){
  await fs.mkdir(stagingDir);const source=new DirectExecutionJobs({dataDir}),target=new DirectExecutionJobs({dataDir:stagingDir});let count=0,retiredApprovals=0;
  try{
   await source.ensureDirectory();await source.acquireLease();
-  try{await fs.stat(source.databaseFile);throw Error('Receipt database already exists; refusing replacement.');}catch(e){if(e.code!=='ENOENT')throw e;}
+  try{await fs.lstat(source.databaseFile);throw Error('Receipt database already exists; refusing replacement.');}catch(e){if(e.code!=='ENOENT')throw e;}
   const entries=await fs.readdir(source.directory);
   // Packed migrations require a separate explicit export, not silent data omission.
   if(entries.some(n=>n.includes('manifest')||n==='direct_'+'0'.repeat(64)+'.json'))throw Error('Packed history requires export before SQLite import. No source data was changed.');
@@ -32,7 +33,18 @@ export async function importReceipts({dataDir,stagingDir,publish=false}){
   const integrity=target.db.prepare('PRAGMA integrity_check').get();if(Object.values(integrity)[0]!=='ok')throw Error('Imported database integrity check failed.');
   target.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');await target.close();
   let published=false;
-  if(publish){const handle=await fs.open(target.databaseFile,'r+');try{await handle.sync();}finally{await handle.close();}await fs.link(target.databaseFile,source.databaseFile);published=true;}
+  if(publish){
+    // A retained hard link is unsafe for SQLite: the two names would share a
+    // main file but use distinct WAL files. Publish an independent copy instead.
+    const temporary=source.databaseFile+'.import-'+randomUUID()+'.tmp';
+    await fs.copyFile(target.databaseFile,temporary,constants.COPYFILE_EXCL);
+    const handle=await fs.open(temporary,'r+');try{await handle.sync();}finally{await handle.close();}
+    await source.assertLease();
+    // All supported app/import writers honor this executor lease. Do not replace
+    // an existing database, including one left by a previous import attempt.
+    try{await fs.lstat(source.databaseFile);throw Error('Receipt database appeared before publication; refusing replacement.');}catch(e){if(e.code!=='ENOENT')throw e;}
+    await fs.rename(temporary,source.databaseFile);published=true;
+  }
   const report={version:1,count,retiredApprovals,published,sourceDataPreserved:true,database:published?source.databaseFile:target.databaseFile};
   await fs.writeFile(path.join(stagingDir,'import-result.json'),JSON.stringify(report,null,2));return report;
  }finally{await target.close();await source.releaseLease();}
