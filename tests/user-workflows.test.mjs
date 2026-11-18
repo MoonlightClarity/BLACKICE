@@ -158,3 +158,25 @@ test('catalog summaries bound description while read and execution preserve the 
   const listed = body(await handler({ name: USER_WORKFLOW_TOOL.name, arguments: { action: 'list' } }));
   assert.equal(listed.workflows[0].description.length, 240);
 });
+
+test('caller-owned create identity replays exact revision without write, but rejects changed input or later revisions', async t => {
+  const { store, dataDir } = await fixture(t);
+  const request = definition({ id: 'human-create-request-123' });
+  const first = await store.save(request, human);
+  const before = await readFile(store.file, 'utf8');
+  const rename = t.mock.method(fileSystem, 'rename', async () => { assert.fail('Exact create replay must not rewrite the store.'); });
+  assert.deepEqual(await store.save(request, human), first);
+  const reopened = await new UserWorkflowStore({ dataDir }).init(); t.after(() => reopened.close());
+  assert.deepEqual(await reopened.save(request, human), first);
+  assert.equal(await readFile(store.file, 'utf8'), before);
+  await assert.rejects(store.save({ ...request, instructions: 'Changed' }, human), { code: 'USER_WORKFLOW_CONFLICT' });
+  await assert.rejects(store.save({ ...request, status: 'draft' }, human), { code: 'USER_WORKFLOW_CONFLICT' });
+  rename.mock.restore();
+  const second = await store.save(update(first, { instructions: 'Edited by human' }), human);
+  await assert.rejects(store.save(request, human), { code: 'USER_WORKFLOW_CONFLICT' });
+  assert.deepEqual(await store.read(first.id), second);
+  const concurrent = definition({ id: 'another-create-request' });
+  const [one, two] = await Promise.all([store.save(concurrent, human), store.save(concurrent, human)]);
+  assert.deepEqual(one, two); assert.equal(one.revision, 1);
+  assert.equal((await store.list()).length, 2);
+});
