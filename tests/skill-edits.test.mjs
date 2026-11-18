@@ -7,12 +7,13 @@ import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 import {readReleaseSkill} from '../lib/release-skills.mjs';
 import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
 import {managedContextPaths} from '../lib/managed-context-paths.mjs';
-const value=base=>({expectedRevision:base.revision,title:'Human browser',summary:'custom discoverable wording',appliesWhen:'For browser work',scope:'This installation',content:'# Human-authored method\nDo the useful thing.\n'});
+const value=base=>({expectedRevision:base.revision,content:'# Human-authored method\ncustom discoverable wording.\n'});
 test('human edits persist, model sees effective content, originals stay immutable, CAS prevents lost edits',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'skill-edits-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const catalog=createSkillsCatalog({dataDir:root}),base=await catalog.detail({id:'builtin-browser'}),edit=value(base);
- assert.equal(base.userEditable,true);const saved=await catalog.save({id:base.id,value:edit});assert.equal(saved.revision,2);assert.equal(saved.source,'user');
+ assert.equal(base.userEditable,true);const saved=await catalog.save({id:base.id,value:edit});assert.equal(saved.revision,2);assert.equal(saved.source,'user');assert.equal(saved.title,'Human-authored method');assert.equal('summary' in saved,false);
  assert.equal(readReleaseSkill(base.id).content,base.content);
+ const persisted=JSON.parse(await readFile(path.join(root,'skill-edits','skills.json'),'utf8')).entries[base.id];assert.deepEqual(Object.keys(persisted).sort(),['content','revision']);assert.equal(persisted.content,edit.content);
  const fresh=createSkillsCatalog({dataDir:root});assert.deepEqual(await fresh.detail({id:base.id}),saved);
  assert.equal((await fresh.list({query:'custom discoverable'})).entries[0].id,base.id);
  await assert.rejects(catalog.save({id:base.id,value:edit}),{status:409});

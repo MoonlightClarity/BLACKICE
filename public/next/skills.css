@@ -8,21 +8,31 @@
 .next-skills-list button{display:flex;align-items:center;text-align:left;width:100%;min-width:0;min-height:30px;padding:5px 8px;overflow-wrap:anywhere}
 .next-skills-list button[aria-pressed=true]{border-color:var(--accent);background:var(--next-selection-background)}
 .next-skills-inspector{min-width:0}
-.next-skills-meta{display:grid;grid-template-columns:minmax(90px,130px) minmax(0,1fr);gap:8px 12px;margin:16px 0 18px;font-size:12px;line-height:1.6}
-.next-skills-meta dt{font-weight:600;color:var(--muted)}
-.next-skills-meta dd{margin:0;overflow-wrap:anywhere}
-.next-skills-content{box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:18px;background:var(--next-control-background);max-height:65dvh;overflow:auto;font:12px/1.55 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
-.next-skills-folder>summary{cursor:pointer;padding:8px 4px;overflow-wrap:anywhere}
-.next-skills-folder>.next-skills-list{margin-left:12px;padding-left:8px;border-left:1px solid var(--line)}
-.next-skills-folder-form,#skills-folder-edit-form,#skills-assignment{display:grid;gap:8px;margin-bottom:18px}
+.next-skills-folder-form{display:grid;gap:8px;margin-bottom:18px}
 .next-skills-list ul{min-width:0;list-style:none}
-#skills-folder-editor{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
-.next-skills-folder button{font-size:12px}
 @media(max-width:850px){.next-skills-layout{grid-template-columns:minmax(180px,250px) minmax(0,1fr)}}
-@media(max-width:650px){.next-skills-layout{grid-template-columns:1fr}.next-skills-aside{max-height:42dvh}.next-skills-root.next-panel{padding:16px}.next-skills-meta{grid-template-columns:95px minmax(0,1fr)}}
+@media(max-width:650px){.next-skills-layout{grid-template-columns:1fr}.next-skills-aside{max-height:42dvh}.next-skills-root.next-panel{padding:16px}}
 
 #skills-editor:not([hidden]){display:grid;gap:12px;margin-top:16px}
 #skills-editor textarea{box-sizing:border-box;width:100%;min-height:70px;resize:vertical}
 #skills-edit-content{min-height:320px;font:12px/1.55 Consolas,monospace}
 .next-skills-actions{display:flex;gap:10px;flex-wrap:wrap}
 #skills-save-status{overflow-wrap:anywhere}
+/* Plain outline rows with explicit disclosure and folder icons. */
+.skills-folder-row{display:flex;align-items:center;gap:5px;min-width:0;padding:3px 0}
+.skills-folder-row button,.skills-document-row,.skills-root-drop{background:transparent;border-color:transparent;border-radius:3px;text-align:left}
+.skills-folder-arrow{flex:none;width:26px;padding:3px!important}
+.skills-folder-name{flex:1;min-width:0;overflow-wrap:anywhere;padding:5px!important}
+.skills-folder-icon{display:inline-block;flex:none;width:17px;height:14px;border:1px solid #c6ad70;border-radius:2px;background:#c6ad7022;position:relative}
+.skills-folder-icon::before{content:"";position:absolute;width:7px;height:3px;top:-4px;left:1px;border:1px solid #c6ad70;border-bottom:0;border-radius:2px 2px 0 0}
+.skills-folder-remove{padding:2px 5px!important;opacity:.6}
+.skills-folder-row:hover .skills-folder-remove,.skills-folder-remove:focus{opacity:1}
+.skills-folder-row input{min-width:0;width:100%;padding:5px;background:var(--next-control-background);color:inherit;border:1px solid var(--line)}
+.skills-folder-branch>.next-skills-list{margin-left:13px;padding-left:13px;border-left:1px solid var(--line)}
+.skills-document-row{width:100%;padding:7px 9px!important}
+.skills-document-row[aria-pressed=true]{background:var(--raised);border-color:var(--line)}
+.skills-root-drop{width:100%;padding:8px 0}
+#skills-create-location{margin:0;font-size:11px;color:var(--muted)}
+#skills-editor textarea{min-height:55dvh}
+
+.skills-folder-row>button{width:auto}.skills-folder-row>.skills-folder-arrow{width:26px}.skills-folder-row>.skills-folder-remove{flex:none;width:25px}

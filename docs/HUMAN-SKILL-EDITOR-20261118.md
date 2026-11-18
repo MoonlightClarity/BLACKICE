@@ -36,3 +36,7 @@ Combined changes include the human Skills editor, native browser folder rail and
 The original reported cross-section Cronjobs visual leak was not independently reproduced. The tested fix closes top-layer dialogs and suspends folder-management UI on navigation, preserving drafts. It should not be described as proof that every possible cause of that original report is resolved.
 
 This is source qualification only. No installer was built or installed here; live user drafts, saved skills and browser profiles were not changed.
+
+## Direct-document follow-up
+
+The next iteration removes the separate Edit step and duplicated metadata fields. A selected skill is one directly editable document with Save and Discard changes. Saves send only content and its edit-start revision. Display labels derive from the document heading; search reads the document. No user document text is rewritten by folder operations. Folder names rename inline; arrows expand/collapse; drag moves folders or skills; Ctrl+Enter indents a folder under its preceding sibling and Ctrl+Shift+Enter outdents it. Stale edits retain their original revision and draft across refresh rather than silently rebasing.
