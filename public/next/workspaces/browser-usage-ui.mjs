@@ -21,7 +21,7 @@ export function browserIconButton(button,icon,label,tooltip=label){
 }
 /** Folders organize all tabs. An explicit in-use mark is independent of task ownership. */
 export const browserTabUsageLabel=tab=>tab?.inUse?'In use':'';
-export function browserUsageMarkup(){return '<div class="next-browser-usage" aria-label="Tab usage"><span>All tabs</span><button id="next-browser-in-use" type="button" aria-pressed="false" disabled>Mark in use</button></div>';}
+export function browserUsageMarkup(){return '<div class="next-browser-usage" role="group" aria-label="Tab usage"><button id="next-browser-in-use" type="button" aria-pressed="false" disabled>Mark in use</button></div>';}
 export function createBrowserUsageControls({mount,api,getTab,isBusy=()=>false,onMoveStart=()=>{},onMoveStatus=()=>{},onMoveEnd=()=>{},notice=()=>{}}){
  const button=mount.querySelector('#next-browser-in-use');let marking=false,destroyed=false,selection=null;
  function render(){const tab=getTab();button.disabled=marking||isBusy()||!tab;browserIconButton(button,tab?.inUse?'unpin':'pin',tab?.inUse?'Release in-use mark':'Mark in use',tab?.inUse?'Release in-use mark; this tab can then be cleaned up':'Mark in use; protect this tab from automatic cleanup');button.setAttribute('aria-pressed',String(Boolean(tab?.inUse)));}
