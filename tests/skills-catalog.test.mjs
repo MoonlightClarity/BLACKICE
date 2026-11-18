@@ -21,6 +21,7 @@ test('model sees discovery/read only, no memory, no ambient instructions or pers
  const schema=KNOWLEDGE_TOOLS.find(t=>t.name==='relay_skills').inputSchema;assert.deepEqual(schema.properties.action.enum,['search','read']);assert.ok(!schema.properties.content&&!schema.properties.scope);
  const handler=createKnowledgeToolHandler({cwd:path.resolve('.'),store:new Proxy({},{get(){throw Error('legacy store read');}})});
  const invoke=arguments_=>handler({name:'relay_skills',arguments:arguments_});
+ const all=JSON.parse((await invoke({action:'search'})).contentItems[0].text);assert.equal(all.entries.length,13);assert.equal(all.truncated,false);
  const found=JSON.parse((await invoke({action:'search',query:'browser'})).contentItems[0].text);assert.ok(found.entries.some(e=>e.id==='builtin-browser'));assert.ok(!('content' in found.entries[0]));
  const read=JSON.parse((await invoke({action:'read',id:'builtin-browser'})).contentItems[0].text);assert.match(read.entry.content,/When to use/);
  for(const action of ['save','patch','remove','remember'])await assert.rejects(invoke({action,id:'builtin-browser'}));
