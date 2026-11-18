@@ -68,10 +68,10 @@ test('real BLACKICE server serves only the current interface and keeps old bookm
     '/next/workspaces/task-lifecycle.mjs',
     '/next/workspaces/skills.mjs','/next/core/folder-tree.mjs',
     '/next/workspaces/settings.mjs','/next/workspaces/settings-identity.mjs',
-    '/next/workspaces/settings-providers.mjs','/next/workspaces/settings-connections.mjs','/next/workspaces/settings-import.mjs',
-    '/next/settings.css','/next/settings-identity.css','/next/settings-providers.css','/next/settings-connections.css',
+    '/next/workspaces/settings-providers.mjs',
+    '/next/settings.css','/next/settings-identity.css','/next/settings-providers.css',
     '/native-apps-ui.mjs','/native-apps.css'];
-  for(const resource of ['/next/knowledge.css','/next/core/knowledge-approvals.mjs','/next/workspaces/knowledge.mjs','/next/workspaces/knowledge-model.mjs','/next/chat/ontology-preferences.mjs','/next/chat/execution-preferences.mjs'])assert.equal((await get(resource,cookie)).status,404,'Retired controls stay unavailable: '+resource);
+  for(const resource of ['/tool-connections-ui.mjs','/tool-connections.css','/next/workspaces/settings-connections.mjs','/next/workspaces/settings-import.mjs','/next/settings-connections.css','/next/knowledge.css','/next/core/knowledge-approvals.mjs','/next/workspaces/knowledge.mjs','/next/workspaces/knowledge-model.mjs','/next/chat/ontology-preferences.mjs','/next/chat/execution-preferences.mjs'])assert.equal((await get(resource,cookie)).status,404,'Retired controls stay unavailable: '+resource);
   for(const resource of assets){
     const result=await get(resource,cookie);
     assert.equal(result.status,200,resource+' should be served by the real HTTP route.');

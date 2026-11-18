@@ -4,9 +4,14 @@ import { createForceRestart } from './settings-restart.mjs';
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
 import { enableProviderForModel } from '../../provider-availability.mjs';
 import { createContextControls } from '../core/context-controls.mjs';
+import { reasoningChoices } from '../../reasoning-model.mjs';
+import { serviceTierSupport } from '../../service-tier-model.mjs';
 
 const REASONING=['default','none','minimal','low','medium','high','xhigh','max','ultra'];
 const VERBOSITY=['concise','balanced','detailed'];
+export function responseDefaultCapabilities(status={},selected='default'){
+  return {reasoning:reasoningChoices(status,'default',selected).map(choice=>({...choice,available:choice.value==='default'||choice.available&&choice.verified})),fast:serviceTierSupport(status,'default','fast')};
+}
 
 export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{}}) {
   mount.innerHTML=[
@@ -14,7 +19,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<header class="next-panel-head"><div><h1>Config</h1><p>Models, tools and app preferences.</p></div>',
     '<button type="button" id="next-settings-refresh">Refresh</button></header>',
     '<nav class="next-settings-sections" role="tablist" aria-label="Config sections">',
-    ...[['general','General'],['identity','Behavior & profile'],['models','Models'],['connections','Tools'],['passwords','Passwords'],['storage','Storage & Data'],['troubleshooting','Troubleshooting'],['apps','App connections']].map(([id,label])=>
+    ...[['general','General'],['identity','Behavior & profile'],['models','Models'],['passwords','Passwords'],['storage','Storage & Data'],['troubleshooting','Troubleshooting'],['apps','App connections']].map(([id,label])=>
       '<button type="button" id="next-settings-section-'+id+'" data-settings-section="'+id+'" role="tab" aria-controls="next-settings-'+id+'" aria-selected="'+(id==='general')+'" tabindex="'+(id==='general'?'0':'-1')+'">'+label+'</button>'),
     '</nav><div id="next-settings-general" role="tabpanel" aria-labelledby="next-settings-section-general">',
     '<div id="next-review-notice" hidden><p id="next-review-count"></p><button type="button" id="next-review-open">Review paused actions</button></div>',
@@ -30,7 +35,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<button type="button" class="next-primary" id="next-settings-save-model">Set default</button></div>',
     '<p id="next-settings-model-feedback" class="next-help" role="status"></p></section>',
     '<section class="next-card"><h2>Response defaults</h2>',
-    '<p class="next-help">Defaults for Chat Mode. A chat’s explicit choices take precedence.</p>',
+    '<p class="next-help">Preferences for new work. Explicit chat choices take precedence; model support still applies.</p>',
     '<form id="next-runtime-settings-form" class="next-stack">',
     '<div class="next-settings-grid">',
     '<label class="next-label">Default reasoning<select class="next-field" id="next-runtime-effort"></select></label>',
@@ -38,7 +43,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<option value="default">Standard</option><option value="fast">Fast</option></select></label>',
     '<label class="next-label">Answer detail guidance<select class="next-field" id="next-runtime-verbosity">',
     '<option value="concise">Concise</option><option value="balanced">Balanced</option><option value="detailed">Detailed</option></select></label>',
-    '</div><details class="next-compatibility"><summary>Advanced task settings</summary><div class="next-settings-grid">',
+    '</div><p id="next-runtime-capabilities" class="next-help">Reasoning and Fast depend on the model. Answer detail is prompt guidance, not a guaranteed response length.</p><details class="next-compatibility"><summary>Advanced task settings</summary><div class="next-settings-grid">',
     '<label class="next-label">Stop waiting after no model activity (minutes)<input class="next-field" type="number" id="next-runtime-idle" min="1" max="1440"></label>',
     '<label class="next-label">Maximum task runtime (minutes)<input class="next-field" type="number" id="next-runtime-timeout" min="1" max="1440" placeholder="No limit"></label>',
     '</div>',
@@ -60,10 +65,10 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<p id="next-settings-restart-feedback" class="next-help" role="status" aria-live="polite"></p></section>',
     '<section class="next-card"><h2>Connection status</h2><p class="next-help" id="next-settings-status" role="status">Checking BLACKICE…</p></section>',
     '</div>',
-    '<div id="next-settings-apps" role="tabpanel" aria-labelledby="next-settings-section-apps" hidden><h2>Use BLACKICE from another app</h2><p class="next-help">Connect an app to use BLACKICE tools. Each app has its own authorization.</p><details class="next-card"><summary>How connections work</summary><ol><li>Prepare the shared HTTPS endpoint in the ChatGPT guide. Keep BLACKICE and its connection online.</li><li>Add the MCP URL in your app’s remote MCP setup.</li><li>Match the request code and callback here before approving access to files, browser, commands and plans.</li><li>Ask the app to call blackice_direct_status with a fresh nonce and check the returned nonce.</li></ol><p class="next-help">Setup support depends on the app and account. Each app has a separate grant. Tools connects external tools inside BLACKICE.</p></details><nav class="next-settings-sections" role="tablist" aria-label="App setup guides">',
+    '<div id="next-settings-apps" role="tabpanel" aria-labelledby="next-settings-section-apps" hidden><h2>Use BLACKICE from another app</h2><p class="next-help">Connect another app to BLACKICE’s tools. Set up the shared endpoint once. Each app has its own authorization. Keep BLACKICE online while using it.</p><details class="next-card"><summary>How connections work</summary><ol><li>Prepare the shared HTTPS endpoint in the ChatGPT guide. Keep BLACKICE and its connection online.</li><li>Add the MCP URL in your app’s remote MCP setup.</li><li>Match the request code and callback here before approving access to files, browser, commands and plans.</li><li>Ask the app to call blackice_direct_status with a fresh nonce and check the returned nonce.</li></ol><p class="next-help">Setup support depends on the app and account. Each app has a separate grant.</p></details><nav class="next-settings-sections" role="tablist" aria-label="App setup guides">',
     ...[['connector','ChatGPT'],['gemini','Gemini'],['claude','Claude'],['mcpapps','Other MCP apps']].map(([id,label])=>'<button type="button" id="next-settings-section-'+id+'" data-settings-section="'+id+'" role="tab" aria-controls="next-settings-'+id+'" aria-selected="false" tabindex="-1">'+label+'</button>'),
     '</nav></div>',
-    ...['identity','models','connections','passwords','storage','recovery','connector','gemini','claude','mcpapps'].map(id=>'<div id="next-settings-'+id+'" role="tabpanel" aria-labelledby="next-settings-section-'+id+'" hidden></div>'),
+    ...['identity','models','passwords','storage','recovery','connector','gemini','claude','mcpapps'].map(id=>'<div id="next-settings-'+id+'" role="tabpanel" aria-labelledby="next-settings-section-'+id+'" hidden></div>'),
     '</div></div>',
   ].join('');
   const appSections=['connector','gemini','claude','mcpapps'];
@@ -94,7 +99,14 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     drawStatus(fresh);return fresh;
   }});
   const contextDefaults=createContextControls({mount:$('next-runtime-context'),id:'next-runtime-context',scope:'defaults'});
-  const refreshModelPicker=()=>{const selected=f.model.value||status.defaultModelSelection||'default';modelPicker.update({models:connectionDefaultModels({...status,defaultModelSelection:selected}),status:{...status,runtimeSettings},selected});contextDefaults.update({status,model:selected});};
+  function refreshResponseCapabilities(){
+    const selected=f.effort.value||runtimeSettings.defaultEffort||'default',support=responseDefaultCapabilities(status,selected);
+    f.effort.replaceChildren();
+    for(const choice of support.reasoning){const option=mount.ownerDocument.createElement('option');option.value=choice.value;option.textContent=choice.label+(choice.available?'':' · unavailable for default model');option.disabled=!choice.available;f.effort.append(option);}
+    f.effort.value=selected;
+    const fast=f.tier.querySelector('option[value="fast"]');if(fast){fast.disabled=!support.fast.available;fast.textContent=support.fast.available?'Fast':'Fast · unavailable for default model';}
+  }
+  const refreshModelPicker=()=>{refreshResponseCapabilities();const selected=f.model.value||status.defaultModelSelection||'default';modelPicker.update({models:connectionDefaultModels({...status,defaultModelSelection:selected}),status:{...status,runtimeSettings},selected});contextDefaults.update({status,model:selected});};
   function updateRuntimeSettings(value){
     if(!value||typeof value!=='object'||Array.isArray(value))return;
     runtimeSettings=value;status={...status,runtimeSettings};panels.get('models')?.instance?.updateRuntimeSettings?.(value);refreshModelPicker();
@@ -113,7 +125,6 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     identity:()=>import('./settings-identity.mjs').then(module=>module.createIdentitySettings),
     models:()=>Promise.all([import('./settings-providers.mjs'),import('./settings-subscriptions.mjs')]).then(([providers,focus])=>
       props=>focus.createSubscriptionModelSettings(props,providers.createProviderSettings)),
-    connections:()=>import('./settings-connections.mjs').then(module=>module.createConnectionSettings),
     passwords:()=>import('./settings-passwords.mjs').then(module=>module.createPasswordSettings),
     storage:()=>import('./settings-storage.mjs').then(module=>module.createStorageSettings),
     recovery:()=>import('../../owner-recovery-ui.mjs').then(module=>props=>module.mountOwnerRecovery({...props,autoStart:false})),
@@ -233,6 +244,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     f.idle.value=Number.isFinite(config.providerIdleTimeoutMs)?String(config.providerIdleTimeoutMs/60000):'5';
     f.timeout.value=Number.isFinite(config.runTimeoutMs)?String(config.runTimeoutMs/60000):'';
     f.gmail.checked=config.connectedGmail===true;
+    refreshResponseCapabilities();
     f.runtimeFeedback.textContent='';
   }
   async function load(){
@@ -316,6 +328,9 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
       connectedGmail:f.gmail.checked,
       defaultContext,
     };
+    const caps=responseDefaultCapabilities(status,value.defaultEffort);
+    if(value.defaultEffort!==runtimeSettings.defaultEffort&&!caps.reasoning.find(choice=>choice.value===value.defaultEffort)?.available){f.runtimeFeedback.textContent='Choose reasoning supported by the default model, or Model default.';return;}
+    if(value.defaultServiceTier==='fast'&&value.defaultServiceTier!==runtimeSettings.defaultServiceTier&&!caps.fast.available){f.runtimeFeedback.textContent=caps.fast.error;return;}
     const revision=runtimeRevision;
     void mutate('runtime',f.runtime.querySelector('button[type="submit"]'),async()=>{
       const updated=await api('/api/runtime/settings','POST',value);

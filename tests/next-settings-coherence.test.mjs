@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {planningDOM} from './fixture-planning-dom.mjs';
-import {createSettingsWorkspace} from '../public/next/workspaces/settings.mjs';
+import {createSettingsWorkspace,responseDefaultCapabilities} from '../public/next/workspaces/settings.mjs';
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
-async function fixture(t,requests=[]){
- const d=planningDOM(t),calls=[],status={connected:true,authenticated:true,models:[],execution:{activeCount:0}};
+async function fixture(t,requests=[],modelStatus={}){
+ const d=planningDOM(t),calls=[],status={connected:true,authenticated:true,models:[],execution:{activeCount:0},...modelStatus};
  const api=async(route,method='GET',body)=>{calls.push({route,method,body});if(route==='/api/status')return status;if(route==='/api/runtime/settings')return {providerIdleTimeoutMs:300000,...body};if(route==='/api/owner-recovery')return {localManagement:true,requests};if(route==='/api/codex/native-write-recovery')return {status:{},uncertain:[]};throw Error('Fixture does not expose '+route);};
  const workspace=createSettingsWorkspace({mount:d.mount,api,getStatus:()=>status,events:{subscribe:()=>()=>{}}});t.after(()=>workspace.destroy());workspace.enter();await settle();await settle();return {...d,workspace,calls,requests};
 }
@@ -35,8 +35,18 @@ test('app setup explains shared endpoint and independent app connections',async 
  const f=await fixture(t);
  assert.match(f.$('#next-settings-apps').textContent,/Each app has its own authorization/);
  assert.match(f.$('#next-settings-apps').textContent,/Each app has a separate grant/);
- assert.match(f.$('#next-settings-apps').textContent,/Tools connects external tools inside BLACKICE/);
+ assert.equal(f.$('#next-settings-section-connections'),null);assert.equal(f.$('#next-settings-connections'),null);
  assert.equal(f.calls.some(x=>x.method!=='GET'),false);
 });
 
 test('Config keeps troubleshooting out of General and opens it read-only',async t=>{const f=await fixture(t);assert.equal(f.mount.querySelector('h1').textContent,'Config');assert.equal(f.$('#next-native-recovery').closest('#next-settings-general'),null);await f.click('#next-settings-section-troubleshooting');await settle();assert.equal(f.$('#next-settings-troubleshooting').hidden,false);assert.equal(f.$('#next-settings-general').hidden,true);await f.click('#next-settings-section-general');assert.equal(f.$('#next-settings-troubleshooting').hidden,true);assert.ok(f.calls.every(x=>x.method==='GET'));});
+
+test('response controls expose only advertised reasoning and Fast support without rewriting saved preferences',async t=>{
+ const caps=responseDefaultCapabilities({defaultModel:'api::model',models:[{id:'api::model',providerId:'api',supportedReasoningEfforts:['low','high']}]},'ultra');
+ assert.deepEqual(caps.reasoning.filter(x=>x.available).map(x=>x.value),['default','low','high']);assert.equal(caps.fast.available,false);
+ const unknown=responseDefaultCapabilities({},'default');assert.deepEqual(unknown.reasoning.filter(x=>x.available).map(x=>x.value),['default']);
+ const f=await fixture(t,[],{defaultModel:'native',models:[{id:'native',supportedReasoningEfforts:['high'],serviceTiers:['priority']}]});
+ assert.equal(f.$('#next-runtime-tier').querySelector('[value="fast"]').disabled,false);
+ assert.deepEqual([...f.$('#next-runtime-effort').children].filter(x=>!x.disabled).map(x=>x.value),['default','high']);
+ assert.match(f.$('#next-runtime-capabilities').textContent,/prompt guidance, not a guaranteed/);assert.equal(f.calls.some(x=>x.method!=='GET'),false);
+});

@@ -7,8 +7,6 @@ import {setTimeout as sleep} from 'node:timers/promises';
 import {makeFixture} from './next-fixture-server.mjs';
 import {exerciseIdentitySettings} from './next-settings-identity-journey.mjs';
 import {exerciseProviderSettings} from './next-settings-providers-journey.mjs';
-import {exerciseConnectionSettings} from './next-settings-connections-journey.mjs';
-import {exerciseConnectionImportSettings} from './next-settings-import-journey.mjs';
 import {exerciseTaskManagement} from './next-task-management-journey.mjs';
 import {exerciseVisualPlanning} from './next-visual-planning-journey.mjs';
 import {exerciseCronjobs,exerciseWorkflowManager} from './next-cronjobs-journey.mjs';
@@ -701,8 +699,6 @@ try {
   fixture.state.status.execution.activeCount=1;fixture.send({type:'runtime.status',data:fixture.state.status});counts.settingsDefaults=true;
   await exerciseIdentitySettings({evaluate,send,until,fixture,counts});
   await exerciseProviderSettings({evaluate,send,until,fixture,counts});
-  await exerciseConnectionSettings({evaluate,send,until,fixture,counts});
-  await exerciseConnectionImportSettings({evaluate,send,until,fixture,counts});
   await evaluate('document.querySelector("#next-settings-section-general").click();true');
   assert.equal(await evaluate('document.querySelector(".next-tab[data-space=knowledge], .next-tab[data-space=userWorkflows], .next-tab[data-space=todos]")'),null,'Removed workspaces must stay absent.');
 
