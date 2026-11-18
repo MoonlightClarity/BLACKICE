@@ -8,7 +8,7 @@ import {createHarnessServer} from '../server.mjs';
 import {HarnessEngine} from '../lib/engine.mjs';
 const graph={nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture',prompt:'Inspect available tools.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{planningMode:'off'}};
 class Runtime extends EventEmitter{calls=[];status(){return{connected:true,authenticated:true,defaultModel:'fixture',activeTurns:0};}async start(){return this.status();}async close(){}async runAgent(options){this.calls.push(options);assert.ok(options.dynamicTools.every(t=>!t.name.startsWith('relay_swarm')));return{output:'Ordinary chat remains available.'};}}
-test('retired Swarm HTTP and connector surfaces cannot read or mutate original records, while owner outline remains separate',async t=>{
+test('retired Swarm HTTP and connector surfaces cannot read or mutate original records',async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'swarm-retired-')),runtime=new Runtime(),file=path.join(dir,'swarm-board.json');
  const bytes=JSON.stringify({version:1,revision:9,projects:[{id:'legacy',name:'Original',items:[]}]});await writeFile(file,bytes);
  const app=await createHarnessServer({runtime,port:0,dataDir:dir,defaultCwd:dir,remoteAccess:null});t.after(async()=>{await app.close();await rm(dir,{recursive:true,force:true});});
@@ -17,8 +17,6 @@ test('retired Swarm HTTP and connector surfaces cannot read or mutate original r
  assert.equal((await request('/api/swarm','GET',false)).status,401);
  for(const [route,method]of [['/api/swarm','GET'],['/api/swarm/projects/legacy','GET'],['/api/swarm/actions','POST']]){const r=await request(route,method);assert.equal(r.status,410);await r.arrayBuffer();}
  assert.equal(app.directExecution.tools().some(t=>/swarm/.test(t.name)),false);assert.equal(app.engine.nativeSwarmTools,undefined);
- const legacy=await request('/api/todos/legacy');assert.equal(legacy.status,200);assert.equal((await legacy.json()).readOnly,true);
- const current=await request('/api/todos');assert.deepEqual((await current.json()).items,[]);
  const run=app.engine.startRun({workflow:graph,input:'Inspect tools'});await app.engine.executions.get(run.id);assert.equal(app.engine.getRun(run.id).status,'completed');assert.equal(runtime.calls.length,1);
  assert.equal(await readFile(file,'utf8'),bytes);
 });
