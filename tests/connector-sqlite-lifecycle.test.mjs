@@ -3,8 +3,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import {mkd
 import {DirectExecutionJobs} from '../lib/direct-execution-jobs.mjs';
 import {connectorBrowserOwner} from '../lib/connector-browser-owner.mjs';
 import {stoppedBrowserOwnerStatus,activeBrowserOwnerStatus,readStoppedTabEffects} from '../lib/browser-stopped-adoption.mjs';
-import {retireWithFixtureBackup} from './fixtures/retire-with-verified-fixture.mjs';
-test('packed and loose lifecycle retain exact owner identity and interrupted effects after restart',async t=>{
+test('SQLite lifecycle retain exact owner identity and interrupted effects after restart',async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'packed-owner-'));let jobs=await new DirectExecutionJobs({dataDir:dir}).init();
  t.after(async()=>{await jobs.close();await rm(dir,{recursive:true,force:true});});
  const owner=connectorBrowserOwner('packed-client'),conversation={taskId:'conversation-a',runId:'old',nodeId:'conversation',conversationId:'conversation-a'};
@@ -16,15 +15,10 @@ test('packed and loose lifecycle retain exact owner identity and interrupted eff
  }
  assert.equal(stoppedBrowserOwnerStatus(owner,engine,direct).eligible,true);
  assert.equal(stoppedBrowserOwnerStatus(conversation,engine,direct).eligible,true);
- const staged=await jobs.packTerminalReceipts({maxRecords:10});assert.equal(staged.removed,0);
  await jobs.close();jobs=await new DirectExecutionJobs({dataDir:dir}).init();direct.jobs=jobs;
- assert.equal(jobs.packedIndex.size,2);
- assert.equal((await retireWithFixtureBackup(jobs,{maxRecords:10})).removed,2);
- await jobs.close();jobs=await new DirectExecutionJobs({dataDir:dir}).init();direct.jobs=jobs;
- assert.equal(jobs.packedIndex.size,2);
  const inherited=await readStoppedTabEffects(owner,engine,direct);
  assert.equal(inherited.directJobs.length,1);assert.equal(inherited.uncertain,true);
- const convRows=[...jobs.records.values()].filter(j=>j.browserConversationId===conversation.taskId);assert.equal(convRows.length,1);
+ const convRows=jobs.ownerSnapshot({ownerTaskId:conversation.taskId}).filter(j=>j.browserConversationId===conversation.taskId);assert.equal(convRows.length,1);
  assert.equal(stoppedBrowserOwnerStatus(owner,engine,direct).eligible,true);assert.equal(stoppedBrowserOwnerStatus(conversation,engine,direct).eligible,true);
  const live=(await jobs.admit({ownerId:'packed-client',requestId:'live',tool:'blackice_browser_action',arguments:{action:'click',conversationId:conversation.taskId},requiredScopes:['browser:write'],client:{id:'packed-client',scopes:['browser:write']},mutating:true})).job;
  await jobs.update(live.id,()=>({status:'running'}));

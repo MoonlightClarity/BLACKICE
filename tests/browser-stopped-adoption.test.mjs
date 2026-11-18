@@ -61,10 +61,10 @@ test('adoption checks retained native effect journal without clearing or moving 
 test('shared conversation and active direct borrower are not exclusive stopped ownership',()=>{
   const {engine}=fixture();
   assert.equal(stoppedBrowserOwnerStatus({...owner,nodeId:'conversation'},engine).eligible,true);
-  const direct={jobs:{records:new Map([['job',{status:'running',arguments:{conversationId:owner.taskId}}]])}};
+  const row={id:'job',status:'running',browserConversationId:owner.taskId};const direct={jobs:{startup:{phase:'ready'},ownerSnapshot:({unfinishedOnly})=>unfinishedOnly&&row.status==='succeeded'?[]:[row]}};
   assert.equal(stoppedBrowserOwnerStatus(owner,engine,direct).eligible,false);
-  direct.jobs.records.get('job').status='awaiting_input';assert.equal(stoppedBrowserOwnerStatus(owner,engine,direct).eligible,false);
-  direct.jobs.records.get('job').status='succeeded';assert.equal(stoppedBrowserOwnerStatus(owner,engine,direct).eligible,true);
+  row.status='awaiting_input';assert.equal(stoppedBrowserOwnerStatus(owner,engine,direct).eligible,false);
+  row.status='succeeded';assert.equal(stoppedBrowserOwnerStatus(owner,engine,direct).eligible,true);
   direct.storageError='unknown';assert.equal(stoppedBrowserOwnerStatus(owner,engine,direct).eligible,false);
 });
 
@@ -73,7 +73,7 @@ test('clean native family does not erase uncertain conversation direct effects',
  const {run,engine}=fixture();run.cwd=directory;engine.tasks=await new TaskStateStore({dataDir:directory}).init();
  const conversationOwner={...owner,nodeId:'conversation',conversationId:owner.taskId};
  const row={id:'direct-uncertain',tool:'blackice_browser_action',browserConversationId:owner.taskId,status:'interrupted',effects:{possible:true,confirmed:false}};
- const direct={jobs:{records:new Map([[row.id,row]])}};
+ const direct={jobs:{startup:{phase:'ready'},ownerSnapshot:()=>[row]}};
  const inherited=await readStoppedTabEffects(conversationOwner,engine,direct);
  assert.equal(inherited.unavailable,false);
  assert.equal(inherited.interrupted,false);

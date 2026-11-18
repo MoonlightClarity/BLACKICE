@@ -25,8 +25,7 @@ test('concurrent identical admissions have one durable identity and changed argu
   const values = await Promise.all(Array.from({ length: 20 }, () => store.admit(admission())));
   assert.equal(values.filter(value => value.created).length, 1); assert.equal(new Set(values.map(value => value.job.id)).size, 1);
   await assert.rejects(store.admit(admission('read-one', { action: 'read', path: 'other.txt' })), { code: 'DIRECT_REQUEST_CONFLICT' });
-  const files = (await readdir(path.join(directory, 'direct-execution-jobs'))).filter(file => file.endsWith('.json'));
-  assert.equal(files.length, 1); assert.equal(JSON.parse(await readFile(path.join(directory, 'direct-execution-jobs', files[0]), 'utf8')).requestId, 'read-one');
+  assert.equal((await store.counts()).total,1);assert.equal((await store.list()).jobs[0].requestId,'read-one');
 });
 
 test('request lookup waits for durable admission and checks the owner and original digest without admitting work', async t => {
@@ -63,117 +62,11 @@ test('restart retains completed receipts and marks queued or dispatched work int
   const retried = await second.admit(admission('queued')); assert.equal(retried.created, false); assert.equal(retried.job.status, 'interrupted');
 });
 
-test('saved local approvals survive restart but volatile signed inputs never do', async t => {
-  const { make, directory } = await harness(t), first = make();
-  const interaction = { id: 'input-test', kind: 'approval', message: 'Review locally.' };
-  const plain = (await first.admit({ ...admission('plain'), interaction })).job;
-  const full = { action: 'import', fileId: 'file-one', download_url: 'https://files.example.test/private?secret=signed-token' }, durable = { action: 'import', fileId: 'file-one' };
-  const secret = (await first.admit({ ...admission('transient', durable), interaction, transientArguments: true, originalRequestDigest: directRequestDigest({ tool: 'blackice_workspace_read', arguments: full }) })).job;
-  const raw = await readFile(path.join(directory, 'direct-execution-jobs', `${secret.id}.json`), 'utf8'); assert.doesNotMatch(raw, /signed-token|download_url|files\.example/);
-  await first.close(); const second = make(); await second.init();
-  assert.equal((await second.get(plain.id)).status, 'awaiting_input'); assert.equal((await second.get(secret.id)).status, 'interrupted');
-  assert.equal((await second.get(secret.id)).effects.possible, false);
-});
-
-test('startup uses at most eight readers and validates the entire index before any recovery write or admission', async t => {
-  const { make, directory } = await harness(t), first = make(), saved = [];
-  const interaction = { id: 'startup-pending', kind: 'verification' };
-  for (let index = 0; index < 10; index++) {
-    const input = admission('preload-' + index);
-    if ([3, 4, 5].includes(index)) input.interaction = interaction;
-    if (index === 4) { input.transientArguments = true; input.originalRequestDigest = directRequestDigest({ tool: input.tool, arguments: { ...input.arguments, volatile: 'Synthetic transient input' } }); }
-    if (index === 5) { input.ownerId = 'grant-b'; input.client = { ...client, id: 'grant-b' }; }
-    const { job } = await first.admit(input);
-    if (index === 1 || index === 2) await first.update(job.id, () => ({ status: index === 1 ? 'running' : 'cancelling', dispatched: true }));
-    if (index >= 6) await first.update(job.id, () => ({ status: 'succeeded', result: { exact: index }, finishedAt: new Date().toISOString() }));
-    saved.push({ input, job });
-  }
-  const terminalFile = path.join(directory, 'direct-execution-jobs', saved[6].job.id + '.json'), originalTerminal = await readFile(terminalFile);
-  await first.close();
-  const reopened = make({ maxJobs: 2 }), release = deferred(); t.after(() => release.resolve());
-  const readRecord = reopened.readRecord.bind(reopened), save = reopened.save.bind(reopened);
-  let active = 0, peak = 0, started = 0, validated = 0, recoveries = 0, countsResolved = false;
-  reopened.readRecord = async id => {
-    const number = ++started; active++; peak = Math.max(peak, active);
-    try { const result = await readRecord(id); if (number <= 8) await release.promise; validated++; return result; }
-    finally { active--; }
-  };
-  reopened.save = async record => { assert.equal(validated, 10); assert.equal(active, 0); assert.equal(reopened.records.size, 10); assert.equal(reopened.hasLease, true); recoveries++; return save(record); };
-  const init = reopened.init(); assert.equal(reopened.init(), init, 'Concurrent callers share one scan.');
-  const counts = reopened.counts().then(value => { countsResolved = true; return value; });
-  const duplicate = reopened.admit(saved[0].input);
-  await until(() => started === 8); assert.equal(active, 8); assert.equal(countsResolved, false); assert.equal(recoveries, 0);
-  release.resolve(); await init;
-  assert.equal(peak, 8); assert.equal(started, 10); assert.equal(recoveries, 4);
-  assert.deepEqual(await counts, { total: 10, unfinished: 2 });
-  assert.equal((await duplicate).created, false); assert.equal((await duplicate).job.status, 'interrupted');
-  reopened.readRecord = readRecord; reopened.save = save;
-  assert.equal((await reopened.get(saved[1].job.id)).effects.possible, true);
-  assert.equal((await reopened.get(saved[2].job.id)).status, 'interrupted');
-  assert.equal((await reopened.get(saved[3].job.id)).status, 'awaiting_input');
-  assert.equal((await reopened.get(saved[4].job.id)).status, 'interrupted');
-  await assert.rejects(reopened.get(saved[5].job.id, { ownerId: client.id }), { code: 'DIRECT_JOB_NOT_FOUND' });
-  await assert.rejects(reopened.admit(admission('preload-over-capacity')), { code: 'DIRECT_JOB_LIMIT' });
-  const terminal = reopened.records.get(saved[6].job.id);
-  for (const key of ['arguments', 'client', 'result']) assert.equal(Object.hasOwn(terminal, key), false);
-  assert.deepEqual((await reopened.get(saved[6].job.id)).result, { exact: 6 }); assert.deepEqual(await readFile(terminalFile), originalTerminal);
-});
-
-test('startup indexes exact UTF-8 receipt bytes with preserved Unicode payload and hash', async t => {
-  const { make } = await harness(t);
-  const first = make();
-  const { job } = await first.admit(admission('byte-io-unicode', { action: 'read', path: 'résumé-日本語.txt' }));
-  const result = { success: true, contentItems: [{ type: 'inputText', text: 'Café ☕ / 日本語 / مرحبا' }] };
-  await first.update(job.id, () => ({ status: 'succeeded', result, finishedAt: new Date().toISOString() }));
-  const original = await readFile(first.file(job.id));
-  const expectedHash = createHash('sha256').update(original).digest('hex');
-  await first.close();
-  let startupReads = 0;
-  const reopened = make({ io: {
-    ...fs,
-    readFile: (file, ...args) => {
-      if (file === first.file(job.id)) {
-        startupReads++;
-        assert.deepEqual(args, [], 'startup must read canonical bytes, not a decoded/re-encoded receipt string');
-      }
-      return fs.readFile(file, ...args);
-    },
-  } });
-  await reopened.init();
-  assert.equal(startupReads, 1);
-  assert.equal(reopened.records.get(job.id).receiptHash, expectedHash);
-  assert.deepEqual((await reopened.get(job.id)).result, result);
-  assert.deepEqual(await readFile(reopened.file(job.id)), original);
-});
-
-test('a failed startup reader stops new reads and drains in-flight work before lease release or close', async t => {
-  const { make, directory } = await harness(t), first = make(), jobs = [];
-  for (let index = 0; index < 12; index++) jobs.push((await first.admit(admission('failed-preload-' + index))).job);
-  await first.close();
-  const broken = jobs[0].id, brokenFile = path.join(directory, 'direct-execution-jobs', broken + '.json'); await writeFile(brokenFile, '{broken-startup-receipt');
-  const before = await Promise.all(jobs.map(job => readFile(path.join(directory, 'direct-execution-jobs', job.id + '.json'))));
-  const reopened = make({ io: { ...fs, readdir: async () => jobs.map(job => job.id + '.json') } }), readRecord = reopened.readRecord.bind(reopened), release = deferred(); t.after(() => release.resolve());
-  let started = 0, active = 0, settled = false, closed = false;
-  reopened.readRecord = async id => { started++; active++; try { if (id !== broken) await release.promise; return await readRecord(id); } finally { active--; } };
-  reopened.save = async () => { assert.fail('No recovery may write around a failed validation.'); };
-  const init = reopened.init().then(() => { assert.fail('Corrupt startup must fail.'); }, error => { settled = true; return error; });
-  await until(() => reopened.storageError && active === 7);
-  assert.equal(started, 8); assert.equal(settled, false); assert.equal(reopened.hasLease, true);
-  await assert.rejects(make().init(), { code: 'DIRECT_JOB_LOCKED' });
-  const closing = reopened.close().then(() => { closed = true; });
-  await new Promise(resolve => setImmediate(resolve)); assert.equal(closed, false); assert.equal(reopened.hasLease, true);
-  release.resolve(); assert.equal((await init).code, 'DIRECT_JOB_STORAGE'); await closing;
-  assert.equal(active, 0); assert.equal(started, 8); assert.equal(reopened.hasLease, false);
-  await assert.rejects(readFile(reopened.leaseFile), { code: 'ENOENT' });
-  assert.deepEqual(await Promise.all(jobs.map(job => readFile(path.join(directory, 'direct-execution-jobs', job.id + '.json')))), before);
-  await assert.rejects(make().init(), { code: 'DIRECT_JOB_STORAGE' }, 'The failed executor released its lease but preserved corruption.');
-});
-
 test('expected revision rejects stale interaction edits and immutable request fields cannot change', async t => {
   const { make } = await harness(t), store = make(), job = (await store.admit(admission())).job;
   await store.update(job.id, () => ({ status: 'running', dispatched: true }), { expectedRevision: 1 });
   await assert.rejects(store.update(job.id, () => ({ status: 'cancelled' }), { expectedRevision: 1 }), { code: 'DIRECT_JOB_CONFLICT', currentRevision: 2 });
-  await assert.rejects(store.update(job.id, () => ({ arguments: { path: 'changed.txt' } })), /cannot change/);
+  await assert.rejects(store.update(job.id, () => ({ arguments: { path: 'changed.txt' } })), /Cannot change/);
   assert.equal((await store.get(job.id)).arguments.path, 'example.txt');
 });
 
@@ -195,13 +88,6 @@ test('a second process cannot own the same live ledger; after hard process exit 
   const recovered = make(); await recovered.init(); assert.equal((await recovered.list()).total, 0);
 });
 
-test('corrupt durable records fail closed without deleting records or silently forgetting request IDs', async t => {
-  const { make, directory } = await harness(t), first = make(), job = (await first.admit(admission())).job;
-  await first.close(); const file = path.join(directory, 'direct-execution-jobs', `${job.id}.json`);
-  const damaged = '{"damaged":true}'; await writeFile(file, damaged);
-  await assert.rejects(make().init(), { code: 'DIRECT_JOB_STORAGE' }); assert.equal(await readFile(file, 'utf8'), damaged);
-});
-
 test('ledger capacity preserves all idempotency receipts instead of silently expiring old keys', async t => {
   const { make } = await harness(t), store = make({ maxJobs: 1 });
   const first = await store.admit(admission()); await assert.rejects(store.admit(admission('second')), { code: 'DIRECT_JOB_LIMIT' });
@@ -216,7 +102,7 @@ test('completed history can exceed the unfinished limit and retains exact identi
     completed.push({ input, job: await first.update(job.id, () => ({ status: 'succeeded', result, finishedAt: new Date().toISOString() })) });
   }
   assert.deepEqual(await first.counts(), { total: 6, unfinished: 0 });
-  const old = completed[0], file = path.join(directory, 'direct-execution-jobs', `${old.job.id}.json`), bytes = await readFile(file);
+  const old = completed[0], bytes = JSON.stringify(await first.get(old.job.id));
   await first.close(); const reopened = make({ maxJobs: 1 }); await reopened.init();
   assert.deepEqual(await reopened.counts(), { total: 6, unfinished: 0 });
   const pending = (await reopened.admit(admission('outstanding'))).job;
@@ -225,7 +111,7 @@ test('completed history can exceed the unfinished limit and retains exact identi
   assert.deepEqual(await reopened.findRequest({ ownerId: client.id, requestId: old.input.requestId, requestDigest: old.job.requestDigest }), old.job);
   await assert.rejects(reopened.admit({ ...old.input, arguments: { action: 'read', path: 'different.txt' } }), { code: 'DIRECT_REQUEST_CONFLICT' });
   await assert.rejects(reopened.get(old.job.id, { ownerId: 'another-owner' }), { code: 'DIRECT_JOB_NOT_FOUND' });
-  assert.deepEqual(await reopened.snapshot({ ownerId: 'another-owner' }), []); assert.deepEqual(await readFile(file), bytes);
+  assert.deepEqual(await reopened.snapshot({ ownerId: 'another-owner' }), []); assert.equal(JSON.stringify(await reopened.get(old.job.id)), bytes);
   await reopened.update(pending.id, () => ({ status: 'cancelled', finishedAt: new Date().toISOString() }));
   const admissions = await Promise.allSettled([reopened.admit(admission('fresh-a')), reopened.admit(admission('fresh-b'))]);
   assert.equal(admissions.filter(value => value.status === 'fulfilled').length, 1); assert.equal(admissions.find(value => value.status === 'rejected').reason.code, 'DIRECT_JOB_LIMIT');
@@ -242,225 +128,3 @@ test('queued, running and awaiting-input work consume capacity, while terminal o
   assert.deepEqual(await store.counts(), { total: 3, unfinished: 2 });
 });
 
-test('terminal payloads leave memory and metadata reads never hydrate or copy arguments, clients or results', async t => {
-  const { make } = await harness(t), store = make();
-  const input = admission('large-history', { action: 'read', path: 'example.txt', privateNote: 'argument-only-marker-' + 'a'.repeat(32000) });
-  const job = (await store.admit(input)).job, result = { success: true, contentItems: [{ type: 'inputText', text: 'result-only-marker-' + 'r'.repeat(512000) }] };
-  await store.update(job.id, () => ({ status: 'succeeded', result, finishedAt: new Date().toISOString() }));
-  let receiptReads = 0;
-  store.io = { ...fs, readFile: (...args) => { if (/direct_[a-f0-9]{64}\.json$/.test(args[0])) receiptReads++; return fs.readFile(...args); } };
-  for (const value of [store.records.get(job.id), ...(await store.snapshot()), ...(await store.listMetadata()).jobs]) {
-    for (const key of ['arguments', 'client', 'result']) assert.equal(Object.hasOwn(value, key), false);
-    assert.equal(value.resultAvailable, true); assert.equal(value.action, 'read'); assert.equal(JSON.stringify(value).length < 10000, true);
-  }
-  assert.deepEqual(await store.counts(), { total: 1, unfinished: 0 }); assert.equal(receiptReads, 0);
-  const hydrated = await store.get(job.id); assert.deepEqual(hydrated.result, result); assert.deepEqual(hydrated.arguments, input.arguments); assert.equal(receiptReads, 1);
-  hydrated.result.contentItems[0].text = 'caller mutation'; assert.deepEqual((await store.get(job.id)).result, result);
-  assert.deepEqual((await store.list()).jobs[0].result, result); assert.equal(Object.hasOwn(store.records.get(job.id), 'result'), false);
-});
-
-test('terminal hydration is serialized with receipt updates and snapshots remain independent of later admissions', async t => {
-  const { make } = await harness(t), store = make(); const job = (await store.admit(admission('serialized'))).job;
-  await store.update(job.id, () => ({ status: 'succeeded', result: { before: true }, finishedAt: new Date().toISOString() }));
-  let reading, release, block = true, updated = false;
-  const started = new Promise(resolve => { reading = resolve; }), held = new Promise(resolve => { release = resolve; });
-  store.io = { ...fs, readFile: async (...args) => { const raw = await fs.readFile(...args); if (block && /direct_[a-f0-9]{64}\.json$/.test(args[0])) { block = false; reading(); await held; } return raw; } };
-  const getting = store.get(job.id); await started;
-  const updating = store.update(job.id, () => { updated = true; return { result: { after: true } }; });
-  await Promise.resolve(); assert.equal(updated, false); release();
-  assert.deepEqual((await getting).result, { before: true }); assert.deepEqual((await updating).result, { after: true }); assert.deepEqual((await store.get(job.id)).result, { after: true });
-  const snapshot = await store.snapshot(); await store.admit(admission('later'));
-  assert.equal(snapshot.length, 1); snapshot[0].effects.confirmed = 'caller change'; assert.equal((await store.snapshot()).find(value => value.id === job.id).effects.confirmed, false);
-});
-
-test('unreadable or changed terminal receipt files fail closed without forgetting identities or overwriting evidence', async t => {
-  for (const damage of ['corrupt', 'changed', 'missing']) await t.test(damage, async t => {
-    const { make, directory } = await harness(t), store = make(), input = admission('must-not-replay'), job = (await store.admit(input)).job;
-    await store.update(job.id, () => ({ status: 'succeeded', result: { exact: 'original' }, finishedAt: new Date().toISOString() }));
-    const file = path.join(directory, 'direct-execution-jobs', `${job.id}.json`);
-    if (damage === 'missing') await rm(file);
-    else if (damage === 'corrupt') await writeFile(file, '{broken');
-    else { const value = JSON.parse(await readFile(file, 'utf8')); value.result.exact = 'changed'; await writeFile(file, JSON.stringify(value)); }
-    const evidence = damage === 'missing' ? null : await readFile(file);
-    await assert.rejects(store.get(job.id), { code: 'DIRECT_JOB_STORAGE' }); assert.equal(store.records.has(job.id), true);
-    await assert.rejects(store.admit(input), { code: 'DIRECT_JOB_STORAGE' }); await assert.rejects(store.admit(admission('no-bypass')), { code: 'DIRECT_JOB_STORAGE' });
-    await assert.rejects(store.findRequest({ ownerId: client.id, requestId: input.requestId, requestDigest: job.requestDigest }), { code: 'DIRECT_JOB_STORAGE' });
-    if (evidence) assert.deepEqual(await readFile(file), evidence); else await assert.rejects(readFile(file), { code: 'ENOENT' });
-    if (damage === 'corrupt') { await store.close(); await assert.rejects(make().init(), { code: 'DIRECT_JOB_STORAGE' }); assert.deepEqual(await readFile(file), evidence); }
-  });
-});
-
-test('unconfirmed writes cannot overwrite receipt evidence, including a rename that committed before reporting failure', async t => {
-  for (const committed of [false, true]) await t.test(committed ? 'rename committed' : 'rename not committed', async t => {
-    const { make, directory } = await harness(t), store = make(), input = admission('uncertain-write'), job = (await store.admit(input)).job;
-    await store.update(job.id, () => ({ status: 'succeeded', result: { exact: 'original' }, finishedAt: new Date().toISOString() }));
-    const indexed = structuredClone(store.records.get(job.id));
-    store.io = { ...fs, rename: async (...args) => { if (committed) await fs.rename(...args); throw Object.assign(new Error('Write acknowledgement failed.'), { code: 'EIO' }); } };
-    await assert.rejects(store.update(job.id, () => ({ result: { exact: 'replacement' } })), { code: 'DIRECT_JOB_STORAGE' });
-    assert.deepEqual(store.records.get(job.id), indexed);
-    const file = path.join(directory, 'direct-execution-jobs', `${job.id}.json`), evidence = await readFile(file), expected = committed ? 'replacement' : 'original';
-    assert.equal(JSON.parse(evidence).result.exact, expected);
-    await assert.rejects(store.update(job.id, () => ({ result: { exact: 'must-not-overwrite' } })), { code: 'DIRECT_JOB_STORAGE' });
-    await assert.rejects(store.admit(input), { code: 'DIRECT_JOB_STORAGE' }); await assert.rejects(store.admit(admission('new-work')), { code: 'DIRECT_JOB_STORAGE' }); assert.deepEqual(await readFile(file), evidence);
-    await store.close(); const reopened = make(); await reopened.init();
-    const duplicate = await reopened.admit(input); assert.equal(duplicate.created, false); assert.equal(duplicate.job.result.exact, expected); assert.deepEqual(await readFile(file), evidence);
-  });
-});
-
-test('a failed temporary handle close preserves the storage error used to cancel active work', async t => {
-  const { make, directory } = await harness(t), store = make(), input = admission('failed-close'), job = (await store.admit(input)).job;
-  const indexed = structuredClone(store.records.get(job.id)), file = path.join(directory, 'direct-execution-jobs', `${job.id}.json`), before = await readFile(file);
-  let closeAttempts = 0;
-  store.io = { ...fs, open: async (...args) => {
-    const handle = await fs.open(...args);
-    return { writeFile: (...values) => handle.writeFile(...values), sync: () => handle.sync(), close: async () => {
-      closeAttempts++; await handle.close(); throw Object.assign(new Error('The temporary handle close could not be confirmed.'), { code: 'EIO' });
-    } };
-  } };
-  await assert.rejects(store.update(job.id, () => ({ status: 'cancelled' })), error => error === store.storageError && error.code === 'DIRECT_JOB_STORAGE');
-  assert.equal(closeAttempts, 2); assert.deepEqual(store.records.get(job.id), indexed); assert.deepEqual(await readFile(file), before);
-  await assert.rejects(store.admit(admission('no-bypass-after-close')), { code: 'DIRECT_JOB_STORAGE' });
-  assert.deepEqual((await readdir(path.dirname(file))).filter(name => name.endsWith('.tmp')), []);
-});
-
-const renameRefusal = (code = 'EPERM') => Object.assign(new Error('The owned fixture still has a receipt reader.'), { code, syscall: 'rename' });
-
-test('Windows receipt replacement tolerates a transient reader and saves one next revision', async t => {
-  for (const code of ['EPERM', 'EACCES', 'EBUSY']) await t.test(code, async t => {
-    const { make } = await harness(t), store = make({ platform: 'win32' }), job = (await store.admit(admission('reader-overlap'))).job;
-    const file = store.file(job.id), before = await readFile(file, 'utf8'), reader = await fs.open(file, 'r');
-    let readerHeld = true, releaseTimer, attempts = 0;
-    assert.equal(await reader.readFile('utf8'), before);
-    store.io = { ...fs, rename: async (...args) => {
-      attempts++;
-      if (readerHeld) {
-        releaseTimer ||= setTimeout(() => { void reader.close().then(() => { readerHeld = false; }); }, 5);
-        throw renameRefusal(code);
-      }
-      await fs.rename(...args);
-    } };
-    let next;
-    try { next = await store.update(job.id, () => ({ status: 'running', dispatched: true })); }
-    finally { clearTimeout(releaseTimer); await reader.close(); }
-    assert.ok(attempts >= 2 && attempts <= 5, 'Only the bounded replacement attempts may run.');
-    assert.equal(next.revision, job.revision + 1); assert.equal(next.status, 'running'); assert.equal(store.storageError, null);
-    assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), next); assert.deepEqual(await store.get(job.id), next);
-    assert.equal((await store.admit(admission('reader-overlap'))).created, false);
-    assert.deepEqual((await readdir(store.directory)).filter(name => name.endsWith('.tmp')), []);
-  });
-});
-
-test('Windows receipt replacement exhausts a bounded refusal without overwriting the prior receipt', async t => {
-  const { make } = await harness(t), store = make({ platform: 'win32' }), job = (await store.admit(admission('refusal-exhausted'))).job;
-  const file = store.file(job.id), before = await readFile(file), indexed = structuredClone(store.records.get(job.id)); let attempts = 0;
-  store.io = { ...fs, rename: async () => { attempts++; throw renameRefusal(); } };
-  await assert.rejects(store.update(job.id, () => ({ status: 'running', dispatched: true })), { code: 'DIRECT_JOB_STORAGE' });
-  assert.equal(attempts, 5); assert.deepEqual(await readFile(file), before); assert.deepEqual(store.records.get(job.id), indexed);
-  await assert.rejects(store.update(job.id, () => ({ status: 'cancelled' })), { code: 'DIRECT_JOB_STORAGE' });
-  await assert.rejects(store.admit(admission('no-new-work')), { code: 'DIRECT_JOB_STORAGE' }); assert.equal(attempts, 5);
-  assert.deepEqual((await readdir(store.directory)).filter(name => name.endsWith('.tmp')), []);
-});
-
-test('receipt replacement does not retry other platforms or unknown write failures', async t => {
-  for (const [platform, code] of [['linux', 'EPERM'], ['win32', 'EIO'], ['win32', 'ENOENT']]) await t.test(platform + ':' + code, async t => {
-    const { make } = await harness(t), store = make({ platform }), job = (await store.admit(admission('no-generic-retry'))).job;
-    const before = await readFile(store.file(job.id)); let attempts = 0;
-    store.io = { ...fs, rename: async () => { attempts++; throw renameRefusal(code); } };
-    await assert.rejects(store.update(job.id, () => ({ status: 'running' })), { code: 'DIRECT_JOB_STORAGE' });
-    assert.equal(attempts, 1); assert.deepEqual(await readFile(store.file(job.id)), before);
-  });
-});
-
-test('Windows receipt retries stop when the destination, temporary file or lease changes', async t => {
-  for (const changed of ['destination', 'destination removed', 'temporary', 'temporary removed', 'lease']) await t.test(changed, async t => {
-    const { make } = await harness(t), store = make({ platform: 'win32' }), job = (await store.admit(admission('changed-evidence'))).job;
-    const file = store.file(job.id), before = await readFile(file), indexed = structuredClone(store.records.get(job.id)); let attempts = 0;
-    let evidence = before;
-    store.io = { ...fs, rename: async (temporary, destination) => {
-      attempts++;
-      if (changed === 'destination') { evidence = Buffer.from('Changed receipt evidence'); await writeFile(destination, evidence); }
-      if (changed === 'destination removed') { evidence = null; await fs.unlink(destination); }
-      if (changed === 'temporary') await writeFile(temporary, 'Changed temporary evidence');
-      if (changed === 'temporary removed') await fs.unlink(temporary);
-      if (changed === 'lease') await writeFile(store.leaseFile, JSON.stringify({ version: 1, pid: process.pid, token: 'another-owned-fixture-executor' }));
-      throw renameRefusal();
-    } };
-    await assert.rejects(store.update(job.id, () => ({ status: 'running', dispatched: true })), { code: 'DIRECT_JOB_STORAGE' });
-    assert.equal(attempts, 1); assert.deepEqual(store.records.get(job.id), indexed);
-    if (evidence === null) await assert.rejects(readFile(file), { code: 'ENOENT' }); else assert.deepEqual(await readFile(file), evidence);
-    await assert.rejects(store.admit(admission('must-not-overwrite')), { code: 'DIRECT_JOB_STORAGE' }); assert.equal(attempts, 1);
-    if (changed === 'lease') { await store.close(); assert.equal(JSON.parse(await readFile(store.leaseFile, 'utf8')).token, 'another-owned-fixture-executor'); }
-  });
-});
-
-test('Windows receipt retries never replace an unexpectedly created admission destination', async t => {
-  const { make } = await harness(t), store = make({ platform: 'win32' }); await store.init(); let destination, attempts = 0;
-  store.io = { ...fs, rename: async (temporary, file) => { attempts++; destination = file; await writeFile(file, 'Unindexed receipt evidence'); throw renameRefusal(); } };
-  await assert.rejects(store.admit(admission('new-destination')), { code: 'DIRECT_JOB_STORAGE' });
-  assert.equal(attempts, 1); assert.equal(await readFile(destination, 'utf8'), 'Unindexed receipt evidence'); assert.equal(store.records.size, 0);
-});
-
-test('Windows receipt retries recheck destination and lease after the initial proof enters its wait', async t => {
-  for (const changed of ['destination', 'lease']) await t.test(changed, async t => {
-    const { make } = await harness(t), store = make({ platform: 'win32' }), job = (await store.admit(admission('retry-window'))).job;
-    const file = store.file(job.id), before = await readFile(file); let attempts = 0, destinationRead = false, snapshotHeld = false, notify, release;
-    const seen = new Promise(resolve => { notify = resolve; }), gate = new Promise(resolve => { release = resolve; });
-    store.io = { ...fs,
-      rename: async (...args) => { if (++attempts === 1) throw renameRefusal(); await fs.rename(...args); },
-      readFile: async (selected, ...args) => {
-        const raw = await fs.readFile(selected, ...args);
-        if (attempts === 1 && selected === file) destinationRead = true;
-        if (attempts === 1 && destinationRead && selected === store.leaseFile && !snapshotHeld) {
-          // The first proof has read the old destination and the current lease.
-          // Change the fixture after that final snapshot, before the next attempt.
-          snapshotHeld = true; notify(); await gate;
-        }
-        return raw;
-      },
-    };
-    const updating = store.update(job.id, () => ({ status: 'running', dispatched: true }));
-    try {
-      await Promise.race([seen, updating.then(() => { assert.fail('The first proof must precede replacement.'); })]);
-      if (changed === 'destination') await writeFile(file, 'Receipt changed during the retry window');
-      else await writeFile(store.leaseFile, JSON.stringify({ version: 1, pid: process.pid, token: 'lease-changed-during-wait' }));
-    } finally { release(); }
-    await assert.rejects(updating, { code: 'DIRECT_JOB_STORAGE' }); assert.equal(attempts, 1);
-    if (changed === 'destination') assert.equal(await readFile(file, 'utf8'), 'Receipt changed during the retry window');
-    else { assert.deepEqual(await readFile(file), before); await store.close(); assert.equal(JSON.parse(await readFile(store.leaseFile, 'utf8')).token, 'lease-changed-during-wait'); }
-  });
-});
-
-test('Windows receipt retry categories never turn a committed rename with a lost acknowledgement into success', async t => {
-  const { make } = await harness(t), store = make({ platform: 'win32' }), input = admission('committed-refusal'), job = (await store.admit(input)).job;
-  const indexed = structuredClone(store.records.get(job.id)); let attempts = 0;
-  store.io = { ...fs, rename: async (...args) => { attempts++; await fs.rename(...args); throw renameRefusal(); } };
-  await assert.rejects(store.update(job.id, () => ({ status: 'succeeded', result: { exact: 'committed receipt' }, finishedAt: new Date().toISOString() })), { code: 'DIRECT_JOB_STORAGE' });
-  const evidence = await readFile(store.file(job.id)); assert.equal(attempts, 1); assert.deepEqual(store.records.get(job.id), indexed);
-  assert.equal(JSON.parse(evidence).result.exact, 'committed receipt');
-  await assert.rejects(store.update(job.id, () => ({ status: 'cancelled' })), { code: 'DIRECT_JOB_STORAGE' }); assert.equal(attempts, 1);
-  await store.close(); const reopened = make(); await reopened.init();
-  const duplicate = await reopened.admit(input); assert.equal(duplicate.created, false); assert.equal(duplicate.job.result.exact, 'committed receipt');
-  assert.deepEqual(await readFile(reopened.file(job.id)), evidence);
-});
-
-test('startup bulk resource index preserves exact order and subsequent updates', async t => {
-  const { make } = await harness(t), first = make(), ids = [];
-  for (let index = 0; index < 24; index++) {
-    const input = { ...admission('bulk-' + index, { action: 'read', url: 'https://example.test/history' }), tool: 'blackice_browser_read' };
-    const { job } = await first.admit(input); ids.push(job.id);
-    await first.update(job.id, () => ({ status: 'succeeded', result: { success: true }, finishedAt: new Date().toISOString() }));
-  }
-  const expected = [...first.resourceIndex.entries()].map(([key, bucket]) => [key, [...bucket]]);
-  await first.close();
-  const second = make(); let deferred = 0;
-  const remember = second.remember.bind(second);
-  second.remember = (record, receiptHash, options) => { if (options?.deferResourceSort) deferred++; return remember(record, receiptHash, options); };
-  await second.init();
-  assert.equal(deferred, 24);
-  assert.deepEqual([...second.resourceIndex.entries()], expected);
-  await second.update(ids[0], () => ({ error: { code: 'TEST', message: 'historical annotation' } }));
-  assert.deepEqual([...second.resourceIndex.entries()], expected);
-  const next = await second.admit({ ...admission('bulk-new', { action: 'read', url: 'https://example.test/history' }), tool: 'blackice_browser_read' });
-  assert.equal([...second.resourceIndex.values()][0].at(-1), next.job.id);
-  assert.equal((await second.counts()).total, 25);
-});

@@ -6,7 +6,7 @@
   "type": "module",
   "description": "BLACKICE: direct ChatGPT tools, scoped OAuth, durable actions, native browsing, conversation/project planning, and scheduled tasks.",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.23.5"
   },
   "scripts": {
     "start": "node server.mjs",

@@ -49,8 +49,8 @@ test('conversation follows its run family and direct borrower, not stale runId o
  assert.equal(activeBrowserOwnerStatus(owner,e,direct),true);assert.equal(stoppedBrowserOwnerStatus(owner,e,direct).eligible,false);
  assert.equal(activeBrowserOwnerStatus(connectorBrowserOwner('client-a'),e,direct),false);
  await direct.jobs.update(row.id,()=>({status:'succeeded',finishedAt:new Date().toISOString(),effects:{possible:true,confirmed:true}}));
- assert.equal(direct.jobs.records.get(row.id).arguments,undefined);
- assert.equal(direct.jobs.records.get(row.id).browserConversationId,owner.taskId);
+ assert.equal(direct.jobs.ownerSnapshot({ownerTaskId:owner.taskId})[0].arguments,undefined);
+ assert.equal(direct.jobs.ownerSnapshot({ownerTaskId:owner.taskId})[0].browserConversationId,owner.taskId);
  direct.active.set(row.id,{});assert.equal(stoppedBrowserOwnerStatus(owner,e,direct).eligible,false);
  direct.active.clear();assert.equal(stoppedBrowserOwnerStatus(owner,e,direct).eligible,true);
  run.status='running';run.settled=false;assert.equal(activeBrowserOwnerStatus(owner,e,direct),true);assert.equal(stoppedBrowserOwnerStatus(owner,e,direct).eligible,false);
@@ -65,7 +65,7 @@ test('connector lifecycle preserves interrupted effects across actual ledger res
  const row=await admit(direct,'restart');
  await jobs.update(row.id,()=>({status:'running',dispatched:true,effects:{possible:true,confirmed:false}}));
  await jobs.close();jobs=await new DirectExecutionJobs({dataDir:dir}).init();direct.jobs=jobs;
- assert.equal(jobs.records.get(row.id).status,'interrupted');
+ assert.equal((await jobs.get(row.id)).status,'interrupted');
  assert.equal(stoppedBrowserOwnerStatus(owner,e,direct).eligible,true);
  const inherited=await readStoppedTabEffects(owner,e,direct);
  assert.equal(inherited.uncertain,true);assert.equal(inherited.directJobs[0].jobId,row.id);
