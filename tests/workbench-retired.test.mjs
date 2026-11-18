@@ -49,11 +49,11 @@ test('current navigation omits retired Workbench Swarm and memory controls and r
   const server = read('server.mjs');
   const spaces = [...index.matchAll(/data-space="([^"]+)"/g)].map(match => match[1]);
   // Retained deep links do not restore retired top-level controls.
-  const retained = ['chat','todos','cronjobs','browser','skills','settings'];
+  const retained = ['chat','cronjobs','browser','skills','settings'];
   assert.deepEqual(spaces.filter(name=>retained.includes(name)),retained);
   assert.deepEqual(spaces,retained);
   assert.equal(spaces.includes('swarm'),false);assert.equal(spaces.includes('knowledge'),false);
-  assert.match(app,/todos:.*createTodosWorkspace/);
+  assert.doesNotMatch(app,/todos:|createTodosWorkspace|userWorkflows:|createUserWorkflowsWorkspace/);
   assert.equal(spaces.filter(name=>name==='skills').length,1);
   assert.doesNotMatch(index,/data-space="planning"/);
   assert.match(app,/planning:\(\)=>import\('\.\/workspaces\/planning-current\.mjs'\)/);
@@ -77,7 +77,7 @@ test('retained Cronjobs routes preserve the workflow manager and legacy Tasks an
 
   const opened=[],hashes=[];
   const element=()=>({children:[],dataset:{},hidden:false,setAttribute(name,value){this[name]=value;},append(...items){this.children.push(...items);},querySelector(){return null;}});
-  const tabs=['chat','planning','cronjobs','browser','knowledge','settings'].map(name=>Object.assign(element(),{dataset:{space:name}}));
+  const tabs=['chat','cronjobs','browser','skills','settings'].map(name=>Object.assign(element(),{dataset:{space:name}}));
   const modules=Object.fromEntries(['cronjobs','workflows'].map(name=>[name,async()=>()=>({enter(){opened.push(name);},leave(){},updateStatus(){}})]));
   const app=new Function('modules','document','stage','tabs','history','updateWorkspaceTabs',
     'let current=null,revision=0,status=null;const spaces=new Map(),api=()=>{},events={},notify=()=>{};'+routes+';return{show,spaces};'

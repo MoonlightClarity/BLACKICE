@@ -46,6 +46,10 @@ async function fixture(t, {native, currentConversation = 'a', extraTabs = false}
     localStorage:{getItem:key => storage.get(key) || null,setItem:(key,value) => storage.set(key,String(value))}});
   const prototype = Object.getPrototypeOf(dom.mount), type = Object.getOwnPropertyDescriptor(prototype,'type');
   Object.defineProperty(prototype,'type',{get:type.get,set(value) { this.setAttribute('type',value); }});
+  const append = prototype.append;
+  prototype.append = function(...children) {
+    return append.call(this,...children.flatMap(child=>child.tagName==='FRAGMENT'?[...child.children]:[child]));
+  };
   prototype.replaceChildren = function(...children) {
     for (const child of this.children) child.parentElement = null;
     this.children = []; this.rawText = ''; this.markup = ''; this.append(...children);
