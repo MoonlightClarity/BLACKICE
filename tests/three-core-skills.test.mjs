@@ -46,3 +46,25 @@ test('headingless current edits keep ordinary default titles, not builtin identi
  assert.equal((await catalog.detail({id:'builtin-decomposition'})).title,'Task decomposition');
 });
 
+
+test('explicit folder mutation removes orphan placements only, preserving actual saved and deleted documents',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'orphan-placement-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ await mkdir(path.join(root,'skill-edits'));
+ const edits={version:1,entries:{'builtin-browser-tab-management':{revision:4,content:'# My saved method'},'builtin-job-search':{revision:5,deleted:true,content:'# My deleted method'},'builtin-file-discovery':{revision:3,deleted:true}}};
+ const editBytes=JSON.stringify(edits);await writeFile(path.join(root,'skill-edits','skills.json'),editBytes);
+ const file=path.join(root,'skills-folders.json'),state={version:1,revision:9,folders:[{id:'orphan',name:'Orphan',parentId:null},{id:'saved',name:'Saved',parentId:null},{id:'deleted',name:'Deleted',parentId:null}],assignments:{'builtin-browser':'orphan','builtin-file-discovery':'orphan','builtin-browser-tab-management':'saved','builtin-job-search':'deleted','builtin-decomposition':null}};
+ const bytes=JSON.stringify(state);await writeFile(file,bytes);const folders=new SkillFolderStore({dataDir:root});
+ assert.deepEqual(await folders.read(),state);assert.equal(await readFile(file,'utf8'),bytes,'read never mutates placements');
+ await assert.rejects(folders.mutate({action:'remove',id:'orphan',expectedRevision:8}),{status:409});assert.equal(await readFile(file,'utf8'),bytes);
+ for(const id of ['saved','deleted'])await assert.rejects(folders.mutate({action:'remove',id,expectedRevision:9}),{status:409});
+ assert.equal(await readFile(file,'utf8'),bytes,'rejected mutation does not persist cleanup');
+ const removed=await folders.mutate({action:'remove',id:'orphan',expectedRevision:9});assert.equal(removed.revision,10);assert.deepEqual(removed.assignments,{'builtin-browser-tab-management':'saved','builtin-job-search':'deleted','builtin-decomposition':null});
+ assert.equal(await readFile(path.join(root,'skill-edits','skills.json'),'utf8'),editBytes);
+ assert.deepEqual(await new SkillFolderStore({dataDir:root}).read(),removed);
+ await writeFile(file,bytes);
+ const cleared=await folders.mutate({action:'assign',skillId:'builtin-browser',folderId:null,expectedRevision:9});assert.equal(cleared.revision,10);assert.equal(Object.hasOwn(cleared.assignments,'builtin-browser'),false);
+ assert.equal(cleared.assignments['builtin-job-search'],'deleted');assert.equal(cleared.assignments['builtin-browser-tab-management'],'saved');
+ await assert.rejects(folders.mutate({action:'assign',skillId:'builtin-browser',folderId:'saved',expectedRevision:10}),{status:404});
+ assert.deepEqual(await folders.read(),cleared);
+});
+
