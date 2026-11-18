@@ -1,10 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
 import {createModularCompletionController} from '../lib/modular-completion.mjs';
-import {ShadowdancerDirectory,runShadowdancerDirectory} from '../lib/shadowdancer-directory.mjs';
 const policy={version:2,modules:{verification:true,replanning:true}};
 function controller(patch={}){
  let snapshot={request:{text:'Repair; report briefly'},evidence:{records:[{id:'r1',result:'bounded test passed'}]},policy},calls=0;
@@ -60,26 +56,4 @@ test('fresh semantic review can accept corrected response',async()=>{
  assert.equal((await c.beforeFinal({output:'first'})).responseOnly,true);
  assert.equal(await c.beforeFinal({output:'corrected'}),null);
  assert.equal(calls,2);assert.equal((await c.assertReady()).ready,true);
-});
-
-async function fixture(t,changed){
- const dir=await mkdtemp(path.join(os.tmpdir(),'report-comparison-'));t.after(()=>rm(dir,{recursive:true,force:true}));
- const finalPath=path.join(dir,'final.json');await writeFile(finalPath,JSON.stringify({answer:'before'}));
- const r=Object.create(ShadowdancerDirectory.prototype);
- Object.assign(r,{integrations:dir,turnRoot:dir,stats:{},label:async()=>{},
- integrate:async()=>({answer:changed?'after':'before',finalPath}),finishRun:async v=>v,
- continueWork:async()=>{throw Error('No work replay');}});
- return {r,dir};
-}
-test('unchanged report remains unresolved',async t=>{
- const {r,dir}=await fixture(t,false);
- await assert.rejects(r.reviseAnswer('Shorten it'),{code:'DIRECTORY_REPORT_REVISION_UNCHANGED'});
- const saved=JSON.parse(await readFile(path.join(dir,'reports/revision-001/presentation-result.json')));
- assert.equal(saved.changed,false);assert.equal(saved.status,'unresolved_unchanged');
- assert.equal(JSON.parse(await readFile(path.join(dir,'reports/revision-001/previous-final.json'))).answer,'before');
-});
-test('changed report is progress, not semantic acceptance',async t=>{
- const {r,dir}=await fixture(t,true);assert.equal((await r.reviseAnswer('Shorten it')).answer,'after');
- const saved=JSON.parse(await readFile(path.join(dir,'reports/revision-001/presentation-result.json')));
- assert.equal(saved.changed,true);assert.equal(saved.status,'changed_not_semantically_accepted');
 });

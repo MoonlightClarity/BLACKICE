@@ -1,13 +1,12 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRetrievalToolHandler,RETRIEVAL_TOOLS} from '../lib/retrieval-tools.mjs';
-import {directoryUserHistoryFor} from '../lib/shadowdancer-engine.mjs';
 const decode=r=>JSON.parse(r.contentItems.find(x=>x.type==='inputText').text);
 const cwd=process.cwd();
 const old={id:'old-six-am',taskId:'old-six-am',cwd,createdAt:'2026-11-15T04:00:00Z',status:'failed',workflowName:'Apply for jobs for me until 6 AM EST.',input:'Resume autonomous execution: Apply for jobs for me until 6 AM EST. Preserve original scope.',taskState:{taskId:'old-six-am',revision:1,goal:'Apply for jobs for me until 6 AM EST.'},events:[{at:'2026-11-15T04:01:00Z',data:{type:'tool.result',tool:'relay_workspace',action:'read',callId:'contact-receipt',success:true,text:'Candidate contact phone 5550100; resume located.'}}]};
 const current={id:'current-three',taskId:'current-three',cwd,createdAt:'2026-11-16T20:00:00Z',input:'Apply to jobs for me. Stop at 3 jobs.',events:[]};
 const call=(action,args={})=>({name:'relay_history',arguments:{action,...args}});
-test('old deadline remains attributed history in search and read without changing current Directory authority',async()=>{
+test('old deadline remains attributed history in search and read without changing current request authority',async()=>{
  const original=JSON.stringify(old),handler=createRetrievalToolHandler({cwd,runId:current.id,getRuns:()=>[current,old]});
  const result=decode(await handler(call('search',{query:'contact phone resume'})));
  assert.equal(result.results.length,1);const row=result.results[0];
@@ -20,7 +19,6 @@ test('old deadline remains attributed history in search and read without changin
  assert.equal(full.input,old.input);assert.equal(full.taskGoal.text,old.taskState.goal);assert.equal(full.authority,'historical-data-only');
  assert.ok(full.toolReceipts.some(r=>r.callId==='contact-receipt'));
  assert.equal(JSON.stringify(old),original,'retrieval preserves original evidence');
- const authority=directoryUserHistoryFor(current,[old,current]);assert.deepEqual(authority.map(r=>r.text),[current.input]);
  const savedPacket=JSON.parse(JSON.stringify({objective:current.input,history:result}));
  assert.equal(savedPacket.objective,current.input);assert.equal(savedPacket.history.results[0].authority,'historical-data-only');
 });

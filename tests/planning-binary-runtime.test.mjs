@@ -1,11 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,writeFile,rm,mkdir,readdir} from 'node:fs/promises';
+import {mkdtemp,writeFile,rm,mkdir,readdir} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import {normalizePlanningOntology,planningOntologyInstructions,PLANNING_MODULE_STATES,PLANNING_ONTOLOGY_MODULES} from '../public/planning-module-policy.mjs';
-import {DIRECTORY_MODES,SUBAGENT_MODES,executionModesFrom,subagentsEnabledFor,usesDirectory} from '../lib/conversation-execution-modes.mjs';
-import {ShadowdancerDirectory} from '../lib/shadowdancer-directory.mjs';
+import {normalizePlanningOntology,PLANNING_MODULE_STATES,PLANNING_ONTOLOGY_MODULES} from '../public/planning-module-policy.mjs';
 import {createModularEvidenceJournal,createModularCompletionController} from '../lib/modular-completion.mjs';
 import {planningOntologyDirectTool} from '../lib/planning-ontology-direct-tool.mjs';
 
@@ -20,7 +18,6 @@ test('canonical module schema is Boolean On/Off with no Auto or Optional choices
  assert.throws(()=>normalizePlanningOntology({version:2,autoSelect:false,modules:{}}),{code:'PLANNING_ONTOLOGY_INVALID'});
 });
 
-
 test('retained legacy ontology helper advertises Boolean metadata',async()=>{
  let p=policy();const tool=planningOntologyDirectTool({runtimeSettings:{get:()=>({planningOntology:p}),update:async x=>(p=x.planningOntology,{planningOntology:p})}});
  const schema=tool.definition.inputSchema.properties.ontology.properties;
@@ -29,10 +26,6 @@ test('retained legacy ontology helper advertises Boolean metadata',async()=>{
  const metadata=JSON.parse((await tool.execute({action:'get'})).contentItems[0].text);
  assert.deepEqual(metadata.states,['on','off']);
 });
-
-
-
-
 
 test('full settled receipts reach review without excerpt truncation',async()=>temporary(async cwd=>{
  const journal=createModularEvidenceJournal({directory:path.join(cwd,'receipts')});const result={success:true,contentItems:[{type:'inputText',text:'x'.repeat(12000)+'EXACT_TAIL'}]};
@@ -58,5 +51,3 @@ test('identical read-back receipts with new call IDs do not fake progress',async
  state.evidence.records.push({id:'read-'+(++i),tool:'relay_workspace',action:'read',target:'same-file',success:true,excerpt:'same bytes'});
  await assert.rejects(c.beforeFinal({output:'Not done'}),{code:'MODULAR_OUTCOME_STALLED'});
 });
-
-test('retired Directory rejects construction before model calls or disk mutation',async()=>temporary(async cwd=>{const file=path.join(cwd,'preserved.json');await writeFile(file,'original');let calls=0;assert.throws(()=>new ShadowdancerDirectory({cwd,runtime:{runAgent:async()=>{calls++;}}}),{code:'DIRECTORY_RETIRED'});assert.equal(calls,0);assert.deepEqual(await readdir(cwd),['preserved.json']);assert.equal(await readFile(file,'utf8'),'original');}));

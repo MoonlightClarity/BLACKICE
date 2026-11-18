@@ -1,9 +1,7 @@
-import {directoryUserHistoryFor} from '../lib/shadowdancer-engine.mjs';
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {mkdtemp,mkdir,readFile,writeFile,rm,access} from 'node:fs/promises';
+import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
 import {HarnessEngine} from '../lib/engine.mjs';
@@ -13,8 +11,6 @@ import {fixtureOutcomeReview,finishFixtureCandidate} from './fixture-modular-pro
 const graph=(sandbox='danger-full-access')=>({name:'Directory Chat fixture',nodes:[
  {id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture::remote',name:'Chat',prompt:'CURRENT_AGENT_BOUNDARY: preserve source files and task restrictions.',sandbox},
  {id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}});
-const phaseOf=options=>{if(!options.prompt.includes('SHADOWDANCER DIRECTORY MODE.'))return null;const tail=options.prompt.split('CURRENT_DIRECTORY:\n').at(-1);return JSON.parse(tail.split('\nREPOSITORY ')[0]);};
-const response=phase=>phase.label==='decompose'?{atomic:true}:phase.label==='integration'?{answer:'Directory evidence result.',used_refs:phase.payload.required_refs}:{status:'complete',nextAction:'',finding:'A bounded finding.',candidate_answer:'A bounded answer.',uncertainty:''};
 class Runtime extends EventEmitter{
  calls=[];children=[];store={get:()=>({baseUrl:'https://api.example/v1'})};
  status(){return{connected:true,authenticated:true,defaultModel:'fixture::remote',models:[{id:'fixture::remote',supportsTools:true}]};}
@@ -22,10 +18,10 @@ class Runtime extends EventEmitter{
  async runAgent(options){
   this.calls.push(options);
   if(options.prompt.startsWith('You are a short-lived BLACKICE subagent.')){this.children.push(options);return{output:'Child evidence.'};}
-  const phase=phaseOf(options);await this.inspect?.(options,phase);
+  await this.inspect?.(options,null);
   options.onEvent?.({type:'thread',threadId:'ephemeral-'+this.calls.length,turnId:'turn-'+this.calls.length,model:'fixture::remote'});
-  options.onEvent?.({type:'message',text:phase?'PRIVATE_LEAF_JSON':'Ordinary Chat result.',phase:'final_answer'});
-  return{output:phase?JSON.stringify(response(phase)):'Ordinary Chat result.',threadId:'ephemeral-'+this.calls.length};
+  options.onEvent?.({type:'message',text:'Ordinary Chat result.',phase:'final_answer'});
+  return{output:'Ordinary Chat result.',threadId:'ephemeral-'+this.calls.length};
  }
 }
 async function fixture(t,{runtime=new Runtime(),tasks}={}){
@@ -111,6 +107,13 @@ for(const [operation,cause] of [['continue','policy'],['continue','legacy-policy
   delete state.toolNames;delete state.resumeToolNames;
  }
  const frozen=JSON.stringify(historical),sourceThreadId=state.threadId;f.settings.subagentsEnabled=true;
+ if(cause==='runtime-missing-catalog'){
+  const callsBefore=runtime.calls.length;
+  assert.throws(()=>f.engine.retryRun(first.id),{code:'NATIVE_CATALOG_UNSUPPORTED'});
+  assert.equal(runtime.calls.length,callsBefore);
+  assert.equal(JSON.stringify(f.engine.runs.get(first.id)),frozen,'unsupported saved catalog refuses without rewriting evidence');
+  return;
+ }
  const admitted=operation==='continue'?f.engine.continueRun(first.id,{nodeId:'agent',message:'Continue inspecting this same task.'}):f.engine.retryRun(first.id);
  const next=await settle(f.engine,admitted),handoff=operation==='continue'?next.modelHandoff:next.nodeHandoffs.agent;
  assert.equal(next.taskId,historical.taskId);assert.equal(next.parentRunId,first.id);
@@ -120,21 +123,4 @@ for(const [operation,cause] of [['continue','policy'],['continue','legacy-policy
  assert.ok(runtime.calls.at(-1).dynamicTools.some(tool=>tool.name==='relay_delegate'));
  assert.match(runtime.calls.at(-1).prompt,/EXACT_NATIVE_BOUNDARY/);
  assert.equal(JSON.stringify(f.engine.runs.get(first.id)),frozen,'saved run, user restrictions, and prior tool evidence remain exact');
-});
-
-test('Directory authority rehydrates a middle restriction omitted from ordinary excerpts and fails closed on missing lineage',()=>{
- const family=Array.from({length:20},(_,i)=>({id:'r'+i,taskId:'r0',...(i?{parentRunId:'r'+(i-1)}:{}),createdAt:new Date(i*1000).toISOString(),input:i===7?'MIDDLE_RESTRICTION: do not submit anything.':'Request '+i,events:[]}));
- const rows=directoryUserHistoryFor(family.at(-1),family);
- assert.equal(rows.length,20);assert.ok(rows.some(row=>row.text.includes('MIDDLE_RESTRICTION')));
- assert.throws(()=>directoryUserHistoryFor(family.at(-1),[family.at(-1)]),{code:'DIRECTORY_HISTORY_UNAVAILABLE'});
- const truncated={id:'tail',createdAt:new Date().toISOString(),input:'Continue',priorUserRequests:[{key:'missing',runId:'missing',source:'user-request',text:'excerpt',truncated:true}]};
- assert.throws(()=>directoryUserHistoryFor(truncated),{code:'DIRECTORY_HISTORY_UNAVAILABLE'});
-});
-
-
-test('Directory authority cannot follow a foreign-family parent or accept a detached descendant as a root',()=>{
- const foreign={id:'foreign',taskId:'foreign',input:'FOREIGN_PRIVATE_RESTRICTION',events:[]};
- const current={id:'current',taskId:'own-family',parentRunId:'foreign',input:'Own request',events:[]};
- assert.throws(()=>directoryUserHistoryFor(current,[foreign]),{code:'DIRECTORY_HISTORY_UNAVAILABLE'});
- assert.throws(()=>directoryUserHistoryFor({...current,parentRunId:undefined},[]),{code:'DIRECTORY_HISTORY_UNAVAILABLE'});
 });
