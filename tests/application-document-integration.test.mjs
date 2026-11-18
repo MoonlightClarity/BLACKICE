@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
 import { ApplicationWorkspace } from '../lib/application-workspace.mjs';
-import { APPLICATION_TOOL, APPLICATION_SCHEMA_VERSION, LEGACY_APPLICATION_TOOL, LEGACY_APPLICATION_INSTRUCTIONS } from '../lib/application-tools.mjs';
+import { APPLICATION_TOOL, APPLICATION_SCHEMA_VERSION } from '../lib/application-tools.mjs';
 
 const EDITOR = 'uia_abcdef123456_1';
 const catalog = [{ appId: 'notepad-classic', name: 'Notepad', available: true, executable: 'C:\\Windows\\System32\\notepad.exe', args: [] }];
@@ -56,8 +56,7 @@ class ModelRuntime extends EventEmitter {
     const tool = options.dynamicTools?.find(item => item.name === APPLICATION_TOOL.name);
     if (tool) {
       assert.equal(tool.type, 'function'); assert.equal(tool.inputSchema.additionalProperties, false);
-      if (this.expectedApplicationSchemaVersion === 1) assert.deepEqual(tool, LEGACY_APPLICATION_TOOL);
-      else {
+      {
         for (const action of ['save_text', 'read_document', 'restore_document']) assert.ok(tool.inputSchema.properties.action.enum.includes(action), `${action} is advertised to the actual engine provider`);
         assert.equal(tool.inputSchema.properties.documentId.type, 'string'); assert.equal(tool.inputSchema.properties.title.type, 'string'); assert.equal(tool.inputSchema.properties.expectedTextSha256.pattern, '^[a-f0-9]{64}$');
       }
@@ -188,39 +187,15 @@ test('engine tool rejects fabricated save inputs, unknown document fields and st
   const started = f.app.engine.startRun({ workflow: graph, input: 'Check saved document input boundaries.' }); await f.app.engine.executions.get(started.id); assert.equal(f.app.engine.getRun(started.id).status, 'completed', f.app.engine.getRun(started.id).error); assert.equal(f.runtime.editorText, 'Current collaborative editor'); assert.equal(f.runtime.calls.filter(call => call.action === 'set_value').length, writes); assert.equal(f.workspace.documents.list().length, 1);
 });
 
-test('Planning Off native application catalogs without a version marker retain the exact original schema through continuation and retry', async t => {
-  const f = await fixture(t); await f.app.runtimeSettings.update({ codexHistory: 'codex' }); let turns = 0;
-  f.model.execute = async options => {
-    turns++; const tool = options.dynamicTools.find(item => item.name === APPLICATION_TOOL.name); assert.ok(tool);
-    options.onEvent({ type: 'thread', threadId: 'native-legacy-application-thread' });
-    if (turns === 1) { assert.deepEqual(tool, APPLICATION_TOOL); return { output: 'Recorded the initially attached application tool.', threadId: 'native-legacy-application-thread', codexHistory: 'codex' }; }
-    assert.equal(options.threadId, 'native-legacy-application-thread'); assert.deepEqual(tool, LEGACY_APPLICATION_TOOL); assert.equal(tool.inputSchema.properties.expectedTextSha256, undefined); assert.equal(tool.inputSchema.properties.documentId, undefined); assert.equal(tool.inputSchema.properties.title, undefined);
-    assert.ok(options.prompt.includes(LEGACY_APPLICATION_INSTRUCTIONS)); assert.doesNotMatch(options.prompt, /save_text|read_document|restore_document|expectedTextSha256|recovery text version/); assert.doesNotMatch(options.developerInstructions, /save_text|read_document|restore_document|recovery version|Saved versions/);
-    const nativeCalls = f.runtime.calls.length, documents = f.workspace.documents.list();
-    for (const value of [{ action: 'save_text', sessionId: 'never-opened' }, { action: 'read_document', documentId: 'never-saved' }, { action: 'restore_document', sessionId: 'never-opened', documentId: 'never-saved', expectedTextSha256: digest('') }, { action: 'control', sessionId: 'never-opened', ref: EDITOR, operation: 'set_value', text: 'Must not be applied', expectedTextSha256: digest('') }]) {
-      const response = await options.onToolCall({ name: APPLICATION_TOOL.name, arguments: JSON.stringify(value) }, { signal: options.signal }); assert.equal(response.success, false); assert.match(response.contentItems[0].text, /attached.*catalog/);
-    }
-    assert.equal(f.runtime.calls.length, nativeCalls); assert.deepEqual(f.workspace.documents.list(), documents);
-    const status = await options.onToolCall({ name: APPLICATION_TOOL.name, arguments: { action: 'status' } }); assert.equal(status.success, true);
-    if (turns === 2) throw Error('Fixture interrupted after checking the original app catalog.');
-    return { output: 'Retained the original attached application schema.', threadId: 'native-legacy-application-thread', codexHistory: 'codex' };
-  };
-  // Catalog immutability is exercised with optional planning. Planning On has
-  // separate upgrade coverage and records the names of rejected operations in
-  // the plan history, which is intentionally supplied on the next turn.
-  const first = f.app.engine.startRun({ workflow: graph, planningMode: 'off', input: 'Check the initially attached application schema.' }); await f.app.engine.executions.get(first.id); assert.equal(f.app.engine.getRun(first.id).nodes.agent.applicationSchemaVersion, APPLICATION_SCHEMA_VERSION);
-  // An actual pre-upgrade native conversation has relay_apps in its catalog but
-  // predates the newly persisted schema marker.
-  // This simulated retained catalog predates Planning14 and its host catalog hash.
-  const legacyRun = f.app.engine.runs.get(first.id);
-  assert.equal(legacyRun.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
-  assert.ok(!legacyRun.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
-  legacyRun.planningContractVersion = 13; legacyRun.nodes.agent.taskSchemaVersion = 13;
-  delete legacyRun.nodes.agent.providerExecutionContract;
-  delete legacyRun.nodes.agent.applicationSchemaVersion; f.model.expectedApplicationSchemaVersion = 1;
-  const continued = f.app.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue the same native application conversation.' }); await f.app.engine.executions.get(continued.id); const interrupted = f.app.engine.getRun(continued.id);
-  assert.equal(interrupted.status, 'failed'); assert.equal(interrupted.nodes.agent.resumeApplicationSchemaVersion, 1); assert.equal(interrupted.nodes.agent.applicationSchemaVersion, 1);
-  const retry = f.app.engine.retryRun(continued.id); await f.app.engine.executions.get(retry.id); const finished = f.app.engine.getRun(retry.id); assert.equal(finished.status, 'completed', finished.error); assert.equal(finished.nodes.agent.resumeApplicationSchemaVersion, 1); assert.equal(finished.nodes.agent.applicationSchemaVersion, 1); assert.equal(turns, 3); assert.equal(f.runtime.calls.length, 0);
+test('unsupported application catalogs reject continuation and retry without editor or archive mutations', async t=>{
+ const f=await fixture(t);await f.app.runtimeSettings.update({codexHistory:'codex'});
+ f.model.execute=async options=>{options.onEvent({type:'thread',threadId:'old-app-thread'});return {output:'Current tools recorded',threadId:'old-app-thread',codexHistory:'codex'};};
+ const first=f.app.engine.startRun({workflow:graph,planningMode:'off',input:'Record application tools'});await f.app.engine.executions.get(first.id);
+ const old=f.app.engine.runs.get(first.id);delete old.nodes.agent.applicationSchemaVersion;
+ const before=structuredClone(old),documents=f.workspace.documents.list(),calls=f.model.calls.length,count=f.app.engine.runs.size;
+ assert.throws(()=>f.app.engine.continueRun(first.id,{nodeId:'agent',message:'Continue'}),{code:'NATIVE_CATALOG_UNSUPPORTED'});
+ assert.throws(()=>f.app.engine.retryRun(first.id),{code:'NATIVE_CATALOG_UNSUPPORTED'});
+ assert.deepEqual(old,before);assert.equal(f.app.engine.runs.size,count);assert.equal(f.model.calls.length,calls);assert.equal(f.runtime.calls.length,0);assert.deepEqual(f.workspace.documents.list(),documents);
 });
 
 test('native version two application catalogs retain saved-text actions through continuation and retry', async t => {
@@ -237,27 +212,14 @@ test('native version two application catalogs retain saved-text actions through 
   const retry = f.app.engine.retryRun(continued.id); await f.app.engine.executions.get(retry.id); const finished = f.app.engine.getRun(retry.id); assert.equal(finished.status, 'completed', finished.error); assert.equal(finished.nodes.agent.applicationSchemaVersion, 2); assert.equal(finished.nodes.agent.resumeApplicationSchemaVersion, 2); assert.equal(turns, 3); assert.equal(f.runtime.calls.length, 0);
 });
 
-test('legacy Relay preference input preserves the native catalog while fresh chats receive version two', async t => {
-  const f = await fixture(t); await f.app.runtimeSettings.update({ codexHistory: 'codex' });
-  f.model.execute = async options => { options.onEvent({ type: 'thread', threadId: 'native-upgrade-application-thread' }); return { output: 'Recorded an original native application conversation.', threadId: 'native-upgrade-application-thread', codexHistory: 'codex' }; };
-  const original = f.app.engine.startRun({ workflow: graph, input: 'Record a pre-upgrade native session.' }); await f.app.engine.executions.get(original.id);
-  // This simulated retained catalog predates Planning14 and its host catalog hash.
-  const legacyRun = f.app.engine.runs.get(original.id);
-  assert.equal(legacyRun.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
-  assert.ok(!legacyRun.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
-  legacyRun.planningContractVersion = 13; legacyRun.nodes.agent.taskSchemaVersion = 13;
-  delete legacyRun.nodes.agent.providerExecutionContract;
-  delete legacyRun.nodes.agent.applicationSchemaVersion;
-  const savedOriginal = f.app.engine.getRun(original.id);
-  await f.app.runtimeSettings.update({ codexHistory: 'relay' });
-  assert.equal(f.app.runtimeSettings.get().codexHistory, 'codex', 'Legacy preference input normalizes to persistent native history.');
-  f.model.expectedApplicationSchemaVersion = 1;
-  f.model.execute = async options => { assert.deepEqual(options.dynamicTools.find(item => item.name === APPLICATION_TOOL.name), LEGACY_APPLICATION_TOOL); assert.equal(options.threadId, 'native-upgrade-application-thread'); assert.doesNotMatch(options.prompt, /save_text/); return { output: 'Retained the original native session and application schema.', threadId: 'native-upgrade-application-thread', codexHistory: 'codex' }; };
-  const continued = f.app.engine.continueRun(original.id, { nodeId: 'agent', message: 'Continue the saved native conversation after the legacy preference input.' }); await f.app.engine.executions.get(continued.id); const resumed = f.app.engine.getRun(continued.id);
-  assert.equal(resumed.status, 'completed', resumed.error); assert.equal(resumed.nodes.agent.applicationSchemaVersion, 1); assert.equal(resumed.nodes.agent.resumeApplicationSchemaVersion, 1); assert.equal(resumed.modelHandoff, undefined); assert.deepEqual(f.app.engine.getRun(original.id), savedOriginal);
-  f.model.expectedApplicationSchemaVersion = 2;
-  f.model.execute = async options => { assert.deepEqual(options.dynamicTools.find(item => item.name === APPLICATION_TOOL.name), APPLICATION_TOOL); assert.equal(options.threadId, undefined); assert.match(options.prompt, /save_text/); return { output: 'Used the current application schema in a fresh native session.', threadId: 'fresh-upgrade-application-thread', codexHistory: 'codex' }; };
-  const fresh = f.app.engine.startRun({ workflow: graph, input: 'Start a completely fresh current-schema conversation.' }); await f.app.engine.executions.get(fresh.id); assert.equal(f.app.engine.getRun(fresh.id).status, 'completed', f.app.engine.getRun(fresh.id).error); assert.equal(f.app.engine.getRun(fresh.id).nodes.agent.applicationSchemaVersion, 2); assert.equal(f.runtime.calls.length, 0);
+test('a fresh current application session remains available after an old catalog is rejected',async t=>{
+ const f=await fixture(t);await f.app.runtimeSettings.update({codexHistory:'codex'});
+ f.model.execute=async options=>{assert.deepEqual(options.dynamicTools.find(item=>item.name===APPLICATION_TOOL.name),APPLICATION_TOOL);assert.equal(options.threadId,undefined);return {output:'Current application tools',threadId:'app-current-thread',codexHistory:'codex'};};
+ const first=f.app.engine.startRun({workflow:graph,input:'Original application session'});await f.app.engine.executions.get(first.id);
+ const old=f.app.engine.runs.get(first.id);old.nodes.agent.applicationSchemaVersion=1;const before=structuredClone(old);
+ assert.throws(()=>f.app.engine.continueRun(first.id,{nodeId:'agent',message:'Continue'}),{code:'NATIVE_CATALOG_UNSUPPORTED'});
+ const fresh=f.app.engine.startRun({workflow:graph,input:'New current application session'});await f.app.engine.executions.get(fresh.id);
+ assert.equal(f.app.engine.getRun(fresh.id).status,'completed');assert.equal(f.app.engine.getRun(fresh.id).nodes.agent.applicationSchemaVersion,APPLICATION_SCHEMA_VERSION);assert.deepEqual(old,before);assert.equal(f.runtime.calls.length,0);
 });
 
 test('a model can read its saved document library after restart when native applications are unavailable', async t => {

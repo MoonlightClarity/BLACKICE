@@ -7,8 +7,7 @@ import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {ConversationArchive} from '../lib/conversations.mjs';
 import {ConversationGoals} from '../lib/conversation-goals.mjs';
-import {requireAutonomyModel} from '../lib/autonomy-model-allowlist.mjs';
-import {createSubagentToolHandler,SUBAGENT_TOOL,SUBAGENT_V6_TOOL,SUBAGENT_SCHEMA_VERSION} from '../lib/subagents.mjs';
+import {createSubagentToolHandler,SUBAGENT_TOOL,SUBAGENT_SCHEMA_VERSION} from '../lib/subagents.mjs';
 
 const waitFor=async(predicate,message='condition')=>{
   const until=Date.now()+7000;
@@ -40,41 +39,22 @@ async function fixture(t,execute,options={}){
 }
 const out=n=>({output:'Verified fixture turn '+n,threadId:'autonomy_mock_thread_'+n});
 
-test('worker launcher enforces model choices at runtime and retains original v6 catalog',async()=>{
-  assert.equal(SUBAGENT_SCHEMA_VERSION,7);
-  assert.equal(SUBAGENT_V6_TOOL.inputSchema.properties.tasks.items.properties.model,undefined);
-  assert.ok(SUBAGENT_TOOL.inputSchema.properties.tasks.items.properties.model);
-  const launches=[];
-  const runtime={runAgent:async(options)=>{launches.push(options);return {output:'worker result',threadId:'worker-thread'};}};
-  const catalog=[{id:'test-model',model:'test-model'},{id:'alternate-model',model:'alternate-model'},{id:'premium-model',model:'premium-model'}];
-  const allowlist=['test-model','alternate-model'];
-  const handler=createSubagentToolHandler({
-    runtime,cwd:'C:\\fixture',model:'test-model',maxParallel:2,allowTaskModel:true,
-    createTools:async()=>({tools:[]}),
-    selectWorkerModel:({task,inheritedModel})=>requireAutonomyModel({
-      allowlist,requestedModel:task.model??inheritedModel,catalog
-    }),
-  });
-  const response=await handler({name:'relay_delegate',arguments:{tasks:[
-    {id:'image',prompt:'Interpret a synthetic image.',model:'alternate-model'},
-    {id:'blocked',prompt:'Try a costly model.',model:'premium-model'}
-  ]}});
-  const data=JSON.parse(response.contentItems[0].text);
-  assert.equal(data.requested,2);
-  assert.equal(data.completed,1);
-  assert.equal(launches.length,1,'rejected worker must never start provider call');
-  assert.equal(launches[0].model,'alternate-model');
-  assert.equal(data.results.find(result=>result.id==='blocked').status,'failed');
+test('current workers inherit the coordinator model and reject per-worker model overrides before dispatch',async()=>{
+ assert.equal(SUBAGENT_SCHEMA_VERSION,7);assert.equal(SUBAGENT_TOOL.inputSchema.properties.tasks.items.properties.model,undefined);
+ const launches=[],runtime={runAgent:async options=>{launches.push(options);return {output:'Worker result',threadId:'worker-thread'};}};
+ const handler=createSubagentToolHandler({runtime,cwd:process.cwd(),model:'test-model',maxParallel:2,createTools:async()=>({tools:[]})});
+ const denied=await handler({name:'relay_delegate',arguments:{tasks:[{id:'bad',prompt:'No effect',model:'premium-model'},{id:'peer',prompt:'No effect'}]}});
+ assert.equal(denied.success,false);assert.equal(launches.length,0);
+ const accepted=await handler({name:'relay_delegate',arguments:{tasks:[{id:'one',prompt:'First independent item'},{id:'two',prompt:'Second independent item',readOnly:true}]}});
+ assert.equal(accepted.success,true);assert.equal(JSON.parse(accepted.contentItems[0].text).completed,2);assert.deepEqual(launches.map(x=>x.model),['test-model','test-model']);
 });
 
 test('without autonomy workers inherit the user-selected coordinator model and cannot switch it',async t=>{
-  let result;
+  let result,denied;
   const {engine,runtime}=await fixture(t,async(options,n)=>{
     if(n===1){
-      result=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[
-        {id:'denied',prompt:'Investigate one item.',model:'premium-model'},
-        {id:'inherited',prompt:'Investigate another item.'}
-      ]}});
+      denied=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'denied',prompt:'No model switch.',model:'premium-model'},{id:'peer',prompt:'No dispatch.'}]}});
+      result=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'inherited',prompt:'Investigate one item.'},{id:'other',prompt:'Investigate another item.'}]}});
       return out(n);
     }
     return out(n);
@@ -84,9 +64,9 @@ test('without autonomy workers inherit the user-selected coordinator model and c
   await waitFor(()=>engine.getRun(run.id).settled,'worker dispatch');
   assert.ok(result,'coordinator must invoke the real delegate handler');
   const data=JSON.parse(result.contentItems[0].text);
-  assert.equal(data.results.find(row=>row.id==='denied').status,'failed');
+  assert.equal(denied.success,false);assert.equal(data.completed,2);
   assert.equal(data.results.find(row=>row.id==='inherited').status,'completed');
-  assert.deepEqual(runtime.calls.map(call=>call.model),['test-model','test-model']);
+  assert.deepEqual(runtime.calls.map(call=>call.model),['test-model','test-model','test-model']);
 });
 
 
@@ -111,28 +91,18 @@ test('explicit Goal still continues with its bounded budget without Autonomy',as
  assert.equal(runtime.calls.length,2);assert.equal(runtime.calls[1].model,'test-model');
  const family=await conversations.family(first.id);assert.equal(family.runs[1].goal.automatic,true);assert.equal(family.runs[1].autonomy,undefined);
 });
-test('retired autonomy history fails closed instead of inventing a tool schema',async t=>{
-  const {engine}=await fixture(t,async(options,n)=>out(n),{autoStart:false});
-  const sample={
-    id:'native-history',taskId:'native-history',workflow:{nodes:[{id:'agent',type:'agent',model:'test-model'}],settings:{}},
-    nodes:{agent:{status:'completed',toolNames:['relay_autonomy']}},
-    runtimeSettings:{},planningMode:'off',
-  };
-  assert.throws(()=>engine.nativeHistoryDescription(sample,sample.workflow.nodes[0],sample.nodes.agent,'native-test'),e=>e.code==='CONTEXT_MIGRATION_SCHEMA');
+test('retired history migration entry point is absent',async t=>{
+ const {engine}=await fixture(t,async(options,n)=>out(n),{autoStart:false});
+ assert.equal(engine.nativeHistoryDescription,undefined);assert.equal(engine.recoverNativeHistoryMigration,undefined);
 });
 
-test('saved v1 native agent catalog upgrades through a fresh session without replacing the conversation',async t=>{
-  const {engine,conversations}=await fixture(t,async(options,n)=>out(n),{autoStart:false});
-  const first=engine.startRun({workflow:graph(),input:'Original task.'});await waitFor(()=>engine.getRun(first.id).settled);
-  const original=engine.runs.get(first.id);original.nodes.agent.nativeAgentSchemaVersion=1;
-  assert.ok(original.nodes.agent.toolNames.includes('relay_agents'));
-  const family=await conversations.family(first.id);
-  const next=engine.continueRun(first.id,{nodeId:'agent',message:'Continue with current capabilities.'},{historyRuns:family.runs});
-  await waitFor(()=>engine.getRun(next.id).settled);
-  const saved=engine.runs.get(next.id);
-  assert.equal(saved.taskId,first.id);
-  assert.equal(saved.modelHandoff.reason,'native-agent-scope-capability');
-  assert.equal(saved.nodes.agent.nativeAgentSchemaVersion,2);
+test('old native agent catalog is rejected without replacing the conversation',async t=>{
+ const {engine,conversations,runtime}=await fixture(t,async(options,n)=>out(n),{autoStart:false});
+ const first=engine.startRun({workflow:graph(),input:'Original task.'});await waitFor(()=>engine.getRun(first.id).settled);
+ const original=engine.runs.get(first.id);original.nodes.agent.nativeAgentSchemaVersion=1;
+ const before=structuredClone(original),family=await conversations.family(first.id),count=engine.runs.size,calls=runtime.calls.length;
+ assert.throws(()=>engine.continueRun(first.id,{nodeId:'agent',message:'Continue'},{historyRuns:family.runs}),{code:'NATIVE_CATALOG_UNSUPPORTED'});
+ assert.deepEqual(original,before);assert.equal(engine.runs.size,count);assert.equal(runtime.calls.length,calls);
 });
 test('explicit manual native child with goal does not gain automatic continuation',async t=>{
   let childId;

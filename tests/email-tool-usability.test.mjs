@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AgentEmailStore, runEmailCli } from '../lib/agent-email.mjs';
-import { EMAIL_TOOL, EMAIL_INSTRUCTIONS, LEGACY_EMAIL_TOOL, LEGACY_EMAIL_INSTRUCTIONS, createEmailToolHandler } from '../lib/email-tools.mjs';
+import { EMAIL_TOOL, EMAIL_INSTRUCTIONS, createEmailToolHandler } from '../lib/email-tools.mjs';
 
 const payload = result => JSON.parse(result.contentItems[0].text);
 const invoke = (handler, args) => handler({ name: 'relay_email', arguments: args });
@@ -22,12 +22,10 @@ function fixture(deliveries = records) {
   return { handler, calls };
 }
 
-test('email usability fixes preserve exact cached v1 and v2 catalogs and instructions', () => {
+test('email usability fixes preserve the current catalog and instructions', () => {
   const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
   assert.equal(hash(EMAIL_TOOL), '7e0a5a35f54d7b6389a52283ce68cce306775372edecce3fa46d2c247ee9d9e8');
   assert.equal(hash(EMAIL_INSTRUCTIONS), '65f8fe07198ec6f5801f3ed3c6f005c5d9d2a13942cc6a23a55af664eb0df9c0');
-  assert.equal(hash(LEGACY_EMAIL_TOOL), 'e05ea1d8409d310dab6110a1332a9459466dd6ee610c11c8f4e78e28731daa27');
-  assert.equal(hash(LEGACY_EMAIL_INSTRUCTIONS), '364cc13a2b05661600913fb00023a36f019b54f54ecf6aa5ae32e920ac7d1d46');
 });
 
 test('unpaged deliveries retain every record and the compatible response shape', async () => {
@@ -114,7 +112,7 @@ test('v2 explicit-folder reads preserve exact source identity and cancellation s
   controller.abort(); assert.equal(calls[0].options.signal.aborted, true);
 });
 
-test('v1 omitted-folder reads and direct backend INBOX defaults remain unchanged', async t => {
+test('current tool requires explicit folders while the direct backend retains its INBOX default', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-email-tool-usability-'));
   t.after(async () => {
     const resolved = path.resolve(directory), base = path.resolve(os.tmpdir());
@@ -132,11 +130,9 @@ test('v1 omitted-folder reads and direct backend INBOX defaults remain unchanged
   await store.configure({ enabled: true, executable: process.execPath, configPath, account: 'fixture' }); await store.check();
   const count = commands.length, modern = createEmailToolHandler({ store });
   assert.equal((await invoke(modern, { action: 'read', id: '42' })).success, false); assert.equal(commands.length, count);
-  const legacy = createEmailToolHandler({ store, schemaVersion: 1 });
-  assert.equal((await invoke(legacy, { action: 'read', id: '42' })).success, true); assert.ok(commands.at(-1).includes('--mailbox=INBOX'));
   assert.equal((await store.read({ id: '42' })).folder, 'INBOX'); assert.ok(commands.at(-1).includes('--mailbox=INBOX'));
   assert.equal((await invoke(modern, { action: 'read', folder: 'Archive & receipts', id: 'opaque:42=' })).success, true);
   assert.ok(commands.at(-1).includes('--mailbox=Archive & receipts')); assert.equal(commands.at(-1).at(-1), 'opaque:42=');
   const before = commands.length;
-  assert.equal((await invoke(legacy, { action: 'deliveries', limit: 100 })).success, false); assert.equal(commands.length, before);
+  assert.equal((await invoke(modern, { action: 'deliveries', limit: 100 })).success, true); assert.equal(commands.length, before);
 });

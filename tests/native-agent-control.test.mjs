@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {NATIVE_AGENT_TOOL,NATIVE_AGENT_V1_TOOL, createNativeAgentToolHandler} from '../lib/native-agent-control.mjs';
+import {NATIVE_AGENT_TOOL, createNativeAgentToolHandler} from '../lib/native-agent-control.mjs';
 
 const tool = (handler, args) => handler({name:NATIVE_AGENT_TOOL.name,arguments:args})
   .then(value => JSON.parse(value.contentItems[0].text));
@@ -192,9 +192,9 @@ test('native request identity binds autonomous flag independently from goal obje
   assert.equal(h.starts.at(-1).input.goal.objective,'Outcome');
 });
 
-test('current and pinned native schemas cannot restore retired automatic Autonomy',async()=>{
-  for(const schemaVersion of [1,2]){
-   const h=harness(),handler=createNativeAgentToolHandler({engine:h.engine,run:h.parent,nodeId:'agent',schemaVersion});
+test('current native schema rejects retired automatic Autonomy',async()=>{
+  {
+   const h=harness(),handler=createNativeAgentToolHandler({engine:h.engine,run:h.parent,nodeId:'agent'});
    await assert.rejects(()=>tool(handler,{action:'start',requestId:'retired-auto',task:'Old request',autonomous:true,maxTurns:2}),e=>e.code==='AUTONOMY_RETIRED');
    assert.equal(h.starts.length,0);
   }

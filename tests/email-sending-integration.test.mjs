@@ -1,17 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { EMAIL_SCHEMA_VERSION, EMAIL_TOOL, EMAIL_INSTRUCTIONS, LEGACY_EMAIL_TOOL, LEGACY_EMAIL_INSTRUCTIONS, emailToolForVersion, emailInstructionsForVersion, createEmailToolHandler } from '../lib/email-tools.mjs';
+import { EMAIL_SCHEMA_VERSION, EMAIL_TOOL, EMAIL_INSTRUCTIONS, createEmailToolHandler } from '../lib/email-tools.mjs';
 import { HarnessEngine } from '../lib/engine.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
 import { readOnlyToolDenial } from '../lib/worker-permissions.mjs';
 import { createHarnessServer } from '../server.mjs';
 
-const hash = value => createHash('sha256').update(value).digest('hex');
 const payload = result => JSON.parse(result.contentItems.find(item => item.type === 'inputText').text);
 const call = (options, args, context) => options.onToolCall({ name: 'relay_email', arguments: args }, context);
 const composeInput = () => ({ requestId: 'compose-fixture', from: 'sender@example.invalid', to: ['recipient@example.invalid'], cc: ['copy@example.invalid'], bcc: ['private@example.invalid'], subject: 'Synthetic résumé ✓', body: 'Exact fixture content\nNo actual email is sent.', attachments: [path.resolve('fixture attachment.pdf')] });
@@ -31,13 +29,13 @@ function fakeStore() {
   return store;
 }
 
-test('email v1 schema and instructions retain exact pre-sending bytes', () => {
-  assert.equal(hash(JSON.stringify(LEGACY_EMAIL_TOOL)), 'e05ea1d8409d310dab6110a1332a9459466dd6ee610c11c8f4e78e28731daa27');
-  assert.equal(hash(LEGACY_EMAIL_INSTRUCTIONS), '364cc13a2b05661600913fb00023a36f019b54f54ecf6aa5ae32e920ac7d1d46');
-  assert.equal(emailToolForVersion(1), LEGACY_EMAIL_TOOL); assert.equal(emailInstructionsForVersion(1), LEGACY_EMAIL_INSTRUCTIONS);
-  assert.equal(EMAIL_SCHEMA_VERSION, 2); assert.equal(emailToolForVersion(), EMAIL_TOOL); assert.equal(emailInstructionsForVersion(), EMAIL_INSTRUCTIONS);
-  assert.ok(EMAIL_TOOL.inputSchema.properties.action.enum.includes('send')); assert.ok(!Object.hasOwn(EMAIL_TOOL.inputSchema.properties, 'confirmSend'));
-  assert.doesNotMatch(EMAIL_INSTRUCTIONS, /provides no sending capability|read-only Gmail|Sending is not implemented/);
+test('current email catalog exposes sending without historical schema selectors', async () => {
+ const exports=await import('../lib/email-tools.mjs');
+ assert.deepEqual(Object.keys(exports).sort(),['EMAIL_SCHEMA_VERSION','EMAIL_TOOL','EMAIL_INSTRUCTIONS','createEmailToolHandler'].sort());
+ assert.equal(EMAIL_SCHEMA_VERSION,2);
+ for(const action of ['compose','send','deliveries','get_delivery'])assert.ok(EMAIL_TOOL.inputSchema.properties.action.enum.includes(action));
+ assert.ok(!Object.hasOwn(EMAIL_TOOL.inputSchema.properties,'confirmSend'));
+ assert.doesNotMatch(EMAIL_INSTRUCTIONS,/provides no sending capability|read-only Gmail|Sending is not implemented/);
 });
 
 test('v2 composes exact structured attachments and sends directly with stable request IDs', async () => {
@@ -50,10 +48,9 @@ test('v2 composes exact structured attachments and sends directly with stable re
   assert.deepEqual(store.calls[1].input, request); assert.equal(store.calls[1].signal, signal); assert.deepEqual(store.calls.map(value => value.action), ['compose', 'send']);
 });
 
-test('v2 refuses ignored send fields and v1 never dispatches new sending actions', async () => {
-  const store = fakeStore(), handler = createEmailToolHandler({ store }), legacy = createEmailToolHandler({ store, schemaVersion: 1 });
+test('current email refuses ignored send fields without dispatch', async () => {
+  const store = fakeStore(), handler = createEmailToolHandler({ store });
   for (const args of [{ action: 'send', id: 'email_fixture', requestId: 'send-fixture', body: 'Replacement content must not be ignored.' }, { action: 'send', id: 'email_fixture', requestId: 'send-fixture', confirmSend: true }, { action: 'deliveries', to: ['ignored@example.invalid'] }]) assert.equal((await handler({ name: 'relay_email', arguments: args })).success, false);
-  for (const action of ['compose', 'send', 'deliveries', 'get_delivery']) assert.equal((await legacy({ name: 'relay_email', arguments: { action } })).success, false);
   assert.deepEqual(store.calls, []);
 });
 
@@ -121,19 +118,17 @@ test('new v2 native retries retain the sending catalog after an interrupted turn
   const next = await f.settled(f.engine.retryRun(first.id)); assert.equal(next.status, 'completed', next.error); assert.equal(next.nodes.agent.emailSchemaVersion, 2); assert.equal(f.runtime.calls[1].threadId, f.threadId);
 });
 
-for (const retry of [false, true]) test(`legacy native ${retry ? 'retry' : 'continuation'} retains v1 when saved metadata predates email versioning`, async t => {
-  const f = await engineFixture(t, async (options, index, context) => {
-    if (index === 1 && retry) throw new Error('Fixture interrupted after native thread creation.');
-    if (index === 2) { assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_email'), LEGACY_EMAIL_TOOL); assert.ok(options.prompt.includes(LEGACY_EMAIL_INSTRUCTIONS)); assert.ok(!options.prompt.includes(EMAIL_INSTRUCTIONS)); assert.equal((await call(options, { action: 'send', id: 'email_fixture', requestId: 'legacy-send' })).success, false); }
-    return { output: 'Legacy catalog retained.', threadId: context.threadId };
-  });
-  const first = await f.settled(f.engine.startRun({ workflow: f.workflow, input: 'Read fixture email.' })); delete f.engine.runs.get(first.id).nodes.agent.emailSchemaVersion;
-  const next = await f.settled(retry ? f.engine.retryRun(first.id) : f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue this saved native chat.' }));
-  assert.equal(next.status, 'completed', next.error); assert.equal(next.nodes.agent.emailSchemaVersion, 1); assert.equal(f.runtime.calls[1].threadId, f.threadId); assert.equal(f.email.calls.filter(value => value.action === 'send').length, 0);
+for (const retry of [false,true]) test('old email catalog rejects '+(retry?'retry':'continuation')+' before provider or transport effects',async t=>{
+ const f=await engineFixture(t,async(options,index,context)=>{if(retry)throw Error('Fixture interrupted');return {output:'Recorded current catalog',threadId:context.threadId};});
+ const first=await f.settled(f.engine.startRun({workflow:f.workflow,input:'Read fixture email.'}));
+ const old=f.engine.runs.get(first.id);delete old.nodes.agent.emailSchemaVersion;
+ const before=structuredClone(old),count=f.engine.runs.size;
+ assert.throws(()=>retry?f.engine.retryRun(first.id):f.engine.continueRun(first.id,{nodeId:'agent',message:'Continue'}),{code:'NATIVE_CATALOG_UNSUPPORTED'});
+ assert.deepEqual(old,before);assert.equal(f.engine.runs.size,count);assert.equal(f.runtime.calls.length,1);assert.deepEqual(f.email.calls,[]);
 });
 
 test('saved native catalogs that omit email never silently gain the sending tool', async t => {
-  const f = await engineFixture(t, async (options, index, context) => { if (index === 2) { assert.equal(options.dynamicTools.find(tool => tool.name === 'relay_email'), undefined); assert.ok(!options.prompt.includes(EMAIL_INSTRUCTIONS)); assert.ok(!options.prompt.includes(LEGACY_EMAIL_INSTRUCTIONS)); } return { output: 'Saved tool names preserved.', threadId: context.threadId }; });
+  const f = await engineFixture(t, async (options, index, context) => { if (index === 2) { assert.equal(options.dynamicTools.find(tool => tool.name === 'relay_email'), undefined); assert.ok(!options.prompt.includes(EMAIL_INSTRUCTIONS)); } return { output: 'Saved tool names preserved.', threadId: context.threadId }; });
   const first = await f.settled(f.engine.startRun({ workflow: f.workflow, input: 'Inspect fixture tools.' })); f.engine.runs.get(first.id).nodes.agent.toolNames = first.nodes.agent.toolNames.filter(name => name !== 'relay_email');
   const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue the saved tools.' })); assert.equal(next.status, 'completed', next.error); assert.equal(next.nodes.agent.emailSchemaVersion, undefined);
 });
@@ -147,7 +142,7 @@ test('provider continuations use the current v2 catalog instead of native cache 
 test('fresh delegated worker catalogs receive v2 and can inspect background delivery records', async t => {
   const f = await engineFixture(t, async (options, _index, context) => {
     if (options.prompt.startsWith('You are a short-lived')) { assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_email'), EMAIL_TOOL); assert.ok(options.prompt.includes(EMAIL_INSTRUCTIONS)); assert.equal((await call(options, { action: options.prompt.includes('Inspect the independent email status.') ? 'status' : 'deliveries' })).success, true); return { output: 'Observed the prepared fixture only.', threadId: 'email-worker-thread' }; }
-    const delegated = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'inspect-email', prompt: 'Inspect the existing delivery record.', canWrite: false }, { id: 'inspect-status', prompt: 'Inspect the independent email status.', canWrite: false }] } }); assert.equal(delegated.success, true, JSON.stringify(delegated));
+    const delegated = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'inspect-email', prompt: 'Inspect the existing delivery record.', readOnly: true }, { id: 'inspect-status', prompt: 'Inspect the independent email status.', readOnly: true }] } }); assert.equal(delegated.success, true, JSON.stringify(delegated));
     return { output: 'Independent delivery inspection completed.', threadId: context.threadId };
   }, { workers: true });
   const run = await f.settled(f.engine.startRun({ workflow: f.workflow, input: 'Have a reviewer inspect the fixture delivery.' })); assert.equal(run.status, 'completed', run.error); assert.equal(f.runtime.calls.length, 3); assert.equal(f.email.calls.filter(value => value.action === 'deliveries').length, 1);
