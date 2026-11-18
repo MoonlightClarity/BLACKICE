@@ -58,6 +58,14 @@ for(const width of [1200,640,390]){
  assert.ok(state.scroll<=state.width);assert.equal(state.views,2);
  fs.writeFileSync(path.join(out,'refresh-'+width+'.png'),(await win.webContents.capturePage()).toPNG());
  if(width<=640)await run('document.querySelector("#next-chat-mobile-list").click();true');
+ if(width<=640){
+  await until('document.querySelector("#next-chat").dataset.showList==="true" && getComputedStyle(document.querySelector(".next-chat-sidebar")).display!=="none" && getComputedStyle(document.querySelector(".next-chat-main")).visibility==="hidden"');
+  await run('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+  await sleep(200);
+  const shown=await run('(()=>{const side=document.querySelector(".next-chat-sidebar"),r=side.getBoundingClientRect(),hit=document.elementFromPoint(r.left+20,r.top+20);return {display:getComputedStyle(side).display,left:r.left,right:r.right,width:r.width,hit:side.contains(hit),main:getComputedStyle(document.querySelector(".next-chat-main")).visibility};})()');
+  assert.equal(shown.hit,true);assert.equal(shown.main,'hidden');assert.ok(shown.left>=0&&shown.right<=width&&shown.width>width-4);
+  fs.writeFileSync(path.join(out,'sidebar-visible-'+width+'.json'),JSON.stringify(shown,null,2));
+ }
  const bounds=await run('(()=>{const row=document.querySelector(".next-chat-folder-heading"),button=row.querySelector(".next-chat-folder-new-chat");return {row:row.getBoundingClientRect().height,button:button.getBoundingClientRect().height,wrap:getComputedStyle(button).whiteSpace}})()');
  assert.ok(bounds.row<=45,JSON.stringify(bounds));assert.ok(bounds.button<=30);assert.equal(bounds.wrap,'nowrap');
  fs.writeFileSync(path.join(out,'folders-'+width+'.png'),(await win.webContents.capturePage()).toPNG());
