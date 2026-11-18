@@ -16,7 +16,6 @@ import { conversationGoalsDirectTool } from './lib/conversation-goals-direct-too
 import { createActivityService } from './lib/activity.mjs';
 import { OperationsStore } from './lib/operations.mjs';
 import {ProjectStore} from './lib/projects.mjs';
-import { createNativeSwarmTools } from './lib/swarm-native-tools.mjs';
 import {MethodStore} from './lib/methods.mjs';
 import {CapabilityStore} from './lib/capabilities.mjs';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
