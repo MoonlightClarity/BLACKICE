@@ -45,8 +45,7 @@ export function createClaudeConnectorSettings({ mount, api, notify = () => {} } 
       ? '<p class="next-help" role="alert">' + escape(error) + '</p>'
       : receipt ? '<p class="next-help" role="status">' + escape(receipt) + '</p>' : '';
     const status = !current ? 'Checking connection…'
-      : grants.length ? 'Connected' : requests.length ? 'Approval needed'
-      : !available ? 'Unavailable' : 'Not connected';
+      : !available ? 'Unavailable' : grants.length ? 'Access approved; verify tools in the app' : requests.length ? 'Approval needed' : 'Not connected';
 
     mount.innerHTML = '<div class="next-stack claude-connector-settings">'
       + '<section class="next-card"><h2>Claude connector</h2>'
@@ -72,7 +71,7 @@ export function createClaudeConnectorSettings({ mount, api, notify = () => {} } 
       + (requests.length ? requests.map(request => {
         const chosen = selected.get(request.id) || request.scopes || [];
         return '<form class="next-stack" data-claude-request="' + escape(request.id) + '"><h3>Pending Claude request</h3>'
-          + '<p>Match this request code in Claude: <strong><code>' + escape(request.displayCode) + '</code></strong></p>'
+          + '<p>Check the callback below and match this request code in Claude: <strong><code>' + escape(request.displayCode) + '</code></strong></p>'
           + '<p class="next-help">Callback: ' + escape(request.clientOrigin || 'Claude') + '</p>'
           + '<p class="next-help">Connecting Claude grants access to all BLACKICE MCP tools, including plans, local files, browser control, and commands.</p>'
           + '<div class="next-row"><button type="submit" class="next-primary"' + (locked ? ' disabled' : '') + '>Connect Claude</button>'

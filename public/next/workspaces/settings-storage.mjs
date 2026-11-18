@@ -34,8 +34,8 @@ const unavailable = item => item.unsafe ? (item.id === 'workspaceFiles' ? 'Some 
 
 export function createStorageSettings({ mount, api, notify = () => {} }) {
   mount.innerHTML = [
-    '<section class="next-card storage-overview">',
-    '<div class="storage-heading"><div><h2>Storage &amp; Data</h2>',
+    '<section class="next-card storage-overview" id="storage-overview">',
+    '<div class="storage-heading"><div><h2>Storage usage</h2>',
     '<p class="next-help">See how much space BLACKICE uses and manage saved data on this computer.</p></div>',
     '<button type="button" id="storage-refresh">Refresh usage</button></div>',
     '<div class="storage-summary"><div><span class="storage-caption">Measured app storage</span>',
@@ -47,7 +47,7 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     '<div id="storage-pending-notice" class="storage-notice" hidden><strong id="storage-pending-title"></strong>',
     '<p class="next-help" id="storage-pending"></p><button type="button" id="storage-cancel" hidden>Cancel scheduled cleanup</button></div>',
     '<p id="storage-feedback" class="next-help" role="status" aria-live="polite"></p></section>',
-    '<section class="next-card"><h3>Your saved data</h3><div id="storage-usage" class="storage-usage-list"></div>',
+    '<section class="next-card" id="storage-saved-usage"><h3>Your saved data</h3><div id="storage-usage" class="storage-usage-list"></div>',
     '<p id="storage-empty" class="next-help storage-empty" hidden>Saved chats and files will appear here as you use BLACKICE.</p>',
     '<p class="next-help">Usage covers the app-managed categories shown here.</p>',
     '<details id="storage-details" class="storage-details"><summary>Other app data &amp; technical details</summary>',
@@ -61,7 +61,7 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     '<div id="storage-workspace-entries" class="storage-removal-list"></div>',
     '<button type="button" id="storage-workspace-more" hidden>Load more</button>',
     '<div id="storage-workspace-selected" class="next-help"></div></div></section>',
-    '<section class="next-card storage-cleanup"><h3>Automatic cleanup</h3>',
+    '<section class="next-card storage-cleanup" id="storage-automatic"><h3>Automatic cleanup</h3>',
     '<div class="storage-policy"><label class="storage-checkbox-row"><input type="checkbox" id="storage-auto">',
     '<span>Automatically clear temporary files when BLACKICE starts</span></label>',
     '<p class="next-help">Applies to temporary diagnostics and troubleshooting files. Your chats, workspace files, action history, passwords, and browser data stay saved.</p>',
@@ -75,10 +75,45 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     '<input class="next-field" id="storage-confirm" autocomplete="off" spellcheck="false" placeholder="DELETE SELECTED DATA" aria-describedby="storage-selection">',
     '<div class="next-row"><button type="button" class="next-primary" id="storage-schedule" disabled>Schedule deletion on next startup</button></div>',
     '</div></details>',
-    '<details class="next-card storage-details"><summary>Cleanup history</summary>',
-    '<p class="next-help" id="storage-report">No cleanup has been recorded.</p></details>'
+    '<section class="next-card storage-details" id="storage-history"><h3>Cleanup history</h3>',
+    '<p class="next-help" id="storage-report">No cleanup has been recorded.</p></section>'
   ].join('');
   const $ = id => mount.querySelector('#' + id);
+
+  // Each task gets a separate view. Navigation never selects data or writes a setting.
+  const sections=[['usage','Usage',['storage-overview','storage-saved-usage']],['workspace','Workspace files',['storage-workspace-panel']],['automatic','Automatic cleanup',['storage-automatic']],['delete','Delete saved data',['storage-delete']],['history','Cleanup history',['storage-history']]];
+  const navigation=mount.ownerDocument.createElement('nav');
+  navigation.className='next-settings-sections';navigation.setAttribute('role','tablist');navigation.setAttribute('aria-label','Storage and data');
+  const notices=mount.ownerDocument.createElement('div');
+  const workspaceNotice=mount.ownerDocument.createElement('p');workspaceNotice.id='storage-workspace-notice';workspaceNotice.className='next-help';workspaceNotice.setAttribute('role','status');workspaceNotice.hidden=true;
+  notices.append($('storage-pending-notice'),$('storage-feedback'),workspaceNotice);
+  mount.insertBefore(navigation,mount.children[0]);mount.insertBefore(notices,navigation);
+  const views=new Map(),tabs=[];
+  for(const [id,label,contents] of sections){
+    const button=mount.ownerDocument.createElement('button');button.type='button';button.id='storage-tab-'+id;button.textContent=label;
+    button.setAttribute('role','tab');button.setAttribute('aria-controls','storage-view-'+id);navigation.append(button);tabs.push(button);
+    const panel=mount.ownerDocument.createElement('div');panel.id='storage-view-'+id;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',button.id);
+    for(const content of contents)panel.append($(content));mount.append(panel);views.set(id,panel);
+    button.addEventListener('click',()=>selectView(id));
+    button.addEventListener('keydown',event=>{
+      const index=tabs.indexOf(button);let next;
+      if(event.key==='ArrowRight')next=(index+1)%tabs.length;
+      else if(event.key==='ArrowLeft')next=(index+tabs.length-1)%tabs.length;
+      else if(event.key==='Home')next=0;
+      else if(event.key==='End')next=tabs.length-1;
+      else return;
+      event.preventDefault();tabs[next].focus();selectView(sections[next][0]);
+    });
+  }
+  function selectView(id){
+    if(!views.has(id))return;
+    for(const [name,panel] of views){panel.hidden=name!==id;const button=$('storage-tab-'+name);button.setAttribute('aria-selected',String(name===id));button.tabIndex=name===id?0:-1;}
+    if(id==='delete')$('storage-delete').open=true;
+  }
+  const reviewWorkspace=mount.ownerDocument.createElement('button');reviewWorkspace.type='button';reviewWorkspace.id='storage-review-workspace-selection';reviewWorkspace.textContent='Review selected files for deletion';
+  reviewWorkspace.addEventListener('click',()=>{selectView('delete');$('storage-tab-delete').focus();});
+  $('storage-workspace-browser').append(reviewWorkspace);
+  selectView('usage');
   const refreshButton = $('storage-refresh'), list = $('storage-categories');
   const confirm = $('storage-confirm'), schedule = $('storage-schedule'), cancel = $('storage-cancel');
   const auto = $('storage-auto'), savePolicy = $('storage-save-policy'), reviewTemporary = $('storage-review-temporary');
@@ -251,6 +286,7 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     if (destroyed || !active || busy || workspaceLoading || loading) return;
     const sequence = ++workspaceSequence, view = lifecycle;
     workspaceLoading = true; workspaceFailed = false; confirm.value = '';
+    workspaceNotice.textContent='Measuring workspace files. Deletion is unavailable until this check finishes.';workspaceNotice.hidden=false;
     $('storage-workspace-browser').hidden = false;
     $('storage-workspace-status').textContent = 'Measuring folder contents...'; updateControls();
     try {
@@ -267,15 +303,16 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     } catch (error) {
       if (active && !destroyed && sequence === workspaceSequence && view === lifecycle) {
         workspaceFailed = true; $('storage-workspace-status').textContent = 'Folder scan failed. Review workspace files to retry. ' + error.message;
+        workspaceNotice.textContent='Folder scan failed. Open Workspace files and choose Review workspace files to retry. '+error.message;workspaceNotice.hidden=false;
       }
-    } finally { if (!destroyed && sequence === workspaceSequence) { workspaceLoading = false; updateControls(); } }
+    } finally { if (!destroyed && sequence === workspaceSequence) { workspaceLoading = false;if(!workspaceFailed){workspaceNotice.textContent='';workspaceNotice.hidden=true;} updateControls(); } }
   }
   workspaceOpen.addEventListener('click', () => { if (!workspaceOpen.disabled) void browseWorkspace(); });
   workspaceMore.addEventListener('click', () => { if (!workspaceMore.disabled) void browseWorkspace(workspaceResult?.parent, true); });
   async function refresh() {
     if (destroyed || !active) return;
     const read = ++readSequence;
-    selectedWorkspace.clear(); confirm.value = ''; workspaceFailed = false;
+    selectedWorkspace.clear(); confirm.value = ''; workspaceFailed = false;workspaceNotice.textContent='';workspaceNotice.hidden=true;
     workspaceResult = null; workspaceSequence++; workspaceLoading = false;
     $('storage-workspace-browser').hidden = true;
     loading = true;
@@ -317,7 +354,7 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
     if (reviewTemporary.disabled) return;
     selected.clear(); selectedWorkspace.clear(); selected.add('temporary'); confirm.value = '';
     for (const input of list.querySelectorAll('input')) input.checked = input.value === 'temporary';
-    $('storage-delete').open = true;
+    selectView('delete');
     updateControls();
     $('storage-delete').scrollIntoView?.({ block: 'start' });
     Array.from(list.querySelectorAll('input')).find(input => input.value === 'temporary')?.focus();
@@ -390,7 +427,7 @@ export function createStorageSettings({ mount, api, notify = () => {} }) {
       if (destroyed) return;
       active = false; lifecycle++; readSequence++; loading = false;
       selected.clear(); selectedWorkspace.clear(); workspaceResult = null; workspaceSequence++; workspaceLoading = false; workspaceFailed = false; $('storage-workspace-browser').hidden = true; confirm.value = ''; snapshot = null; scanFailed = false;
-      $('storage-delete').open = false;
+      $('storage-delete').open = false; selectView('usage');workspaceNotice.textContent='';workspaceNotice.hidden=true;
       $('storage-feedback').textContent = ''; $('storage-policy-feedback').textContent = '';
       updateControls();
     },

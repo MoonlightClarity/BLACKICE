@@ -28,7 +28,7 @@ function mount(t, snapshot = status(), custom = null) {
 test('Gemini connector is a client-specific panel that leaves ChatGPT grant intact and fetches read-only status', async t => {
   const f = mount(t);
   await settle();
-  assert.match(f.mount.textContent, /Google: Connected/);
+  assert.match(f.mount.textContent, /Google: Access approved; verify tools in the app/);
   assert.match(f.mount.textContent, /ChatGPT: 1 separate active grant/);
   assert.match(f.mount.textContent, /Server tools available: 36/);
   assert.match(f.mount.textContent, /google-grant/);
@@ -128,3 +128,5 @@ test('App connections navigation and static-file registration include independen
   assert.match(settings,/gemini:\(\)=>import\('\.\/settings-gemini-connector\.mjs'\)/);
   assert.match(server,/'workspaces\/settings-gemini-connector\.mjs'/);
 });
+
+test('a saved grant does not imply endpoint availability or verified tool execution',async t=>{const input=status();input.available=false;const f=mount(t,input);await settle();assert.match(f.mount.textContent,/Google: Unavailable/);assert.doesNotMatch(f.mount.textContent,/Google: Connected/);assert.deepEqual(f.writes(),[]);});

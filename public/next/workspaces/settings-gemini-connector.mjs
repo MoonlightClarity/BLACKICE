@@ -45,8 +45,7 @@ export function createGeminiConnectorSettings({ mount, api, notify = () => {} } 
       ? '<p class="next-help" role="alert">' + escape(error) + '</p>'
       : receipt ? '<p class="next-help" role="status">' + escape(receipt) + '</p>' : '';
     const status = !current ? 'Checking connection…'
-      : grants.length ? 'Connected' : requests.length ? 'Approval needed'
-      : !available ? 'Unavailable' : 'Not connected';
+      : !available ? 'Unavailable' : grants.length ? 'Access approved; verify tools in the app' : requests.length ? 'Approval needed' : 'Not connected';
 
     mount.innerHTML = '<div class="next-stack gemini-connector-settings">'
       + '<section class="next-card"><h2>Gemini connector</h2>'
@@ -72,7 +71,7 @@ export function createGeminiConnectorSettings({ mount, api, notify = () => {} } 
       + (requests.length ? requests.map(request => {
         const chosen = selected.get(request.id) || request.scopes || [];
         return '<form class="next-stack" data-gemini-request="' + escape(request.id) + '"><h3>Pending Google request</h3>'
-          + '<p>Match this request code in Gemini: <strong><code>' + escape(request.displayCode) + '</code></strong></p>'
+          + '<p>Check the callback below and match this request code in Gemini: <strong><code>' + escape(request.displayCode) + '</code></strong></p>'
           + '<p class="next-help">Callback: ' + escape(request.clientOrigin || 'Google') + '</p>'
           + '<p class="next-help">Connecting Gemini grants access to all BLACKICE MCP tools, including plans, local files, browser control, and commands.</p>'
           + '<div class="next-row"><button type="submit" class="next-primary"' + (locked ? ' disabled' : '') + '>Connect Gemini</button>'

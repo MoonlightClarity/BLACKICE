@@ -268,3 +268,46 @@ test('workspace listing failure blocks stale deletion and recovers on retry', as
   await d.click('#storage-workspace-open');
   await until(()=>/no entries/.test(d.$('#storage-workspace-status').textContent));
 });
+
+test('storage task tabs isolate controls, preserve selection across views, and never mutate on navigation', async t => {
+ const d=await setup(t);
+ const tabs=['usage','workspace','automatic','delete','history'];
+ for(const id of tabs)assert.equal(d.$('#storage-view-'+id).hidden,id!=='usage');
+ assert.equal(d.$('#storage-tab-usage').getAttribute('aria-selected'),'true');
+ await d.click('#storage-tab-delete');
+ assert.equal(d.$('#storage-delete').open,true);
+ const checkbox=d.inputFor('conversations');checkbox.checked=true;await checkbox.dispatch('change');
+ await d.input('#storage-confirm','DELETE SELECTED DATA');
+ await d.click('#storage-tab-history');
+ assert.equal(d.$('#storage-view-delete').hidden,true);
+ assert.equal(d.$('#storage-view-history').hidden,false);
+ await d.$('#storage-tab-history').dispatch('keydown',{key:'Home'});
+ assert.equal(d.$('#storage-tab-usage').getAttribute('aria-selected'),'true');
+ assert.equal(document.activeElement,d.$('#storage-tab-usage'));
+ await d.click('#storage-tab-delete');
+ assert.equal(checkbox.checked,true);assert.equal(d.$('#storage-confirm').value,'DELETE SELECTED DATA');
+ assert.deepEqual(d.posts(),[]);
+ d.workspace.leave();d.workspace.enter();await until(()=>!d.$('#storage-refresh').disabled);
+ assert.equal(d.$('#storage-view-usage').hidden,false);
+ assert.equal(d.$('#storage-confirm').value,'');assert.equal(d.$('#storage-schedule').disabled,true);
+ assert.deepEqual(d.posts(),[]);
+});
+test('temporary cleanup review switches to deletion view but never schedules automatically',async t=>{
+ const d=await setup(t);await d.click('#storage-review-temporary');
+ assert.equal(d.$('#storage-view-delete').hidden,false);assert.equal(d.$('#storage-tab-delete').getAttribute('aria-selected'),'true');
+ assert.equal(d.inputFor('temporary').checked,true);assert.equal(d.$('#storage-confirm').value,'');assert.equal(d.$('#storage-schedule').disabled,true);
+ assert.deepEqual(d.posts(),[]);
+});
+
+test('a folder scan failing after a tab switch stays visible and clears after retry',async t=>{
+ const hold=deferred();let reads=0;
+ const d=await setup(t,{beforeApi:route=>route.startsWith('/api/storage/workspace?')?(++reads===1?hold.promise:{entries:[],breadcrumbs:[],nextOffset:null}):undefined});
+ await d.click('#storage-tab-workspace');await d.click('#storage-workspace-open');await d.click('#storage-tab-delete');
+ assert.equal(d.$('#storage-workspace-notice').hidden,false);
+ hold.reject(Error('Synthetic access failure'));await until(()=>/Folder scan failed/.test(d.$('#storage-workspace-notice').textContent));
+ assert.equal(d.$('#storage-view-workspace').hidden,true);assert.equal(d.$('#storage-workspace-notice').hidden,false);
+ assert.match(d.$('#storage-workspace-notice').textContent,/Open Workspace files/);
+ assert.equal(d.$('#storage-schedule').disabled,true);
+ await d.click('#storage-tab-workspace');await d.click('#storage-workspace-open');await until(()=>d.$('#storage-workspace-notice').hidden);
+ assert.deepEqual(d.posts(),[]);
+});
