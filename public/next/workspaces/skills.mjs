@@ -17,6 +17,9 @@ export function createSkillsWorkspace({mount,api}) {
   for(const node of mount.querySelectorAll('button,input,textarea'))node.disabled=busy||saving||!!deleteTarget;
   for(const node of el('folder-form').querySelectorAll('button,input'))node.disabled=blocked();
   for(const node of el('list').querySelectorAll('button,input'))node.disabled=blocked();
+  el('create-cancel').disabled=busy||saving||!!deleteTarget;
+  el('create-save').disabled=blocked()||!!(creation?.parentId&&!organization?.folders.some(row=>row.id===creation.parentId));
+  for(const node of el('list').querySelectorAll('.skills-folder-remove'))node.disabled=blocked()||!!creation;
   el('query').disabled=busy||saving||!!deleteTarget||!!creation||!!rename;
   el('new-folder').disabled=blocked()||!!rename||!!creation;for(const node of el('list').querySelectorAll('[data-new-subfolder]'))node.disabled=blocked()||!!rename||!!creation;
   el('save').disabled=busy||saving||!!deleteTarget||!entry?.userEditable||!drafts.has(selected);
@@ -99,12 +102,14 @@ export function createSkillsWorkspace({mount,api}) {
     const name=add(line,'button',row.name);name.type='button';name.className='skills-folder-name';name.dataset.folderName=row.id;name.setAttribute('aria-label','Rename folder '+row.name);name.addEventListener('click',()=>startRename(row.id));
     name.addEventListener('keydown',event=>{if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();indent(row.id,event.shiftKey);}});
     const child=add(line,'button');child.type='button';child.dataset.newSubfolder=row.id;icon(child,'plus','New subfolder in '+row.name);child.addEventListener('click',()=>startCreate(row.id));
-    const remove=add(line,'button','×');remove.type='button';remove.className='skills-folder-remove';remove.title='Delete empty folder';icon(remove,'trash','Delete empty folder '+row.name);remove.addEventListener('click',()=>void mutate({action:'remove',id:row.id}));
+    const remove=add(line,'button','×');remove.type='button';remove.className='skills-folder-remove';remove.title='Delete empty folder';icon(remove,'trash','Delete empty folder '+row.name);remove.addEventListener('click',()=>{if(!creation)void mutate({action:'remove',id:row.id});});
    }
    const children=add(li,'ul');children.className='next-skills-list';children.hidden=!open.has(row.id);containers.set(row.id,children);if(open.has(row.id))renderChildren(row.id,children);
    }
   }
   renderChildren(null,list);
+  if(creation&&!el('folder-form').parentNode){const line=add(list,'li');line.className='skills-folder-create-line';const missing=creation.parentId&&!organization?.folders.some(row=>row.id===creation.parentId);add(line,'p',missing?'Original folder "'+creation.parentName+'" is no longer available. Cancel to choose a new location.':'New folder in "'+creation.parentName+'".');line.append(el('folder-form'));}
+
 
   if(!items.length)add(list,'li','No matching skills.');
   el('trash-list').replaceChildren();for(const item of pageRows(trashItems,'trash',el('trash-list'))){const li=add(el('trash-list'),'li'),assigned=organization?.assignments?.[item.id],location=folderRows(organization?.folders||[]).find(row=>row.id===assigned)?.path;add(li,'span',item.title+(location?' · '+location:''));const restore=add(li,'button','Restore');restore.type='button';restore.dataset.restoreSkill=item.id;icon(restore,'refresh','Restore '+item.title);restore.addEventListener('click',()=>void restoreSkill(item));}if(!trashItems.length)add(el('trash-list'),'li','No deleted skills.');
@@ -148,14 +153,14 @@ export function createSkillsWorkspace({mount,api}) {
  function startCreate(parentId){
   if(blocked()||rename||creation)return;
   if(parentId!==null&&!organization.folders.some(row=>row.id===parentId))return;
-  creation={id:globalThis.crypto.randomUUID(),parentId,revision:organization.revision};
+  creation={id:globalThis.crypto.randomUUID(),parentId,parentName:organization.folders.find(row=>row.id===parentId)?.name||'Skills',revision:organization.revision};
   if(parentId)open.add(parentId);pages.delete(parentId);el('folder-name').value='';paint();el('folder-name').focus?.();
  }
  function cancelCreate(){const parentId=creation?.parentId;creation=null;el('folder-name').value='';paint();if(parentId)focusFolder(parentId);else el('new-folder').focus?.();}
  el('new-folder').addEventListener('click',()=>startCreate(null));
  el('create-cancel').addEventListener('click',cancelCreate);
  el('folder-form').addEventListener('keydown',event=>{if(event.key==='Escape'&&!busy){event.preventDefault();cancelCreate();}});
- el('folder-form').addEventListener('submit',event=>{event.preventDefault();if(!creation)return;const name=el('folder-name').value.trim();if(!name)return;const current=creation;void mutate({action:'create',id:current.id,name,parentId:current.parentId},{expectedRevision:current.revision,onSaved:()=>{creation=null;el('folder-name').value='';if(current.parentId)open.add(current.parentId);},afterPaint:()=>focusFolder(current.id)});});
+ el('folder-form').addEventListener('submit',event=>{event.preventDefault();if(!creation||(creation.parentId&&!organization.folders.some(row=>row.id===creation.parentId)))return;const name=el('folder-name').value.trim();if(!name)return;const current=creation;void mutate({action:'create',id:current.id,name,parentId:current.parentId},{expectedRevision:current.revision,onSaved:()=>{creation=null;el('folder-name').value='';if(current.parentId)open.add(current.parentId);},afterPaint:()=>focusFolder(current.id)});});
  drop(el('root'),null);
  el('query').addEventListener('input',()=>{clearTimeout(timer);pages.clear();++listEpoch;controller?.abort();if(active)timer=setTimeout(()=>void load(),150);});
  el('refresh').addEventListener('click',()=>{clearTimeout(timer);if(active&&!busy&&!saving&&!deleteTarget)void load().then(ok=>{if(ok&&selected)void select(selected);});});
