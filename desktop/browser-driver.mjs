@@ -1173,7 +1173,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     this.emit('changed');
     return this.interactionReceipt(tab, { receipt: { interactionId: current.id, decision: args.decision, replayed: false, inspectBeforeContinuing: true } });
   }
-  async activate(tab, signal) {
+  async activate(tab, signal, { forHumanSurface = false } = {}) {
     if (tab.rendererFailure) throw rendererFailure(tab);
     if (!tab.window) this.materialize(tab);
     if (tab.authenticationChallenge) return;
@@ -1189,7 +1189,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         .finally(() => { if (tab.window === window) tab.preparingURL = null; });
     }
     await this.pageWork(tab, tab.loading, signal, 20000);
-    if (tab.popupViewport) await this.ensurePopupViewport(tab, signal);
+    if (tab.popupViewport) await this.ensurePopupViewport(tab, signal, { forHumanSurface });
   }
   async show() { throw Object.assign(error('Browser pages stay contained inside BLACKICE. Use the Observe view to inspect and control them.'), { code: 'BROWSER_CONTAINED' }); }
   async download(item, contents) {
@@ -1731,7 +1731,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     tab.surfaceTransition = pending;
     return pending;
   }
-  async ensurePopupViewport(tab, signal) {
+  async ensurePopupViewport(tab, signal, { forHumanSurface = false } = {}) {
     const state = tab.popupViewport;
     if (!state || state.ready) return;
     cancel(signal);
@@ -1744,7 +1744,10 @@ export class ElectronBrowserDriver extends EventEmitter {
           if (tab.rendererFailure) throw rendererFailure(tab);
           if (this.closed || tab.window !== window || tab.popupViewport !== state || window.isDestroyed() || wc.isDestroyed()) throw Object.assign(error('The popup closed before its browser viewport was ready.'), { code: 'BROWSER_CLOSED' });
           if (!containment || tab.containmentReady !== containment || !wc.debugger.isAttached()) throw Object.assign(error('The contained popup connection changed before its viewport was ready. Inspect the page after it reconnects.'), { code: 'BROWSER_CONTAINMENT_LOST' });
-          this.assertInputDocument(tab, expected);
+          // Attaching a live view does not send page input. Redirects may change
+          // its document while the same native widget is being sized. Actual
+          // automation still uses the document guard here and at input dispatch.
+          if (!forHumanSurface) this.assertInputDocument(tab, expected);
         };
         const clear = async () => {
           if (wc.isDestroyed() || !wc.debugger.isAttached()) throw Object.assign(error('The popup viewport reset could not be confirmed. Inspect the page after it reconnects.'), { code: 'BROWSER_CONTAINMENT_LOST' });

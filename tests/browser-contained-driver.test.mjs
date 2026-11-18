@@ -2804,3 +2804,19 @@ test('model browser tool marks exact owned tab through host/router without navig
  await driver.perform({action:'tab_mark',tabId:tab.id,inUse:true},{source:'user'});
  const denied=await call(false);assert.equal(denied.success,false);assert.equal(driver.tabs.get(tab.id).inUse,true);
 });
+
+test('human popup attachment survives redirect during viewport setup without dispatching input',async t=>{
+ const {BrowserSurfaceHost}=await import('../desktop/browser-surface.mjs');
+ for(const stage of ['viewport','set','clear'])await t.test(stage,async t=>{
+  let changed=false;const change=s=>{if(!changed){changed=true;s.tab.revision++;s.window.url='https://identity.example.test/redirected';}};
+  const f=await popupViewportFixture(t,{readViewport:async s=>{if(stage==='viewport')change(s);},command:async(method,_p,s)=>{if(method==='Emulation.'+(stage==='set'?'setDeviceMetricsOverride':'clearDeviceMetricsOverride')&&stage!=='viewport')change(s);}});
+  const host={isDestroyed:()=>false,getContentSize:()=>[1200,900]};let attached=false;
+  f.tab.window.liveSurface=true;f.tab.window.attach=()=>{attached=true;};f.tab.window.hide=()=>{attached=false;};
+  const surface=new BrowserSurfaceHost(f.driver);
+  const result=await surface.perform(host,{action:'attach',tabId:f.tab.id,bounds:{x:0,y:100,width:1000,height:700}});
+  assert.equal(result.attached,true);assert.equal(attached,true);assert.equal(f.tab.popupViewport.ready,true);assert.equal(f.emulated,false);
+  assert.equal(f.window.protocol.some(c=>c.method.startsWith('Input.')),false);
+  await assert.rejects(f.driver.perform({action:'type',...f.guard,text:'Must not arrive'}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+  assert.equal(f.window.protocol.some(c=>c.method.startsWith('Input.')),false);
+ });
+});

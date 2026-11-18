@@ -118,7 +118,7 @@ export class BrowserSurfaceHost {
     // HTTP authentication remains pending while its live view is attached.
     try {
       if (tab.window && !tab.window.isDestroyed() && tab.pendingInteraction) await this.driver.setHumanSurface(tab, true);
-      await this.driver.activate(tab);
+      await this.driver.activate(tab, undefined, { forHumanSurface: true });
       if (generation !== this.generation) return this.status();
       if (host.isDestroyed()) return this.hide();
       if (!tab.window?.liveSurface) throw Error('This browser page does not have a live native view.');
