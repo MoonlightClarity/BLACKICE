@@ -473,7 +473,7 @@ export async function createHarnessServer(options = {}) {
   directExecution = options.directExecution || await startupPhase(diagnostics, 'direct-jobs', () => new DirectExecutionAPI({
     onStartupDiagnostics: value => diagnostics.record(value),
     startupTrace: diagnostics.startupTrace || null,
-    dataDir: path.resolve(dataDir), allowedRoot: defaultCwd, browser, patchStore: engine.filePatches, taskStore:tasks,
+    dataDir: path.resolve(dataDir), managedStores:{identity,knowledge,learning}, allowedRoot: defaultCwd, browser, patchStore: engine.filePatches, taskStore:tasks,
     isClosing: connectorClosing, onChange: connectorChanged,
     resolveBrowserConversationOwner: id => resolveBrowserConversationOwner(id, conversations),
     getBrowserConversations: () => browserConversationStatus(browser.status(), conversations).conversations,

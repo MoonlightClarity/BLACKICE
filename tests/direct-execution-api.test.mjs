@@ -616,3 +616,14 @@ test('direct browser guidance permits ordinary account input without requiring t
   assert.doesNotMatch(definition.description,/never put plaintext passwords|Use blackice_credentials_generate and/);
   assert.doesNotMatch(definition.inputSchema.properties.promptText.description,/Never supply passwords/);
 });
+
+
+test('direct structured writes cannot bypass managed memory approval or profile ownership',async t=>{
+ const {api,dataDir,cwd}=await harness(t);
+ for(const [index,file] of ['knowledge.json','knowledge-approvals.json','learning.json','identity/USER.md'].entries()){
+  const target=path.join(dataDir,file);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,'owner text');
+  const job=await api.call('blackice_workspace_write',{requestId:'managed-'+index,action:'write',path:target,text:'unapproved'},client);
+  const done=await waitJob(api,job.jobId);assert.equal(done.status,'failed');assert.equal(done.effects.possible,false);assert.equal(JSON.parse(done.result.text.text).code,'WORKSPACE_PROTECTED_PATH');assert.equal(await readFile(target,'utf8'),'owner text');
+ }
+ const ordinary=await api.call('blackice_workspace_write',{requestId:'ordinary-after-managed-denial',action:'write',path:path.join(cwd,'knowledge.json'),text:'project data'},client);assert.equal((await waitJob(api,ordinary.jobId)).status,'succeeded');
+});
