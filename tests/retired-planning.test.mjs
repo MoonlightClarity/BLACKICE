@@ -257,10 +257,17 @@ test('mounted Plan-only drafts require explicit new-request reset and saved requ
   };
   const status={cwd:'fixture-workspace',defaultModel:'fixture',models:[{id:'fixture',available:true}]};
   let mutations=0,allowNewRequest=false;const posted=[];
+  let folderOrganization={revision:0,healthy:true,folders:[],counts:{byId:{},ungrouped:0,total:0}};
   const api=async(route,method,body)=>{
     if(method==='POST'){
       mutations++;posted.push({route,body:structuredClone(body)});
       if(!allowNewRequest)throw Error('No mutation is allowed');
+      if(route==='/api/conversation-folders/edit'){
+        assert.equal(families.has('explicit-new'),true,'placement follows an accepted new run');
+        assert.deepEqual(body,{expectedRevision:0,operations:[{type:'assign',rootId:'explicit-new',folderId:null}]});
+        folderOrganization={...folderOrganization,revision:1,counts:{byId:{},ungrouped:1,total:1}};
+        return {folderOrganization:structuredClone(folderOrganization)};
+      }
       if(route==='/api/workflows')return body;
       if(route==='/api/runs'){
         const workflow=structuredClone(body.workflow);
@@ -272,6 +279,7 @@ test('mounted Plan-only drafts require explicit new-request reset and saved requ
       }
       throw Error('Unexpected mutation '+route);
     }
+    if(route==='/api/conversation-folders?state=active')return {folderOrganization:structuredClone(folderOrganization)};
     if(route.startsWith('/api/conversations?'))return{conversations:[]};
     if(route==='/api/attachments')return[];
     if(route==='/api/status')return status;
@@ -279,7 +287,7 @@ test('mounted Plan-only drafts require explicit new-request reset and saved requ
   };
   const workspace=createChatWorkspace({mount:dom.mount,api,events:{subscribe:()=>()=>{}},getStatus:()=>status});
   t.after(()=>{workspace.destroy();if(oldStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=oldStorage;if(oldWorker===undefined)delete globalThis.Worker;else globalThis.Worker=oldWorker;});
-  const wait=async predicate=>{for(let i=0;i<80;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,5));}throw Error('Mounted chat state did not settle');};
+  const wait=async predicate=>{for(let i=0;i<80;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,5));}throw Error('Mounted chat state did not settle: '+JSON.stringify({state:workspace.getState(),hint:dom.$('#next-chat-hint').textContent,routes:posted.map(item=>item.route)}));};
   const rejectSubmit=async()=>{
     const before=mutations;
     dom.$('#next-chat-input').value='Do not run this stale request';
@@ -324,7 +332,8 @@ test('mounted Plan-only drafts require explicit new-request reset and saved requ
   dom.$('#next-chat-input').value='Run this new Automatic request';
   await dom.$('#next-chat-form').dispatch('submit');
   await wait(()=>workspace.getState().selected==='explicit-new'&&workspace.getState().runCount===1&&dom.$('#next-chat-hint').textContent.includes('Message sent.'));
-  assert.deepEqual(posted.map(item=>item.route),['/api/workflows','/api/runs']);
+  assert.deepEqual(posted.map(item=>item.route),['/api/workflows','/api/runs','/api/conversation-folders/edit']);
+  assert.equal(posted.filter(item=>item.route==='/api/runs').length,1,'folder placement never replays the send');
   assert.equal(posted[0].body.settings.planningExecutionMode,'automatic');
   assert.equal(posted[1].body.input.planningExecutionMode,'automatic');
   assert.equal(posted[1].body.input.task,'Run this new Automatic request');
@@ -335,7 +344,7 @@ test('mounted Plan-only drafts require explicit new-request reset and saved requ
   await dom.click('#next-chat-enable-automatic');
   assert.equal(dom.$('#next-chat-plan'),null);
   assert.equal(JSON.parse(stored.get('blackice.next.chatOptions')).planningExecutionMode,'automatic','saved-chat edits do not overwrite the explicit new-draft choice');
-  await rejectSubmit();assert.equal(mutations,2,'saved request still rejects after a new Automatic request');
+  await rejectSubmit();assert.equal(mutations,3,'saved request still rejects after a new Automatic request and its Unfiled placement');
   for(const [id,saved] of original)assert.deepEqual(families.get(id),saved,'saved records remain unchanged');
   await dom.click('#next-chat-new');
   assert.equal(dom.$('#next-chat-execution-mode').value,'automatic','explicit new-request choice is retained');
