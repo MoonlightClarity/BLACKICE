@@ -12,9 +12,22 @@ export function loadBrowserCompatibility(browserSession) {
     const loaded = Promise.resolve().then(() => browserSession.extensions.loadExtension(extensionDirectory));
     const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Contained browser compatibility loading timed out.')), 10000); });
     ready = Promise.race([loaded, deadline]).catch(cause => {
-      throw Object.assign(new Error('The contained browser compatibility extension could not be loaded. Remote pages remain blocked; repair the installation and restart BLACKICE.', { cause }), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE', actionDispatched: false });
+      throw Object.assign(new Error('The contained browser compatibility extension could not be loaded. The optional file-picker and conditional-passkey compatibility patches could not be verified.', { cause }), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE', actionDispatched: false });
     }).finally(() => clearTimeout(timer));
     loads.set(browserSession, ready);
   }
   return ready;
+}
+
+/** Auxiliary patches must not determine whether ordinary Chromium browsing starts. */
+export async function prepareBrowserCompatibility(browserSession) {
+  try {
+    await loadBrowserCompatibility(browserSession);
+    return { state: 'ready', verified: true };
+  } catch {
+    return {
+      state: 'degraded', verified: false,
+      message: 'Ordinary browsing is available. Optional file-picker and conditional-passkey compatibility patches could not be verified; restart BLACKICE to retry.',
+    };
+  }
 }

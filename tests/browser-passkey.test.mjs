@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { loadBrowserCompatibility } from '../desktop/browser-compatibility.mjs';
+import { loadBrowserCompatibility, prepareBrowserCompatibility } from '../desktop/browser-compatibility.mjs';
 
 const source = await readFile(new URL('../desktop/browser-compatibility/main.js', import.meta.url), 'utf8');
 const install = context => vm.runInContext(source, context);
@@ -110,7 +110,7 @@ test('missing extension support or a failed load fails closed without retrying i
   const failure = new Error('Owned fixture manifest failure');
   for (const browserSession of [{}, { extensions: { loadExtension: async () => { calls++; throw failure; } } }]) {
     const first = loadBrowserCompatibility(browserSession);
-    await assert.rejects(first, value => value.code === 'BROWSER_COMPATIBILITY_UNAVAILABLE' && value.actionDispatched === false && /Remote pages remain blocked/.test(value.message));
+    await assert.rejects(first, value => value.code === 'BROWSER_COMPATIBILITY_UNAVAILABLE' && value.actionDispatched === false && /could not be verified/.test(value.message));
     assert.equal(loadBrowserCompatibility(browserSession), first);
     await assert.rejects(loadBrowserCompatibility(browserSession), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE' });
   }
@@ -128,4 +128,21 @@ test('a stalled extension load has a bounded failure and a late completion does 
   assert.equal(loadBrowserCompatibility(browserSession), pending);
   await assert.rejects(pending, { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE' });
   assert.equal(calls, 1);
+});
+
+test('optional compatibility failures degrade visibly without preventing browser startup', async () => {
+  const absent = await prepareBrowserCompatibility({});
+  assert.equal(absent.state, 'degraded'); assert.equal(absent.verified, false);
+  assert.match(absent.message, /Ordinary browsing is available/);
+  assert.deepEqual(await prepareBrowserCompatibility({ extensions: { loadExtension: async () => ({ id: 'fixture' }) } }), {state:'ready',verified:true});
+});
+test('timed-out optional preparation resolves degraded and never retries a late load', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let resolve, calls = 0;
+  const session = {extensions:{loadExtension:()=>{calls++;return new Promise(r=>resolve=r)}}};
+  const prepared = prepareBrowserCompatibility(session);
+  await Promise.resolve(); t.mock.timers.tick(10000);
+  const status = await prepared; assert.equal(status.state, 'degraded'); assert.equal(status.verified, false);
+  resolve({id:'late'}); await Promise.resolve();
+  assert.equal((await prepareBrowserCompatibility(session)).state,'degraded'); assert.equal(calls,1);
 });

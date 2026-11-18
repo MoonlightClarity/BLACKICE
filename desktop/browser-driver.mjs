@@ -11,7 +11,7 @@ import path from 'node:path';
 import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserUploadRequest, validateBrowserFillRequest } from '../lib/browser.mjs';
 import { captureHiddenPage } from './browser-capture.mjs';
 import { NativePasswordManager, passwordManagerURL, passwordManagerPreload } from './native-password-manager.mjs';
-import { loadBrowserCompatibility } from './browser-compatibility.mjs';
+import { prepareBrowserCompatibility } from './browser-compatibility.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { BrowserTabDiagnostics, diagnosticText } from '../lib/browser-tab-diagnostics.mjs';
 import { BrowserProtection, protectionOrigin } from '../lib/browser-protection.mjs';
@@ -405,8 +405,9 @@ export class ElectronBrowserDriver extends EventEmitter {
     // Retire the 2.4.2 partition that could contain transferred site credentials.
     // Preserve its files offline; never open it or replay its cookies again.
     this.session = session.fromPartition('persist:relay-agent-browser-v2');
-    this.compatibilityLoaded = false;
-    this.compatibilityReady = loadBrowserCompatibility(this.session).then(() => { this.compatibilityLoaded = true; });
+    this.compatibilitySettled = false;
+    this.compatibilityStatus = { state: 'loading', verified: false };
+    this.compatibilityReady = prepareBrowserCompatibility(this.session).then(status => { this.compatibilityStatus = status; this.compatibilitySettled = true; });
     this.compatibilityReady.catch(() => {});
     this.protection = protection || new BrowserProtection({ dataDir });
     this.protectionListener = () => this.emit('changed'); this.protection.on('updated', this.protectionListener);
@@ -505,7 +506,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   liveTabs() { return [...this.tabs.values()].filter(tab => tab.window && !tab.window.isDestroyed()); }
   status() {
     const live = this.liveTabs();
-    const status = { contained: true, canShow: false, protection: this.protection.status(), persistence: { healthy: !this.persistenceError, ...(this.persistenceError ? { error: 'Browser folders and pages could not be saved.' } : {}) }, collections: [...this.collections.values()].map(folder => ({ ...folder })), folders: [...this.folders.values()].map(folder => ({ ...folder })), capacity: { live: live.filter(tab => tab.purpose !== 'chat-mode').length, maxLive: this.maxLiveTabs, saved: this.tabs.size, maxSaved: this.maxSavedTabs, perTaskLive: this.maxTaskTabs }, ownerActiveTabs: Object.fromEntries(this.ownerActiveTabs), tabs: [...this.tabs.values()].map(t => ({ tabId: t.id, documentId: inputDocumentId(t), collectionId: t.collectionId || null, folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ownershipKind: t.owner ? 'ai' : 'user', ...(t.inheritedEffects ? { inheritedEffects: structuredClone(t.inheritedEffects) } : {}), ...(t.externalHandoff?.status === 'pending' ? { effectInFlight: true } : {}), conversationId: t.owner?.conversationId || null, ...(t.humanCreated ? { humanCreated: true } : {}), ...(t.userPinned ? { userPinned: true } : {}), ...(t.adoptionUncertainEffects || t.submissionObservations?.pending?.size || t.externalHandoff && t.externalHandoff.status !== 'handed-to-os' ? { uncertainEffects: true } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}), ...(t.providerKeyProtected ? { protectedContent: true } : {}), url: this.tabURL(t), title: this.tabTitle(t), loading: !t.pendingURL && Boolean(t.window?.webContents.isLoading()), canGoBack: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoBack?.()), canGoForward: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoForward?.()), visible: Boolean(t.window?.isVisible()), contained: true, canShow: false, protection: this.protection.tabStatus(t.id, this.tabURL(t)), suspended: !t.window || Boolean(t.pendingURL), interactionSettling: t.suspendedWork.size > 0, ...(t.rendererFailure ? { rendererFailure: { ...t.rendererFailure } } : {}), ...(t.siteNotices?.length ? { siteNotices: structuredClone(t.siteNotices) } : {}), ...(t.pendingInteraction ? { pendingInteraction: structuredClone(t.pendingInteraction) } : {}) })), activeTab: this.activeTab, downloads: this.downloads.filter((item, index) => item.status === 'downloading' || index >= this.downloads.length - 20), activeDownloads: this.downloads.filter(item => item.status === 'downloading').length, profile: 'BLACKICE contained browser · saved locally', ...(this.diagnostics ? { diagnostics: this.diagnostics.snapshot() } : {}) };
+    const status = { contained: true, canShow: false, compatibility: { ...this.compatibilityStatus }, protection: this.protection.status(), persistence: { healthy: !this.persistenceError, ...(this.persistenceError ? { error: 'Browser folders and pages could not be saved.' } : {}) }, collections: [...this.collections.values()].map(folder => ({ ...folder })), folders: [...this.folders.values()].map(folder => ({ ...folder })), capacity: { live: live.filter(tab => tab.purpose !== 'chat-mode').length, maxLive: this.maxLiveTabs, saved: this.tabs.size, maxSaved: this.maxSavedTabs, perTaskLive: this.maxTaskTabs }, ownerActiveTabs: Object.fromEntries(this.ownerActiveTabs), tabs: [...this.tabs.values()].map(t => ({ tabId: t.id, documentId: inputDocumentId(t), collectionId: t.collectionId || null, folderId: t.folderId, parentTabId: t.parentTabId || null, ...(t.owner ? { owner: { ...t.owner } } : {}), ownershipKind: t.owner ? 'ai' : 'user', ...(t.inheritedEffects ? { inheritedEffects: structuredClone(t.inheritedEffects) } : {}), ...(t.externalHandoff?.status === 'pending' ? { effectInFlight: true } : {}), conversationId: t.owner?.conversationId || null, ...(t.humanCreated ? { humanCreated: true } : {}), ...(t.userPinned ? { userPinned: true } : {}), ...(t.adoptionUncertainEffects || t.submissionObservations?.pending?.size || t.externalHandoff && t.externalHandoff.status !== 'handed-to-os' ? { uncertainEffects: true } : {}), ...(t.purpose === 'chat-mode' ? { purpose: 'chat-mode' } : {}), ...(t.providerKeyProtected ? { protectedContent: true } : {}), url: this.tabURL(t), title: this.tabTitle(t), loading: !t.pendingURL && Boolean(t.window?.webContents.isLoading()), canGoBack: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoBack?.()), canGoForward: !t.pendingURL && Boolean(t.window?.webContents.navigationHistory?.canGoForward?.()), visible: Boolean(t.window?.isVisible()), contained: true, canShow: false, protection: this.protection.tabStatus(t.id, this.tabURL(t)), suspended: !t.window || Boolean(t.pendingURL), interactionSettling: t.suspendedWork.size > 0, ...(t.rendererFailure ? { rendererFailure: { ...t.rendererFailure } } : {}), ...(t.siteNotices?.length ? { siteNotices: structuredClone(t.siteNotices) } : {}), ...(t.pendingInteraction ? { pendingInteraction: structuredClone(t.pendingInteraction) } : {}) })), activeTab: this.activeTab, downloads: this.downloads.filter((item, index) => item.status === 'downloading' || index >= this.downloads.length - 20), activeDownloads: this.downloads.filter(item => item.status === 'downloading').length, profile: 'BLACKICE contained browser · saved locally', ...(this.diagnostics ? { diagnostics: this.diagnostics.snapshot() } : {}) };
     return decorateStoppedTabAdoption(status, this.stoppedOwnerResolver);
   }
   setActiveOwnerResolver(resolve) { this.activeOwnerResolver = resolve; }
@@ -671,7 +672,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (tab.window && !tab.window.isDestroyed()) return;
     if (this.surface?.pending === tab) tab.humanCreated = true;
     if (!suppliedWindow) this.assertLiveCapacity(tab);
-    if (suppliedWindow && !this.compatibilityLoaded) {
+    if (suppliedWindow && !this.compatibilitySettled) {
       suppliedWindow.destroy(); throw capacityError('The contained browser compatibility extension is not ready. No popup was adopted.', 'BROWSER_COMPATIBILITY_NOT_READY');
     }
     if (suppliedWindow && ((this.liveSurface ? suppliedWindow.liveSurface !== true : suppliedWindow.webContents.isOffscreen?.() !== true) || suppliedWindow.isVisible() || suppliedWindow.isFocusable())) {
@@ -740,7 +741,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         this.dispatchExternal(tab, url);
         return { action: 'deny' };
       } } catch { /* Let Chromium handle invalid or relative popup URLs. */ }
-      try { if (url && url !== 'about:blank') browserURL(url); if (this.closed || !this.compatibilityLoaded) return { action: 'deny' }; }
+      try { if (url && url !== 'about:blank') browserURL(url); if (this.closed || !this.compatibilitySettled) return { action: 'deny' }; }
       catch { return { action: 'deny' }; }
       // Preserve the OAuth opener relationship, but give each browser tab its own
       // lifetime. Closing the source page must not destroy its opened pages.
@@ -755,7 +756,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     });
     wc.on('did-create-window', (child, details) => {
       const humanCreated = tab.humanCreated || tab.humanSurface === true;
-      if (this.closed || !this.compatibilityLoaded || tab.closing || this.tabs.get(tab.id) !== tab || tab.window !== window) child.destroy();
+      if (this.closed || !this.compatibilitySettled || tab.closing || this.tabs.get(tab.id) !== tab || tab.window !== window) child.destroy();
       else try { this.newTab(details.url || 'about:blank', { window: child, owner: tab.owner, humanCreated, providerKeyProtected: tab.providerKeyProtected === true, folderId: tab.folderId, parentTabId: tab.id }); } catch { if (!child.isDestroyed()) child.destroy(); }
     });
     wc.on('will-attach-webview', event => event.preventDefault());

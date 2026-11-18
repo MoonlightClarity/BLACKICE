@@ -689,15 +689,19 @@ test('direct metadata resumption cannot bypass compatibility loading', async t =
   assert.deepEqual(windows[0].loads, ['about:blank', 'https://saved.example.test/']);
 });
 
-test('failed compatibility installation rejects startup, navigation, input and popups without a fallback or retry', async t => {
+test('failed optional compatibility installation preserves browsing, input and popups without a retry', async t => {
   const { driver, windows, extensionLoads } = await fixture(t, { loadExtension: async () => { throw new Error('Owned fixture extension load failure'); } });
-  await assert.rejects(driver.init(), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE', actionDispatched: false });
+  await driver.init();
+  assert.equal(driver.status().compatibility.state, 'degraded');
+  assert.equal(driver.status().compatibility.verified, false);
   const tab = driver.newTab('https://signin.example.test/'); await tab.loading;
-  assert.match(tab.loadError, /compatibility extension could not be loaded/);
-  await assert.rejects(driver.perform({ action: 'navigate', tabId: tab.id, url: 'https://signin.example.test/second' }), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE', actionDispatched: false });
-  await assert.rejects(driver.cdp(tab, 'Input.insertText', { text: 'owned fixture' }), { code: 'BROWSER_COMPATIBILITY_UNAVAILABLE', actionDispatched: false });
-  assert.equal(windows[0].webContents.openHandler({ url: 'https://signin.example.test/popup' }).action, 'deny');
-  assert.deepEqual(windows[0].loads, ['about:blank']); assert.deepEqual(windows[0].protocol, []); assert.equal(extensionLoads.length, 1);
+  assert.ok(!tab.loadError);
+  await driver.perform({ action: 'navigate', tabId: tab.id, url: 'https://signin.example.test/second' });
+  await driver.cdp(tab, 'Input.insertText', { text: 'owned fixture' });
+  assert.equal(windows[0].webContents.openHandler({ url: 'https://signin.example.test/popup' }).action, 'allow');
+  assert.ok(windows[0].loads.includes('https://signin.example.test/second'));
+  assert.ok(windows[0].protocol.some(call => call.method === 'Input.insertText'));
+  assert.equal(extensionLoads.length, 1);
   assertContained(windows[0]);
 });
 
