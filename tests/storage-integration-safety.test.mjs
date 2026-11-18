@@ -130,6 +130,7 @@ test('server applies queued cleanup before its stores load, without deleting pro
   const app = await createHarnessServer({ dataDir, defaultCwd: workspaceDir, runtime: new Runtime(), remoteAccess: false, port: 0, autoAttachDesktop: false });
   beforeRemove(() => app.close());
   assert.equal(await manager.pending(), null);
-  assert.equal(app.knowledge.status().count ?? app.knowledge.list?.().length ?? 0, 0);
+  assert.equal(app.knowledge, undefined);
+  assert.equal(await present(path.join(dataDir, 'knowledge.json')), false, 'authorized queued context cleanup removes the selected archived bytes');
   assert.deepEqual((await manager.overview()).lastCleanup.categories, ['context']);
 });

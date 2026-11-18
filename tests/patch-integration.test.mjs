@@ -18,7 +18,7 @@ class Runtime extends EventEmitter{
     return{threadId:'fixture-thread',output:patch.id};
   }
 }
-async function fixture(t){const root=await mkdtemp(path.join(tmpdir(),'relay-patch-http-')),cwd=path.join(root,'project');await mkdir(cwd);const app=await createHarnessServer({port:0,dataDir:path.join(root,'data'),defaultCwd:cwd,runtime:new Runtime()});const url=await app.listen(),page=await fetch(url),cookie=page.headers.get('set-cookie').split(';')[0];await page.text();t.after(async()=>{await app.close();assert.match(path.basename(root),/^relay-patch-http-/);await rm(root,{recursive:true,force:true});});const request=async(route,method='GET',value)=>{const response=await fetch(url+route,{method,headers:{cookie,origin:url,...(value?{'content-type':'application/json'}:{})},...(value?{body:JSON.stringify(value)}:{})});return{status:response.status,data:await response.json()};};return{app,cwd,url,cookie,request};}
+async function fixture(t){const root=await mkdtemp(path.join(tmpdir(),'relay-patch-http-')),cwd=path.join(root,'project');await mkdir(cwd);const archive=path.join(root,'data','knowledge.json'),archiveBytes=JSON.stringify({version:1,entries:[{id:'legacy',content:'Preserve saved content.'}]});await mkdir(path.dirname(archive));await writeFile(archive,archiveBytes);const app=await createHarnessServer({port:0,dataDir:path.join(root,'data'),defaultCwd:cwd,runtime:new Runtime()});t.after(async()=>{await app.close();assert.match(path.basename(root),/^relay-patch-http-/);await rm(root,{recursive:true,force:true});});const url=await app.listen(),page=await fetch(url),cookie=page.headers.get('set-cookie').split(';')[0];await page.text();const request=async(route,method='GET',value)=>{const response=await fetch(url+route,{method,headers:{cookie,origin:url,...(value?{'content-type':'application/json'}:{})},...(value?{body:JSON.stringify(value)}:{})});return{status:response.status,data:await response.json()};};return{app,cwd,url,cookie,request,archive,archiveBytes};}
 async function settled(app,id){const deadline=Date.now()+5000;while(Date.now()<deadline){const run=app.engine.getRun(id);if(run.settled)return run;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Fixture run did not settle.');}
 
 test('an actual engine turn receives patch tools and its HTTP audit/undo changes the actual file',async t=>{
@@ -31,8 +31,8 @@ test('an actual engine turn receives patch tools and its HTTP audit/undo changes
 });
 
 test('retired knowledge HTTP mutations and history cannot create or revive mutable memories',async t=>{
- const{app,cwd,request,url}=await fixture(t);
- const before=await app.knowledge.list({cwd});
+ const{app,cwd,request,url,archive,archiveBytes}=await fixture(t);
+ assert.equal(app.knowledge,undefined);
  for(const [route,method,value] of [
  ['/api/knowledge','POST',{kind:'memory',cwd,title:'Preference',content:'Use short paragraphs.'}],
  ['/api/knowledge/legacy/patch','POST',{oldText:'short',newText:'compact',expectedRevision:1}],
@@ -41,9 +41,9 @@ test('retired knowledge HTTP mutations and history cannot create or revive mutab
  ['/api/knowledge?kind=memory&deletedOnly=true','GET'],
  ['/api/knowledge/legacy/restore','POST',{revision:1,expectedRevision:2}]
  ]){
-  const result=await request(route,method,value);assert.equal(result.status,410,route);assert.equal(result.data.code,'KNOWLEDGE_RETIRED',route);
+  const result=await request(route,method,value);assert.equal(result.status,404,route);
  }
- assert.deepEqual(await app.knowledge.list({cwd}),before);
+ assert.equal(await readFile(archive,'utf8'),archiveBytes);
  assert.equal((await fetch(url+'/api/knowledge')).status,401,'Retirement does not bypass authentication');
 });
 
