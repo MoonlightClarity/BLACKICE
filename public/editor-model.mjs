@@ -1,4 +1,5 @@
 /** Pure editor state helpers, shared by the browser and its regression tests. */
+import { safeSvgPreview, SVG_PREVIEW_LIMIT } from './svg-preview.mjs';
 import { aggregateTokenUsage, tokenUsagePresentation } from './token-usage.mjs';
 export class WorkflowHistory {
   constructor(limit = 80) { this.limit = limit; this.reset(null); }
@@ -153,8 +154,8 @@ function inlineMarkdown(value, { links = true, depth = 0, resolveArtifact } = {}
   return out + html(value.slice(cursor));
 }
 
-/** Small intentionally limited Markdown renderer: raw HTML, images and executable URLs stay inert. */
-export function renderMarkdown(value, { resolveArtifact } = {}) {
+/** Limited Markdown: HTML/URLs stay inert; Chat may opt into validated static SVG images. */
+export function renderMarkdown(value, { resolveArtifact, svgPreviews = false } = {}) {
   const inline = text => inlineMarkdown(text, { resolveArtifact });
   const indentation = line => (line.match(/^[ \t]*/)?.[0] || '').replaceAll('\t', '    ').length;
   const stripIndent = (line, columns) => {
@@ -171,18 +172,50 @@ export function renderMarkdown(value, { resolveArtifact } = {}) {
   };
   const heading = line => line.match(/^[ \t]{0,3}(#{1,4})\s+(.+)$/);
   const fence = line => line.match(/^[ \t]*\x60{3}([\w-]*)/);
+  const codeBlock = (source, language) => '<pre><code' + (language ? ' data-language="' + html(language) + '"' : '') + '>' + html(source) + '</code></pre>';
+  const svgPreview = (source, language = 'svg') => {
+    if (!svgPreviews) return null;
+    const url = safeSvgPreview(source);
+    return url ? '<figure class="chat-svg-preview"><img src="' + html(url) + '" alt="SVG preview"><details class="chat-svg-source"><summary>SVG source</summary><button type="button" class="button subtle" data-copy-svg aria-label="Copy SVG source">Copy SVG source</button>' + codeBlock(source, language) + '</details></figure>' : null;
+  };
+  // Raw SVG is recognized only as a standalone, bounded block. Validation,
+  // not this boundary scan, decides whether it can become an inert image.
+  // Shared budget prevents repeated malformed starts from rescanning a long reply.
+  let rawScanRemaining = SVG_PREVIEW_LIMIT * 4;
+  const rawSvg = (lines, start) => {
+    if (!svgPreviews || !/^\s*(?:<svg(?:\s|\/?>)|<\?xml\s)/.test(lines[start])) return null;
+    let size = 0, candidates = 0;
+    for (let end = start; end < lines.length; end++) {
+      const cost = lines[end].length + 1;
+      rawScanRemaining -= cost;
+      if (rawScanRemaining < 0) return null;
+      size += lines[end].length + (end > start ? 1 : 0);
+      if (size > SVG_PREVIEW_LIMIT || fence(lines[end])) return null;
+      if (!/<\/svg\s*>\s*$/.test(lines[end]) && !/^\s*<svg\b[^<>]*\/>\s*$/.test(lines[end])) continue;
+      if (++candidates > 32) return null;
+      const preview = svgPreview(lines.slice(start, end + 1).join('\n'));
+      if (preview) return { preview, end: end + 1 };
+    }
+    return null;
+  };
   function renderLines(lines, depth = 0) {
     if (depth >= 24) return '<p>' + lines.map(inline).join('<br>') + '</p>';
     const result = []; let paragraph = [], index = 0;
     const flush = () => { if (paragraph.length) { result.push('<p>' + paragraph.map(inline).join('<br>') + '</p>'); paragraph = []; } };
     while (index < lines.length) {
       const line = lines[index], opening = fence(line), title = heading(line), first = marker(line);
+      const raw = !opening && svgPreviews ? rawSvg(lines, index) : null;
       if (!line.trim()) { flush(); index++; continue; }
       if (opening) {
         flush(); const code = []; index++;
         while (index < lines.length && !/^[ \t]*\x60{3,}\s*$/.test(lines[index])) code.push(lines[index++]);
-        if (index < lines.length) index++;
-        result.push('<pre><code' + (opening[1] ? ' data-language="' + html(opening[1]) + '"' : '') + '>' + html(code.join('\n')) + '</code></pre>');
+        const closed = index < lines.length;
+        if (closed) index++;
+        const source = code.join('\n');
+        const preview = closed && /^[ \t]*\x60{3}(?:svg|xml)?[ \t]*$/i.test(line) ? svgPreview(source, opening[1]) : null;
+        result.push(preview || codeBlock(source, opening[1]));
+      } else if (raw) {
+        flush(); result.push(raw.preview); index = raw.end;
       } else if (title) {
         flush(); const level = title[1].length + 1;
         result.push('<h' + level + '>' + inline(title[2]) + '</h' + level + '>'); index++;

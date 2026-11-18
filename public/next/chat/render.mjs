@@ -1,3 +1,4 @@
+import { bindChatSvgPreviews } from './svg-previews.mjs';
 import { text, formatDate } from '../core/dom.mjs';
 import { runText, displayChatRequest, messagesOfRun, chatResponseState, windowedRuns, windowedMessages, CHAT_MESSAGE_BATCH, rootId, lastRunId, running, CHAT_INDEX_BATCH, conversationIndexWindow, conversationGoalStatus } from './model.mjs';
 import { chatOptionChoices } from './options-model.mjs';
@@ -389,7 +390,8 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       const body=text(parent,'','div','next-message-body');
       if(running(run)||typeof markdown!=='function')body.textContent=message.text;
       else {
-        body.innerHTML=markdown(message.text,{resolveArtifact});
+        body.innerHTML=markdown(message.text,{resolveArtifact,svgPreviews:true});
+        bindChatSvgPreviews(body);
         body.addEventListener('click',event=>{const link=event.target.closest?.('[data-task-artifact][data-task-id]');if(link&&body.contains(link)){event.preventDefault();cache.callbacks.onArtifact?.({taskId:link.dataset.taskId,artifactId:link.dataset.taskArtifact});}});
       }
     };
