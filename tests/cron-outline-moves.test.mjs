@@ -14,7 +14,7 @@ async function fixture(t,{compact=false}={}){
  render();
  const folder=id=>list.querySelector('[data-schedule-folder="'+id+'"]').querySelector('summary'),job=()=>list.querySelector('[data-schedule-id="job"]').querySelector('summary');
  async function drag(from,to){const dataTransfer={setData(){}};await from.dispatch('dragstart',{dataTransfer});await to.dispatch('drop',{dataTransfer});await settle();}
- return{mount:dom.mount,manager,refresh:render,advance(){organization={...organization,revision:organization.revision+1};render();},component,calls,folder,job,drag,state:()=>organization,fail(){fail=true;},list};
+ return{mount:dom.mount,manager,refresh:render,advance(){organization={...organization,revision:organization.revision+1};render();},removeExternally(id){organization={...organization,revision:organization.revision+1,folders:organization.folders.filter(row=>row.id!==id)};render();},component,calls,folder,job,drag,state:()=>organization,fail(){fail=true;},list};
 }
 test('outline moves schedules and nested folders through CAS without changing jobs',async t=>{
  const f=await fixture(t);await f.drag(f.job(),f.folder('b'));assert.equal(f.state().assignments.job,'b');assert.equal(document.activeElement,f.job());assert.equal(f.calls[0].body.expectedRevision,1);
@@ -71,4 +71,18 @@ test('inline create conflict pins destination and preserves draft; Escape sends 
 });
 test('focused folder name supports keyboard nesting rather than summary-only shortcut',async t=>{
  const f=await fixture(t,{compact:true});const label=f.folder('b').querySelector('.next-schedule-folder-name');await f.folder('b').dispatch('keydown',{key:'Enter',ctrlKey:true,target:label});await settle();assert.equal(f.state().folders.find(x=>x.id==='b').parentId,'a');
+});
+
+test('removing any folder cannot clear an open inline create draft',async t=>{
+ const f=await fixture(t,{compact:true});await f.folder('a').querySelector('.next-schedule-folder-add').dispatch('click',{});
+ const form=f.mount.querySelector('form'),input=form.querySelector('input');input.value='Unique unsaved child';
+ await f.folder('b').querySelector('.next-schedule-folder-remove').dispatch('click',{});await settle();
+ assert.equal(f.calls.length,0);assert.equal(input.value,'Unique unsaved child');assert.equal(form.hidden,false);assert.equal(form.getAttribute('aria-label'),'New folder in Alpha');
+ await form.dispatch('submit',{});await settle();assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.parentId,'a');assert.equal(f.calls[0].body.expectedRevision,1);
+});
+test('externally removed create destination preserves draft without silently retargeting',async t=>{
+ const f=await fixture(t,{compact:true});await f.folder('a').querySelector('.next-schedule-folder-add').dispatch('click',{});const form=f.mount.querySelector('form'),input=form.querySelector('input');input.value='Keep destination';f.removeExternally('a');
+ assert.equal(input.value,'Keep destination');assert.equal(form.getAttribute('aria-label'),'New folder in Alpha');assert.equal(form.querySelector('button').disabled,true);
+ await form.dispatch('submit',{});await settle();assert.equal(f.calls.length,0);assert.match(f.manager.textContent,/destination folder no longer exists/);
+ await input.dispatch('keydown',{key:'Escape'});await f.manager.querySelector('.next-schedule-new-folder').dispatch('click',{});input.value='Root after cancellation';await form.dispatch('submit',{});await settle();assert.equal(f.calls[0].body.parentId,null);assert.equal(f.calls[0].body.expectedRevision,2);
 });

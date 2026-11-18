@@ -66,12 +66,14 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   }
   form.addEventListener('submit', async event => {
     event.preventDefault();
+    if(compact&&parent.value&&!organization.folders.some(folder=>folder.id===parent.value)){notice.textContent='The destination folder no longer exists. Your draft is preserved. Cancel it to choose another destination.';save.disabled=true;return;}
     if (await mutate({ action: selected.value ? 'update' : 'create', id: selected.value, name: name.value, parentId: parent.value || null },compact?(createRevision??organization.revision):organization.revision)) {
       selected.value = ''; editSelection();if(compact){manager.open=false;form.hidden=true;parent.value='';} notice.textContent = 'Folder saved.';
     }
   });
   async function removeFolder(id) {
     if (!id || pending) return;
+    if(compact&&manager.open){notice.textContent='Finish or cancel the new folder before removing a folder.';return;}
     if (await mutate({ action: 'remove', id })) {
       selected.value = ''; editSelection(); notice.textContent = 'Folder removed. Its cronjobs are Unfiled; child folders moved up one level.';
     }
@@ -147,7 +149,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   }
 
   function paintSelection(){if(!compact)return;for(const row of outlineContainer?.querySelectorAll('[data-schedule-folder]')||[])row.classList.toggle('next-folder-selected',row.dataset.scheduleFolder===selectedParent);}
-  function placeDraft(){if(!compact||!outlineContainer)return;const row=[...outlineContainer.querySelectorAll('[data-schedule-folder]')].find(row=>row.dataset.scheduleFolder===parent.value);const host=row?.querySelector('.next-schedule-folder-children')||outlineContainer;if(row){row.open=true;closed.delete(parent.value);}host.insertBefore(form,host.firstChild);form.hidden=!manager.open;}
+  function placeDraft(){if(!compact||!outlineContainer)return;const row=[...outlineContainer.querySelectorAll('[data-schedule-folder]')].find(row=>row.dataset.scheduleFolder===parent.value);const missing=!!parent.value&&!row;const host=row?.querySelector('.next-schedule-folder-children')||outlineContainer;save.disabled=pending||missing;if(missing){notice.textContent='The destination folder no longer exists. Your draft is preserved. Cancel it to choose another destination.';}if(row){row.open=true;closed.delete(parent.value);}host.insertBefore(form,host.firstChild);form.hidden=!manager.open;}
   return {
     leave(){manager.open=false;form.hidden=true;activeDrag=null;},
     group(container, deployments, value) {
