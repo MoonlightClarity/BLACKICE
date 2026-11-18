@@ -31,3 +31,18 @@ test('invalid edits and corrupt persistence fail rather than replacing original 
  await assert.rejects(catalog.save({id:'../escape',value:edit}),{status:404});await catalog.save({id:base.id,value:edit});
  const file=path.join(root,'skill-edits','skills.json');await writeFile(file,'{broken');await assert.rejects(catalog.detail({id:base.id}));await assert.rejects(catalog.save({id:base.id,value:{...edit,expectedRevision:2}}));assert.equal(await readFile(file,'utf8'),'{broken');
 });
+
+test('killed lock owner recovers without stealing a live lock or losing a concurrent edit',async t=>{
+ const {spawn}=await import('node:child_process');const {once}=await import('node:events');const {mkdir}=await import('node:fs/promises');
+ const root=await mkdtemp(path.join(tmpdir(),'skill-crash-'));t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(path.join(root,'skill-edits'));
+ const child=spawn(process.execPath,['--input-type=module','-e',`import {SkillEditStore} from ${JSON.stringify(new URL('../lib/skill-edits.mjs',import.meta.url).href)}; const store=new SkillEditStore({dataDir:${JSON.stringify(root)}});await store.acquireLock(store.file+'.lock','killed-owner');console.log('LOCKED');setInterval(()=>{},1000);`],{stdio:['ignore','pipe','pipe']});
+ t.after(()=>{if(child.exitCode===null)child.kill();});await once(child.stdout,'data');
+ const catalog=createSkillsCatalog({dataDir:root}),base=await catalog.detail({id:'builtin-browser'}),edit=value(base);
+ await assert.rejects(catalog.save({id:base.id,value:edit}),{status:409});
+ const exited=once(child,'exit');child.kill();await exited;
+ const other=createSkillsCatalog({dataDir:root});
+ const outcomes=await Promise.allSettled([catalog.save({id:base.id,value:edit}),other.save({id:base.id,value:edit})]);
+ assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);assert.equal(outcomes.filter(x=>x.status==='rejected').length,1);assert.equal(outcomes.find(x=>x.status==='rejected').reason.status,409);
+ assert.equal((await other.detail({id:base.id})).revision,2);
+ const saved=await other.save({id:base.id,value:{...edit,expectedRevision:2}});assert.equal(saved.revision,3);
+});
