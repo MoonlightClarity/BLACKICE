@@ -37,6 +37,7 @@ async function fixture(t, execute) {
     status() { return { connected: true, authenticated: true, defaultModel: 'fixture-model', models: this.models }; }
     async runAgent(options) {
       assert.notEqual(options.responseOnly,true,'No automatic reviewer turn is admitted.');
+      assert.equal(options.onBeforeFinal,undefined,'No automatic final-review hook is installed.');
       this.calls.push(options);
       options.onEvent({ type: 'thread', threadId: options.threadId || 'planning-mode-thread', model: options.model || 'fixture-model' });
       return execute(options, this.calls.length, context);
