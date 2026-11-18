@@ -7,7 +7,6 @@ import os from 'node:os';
 import path from 'node:path';
 import {createHarnessServer} from '../server.mjs';
 import {reviewModularOutcome,createModularCompletionController} from '../lib/modular-completion.mjs';
-import {directoryContextConfiguration} from '../lib/directory-conversation-scope.mjs';
 import {estimateContextTokens} from '../lib/context.mjs';
 import {ProviderRuntime} from '../lib/providers.mjs';
 
@@ -45,31 +44,19 @@ class Runtime extends EventEmitter {
   }
 }
 
-test('engine completion review keeps Directory extended capacity and ordinary Chat authored capacity',async t=>{
-  const root=await mkdtemp(path.join(os.tmpdir(),'modular-review-window-')),runtime=new Runtime();
-  const app=await createHarnessServer({runtime,port:0,dataDir:path.join(root,'data'),defaultCwd:path.join(root,'workspace')});
-  t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});
-
-  const authored={preset:'custom',windowTokens:36000,outputReserveTokens:2000,headroomTokens:1000};
-  for(const directoryMode of ['on','off']){
-    const context=directoryMode==='on'?{preset:'model'}:authored;
-    const workflow={name:'Review context fixture',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture',prompt:'Answer the current request.',context},{id:'output',type:'output'}],
-      edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{planningMode:'ontology',planningOntology:policy}};
-    const start=runtime.calls.length,run=app.engine.startRun({workflow,input:{task:'Reply with Ready.',directoryMode,subagentsMode:'off',planningMode:'ontology',planningOntology:policy}});
-    await app.engine.executions.get(run.id);
-    const saved=app.engine.getRun(run.id);
-    assert.equal(saved.status,'completed',saved.error);
-    const reviews=runtime.calls.slice(start).filter(call=>call.prompt.startsWith('BLACKICE MODULAR OUTCOME REVIEW.'));
-    assert.equal(reviews.length,1);
-    if(directoryMode==='on'){
-      assert.deepEqual(reviews[0].context,directoryContextConfiguration({model,context}).options);
-      assert.equal(reviews[0].context.preset,'extended');
-      assert.equal(reviews[0].context.compactAtTokens,812016);
-    }else{
-      assert.deepEqual(reviews[0].context,saved.workflow.nodes.find(node=>node.id==='agent').context);
-      assert.equal(reviews[0].context.windowTokens,36000);assert.equal(reviews[0].context.preset,'custom');
-    }
-  }
+test('engine rejects retired Directory and preserves authored ordinary Chat capacity without automatic review',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'modular-review-window-')),runtime=new Runtime();
+ const app=await createHarnessServer({runtime,port:0,dataDir:path.join(root,'data'),defaultCwd:path.join(root,'workspace')});
+ t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});
+ const authored={preset:'custom',windowTokens:36000,outputReserveTokens:2000,headroomTokens:1000};
+ const workflow={name:'Review context fixture',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture',prompt:'Answer the current request.',context:authored},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{planningMode:'ontology',planningOntology:policy}};
+ assert.throws(()=>app.engine.startRun({workflow,input:{task:'Reply with Ready.',directoryMode:'on'}}),error=>error.code==='DIRECTORY_RETIRED');assert.equal(runtime.calls.length,0);
+ const run=app.engine.startRun({workflow,input:{task:'Reply with Ready.',directoryMode:'off',planningMode:'ontology',planningOntology:policy}});
+ await app.engine.executions.get(run.id);const saved=app.engine.getRun(run.id);
+ assert.equal(saved.status,'completed',saved.error);assert.equal(runtime.calls.length,1);
+ assert.deepEqual(runtime.calls[0].context,saved.workflow.nodes.find(node=>node.id==='agent').context);
+ assert.equal(runtime.calls[0].context.windowTokens,36000);assert.equal(runtime.calls[0].context.preset,'custom');
+ assert.equal(runtime.calls[0].onBeforeFinal,undefined);assert.equal(saved.nodes.agent.modularReview,undefined);
 });
 
 test('large wrapped review retains inspection provenance, repairs an unread citation, and reads only its needed receipt',async t=>{
@@ -218,18 +205,18 @@ test('the real API provider transports the isolated evidence-read tool and its s
   assert.deepEqual(result.assessment.evidenceInspection.reads[0].evidenceIds,['api-operation']);
 });
 
-test('ordinary Chat returns original partial candidate when optional reviewer is unavailable without replay',async t=>{
+test('ordinary Chat returns original partial candidate without a retired automatic reviewer or replay',async t=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'modular-chat-unavailable-'));let reviews=0,work=0;
  const candidate={output:'No applications were submitted. Research remains incomplete.'};
  class UnavailableRuntime extends Runtime {async runAgent(options){
   if(options.prompt.startsWith('BLACKICE MODULAR OUTCOME REVIEW.')){reviews++;return {output:'{"type":"object","properties":{}}'};}
-  work++;assert.equal((await options.onBeforeFinal(candidate))??null,null);return candidate;
+  work++;assert.equal(options.onBeforeFinal,undefined);return candidate;
  }}
  const runtime=new UnavailableRuntime();const app=await createHarnessServer({runtime,port:0,dataDir:path.join(root,'data'),defaultCwd:path.join(root,'workspace')});
  t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});
  const workflow={name:'Unreviewed Chat fixture',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture',prompt:'Perform the task.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{planningMode:'ontology',planningOntology:policy}};
  const run=app.engine.startRun({workflow,input:{task:'Apply to up to three roles.',directoryMode:'off',subagentsMode:'off',planningMode:'ontology',planningOntology:policy}});
  await app.engine.executions.get(run.id);const saved=app.engine.getRun(run.id);
- assert.equal(saved.status,'completed',saved.error);assert.equal(saved.nodes.agent.output,candidate.output);assert.equal(work,1);assert.equal(reviews,3);
- assert.equal(saved.nodes.agent.modularReview.status,'unavailable');assert.equal(saved.nodes.agent.modularReview.decision,'unreviewed');
+ assert.equal(saved.status,'completed',saved.error);assert.equal(saved.nodes.agent.output,candidate.output);assert.equal(work,1);assert.equal(reviews,0);
+ assert.equal(saved.nodes.agent.modularReview,undefined);
 });

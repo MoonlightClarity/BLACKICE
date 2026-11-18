@@ -30,14 +30,21 @@ test('an actual engine turn receives patch tools and its HTTP audit/undo changes
   const newPatch=await app.engine.filePatches.patch({cwd,path:file,oldText:'before',newText:'new'});await writeFile(file,'user editor content');assert.equal((await request('/api/file-patches/'+newPatch.id+'/undo','POST',{})).status,409);assert.equal(await readFile(file,'utf8'),'user editor content');
 });
 
-test('knowledge HTTP patches, conflict checks, deleted history and restores are applied without approval',async t=>{
-  const{cwd,request}=await fixture(t),created=await request('/api/knowledge','POST',{kind:'memory',cwd,title:'Preference',content:'Use short paragraphs and keep dates explicit.'});assert.equal(created.status,200);const id=created.data.id;
-  const patch=await request('/api/knowledge/'+id+'/patch','POST',{oldText:'short paragraphs',newText:'compact paragraphs',expectedRevision:1});assert.equal(patch.status,200);assert.equal(patch.data.content,'Use compact paragraphs and keep dates explicit.');
-  const history=await request('/api/knowledge/'+id+'/history');assert.equal(history.status,200);assert.equal(history.data.currentRevision,2);assert.equal(history.data.history[1].content,created.data.content);
-  assert.equal((await request('/api/knowledge/'+id,'DELETE',{expectedRevision:1})).status,409);assert.equal((await request('/api/knowledge/'+id,'DELETE',{expectedRevision:2})).status,200);
-  const list=await request('/api/knowledge?kind=memory&cwd='+encodeURIComponent(cwd));assert.equal(list.data.some(entry=>entry.id===id),false);
-  const deleted=await request('/api/knowledge?kind=memory&deletedOnly=true');assert.equal(deleted.data.some(entry=>entry.id===id),true);
-  const state=await request('/api/knowledge/'+id+'/history');const restored=await request('/api/knowledge/'+id+'/restore','POST',{revision:1,expectedRevision:state.data.currentRevision});assert.equal(restored.status,200);assert.equal(restored.data.content,created.data.content);assert.equal(restored.data.deleted,undefined);
+test('retired knowledge HTTP mutations and history cannot create or revive mutable memories',async t=>{
+ const{app,cwd,request,url}=await fixture(t);
+ const before=await app.knowledge.list({cwd});
+ for(const [route,method,value] of [
+ ['/api/knowledge','POST',{kind:'memory',cwd,title:'Preference',content:'Use short paragraphs.'}],
+ ['/api/knowledge/legacy/patch','POST',{oldText:'short',newText:'compact',expectedRevision:1}],
+ ['/api/knowledge/legacy/history','GET'],
+ ['/api/knowledge/legacy','DELETE',{expectedRevision:1}],
+ ['/api/knowledge?kind=memory&deletedOnly=true','GET'],
+ ['/api/knowledge/legacy/restore','POST',{revision:1,expectedRevision:2}]
+ ]){
+  const result=await request(route,method,value);assert.equal(result.status,410,route);assert.equal(result.data.code,'KNOWLEDGE_RETIRED',route);
+ }
+ assert.deepEqual(await app.knowledge.list({cwd}),before);
+ assert.equal((await fetch(url+'/api/knowledge')).status,401,'Retirement does not bypass authentication');
 });
 
 test('profile maintenance rejects new patch undo and preserves the actual file',async t=>{
