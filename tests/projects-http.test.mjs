@@ -48,8 +48,8 @@ async function fixture(t,{execute,externalReceipt=false}={}){
     app.engine.startRun=value=>startRun({...value,planningMode:'off'});
     url=await app.listen();const home=await fetch(url);cookie=home.headers.get('set-cookie').split(';',1)[0];await home.arrayBuffer();
   };
-  await boot();
   t.after(async()=>{for(const value of apps)await value.close();assert.match(path.basename(root),/^blackice-projects-http-/);await rm(root,{recursive:true,force:true});});
+  await boot();
   const request=async(route,{method='GET',body,auth=true}={})=>{const response=await fetch(new URL(route,url),{method,headers:{...(auth?{Cookie:cookie}:{}),...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,data:await response.json()};};
   const definition=extra=>({name:'HTTP project',objective:'Create and independently check an accepted proof file.',cwd,maxRepairs:1,tasks:[{id:'proof',title:'Write proof',instructions:'Create proof.txt and verify its actual contents.',acceptanceCriteria:['proof.txt contains accepted']}],...extra});
   const create=async extra=>{const response=await request('/api/projects',{method:'POST',body:definition(extra)});assert.equal(response.status,201,JSON.stringify(response.data));return response.data;};
