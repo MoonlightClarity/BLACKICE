@@ -89,13 +89,13 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   if(cronjobsOnly){
     // Keep scheduler controls, but do not mount the general task board, timeline or workflow dashboard.
     mount.querySelector('.next-task-workspace')?.classList.add('next-cronjobs-workspace');
-    for(const name of ['board','timeline','workflows']){
+    for(const name of ['board','timeline','workflows','results','jobs']){
       mount.querySelector('#next-tasks-tab-'+name)?.remove();
       mount.querySelector('#next-tasks-panel-'+name)?.remove();
     }
     mount.querySelector('h1').textContent='Cronjobs';
     mount.querySelector('.next-panel-head p').textContent='Create and monitor recurring and event-driven agents.';
-    mount.querySelector('nav[role="tablist"]').setAttribute('aria-label','Cronjobs views');
+    mount.querySelector('nav[role="tablist"]').hidden=true;
     const schedulesTab=mount.querySelector('#next-tasks-tab-schedules');
     schedulesTab.setAttribute('aria-selected','true');
     schedulesTab.removeAttribute('tabindex');
@@ -123,6 +123,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   let section=cronjobsOnly?'schedules':'board',jobsLimit=35,resultsLimit=100,selectedScheduleId=null,scheduleMode='inspect',editSource=null,editForm=null,editNotice=null;
   const scheduleFolders=createScheduleFolders({mount:$('next-tasks-folders'),api,notify,refresh:()=>refresh()});
   const readinessBySchedule=new Map();
+  const expandedSchedules=new Set();
   const createChatProfile=initScheduleChatOptions(view.chatFields,{getStatus});
   let createAttachmentIds=[],createAttachmentPending=false,createAttachmentsUI=null,editAttachmentsUI=null;
   const createPanel=$('next-tasks-create'),newSchedule=$('next-tasks-new-schedule');
@@ -154,7 +155,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       pickFiles:globalThis.window?.relayDesktop?.pickFiles?()=>window.relayDesktop.pickFiles():undefined,
       escape:escapeHTML,icon:()=>'',toast:notify});
   };
-  const sections=cronjobsOnly?['schedules','results','jobs']:['board','timeline','workflows','schedules','results','jobs'];
+  const sections=cronjobsOnly?['schedules']:['board','timeline','workflows','schedules','results','jobs'];
   const operationsSection=()=>['schedules','results','jobs'].includes(section);
   let timeline=null,workflows=null;
   const history=cronjobsOnly?{enter(){},leave(){},destroy(){}}:createTaskHistory({mount:$('next-tasks-history'),api,events,notify,onNavigate,prefix:'next-tasks-history',presentation:'board'});
@@ -596,7 +597,22 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       }
       if(job.error)add(row,'p',jobFailureSummary(job.error),'next-help');
     }
-    if(total>jobs.length)add(view.detail,'p','Showing '+jobs.length+' of '+total+' jobs. Open the Job history tab for additional runs.','next-help');
+    if(total>jobs.length)add(view.detail,'p','Showing '+jobs.length+' of '+total+' recent runs.','next-help');
+  }
+  function paintScheduleResults(target,id){
+    const jobs=newestJobs((snapshot.jobs||[]).filter(job=>job.deploymentId===id));
+    add(target,'h4','Result conversations');
+    if(!jobs.length)add(target,'p','No runs yet.','next-help');
+    for(const job of jobs){
+      const row=add(target,'div','','next-cronjob-conversation');
+      const linked=jobLinkedRun(job);
+      if(linked){
+        const open=add(row,'button','View conversation');open.type='button';open.dataset.scheduleResultRun=linked.runId;
+        open.addEventListener('click',()=>onNavigate?.('chat',{conversationId:linked.runId}));
+      }else add(row,'span','No conversation recorded','next-help');
+      add(row,'span',humanTime(jobLastRunAt(job))+' · '+(job.status||'unknown'),'next-help');
+
+    }
   }
   function paint(){
     if(!snapshot)return;
@@ -615,8 +631,23 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     if(!deployments.length)add(view.deployments,'p',cronjobsOnly?'No cronjobs yet. Select New cronjob to get started.':'No saved schedules yet. Select New schedule to get started.','next-empty');
     const groups=scheduleFolders.group(view.deployments,deployments,snapshot.organization);
     for(const task of deployments){
-      const card=add(groups.target(task),'article','','next-card');
-      add(card,'h3',task.name||'Scheduled task');
+      const row=add(groups.target(task),cronjobsOnly?'details':'article','',cronjobsOnly?'next-cronjob-row':'next-card');
+      row.dataset.scheduleId=task.id;
+      let card=row;
+      if(cronjobsOnly){
+        row.open=expandedSchedules.has(task.id);
+        row.addEventListener('toggle',()=>{
+          if(row.open){expandedSchedules.add(task.id);if(!resultsHost.childElementCount)paintScheduleResults(resultsHost,task.id);}
+          else expandedSchedules.delete(task.id);
+        });
+        const summary=add(row,'summary','','next-cronjob-summary');
+        add(summary,'span',task.name||'Scheduled task','next-cronjob-name');
+        add(summary,'span',task.enabled?'Enabled':'Disabled','next-cronjob-state');
+        add(summary,'span',task.overdue?'Overdue: '+humanTime(task.overdueSince):'Next: '+humanTime(task.nextAt),'next-cronjob-next');
+        card=add(row,'div','','next-cronjob-body');
+        const resultsHost=add(card,'section','','next-cronjob-results');
+        if(row.open)paintScheduleResults(resultsHost,task.id);
+      }else add(card,'h3',task.name||'Scheduled task');
       add(card,'p',task.input?.slice(0,180)||'','next-help');
       const meta=add(card,'p','','next-help');
       const trigger=task.trigger||{};
@@ -657,6 +688,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       add(line,'span','Removed: '+humanTime(record.removedAt)+' · Source: '+(record.removedBy||'not-recorded'));
       if(record.removedBy==='not-recorded')add(line,'p','This older record does not identify who removed the schedule.','next-help');
     }
+    if(cronjobsOnly)return;
     view.results.replaceChildren();
     const inbox=snapshot.results||{items:[],total:0,available:0,acknowledged:0};
     $('next-tasks-tab-results').textContent=inbox.available?'Results ('+inbox.available+' to review)':'Results';
@@ -832,8 +864,8 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     else if(section==='workflows'){workflows?.leave();workflows?.enter();workflows?.updateStatus?.(getStatus?.());}
     else{void refresh();if(section==='schedules')void fillWorkflows();}
   });
-  $('next-tasks-results-more').addEventListener('click',()=>{resultsLimit+=100;paint();});
-  $('next-tasks-jobs-more').addEventListener('click',()=>{jobsLimit+=35;paint();});
+  $('next-tasks-results-more')?.addEventListener('click',()=>{resultsLimit+=100;paint();});
+  $('next-tasks-jobs-more')?.addEventListener('click',()=>{jobsLimit+=35;paint();});
   view.pause.addEventListener('click',()=>void execute('/api/operations/pause','POST',{reason:cronjobsOnly?'Paused from Cronjobs workspace.':'Paused from Tasks workspace.'}));
   view.resume.addEventListener('click',()=>void execute('/api/operations/resume','POST',{resumeInbox:Boolean(snapshot?.status?.blockedReason)}));
   $('next-tasks-preview').addEventListener('click',async()=>{

@@ -1,0 +1,36 @@
+const {app,BrowserWindow}=require('electron'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict'),{pathToFileURL}=require('url');
+const root=process.argv[2],out=process.argv[3];fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();let win,fixture;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms)),run=s=>win.webContents.executeJavaScript(s);
+const until=async s=>{for(let i=0;i<100;i++){if(await run(s))return;await sleep(50);}throw Error(s)};
+(async()=>{
+ await app.whenReady();const {makeFixture}=await import(pathToFileURL(path.join(root,'tests/next-fixture-server.mjs')));fixture=makeFixture();
+ const job=(id,name,time)=>({id,name,revision:1,enabled:true,input:'Read the synthetic project status and summarize it.',trigger:{type:'daily',time:'09:00',timezone:'UTC'},nextAt:time});
+ fixture.state.deployments=[job('later','Afternoon summary','2026-11-19T16:00:00Z'),job('earlier','Morning review','2026-11-19T09:00:00Z'),job('child','Weekly research','2026-11-20T09:00:00Z'),job('loose','Unfiled check','2026-11-19T11:00:00Z')];
+ fixture.state.jobs=[{id:'result-earlier',deploymentId:'earlier',status:'completed',createdAt:'2026-11-18T09:00:00Z',attempts:[{number:1,runId:'sample-run-0',status:'completed'}]},{id:'result-child',deploymentId:'child',status:'completed',createdAt:'2026-11-18T10:00:00Z',attempts:[{number:1,runId:'sample-run-1',status:'completed'}]}];
+ const organization={revision:1,folders:[{id:'work',name:'Work',parentId:null},{id:'research',name:'Research',parentId:'work'}],assignments:{later:'work',earlier:'work',child:'research'}};
+ const handler=fixture.server.listeners('request')[0];fixture.server.removeAllListeners('request');fixture.server.on('request',(req,res)=>{const end=res.end.bind(res);res.end=(body,...args)=>{if(req.url.startsWith('/api/operations')&&req.method==='GET'){try{const data=JSON.parse(body);if(data.deployments)body=JSON.stringify({...data,organization});}catch{}}return end(body,...args)};return handler(req,res)});
+ await new Promise(r=>fixture.server.listen(0,'127.0.0.1',r));win=new BrowserWindow({show:false,width:1200,height:900,webPreferences:{backgroundThrottling:false}});
+ await win.loadURL('http://127.0.0.1:'+fixture.server.address().port+'/next/#cronjobs');
+ await until('document.querySelectorAll(".next-cronjob-row").length===4');
+ assert.deepEqual(await run('[...document.querySelector("[data-schedule-folder=work]>.next-schedule-folder-children>.next-grid").children].map(e=>e.dataset.scheduleId)'),['earlier','later']);
+ assert.equal(await run('document.querySelector("[data-schedule-folder=research]").closest("[data-schedule-folder=work]")!==null'),true);
+ assert.equal(await run('[...document.querySelectorAll(".next-cronjob-row")].every(e=>!e.open)'),true);
+ for(const width of [1200,640]){win.setSize(width,900);await sleep(200);assert.equal(await run('document.documentElement.scrollWidth<=innerWidth'),true);fs.writeFileSync(path.join(out,'cron-list-'+width+'.png'),(await win.webContents.capturePage()).toPNG());}
+ await run('document.querySelector("[data-schedule-id=earlier]>summary").click()');
+ await until('document.querySelector("[data-schedule-id=earlier]").open');
+ await until('document.querySelector("[data-schedule-result-run=sample-run-0]")!==null');
+ assert.equal(await run('document.querySelector("[data-schedule-result-run=sample-run-1]")===null'),true);
+ assert.equal(await run('document.querySelector(".next-schedule-result-preview")===null'),true);
+ assert.equal(await run('document.querySelector("#next-tasks-tab-results")===null&&document.querySelector("#next-tasks-tab-jobs")===null'),true);
+ await run('document.querySelector("#next-tasks-refresh").click()');await sleep(300);
+ assert.equal(await run('document.querySelector("[data-schedule-id=earlier]").open'),true);
+ assert.equal(await run('!!document.querySelector("[data-schedule-id=earlier] [data-schedule-trigger=earlier]")'),true);
+ await run('document.querySelector("[data-schedule-toggle=earlier]").click()');
+ await until('document.querySelector("[data-schedule-id=earlier] .next-cronjob-state").textContent==="Disabled"');
+ assert.equal(fixture.state.deployments.find(j=>j.id==='earlier').enabled,false);
+ assert.equal(fixture.state.scheduledWrites.length,0);
+ await run('document.querySelector("[data-schedule-result-run=sample-run-0]").click()');
+ await until('location.hash==="#chat"');
+ await until('localStorage.getItem("blackice.next.selected")==="sample-run-0"');
+ fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:true,checks:['Nested folders retained','Chronological jobs within folder','Collapsed compact rows','Expansion retained after refresh','Existing enable/disable action','Only selected schedule conversation links','Exact saved conversation navigation','No global results/history or preview viewer','No schedule created','1200 and640 no horizontal overflow']},null,2));
+})().catch(e=>{fs.writeFileSync(path.join(out,'error.txt'),e.stack);process.exitCode=1}).finally(async()=>{win?.destroy();if(fixture){fixture.server.closeAllConnections();await new Promise(r=>fixture.server.close(r));await fixture.close();}app.exit(process.exitCode||0)});setTimeout(()=>app.exit(2),40000).unref();
