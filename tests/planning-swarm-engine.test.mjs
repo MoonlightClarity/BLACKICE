@@ -201,3 +201,50 @@ test('a concurrent Planning Off worker failure preserves its cause and settles t
   assert.equal(run.nodes.worker.status, 'cancelled');
   assert.equal(run.nodes.coordinator.status, 'failed');
 });
+
+test('Planning Off explicit canonical assignments transfer only named ownership before children start', async t => {
+  const workflow = graph([agent('coordinator')], [['input', 'coordinator'], ['coordinator', 'output']], false);
+  workflow.settings.planningMode = 'off';
+  const children = [];
+  const f = await fixture(t, workflow, async (options, context) => {
+    const invoke = async (name, args) => {
+      const call = { name, arguments: args }, result = await options.onToolCall(call);
+      await options.onToolResultDelivered?.({ call, result });
+      return result;
+    };
+    if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
+      const state = await context.tasks.get(context.engine.listRuns()[0].taskId);
+      const expected = options.prompt.split('YOUR ASSIGNED TASK:')[1]?.trimStart().startsWith('Inspect left') ? 'left' : 'right';
+      assert.equal(state.contract.workItems.find(item => item.id === expected).owner, delegatedPlanNodeId('coordinator', expected));
+      assert.match(options.developerInstructions + '\n' + options.prompt, /DELIVERED CANONICAL WORK-ITEM SNAPSHOT/);
+      children.push(expected);
+      return { output: 'Inspected ' + expected + ' without claiming an external effect.' };
+    }
+    const initial = payload(await invoke('relay_task', { action: 'read' }));
+    const contract = { contractVersion: 2, goal: 'Inspect two independent inputs', criteria: [{ id: 'checked', kind: 'judgment', description: 'Report both actual observations' }], workItems: ['left', 'right', 'untouched'].map(id => ({ id, title: 'Inspect ' + id, objective: 'Inspect the supplied ' + id + ' input', owner: 'coordinator', resourceKeys: ['workspace:' + id], effects: ['observe'], dependsOn: [], criterionIds: ['checked'] })), instructions: [] };
+    const planCall = { name: 'relay_task', arguments: { action: 'plan', expectedRevision: initial.revision, contract } };
+    const planned = await options.onToolCall(planCall);
+    assert.equal(planned.success, true, JSON.stringify(planned));
+    const before = await readFile(context.tasks.file(initial.taskId));
+    const stale = await invoke('relay_delegate', { tasks: ['left', 'right'].map(id => ({ id: 'unread-' + id, stepId: id, prompt: 'Inspect ' + id + ' independently' })) });
+    assert.equal(stale.success, false, 'A plan not delivered to the provider cannot authorize ownership transfer.');
+    assert.match(JSON.stringify(stale), /revision changed/i);
+    assert.deepEqual(children, []);
+    assert.deepEqual(await readFile(context.tasks.file(initial.taskId)), before);
+    await options.onToolResultDelivered?.({ call: planCall, result: planned });
+    const unknown = await invoke('relay_delegate', { tasks: ['left', 'right'].map(id => ({ id: 'unknown-' + id, stepId: 'old-outline-' + id, prompt: 'Inspect ' + id + ' independently' })) });
+    assert.equal(unknown.success, false, 'Historical outline IDs are not canonical work-item assignments.');
+    assert.deepEqual(children, []);
+    assert.deepEqual(await readFile(context.tasks.file(initial.taskId)), before);
+    const returned = await invoke('relay_delegate', { tasks: ['left', 'right'].map(id => ({ id, stepId: id, prompt: 'Inspect ' + id + ' supplied input independently', readOnly: true })) });
+    assert.equal(returned.success, true, JSON.stringify(returned));
+    const final = await context.tasks.get(initial.taskId);
+    assert.equal(final.contract.workItems.find(item => item.id === 'untouched').owner, 'coordinator');
+    assert.equal(final.contractAssignments.length, 2);
+    assert.deepEqual(final.contract.criteria, payload(planned).contract.criteria);
+    return { output: 'Both assigned inputs inspected.' };
+  }, { subagents: true });
+  const run = await f.settled(f.start().id);
+  assert.equal(run.status, 'completed', run.error || run.nodes.coordinator.error);
+  assert.deepEqual(children.sort(), ['left', 'right']);
+});
