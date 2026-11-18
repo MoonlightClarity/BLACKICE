@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {createKnowledgeToolHandler} from '../lib/knowledge.mjs';
+import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
 
 const cwd=path.join(tmpdir(),'blackice-history-receipts-fixture');
 const stamp='2026-10-31T00:01:02.000Z';
@@ -10,7 +10,7 @@ const confirmation='The request was recorded. Receipt: record-branch-47.';
 const event=(data,{nodeId='agent',at=stamp}={})=>({type:'agent.event',runId:'cancelled-turn',nodeId,at,data:{threadId:'thread-original',turnId:'turn-original',...data}});
 const nativeReceipt=(callId,text,extra={})=>event({type:'item',stage:'completed',duringSettlement:true,item:{type:'dynamicToolCall',id:callId,tool:'relay_browser',arguments:{action:'getText',tabId:'tab-original'},status:'completed',success:true,contentItems:[{type:'inputText',text}],...extra}});
 const savedRun=(events=[],extra={})=>({id:'cancelled-turn',cwd,workflowName:'Record task',status:'cancelled',settled:true,input:'Complete the requested record task.',output:'',error:'Interrupted after tool completion.',createdAt:stamp,finishedAt:stamp,workflow:{nodes:[{id:'agent',name:'Record worker'}]},nodes:{agent:{status:'cancelled',output:''}},events,...extra});
-const handlerFor=runs=>createKnowledgeToolHandler({store:{},cwd,runId:'current-turn',getRuns:async()=>runs});
+const handlerFor=runs=>createRetrievalToolHandler({store:{},cwd,runId:'current-turn',getRuns:async()=>runs});
 const invoke=async(handler,args)=>{
   const response=await handler({name:'relay_history',arguments:args});
   assert.equal(response.success,true);

@@ -57,7 +57,7 @@ async function fixture({pauseModule,apiResponse,desktop=true}={}){
     renderHeader=()=>{};renderGraph=()=>{};renderInspector=()=>{};markDirty=()=>{state.dirty=true;};saveWorkflow=()=>__effects.push('save');showRun=()=>__effects.push('run');restoreHistory=direction=>__effects.push(direction);toast=(message,error)=>__messages.push({message,error});
     missionUI={getDraft:()=>__draft,getSelection:()=>null,capturePromptDraft:()=>({...__draft}),applyPromptDraft(capture,text){if(capture.task!==__draft.task)return{applied:false};__draft.task=text;return{applied:true};},focus(){document.activeElement=document.querySelector('#mission-task');__effects.push('chat-focus:'+state.screen);},update(){},submitFocused(){__effects.push('chat-submit');}};configureUI={update(){},draft:__settingsDraft};observeUI={update(){},leave(){},enter(){}};
     ${clickRegistration}
-    globalThis.app={state,mountConfigure,mountObserve,showChatGPTConnectorSettings,toast:renderToast,handleGlobalKey,updateSkipLink,syncWorkflowView,ensureWorkflowView,applyView,fit,showModal,closeModal,showPlanning,showTaskNotes,showMission,showObserve,showConfigure,showWorkflow,selectWorkspaceMode,handleWorkspaceModeKey,renderMode,showLearning,showIdentity,showToolConnections,showFilePatches,showKnowledge,showConnections,showBrowserWorkspace,showProjects,showInbox,showOperations,showSchedule,showSwarm,showDeployOperation};
+    globalThis.app={state,mountConfigure,mountObserve,showChatGPTConnectorSettings,toast:renderToast,handleGlobalKey,updateSkipLink,syncWorkflowView,ensureWorkflowView,applyView,fit,showModal,closeModal,showPlanning,showTaskNotes,showMission,showObserve,showConfigure,showWorkflow,selectWorkspaceMode,handleWorkspaceModeKey,renderMode,showIdentity,showToolConnections,showFilePatches,showConnections,showBrowserWorkspace,showProjects,showInbox,showOperations,showSchedule,showSwarm,showDeployOperation};
   })();`);
   await vm.runInContext(adapted,context);
   const app=context.app;app.state.workflow={id:'draft',name:'Unfinished workflow',nodes:[],edges:[],settings:{cwd:'C:\\fixture'}};app.state.dirty=false;
@@ -113,14 +113,14 @@ test('the latest ordinary receipt replaces older success messages while errors r
 });
 
 test('Settings subconfiguration exits to Chat without mutating unsent conversation or Studio edits',async()=>{
-  const f=await fixture();f.showConfigure();await f.showLearning();f.state.dirty=true;f.state.workflow.name='Keep my unfinished workflow';
+  const f=await fixture();f.showConfigure();await f.showFilePatches();f.state.dirty=true;f.state.workflow.name='Keep my unfinished workflow';
   f.selectWorkspaceMode('view');f.flush();
   assert.equal(f.state.screen,'mission');assert.equal(f.state.modal,null);assert.equal(f.mount.innerHTML,'');assert.equal(f.menu.open,false);
   assert.equal(f.draft.task,'Keep my unsent task');assert.equal(f.draft.model,'chosen-model');assert.equal(f.state.workflow.name,'Keep my unfinished workflow');assert.equal(f.state.dirty,true);assert.equal(f.settingsDraft.runFor,'36');assert.equal(f.document.activeElement.dataset.mode,'view');
 });
 
 test('selecting the already active Chat tab still dismisses its open subconfiguration',async()=>{
-  const f=await fixture();await f.showLearning();assert.equal(f.state.screen,'mission');f.selectWorkspaceMode('view');f.flush();assert.equal(f.state.modal,null);assert.equal(f.mount.innerHTML,'');assert.equal(f.tabs[0].attributes['aria-selected'],'true');
+  const f=await fixture();await f.showFilePatches();assert.equal(f.state.screen,'mission');f.selectWorkspaceMode('view');f.flush();assert.equal(f.state.modal,null);assert.equal(f.mount.innerHTML,'');assert.equal(f.tabs[0].attributes['aria-selected'],'true');
 });
 
 test('the advanced menu focuses its canvas and retains a reachable primary tab without selecting it',async()=>{
@@ -206,16 +206,16 @@ test('an old modal focus callback cannot focus a removed dialog after navigation
   const f=await fixture();f.showModal('learning','<input>');f.selectWorkspaceMode('observe');f.flush();assert.equal(f.state.modal,null);assert.equal(f.document.activeElement.dataset.mode,'observe');
 });
 
-for(const[name,module]of [['showPlanning','planning-workspace-ui'],['showLearning','learning-ui'],['showIdentity','identity-ui'],['showToolConnections','tool-connections-ui'],['showFilePatches','file-patches-ui'],['showKnowledge','knowledge-ui'],['showConnections','connections-ui'],['showBrowserWorkspace','browser-ui'],['showProjects','projects-ui'],['showInbox','inbox-ui'],['showOperations','advanced-ui'],['showSchedule','advanced-ui'],['showSwarm','advanced-ui'],['showDeployOperation','advanced-ui']])test(`a delayed ${name} import cannot reopen over a newly selected workspace`,async()=>{
+for(const[name,module]of [['showPlanning','planning-workspace-ui'],['showIdentity','identity-ui'],['showToolConnections','tool-connections-ui'],['showFilePatches','file-patches-ui'],['showConnections','connections-ui'],['showBrowserWorkspace','browser-ui'],['showProjects','projects-ui'],['showInbox','inbox-ui'],['showOperations','advanced-ui'],['showSchedule','advanced-ui'],['showSwarm','advanced-ui'],['showDeployOperation','advanced-ui']])test(`a delayed ${name} import cannot reopen over a newly selected workspace`,async()=>{
   const f=await fixture({pauseModule:`/${module}.mjs`});f.showConfigure();const opening=f[name]();await turn();f.selectWorkspaceMode('view');f.release();await opening;f.flush();assert.equal(f.state.screen,'mission');assert.equal(f.state.modal,null);assert.equal(f.mount.innerHTML,'');assert.deepEqual(f.opened,[]);assert.deepEqual(f.messages,[]);
 });
 
 test('a newer subconfiguration wins over an older lazy import',async()=>{
-  const f=await fixture({pauseModule:'/learning-ui.mjs'});const opening=f.showLearning();await turn();await f.showBrowserWorkspace();f.release();await opening;assert.deepEqual(f.opened,['browser']);assert.equal(f.state.modal,'browser');
+  const f=await fixture({pauseModule:'/file-patches-ui.mjs'});const opening=f.showFilePatches();await turn();await f.showBrowserWorkspace();f.release();await opening;assert.deepEqual(f.opened,['browser']);assert.equal(f.state.modal,'browser');
 });
 
 test('closing while a subconfiguration module loads cancels that opening',async()=>{
-  const f=await fixture({pauseModule:'/learning-ui.mjs'});const opening=f.showLearning();await turn();f.closeModal();f.release();await opening;assert.equal(f.state.modal,null);assert.deepEqual(f.opened,[]);
+  const f=await fixture({pauseModule:'/file-patches-ui.mjs'});const opening=f.showFilePatches();await turn();f.closeModal();f.release();await opening;assert.equal(f.state.modal,null);assert.deepEqual(f.opened,[]);
 });
 
 test('workspace tab arrow keys wrap and Home/End activate a single reachable tab',async()=>{

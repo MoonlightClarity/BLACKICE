@@ -24,7 +24,7 @@ export const PLANNING_BROWSER_LIMITS = Object.freeze({
   attempts: 1500, sources: 200, history: 200, fieldChars: 8000,
   responseChars: 120000, sourceChars: 40000, bytes: 32 * 1024 * 1024
 });
-export const PLANNING_LINK_KINDS = Object.freeze(['depends_on','consumes','supports','challenges','informs','knowledge']);
+export const PLANNING_LINK_KINDS = Object.freeze(['depends_on','consumes','supports','challenges','informs']);
 const field = (id,label,description,grounding='prospective') =>
   Object.freeze({id,label,description,prompt:description,required:true,grounding});
 const template = (kind,label,description,fields) => Object.freeze({kind,label,description,fields:Object.freeze(fields)});
@@ -162,9 +162,6 @@ export function planningRequestSources(request) {
     // readiness inputs must disappear when removed from the actual source set.
     all.push(...(response.sources||[]).filter(source=>!(/^(?:viability|cycle):/.test(source.id||''))||liveIds.has(source.id)));
   }
-  for(const edge of request.edges||[])if(edge.kind==='knowledge'&&edge.knowledge)
-    all.push({id:'knowledge:'+edge.knowledge.id+':'+edge.knowledge.revision,kind:'knowledge',title:edge.knowledge.title,
-      text:edge.knowledge.content,revision:edge.knowledge.revision,provenance:edge.knowledge.provenance});
   // Current source content always wins over older captured response snapshots.
   all.push(...liveSources);
   const sources=new Map(all.filter(item=>item&&typeof item.id==='string').map(item=>[item.id,item]));

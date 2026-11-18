@@ -6,12 +6,12 @@ import {managedContextPaths,RELEASE_SKILL_FILE} from '../lib/managed-context-pat
 import {createWorkspaceToolHandler} from '../lib/workspace-tools.mjs';
 import {FilePatchStore} from '../lib/file-patches.mjs';
 const parse=r=>JSON.parse(r.contentItems[0].text);
-test('managed stores include active snapshots, approval queue, backups and identity history without blanket filename protection',async t=>{
+test('managed stores include active snapshots, backups and identity history without blanket filename protection',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'blackice-managed-paths-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const dataDir=path.join(root,'data'),cwd=path.join(root,'project');await mkdir(dataDir);await mkdir(cwd);
  const protectedPaths=managedContextPaths({dataDir});const patchStore=new FilePatchStore({dataDir:path.join(root,'patches')});t.after(()=>patchStore.close());
  const h=createWorkspaceToolHandler({cwd,patchStore,protectedPaths});let count=0;
- for(const file of ['skills-folders.json','skills-folders.json.lock','knowledge.json','knowledge.json.bak','knowledge.json.12345678-1234-1234-1234-123456789abc.tmp','knowledge.json.12345678-1234-1234-1234-123456789abc.bak.tmp','knowledge-approvals.json.12345678-1234-1234-1234-123456789abc.tmp','knowledge-approvals.json','knowledge-folders.json','identity/USER.md','identity/history/user-1.json']) {
+ for(const file of ['skills-folders.json','skills-folders.json.lock','identity/USER.md','identity/history/user-1.json']) {
   const target=path.join(dataDir,file);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,'owner text');
   for(const args of [{action:'write',path:target,text:'changed'},{action:'patch',path:target,oldText:'owner',newText:'model'}]) {
    const result=await h({name:'relay_workspace',arguments:args},{onOperationDispatch:()=>count++});assert.equal(result.success,false);assert.equal(parse(result).code,'WORKSPACE_PROTECTED_PATH');assert.equal(parse(result).actionDispatched,false);
@@ -24,16 +24,16 @@ test('managed stores include active snapshots, approval queue, backups and ident
  assert.equal((await h({name:'relay_workspace',arguments:{action:'write',path:path.join(cwd,'knowledge.json'),text:'ordinary project artifact'}})).success,true);
 });
 test('custom store locations override defaults and do not protect the whole workspace',()=>{
- const root=path.resolve('fixture'),identity={directory:path.join(root,'custom-identity')},knowledge={file:path.join(root,'custom-k.json'),approvalsFile:path.join(root,'queue.json'),organizationFile:path.join(root,'folders.json'),lockDirectory:path.join(root,'lock')};
- const paths=managedContextPaths({dataDir:root,identity,knowledge});
- for(const file of [identity.directory,knowledge.file,knowledge.approvalsFile,knowledge.organizationFile,knowledge.lockDirectory])assert.ok(paths.includes(file));
+ const root=path.resolve('fixture'),identity={directory:path.join(root,'custom-identity')};
+ const paths=managedContextPaths({dataDir:root,identity});
+ for(const file of [identity.directory])assert.ok(paths.includes(file));
  assert.ok(!paths.includes(root));assert.ok(!paths.includes(path.join(root,'knowledge.json')));
 });
 
 
 test('production engine passes managed store guards into the actual model file handler',async t=>{
  const {HarnessEngine}=await import('../lib/engine.mjs');const {EventEmitter}=await import('node:events');
- const root=await mkdtemp(path.join(tmpdir(),'blackice-managed-engine-')),cwd=path.join(root,'work'),dataDir=path.join(root,'data');await mkdir(cwd);await mkdir(dataDir);const target=path.join(dataDir,'knowledge.json');await writeFile(target,'owner bytes');
+ const root=await mkdtemp(path.join(tmpdir(),'blackice-managed-engine-')),cwd=path.join(root,'work'),dataDir=path.join(root,'data');await mkdir(cwd);await mkdir(dataDir);const target=path.join(dataDir,'identity','USER.md');await mkdir(path.dirname(target));await writeFile(target,'owner bytes');
  let observed;
  class Runtime extends EventEmitter {
   store={get:()=>({baseUrl:'https://api.example/v1'})};

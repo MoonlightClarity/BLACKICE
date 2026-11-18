@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {KnowledgeStore,createKnowledgeToolHandler} from '../lib/knowledge.mjs';
+import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
 
 const cwd=path.join(tmpdir(),'blackice-history-natural-query-fixture');
 const run=(id,input,extra={})=>({id,cwd,input,workflowName:'Saved work',output:'',status:'completed',createdAt:'2026-10-31T00:00:00.000Z',nodes:{},...extra});
-const handlerFor=(runs,store={})=>createKnowledgeToolHandler({store,cwd,runId:'current-turn',getRuns:async()=>runs});
+const handlerFor=(runs,store={})=>createRetrievalToolHandler({store,cwd,runId:'current-turn',getRuns:async()=>runs});
 const invoke=async(handler,args,name='relay_history')=>{
   const response=await handler({name,arguments:args});
   assert.equal(response.success,true);

@@ -158,13 +158,7 @@ test('runtime evidence cannot replace an actual request source identity',async t
   await assert.rejects(writer.recordResponse(f.requestId,attempt.id,{output:JSON.stringify(answer('decision',f.requestId)),metadata:stamp,evidence:[{id:'request:'+f.requestId,kind:'source',text:'Replacement objective'}]}),{code:'PLANNING_SOURCE_COLLISION'});
   await writer.cancel(f.requestId,attempt.id,{reason:'Fixture complete.'});
 });
-test('knowledge inputs are actual scoped snapshots rather than caller-written provenance',async t=>{
-  let entry;const f=await fixture(t,{knowledge:{get:async()=>entry}});await add(f,'choice');
-  entry={id:'memory-one',kind:'memory',revision:4,title:'Observed constraint',content:'Fictional source content',cwd:f.dataDir,provenance:{source:'fixture'}};
-  let state=await link(f,{kind:'knowledge',from:'choice',to:'memory-one'});assert(state.sources.some(s=>s.id==='knowledge:memory-one:4'&&s.text===entry.content));
-  entry={...entry,cwd:path.join(f.dataDir,'other-workspace')};await assert.rejects(link(f,{kind:'knowledge',from:'choice',to:'memory-one'}),{code:'PLANNING_KNOWLEDGE_SCOPE'});
-  assert.throws(()=>f.store.addSource(f.requestId,{title:'Forged',text:'Claim',provenance:{kind:'runtime'}}));
-});
+test('memory links cannot be added to ordinary graphs',async t=>{const f=await fixture(t);await add(f,'choice');await assert.rejects(link(f,{kind:'knowledge',from:'choice',to:'memory-one'}));});
 test('invalid saved runtime provenance is diagnosed without rewriting damaged bytes',async t=>{
   const f=await fixture(t);const state=await add(f,'choice'),writer=f.store.runtimeWriter();const attempt=(await writer.beginAttempt(f.requestId,'choice',{expectedNodeRevision:byId(state,'choice').revision,ownerId:'worker'})).attempt;
   await writer.recordResponse(f.requestId,attempt.id,{output:JSON.stringify(answer('decision',f.requestId)),metadata:stamp});

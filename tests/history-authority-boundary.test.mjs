@@ -1,6 +1,6 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createKnowledgeToolHandler,KNOWLEDGE_TOOLS} from '../lib/knowledge.mjs';
+import {createRetrievalToolHandler,RETRIEVAL_TOOLS} from '../lib/retrieval-tools.mjs';
 import {directoryUserHistoryFor} from '../lib/shadowdancer-engine.mjs';
 const decode=r=>JSON.parse(r.contentItems.find(x=>x.type==='inputText').text);
 const cwd=process.cwd();
@@ -8,7 +8,7 @@ const old={id:'old-six-am',taskId:'old-six-am',cwd,createdAt:'2026-11-15T04:00:0
 const current={id:'current-three',taskId:'current-three',cwd,createdAt:'2026-11-16T20:00:00Z',input:'Apply to jobs for me. Stop at 3 jobs.',events:[]};
 const call=(action,args={})=>({name:'relay_history',arguments:{action,...args}});
 test('old deadline remains attributed history in search and read without changing current Directory authority',async()=>{
- const original=JSON.stringify(old),handler=createKnowledgeToolHandler({cwd,runId:current.id,getRuns:()=>[current,old]});
+ const original=JSON.stringify(old),handler=createRetrievalToolHandler({cwd,runId:current.id,getRuns:()=>[current,old]});
  const result=decode(await handler(call('search',{query:'contact phone resume'})));
  assert.equal(result.results.length,1);const row=result.results[0];
  assert.equal(row.recordType,'historical-run');assert.equal(row.authority,'historical-data-only');assert.equal(row.historicalLabel,'Previous task');
@@ -25,9 +25,9 @@ test('old deadline remains attributed history in search and read without changin
  assert.equal(savedPacket.objective,current.input);assert.equal(savedPacket.history.results[0].authority,'historical-data-only');
 });
 test('historical goal-only match is still discoverable with its boundary and original text',async()=>{
- const handler=createKnowledgeToolHandler({cwd,runId:current.id,getRuns:()=>[current,{...old,events:[]}]});
+ const handler=createRetrievalToolHandler({cwd,runId:current.id,getRuns:()=>[current,{...old,events:[]}]});
  const result=decode(await handler(call('search',{query:'6 AM EST'})));
  assert.equal(result.results[0].input,old.input);assert.equal(result.results[0].sourceRunId,old.id);
  assert.equal(result.results[0].authority,'historical-data-only');assert.match(result.results[0].excerpt,/6 AM EST/);
- assert.match(KNOWLEDGE_TOOLS.find(t=>t.name==='relay_history').description,/Retrieval never reactivates/);
+ assert.match(RETRIEVAL_TOOLS.find(t=>t.name==='relay_history').description,/Retrieval never reactivates/);
 });

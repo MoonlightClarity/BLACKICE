@@ -230,18 +230,6 @@ test('archived failed attempts remain readable but never admit a format repair',
   });
 });
 
-test('unchanged knowledge captured by an unrelated module does not stale the target repair',async t=>{
-  const f=await fixture(t,()=>{throw Error('Store-only capture test must not call a provider.');}),writer=f.store.runtimeWriter();
-  f.store.knowledge={get:async id=>({id,revision:1,kind:'memory',title:'Other branch fact',content:'Only another branch uses this.',cwd:null,provenance:{kind:'human'}})};
-  await f.store.addNode(f.request.id,{id:'target',kind:'viability',title:'Target',prompt:'Use the task.'});
-  await f.store.addNode(f.request.id,{id:'other',kind:'viability',title:'Other',prompt:'Use its own knowledge.'});
-  await f.store.link(f.request.id,{id:'other-knowledge',kind:'knowledge',from:'other',to:'fact'},{expectedNodeRevision:1});
-  const started=await writer.beginAttempt(f.request.id,'target',{ownerId:'fixture-worker',expectedNodeRevision:1});
-  await writer.fail(f.request.id,started.attempt.id,{message:'Synthetic shape failure.',partialOutput:'{}',validation:{code:'TASK_VIABILITY_INVALID',message:'Missing structured fields.',issues:[]}});
-  const repaired=await writer.beginRepairAttempt(f.request.id,started.attempt.id);
-  assert.equal(repaired.created,true);assert.deepEqual(repaired.attempt.sources,started.attempt.sources);assert.equal(repaired.attempt.sources.some(source=>source.id.startsWith('knowledge:')),false);assert.equal(f.calls.length,0);
-  await writer.cancel(f.request.id,repaired.attempt.id,{message:'Store-only fixture complete.'});
-});
 
 test('concurrent stale cycle starts reject before consuming provider budget or creating attempts',async t=>{
   const f=await fixture(t,()=>{throw Error('Archived work cannot reach a provider.');});

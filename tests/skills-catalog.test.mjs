@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createSkillsCatalog,skillIdFromRequestPath} from '../lib/skills-catalog.mjs';
 import {searchReleaseSkills,readReleaseSkill} from '../lib/release-skills.mjs';
-import {KNOWLEDGE_TOOLS,KNOWLEDGE_INSTRUCTIONS,createKnowledgeToolHandler} from '../lib/knowledge.mjs';
+import {RETRIEVAL_TOOLS,createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
 import path from 'node:path';
 test('release catalog is read-only, fresh, and ignores all legacy/native inputs',async()=>{
  const catalog=createSkillsCatalog({knowledge:{list(){throw Error('legacy contamination');}},nativeSkills(){throw Error('ambient contamination');}});
@@ -17,9 +17,9 @@ test('skill IDs are exact identifiers, not paths',()=>{
  for(const value of ['saved%3Aa','native%3Aabc','builtin-..%2Fsecret','builtin-browser/extra','%XX'])assert.equal(skillIdFromRequestPath('/api/skills/'+value),null);
 });
 test('model sees discovery/read only, no memory, no ambient instructions or persistent selection',async()=>{
- assert.equal(KNOWLEDGE_INSTRUCTIONS,'');assert.ok(!KNOWLEDGE_TOOLS.some(t=>t.name==='relay_memory'));
- const schema=KNOWLEDGE_TOOLS.find(t=>t.name==='relay_skills').inputSchema;assert.deepEqual(schema.properties.action.enum,['search','read']);assert.ok(!schema.properties.content&&!schema.properties.scope);
- const handler=createKnowledgeToolHandler({cwd:path.resolve('.'),store:new Proxy({},{get(){throw Error('legacy store read');}})});
+ assert.ok(!RETRIEVAL_TOOLS.some(t=>t.name==='relay_memory'));
+ const schema=RETRIEVAL_TOOLS.find(t=>t.name==='relay_skills').inputSchema;assert.deepEqual(schema.properties.action.enum,['search','read']);assert.ok(!schema.properties.content&&!schema.properties.scope);
+ const handler=createRetrievalToolHandler({cwd:path.resolve('.'),store:new Proxy({},{get(){throw Error('legacy store read');}})});
  const invoke=arguments_=>handler({name:'relay_skills',arguments:arguments_});
  const all=JSON.parse((await invoke({action:'search'})).contentItems[0].text);assert.equal(all.entries.length,13);assert.equal(all.truncated,false);
  const found=JSON.parse((await invoke({action:'search',query:'browser'})).contentItems[0].text);assert.ok(found.entries.some(e=>e.id==='builtin-browser'));assert.ok(!('content' in found.entries[0]));

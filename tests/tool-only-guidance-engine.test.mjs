@@ -5,7 +5,6 @@ import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
-import {KnowledgeStore} from '../lib/knowledge.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 import {BROWSER_TOOL} from '../lib/browser.mjs';
 for(const scenario of [
@@ -14,7 +13,6 @@ for(const scenario of [
 ])test('real engine exposes browser guidance only with the available browser tool: '+scenario.task,async t=>{
  const directory=await mkdtemp(path.join(tmpdir(),'blackice-skill-engine-')),cwd=path.join(directory,'workspace');
  await mkdir(cwd);
- const knowledge=await new KnowledgeStore({dataDir:directory}).init();
  let inspected=false;
  class Runtime extends EventEmitter{
   status(){return{connected:true,authenticated:true,defaultModel:'fixture',models:[{id:'fixture',supportsTools:true}]};}
@@ -31,13 +29,12 @@ for(const scenario of [
   }
   async close(){}
  }
- const engine=await new HarnessEngine({runtime:new Runtime(),knowledge,browser:{status:()=>({available:scenario.available,contained:true})},dataDir:directory,defaultCwd:cwd}).init();
- t.after(async()=>{await engine.close();await knowledge.writeChain.catch(()=>{});await rm(directory,{recursive:true,force:true});});
+ const engine=await new HarnessEngine({runtime:new Runtime(),browser:{status:()=>({available:scenario.available,contained:true})},dataDir:directory,defaultCwd:cwd}).init();
+ t.after(async()=>{await engine.close();await rm(directory,{recursive:true,force:true});});
  const workflow=createMissionWorkflow({task:scenario.task,model:'fixture',cwd,planningMode:'off'});
  const started=engine.startRun({workflow,input:{task:scenario.task,cwd,planningMode:'off'}});
  let done;
  for(let i=0;i<200;i++){done=engine.getRun(started.id);if(done?.settled)break;await new Promise(resolve=>setTimeout(resolve,10));}
  assert.equal(done.status,'completed',done.error||done.nodes.agent?.error);
  assert.equal(inspected,true);
- assert.equal(knowledge.status().count,0);
 });
