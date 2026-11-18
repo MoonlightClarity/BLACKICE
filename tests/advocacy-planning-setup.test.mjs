@@ -8,7 +8,7 @@ import path from 'node:path';
 import { DEFAULT_PLANNING_ONTOLOGY, normalizePlanningOntology, planningOntologyInstructions } from '../public/planning-module-policy.mjs';
 import { ADVOCACY_CASES, runAdvocacyCase } from '../scripts/verify-luna-advocacy.mjs';
 
-test('default fictional form setup uses direct modular execution and preserves a provider failure without external dispatch', async t => {
+test('default fictional form setup uses direct execution and preserves a provider failure without external dispatch', async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'blackice-advocacy-planning-'));
   t.after(async () => {
     assert.ok(path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep));
@@ -26,9 +26,9 @@ test('default fictional form setup uses direct modular execution and preserves a
       const policyReceipt = await options.onToolCall({name:'relay_workspace',arguments:{action:'list'}});
       assert.equal(policyReceipt.success,true,JSON.stringify(policyReceipt));
       const admittedPolicy = JSON.parse(policyReceipt.contentItems.find(item=>item.type==='inputText').text).activeTaskPolicy;
-      assert.equal(admittedPolicy.source,'admitted-run');
+      assert.equal(admittedPolicy,undefined,'Retired module policy is not delivered.');
       assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
-      assert.deepEqual(admittedPolicy.planningOntology,DEFAULT_PLANNING_ONTOLOGY); assert.equal(admittedPolicy.instructions,planningOntologyInstructions(DEFAULT_PLANNING_ONTOLOGY)); assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_browser'));
+      assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_browser'));
       throw Object.assign(Error('Synthetic operational provider failure; no external form accessed.'), { code: 'FIXTURE_PROVIDER_FAILURE' });
     }
     async close() { this.closes++; }
@@ -47,7 +47,7 @@ test('default fictional form setup uses direct modular execution and preserves a
   assert.equal(runtime.starts, 0);
   assert.equal(runtime.closes, 0, 'The caller retains runtime ownership across form cases.');
   assert.deepEqual(result.planningConfiguration, { setup: 'application-services', requestedMode: 'ontology',
-    effectiveMode: 'off', enforcement: null, guardrails: false, servicesAttached: true, ontology: DEFAULT_PLANNING_ONTOLOGY });
+    effectiveMode: 'off', enforcement: null, guardrails: false, servicesAttached: true, ontology: null });
   assert.equal(result.responseCycle, null); assert.equal(result.viability, null); assert.equal(result.planningGraph, null);
   assert.equal(result.inputIntegrity, true); assert.deepEqual(result.externalDispatches, []);
   assert.equal(result.form.calls.length, 0);
@@ -116,17 +116,14 @@ for (const scenario of [
     async start() { assert.fail('The fixture must not start a live provider.'); }
     async close() { closes++; }
     async runAgent(options) {
-      const review = fixtureOutcomeReview(options, ({ snapshot }) => {
-        assert.ok(snapshot.evidence.records.some(row => row.id === 'one-submission'), 'Review sees the actual synthetic submission receipt.');
-        return { decision: 'respond', summary: 'The fixture report accurately describes the recorded submission or validation result.', remaining: [], nextAction: '', blockers: [] };
-      }); if (review) return review;
-      calls++; assert.equal(calls, 1); assert.notEqual(options.responseOnly, true); assert.equal(typeof options.onBeforeFinal, scenario.planningOntology ? 'function' : 'undefined');
+      assert.notEqual(options.responseOnly,true,'No automatic reviewer turn is admitted.');
+      calls++; assert.equal(calls, 1); assert.notEqual(options.responseOnly, true); assert.equal(typeof options.onBeforeFinal, 'undefined');
       const policyReceipt = await options.onToolCall({name:'relay_workspace',arguments:{action:'list'}});
       assert.equal(policyReceipt.success,true,JSON.stringify(policyReceipt));
       const admittedPolicy = JSON.parse(policyReceipt.contentItems.find(item=>item.type==='inputText').text).activeTaskPolicy;
-      assert.equal(admittedPolicy.source,'admitted-run');
+      assert.equal(admittedPolicy,undefined,'Retired module policy is not delivered.');
       assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
-      assert.deepEqual(admittedPolicy.planningOntology,scenario.planningOntology || DEFAULT_PLANNING_ONTOLOGY); assert.equal(admittedPolicy.instructions,planningOntologyInstructions(scenario.planningOntology || DEFAULT_PLANNING_ONTOLOGY));
+      assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_browser'));
       options.onEvent({ type: 'thread', threadId: 'synthetic-form-thread', model: 'fixture-model' });
       const send = async (args, callId) => {
         const result = await options.onToolCall({ name: 'relay_browser', arguments: args, callId });
@@ -153,7 +150,7 @@ for (const scenario of [
   assert.equal(result.form.calls.filter(call => call.args.action === 'click').length, 1, 'Duplicate callbacks do not submit again.');
   assert.equal(result.form.values.nationality, 'Prefer not to say');
   assert.equal(result.planningConfiguration.requestedMode, scenario.planningMode || 'ontology');
-  assert.equal(result.planningConfiguration.effectiveMode, 'off'); assert.deepEqual(result.planningConfiguration.ontology, scenario.planningOntology || DEFAULT_PLANNING_ONTOLOGY);
+  assert.equal(result.planningConfiguration.effectiveMode, 'off'); assert.deepEqual(result.planningConfiguration.ontology, null);
   assert.equal(result.responseCycle, null); assert.equal(result.planningGraph, null); assert.equal(result.viability, null);
   assert.equal(Object.hasOwn(result.assessment.checks, 'forcedPlanning'), false); assert.equal(Object.hasOwn(result.assessment.checks, 'planningCycle'), false);
   assert.deepEqual(result.externalDispatches, []); assert.equal(result.inputIntegrity, true); assert.equal(result.timedOut, false);

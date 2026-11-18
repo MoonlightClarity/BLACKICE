@@ -61,7 +61,7 @@ async function fixture(t, execute) {
     constructor() { super(); this.calls = []; this.models = [{ id: 'fixture-model', supportsTools: true, supportedReasoningEfforts: ['low', 'medium', 'high'] }]; }
     status() { return { connected: true, authenticated: true, defaultModel: 'fixture-model', models: this.models }; }
     async runAgent(options) {
-      const review=fixtureOutcomeReview(options);if(review)return review;
+      assert.notEqual(options.responseOnly,true,'No automatic reviewer turn is admitted.');
       this.calls.push(options);
       options.onEvent({ type: 'thread', threadId: options.threadId || 'planning-mode-thread', model: options.model || 'fixture-model' });
       return finishFixtureCandidate(options,await execute(options, this.calls.length, context));
@@ -87,7 +87,7 @@ for (const mode of ['auto', 'on', 'maximal', 'forced', 'advisory']) test(mode + 
     const planningTool=options.dynamicTools.find(tool=>tool.name==='relay_task'||tool.name==='relay_planning_read');
     if(planningTool)assert.match(planningTool.description,/task|planning/i);
     assert.doesNotMatch(options.developerInstructions, /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL/);
-    assert.equal(typeof options.onBeforeFinal, 'function');
+    assert.equal(typeof options.onBeforeFinal, 'undefined');
     options.onEvent({ type: 'delta', itemId: 'answer', delta: 'The actual local write is complete.' });
     const written = await call(options, 'relay_workspace', { action: 'write', path: 'unplanned.txt', text: 'Authorized ordinary work.' });
     assert.equal(written.success, true);
@@ -139,7 +139,7 @@ test('a saved historical Advisory conversation keeps its captured guardrail stat
 test('a historical On request does not attach the retired mandatory skill', async t => {
   const f = await fixture(t, async options => {
     assert.doesNotMatch(options.developerInstructions, /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL/);
-    assert.equal(typeof options.onBeforeFinal, 'function');
+    assert.equal(typeof options.onBeforeFinal, 'undefined');
     return { output: 'The fixture answered without a sequence guard.' };
   });
   f.settings.executionGuardrails = false;
@@ -167,7 +167,7 @@ test('coordinator and independent read-only workers omit the retired skill witho
 
 test('a legacy On alias does not reject a tool-less model or invoke a planner', async t => {
   const f = await fixture(t, async options => {
-    assert.equal(typeof options.onBeforeFinal, 'function'); assert.equal(options.dynamicTools, undefined);
+    assert.equal(typeof options.onBeforeFinal, 'undefined'); assert.equal(options.dynamicTools, undefined);
     return { output: 'A direct model answer.' };
   });
   f.runtime.models[0].supportsTools = false;
@@ -227,10 +227,10 @@ test('optional authored detail remains explicit instead of being inflated by leg
   assert.equal(second.planDetail, 'compact'); assert.equal(second.planningMode, 'off');
 });
 
-test('legacy Maximal retains explicit user-authored task evidence while final output awaits outcome review', async t => {
+test('legacy Maximal retains explicit user-authored task evidence without automatically reviewing final output', async t => {
   const f = await fixture(t, async (options, number, context) => {
     options.onEvent({ type: 'delta', delta: 'The current observed result.' });
-    assert.equal(context.engine.listRuns()[0].nodes.agent.output, '', 'Provisional output is not an accepted outcome.');
+    assert.equal(context.engine.listRuns()[0].nodes.agent.output,'The current observed result.');
     const state = await plan(options, { steps: [action()], detail: 'compact' });
     assert.equal(state.plan.detail, 'compact');
     await completeAndReview(options, state);
@@ -540,12 +540,12 @@ test('current prospective work can be added beside completed history without rew
   assert.equal(await readFile(path.join(f.cwd,'current.txt'),'utf8'),'current turn effect');
 });
 
-test('ordinary module candidates stay provisional until actual outcome review accepts them',async t=>{
+test('ordinary deltas stream and final response replaces provisional text without an automatic review',async t=>{
   const f=await fixture(t,async (options,number,context)=>{
     options.onEvent({type:'delta',itemId:'premature',delta:'Provisional current observation.'});
     options.onEvent({type:'message',text:'A later provisional observation.'});
     await completeAndReview(options, await plan(options));
-    assert.equal(context.engine.listRuns()[0].nodes.agent.output,'','An optional task-note review does not substitute for the actual outcome review.');
+    assert.equal(context.engine.listRuns()[0].nodes.agent.output,'Provisional current observation.','Ordinary deltas stream without hidden review.');
     options.onEvent({type:'delta',itemId:'grounded',delta:'The answer produced after the prospective plan.'});
     return {output:'The answer produced after the prospective plan.',threadId:'planning-mode-thread'};
   });

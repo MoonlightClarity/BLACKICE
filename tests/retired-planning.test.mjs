@@ -9,7 +9,7 @@ import {PLANNING_MODES,PLANNING_MODE_OPTIONS,PLANNING_INPUT_MODES,planningGuardr
 import {planningModeOf} from '../lib/planning-policy.mjs';
 import {planningExecutionModeOf,assertExecutablePlanningMode} from '../public/response-cycle-model.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
-import {normalizeChatOptions,restoreChatPlanningOptions,validateChatOptions,savedChatExecutionMode} from '../public/next/chat/options-model.mjs';
+import {normalizeChatOptions,validateChatOptions,savedChatExecutionMode} from '../public/next/chat/options-model.mjs';
 import {projectFamily} from '../public/next/chat/reader-model.mjs';
 import {submitChat} from '../public/next/chat/send.mjs';
 import {createChatWorkspace} from '../public/next/chat/chat.mjs';
@@ -18,10 +18,9 @@ import {planningDOM} from './fixture-planning-dom.mjs';
 import {HarnessEngine,validateWorkflow} from '../lib/engine.mjs';
 import {TaskStateStore} from '../lib/task-state.mjs';
 import {normalizePlanningOntology,DEFAULT_PLANNING_ONTOLOGY,planningOntologyInstructions} from '../public/planning-module-policy.mjs';
-import {readConversationOntology} from '../public/next/chat/ontology-preferences.mjs';
 import {createScheduledChatWorkflow,scheduleChatOptionsMarkup} from '../public/next/workspaces/schedule-inspection-model.mjs';
 
-test('only Modules and Off remain selectable; historical aliases are inert and cannot impose a planning gate',t=>{
+test('historical mode records remain legible while removed module controls cannot impose a planning gate',t=>{
   assert.deepEqual(PLANNING_MODES,['ontology','off']);
   assert.deepEqual(PLANNING_MODE_OPTIONS.map(x=>x.label),['Modules','Off']);
   for(const mode of ['forced','advisory','on','auto','maximal']){
@@ -33,21 +32,19 @@ test('only Modules and Off remain selectable; historical aliases are inert and c
   assert.equal(planningExecutionModeOf('plan_only'),'plan_only','historical record remains legible');
   assert.throws(()=>assertExecutablePlanningMode('plan_only'),{code:'PLANNING_EXECUTION_MODE_RETIRED'});
   const options=normalizeChatOptions({planningMode:'forced',planningExecutionMode:'plan_only'});
-  assert.equal(options.planningMode,'ontology');
+  assert.equal(options.planningMode,'off');
   assert.equal(options.planningExecutionMode,'plan_only','normalization preserves historical no-execution intent');
   assert.throws(()=>validateChatOptions({},options),{code:'PLANNING_EXECUTION_MODE_RETIRED'});
-  assert.equal(restoreChatPlanningOptions(options).planningExecutionMode,'plan_only');
+  assert.equal(normalizeChatOptions(options).planningExecutionMode,'plan_only');
   assert.throws(()=>assertExecutablePlanningMode('automatic','plan_only'),{code:'PLANNING_EXECUTION_MODE_RETIRED'});
   assert.throws(()=>assertExecutablePlanningMode('invalid','plan_only'),{code:'PLANNING_EXECUTION_MODE_RETIRED'});
   assert.equal(assertExecutablePlanningMode(undefined,'automatic'),'automatic');
   const dom=planningDOM(t),frame=createChatFrame(dom.mount);
-  assert.deepEqual(frame.plan.children.map(o=>o.value),['ontology','off']);
+  assert.equal(dom.$('#next-chat-plan'),null);
   assert.equal(frame.executionMode.value,'automatic');
   assert.equal(frame.executionMode.tagName,'INPUT');
   assert.doesNotMatch(frame.shell.innerHTML,/Legacy Forced|Legacy Advisory|>Plan only</);
-  const existing=readConversationOntology({conversationId:'legacy',runs:[{id:'prior',planningMode:'on',planningEnforcement:'forced'}]});
-  assert.equal(existing.planningMode,'ontology','legacy conversation reopens under module policy');
-  assert.equal(existing.planningOntology.modules.anti_overalignment,false);
+
 });
 
 test('a scheduled chat rejects Plan-only and explicit Automatic never restores Forced',()=>{
@@ -58,10 +55,10 @@ test('a scheduled chat rejects Plan-only and explicit Automatic never restores F
   assert.equal(verified.settings.planningMode,'off');
   assert.equal(verified.settings.planningExecutionMode,'automatic');
   assert.equal(verified.settings.planningEnforcement,undefined);
-  assert.equal(verified.settings.planningOntology.modules.decomposition,false);
+  assert.equal(verified.settings.planningOntology,undefined);
   const markup=scheduleChatOptionsMarkup();
   assert.doesNotMatch(markup,/value="forced"|value="advisory"|value="plan_only"/);
-  assert.match(markup,/value="ontology"/);
+  assert.doesNotMatch(markup,/value="ontology"/);
 });
 
 test('explicit Plan-only cannot start while old Forced with Automatic still completes useful work',async t=>{
@@ -72,15 +69,14 @@ test('explicit Plan-only cannot start while old Forced with Automatic still comp
   class Runtime extends EventEmitter {
     status(){return{connected:true,authenticated:true,defaultModel:'fixture-model',models:[{id:'fixture-model',supportsTools:true}]};}
     async runAgent(options){
-      const review=fixtureOutcomeReview(options);if(review)return review;
+      assert.notEqual(options.responseOnly,true,'No automatic reviewer turn is admitted.');
       runCount++;
       const policyReceipt = await options.onToolCall({name:'relay_control',arguments:{action:'describe'}});
       assert.equal(policyReceipt.success,true,JSON.stringify(policyReceipt));
       const admittedPolicy = JSON.parse(policyReceipt.contentItems.find(item=>item.type==='inputText').text).activeTaskPolicy;
-      assert.equal(admittedPolicy.source,'admitted-run');
+      assert.equal(admittedPolicy,undefined);
       assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
-      assert.deepEqual(admittedPolicy.planningOntology,DEFAULT_PLANNING_ONTOLOGY);
-      assert.equal(admittedPolicy.instructions,planningOntologyInstructions(DEFAULT_PLANNING_ONTOLOGY));
+
       assert.doesNotMatch(options.developerInstructions,/Save this turn.s task outline first|Planning is On. Read/);
       assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
       const receipt=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'leaf'+runCount+'.txt',text:'completed-'+runCount}});
@@ -124,14 +120,14 @@ test('explicit Plan-only cannot start while old Forced with Automatic still comp
   assert.equal(complete.planningMode,'off');
   assert.equal(complete.planningExecutionMode,'automatic');
   assert.equal(complete.runtimeSettings.planningGuardrails,false);
-  assert.equal(complete.planningOntology.modules.anti_overalignment,false);
+  assert.equal(complete.planningOntology,null);
   assert.equal(await readFile(path.join(cwd,'leaf1.txt'),'utf8'),'completed-1');
   assert.equal(called,0,'no retired response-cycle operation');
   assert.equal(runCount,1);
   const next=engine.continueRun(complete.id,{nodeId:'agent',message:'Continue useful work'});
   const continued=await waitFor(next.id);
   assert.equal(continued.status,'completed',continued.error||continued.nodes.agent?.error);
-  assert.equal(continued.planningOntology.modules.anti_overalignment,false);
+  assert.equal(continued.planningOntology,null);
   assert.equal(await readFile(path.join(cwd,'leaf2.txt'),'utf8'),'completed-2');
   assert.equal(runCount,2);
   assert.equal(called,0);
@@ -215,7 +211,7 @@ test('chat projection and submit retain every saved no-execution source without 
     const family=projectFamily({rootId:'saved',runs:[run]}),projected=family.runs[0];
     assert.equal(projected.workflow.settings.planningExecutionMode,setting);
     assert.equal(savedChatExecutionMode(projected),'plan_only');
-    const options=restoreChatPlanningOptions({planningExecutionMode:savedChatExecutionMode(projected)});
+    const options=normalizeChatOptions({planningExecutionMode:savedChatExecutionMode(projected)});
     assert.equal(options.planningExecutionMode,'plan_only');
     assert.throws(()=>validateChatOptions({},options),{code:'PLANNING_EXECUTION_MODE_RETIRED'});
     let calls=0;
@@ -304,7 +300,7 @@ test('mounted Plan-only drafts require explicit new-request reset and saved requ
     assert.equal(dom.$('#next-chat-execution-notice').hidden,true,'saved requests have no reset action');
     await dom.click('#next-chat-enable-automatic');
     assert.equal(dom.$('#next-chat-execution-mode').value,'plan_only','hidden action cannot reset a saved request');
-    const plan=dom.$('#next-chat-plan');plan.value='off';await plan.dispatch('change');
+    assert.equal(dom.$('#next-chat-plan'),null);
     workspace.updateStatus(status);
     assert.equal(dom.$('#next-chat-execution-mode').value,'plan_only','unrelated choice and refreshed model catalog preserve saved intent');
     await rejectSubmit();
@@ -337,7 +333,7 @@ test('mounted Plan-only drafts require explicit new-request reset and saved requ
   await wait(()=>workspace.getState().selected==='settings'&&workspace.getState().runCount===1);
   assert.equal(dom.$('#next-chat-execution-mode').value,'plan_only');
   await dom.click('#next-chat-enable-automatic');
-  const planning=dom.$('#next-chat-plan');planning.value='off';await planning.dispatch('change');
+  assert.equal(dom.$('#next-chat-plan'),null);
   assert.equal(JSON.parse(stored.get('blackice.next.chatOptions')).planningExecutionMode,'automatic','saved-chat edits do not overwrite the explicit new-draft choice');
   await rejectSubmit();assert.equal(mutations,2,'saved request still rejects after a new Automatic request');
   for(const [id,saved] of original)assert.deepEqual(families.get(id),saved,'saved records remain unchanged');

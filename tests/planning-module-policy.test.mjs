@@ -11,12 +11,12 @@ import { planningOntologyDirectTool } from '../lib/planning-ontology-direct-tool
 import { HarnessEngine } from '../lib/engine.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
-import { normalizeChatOptions, restoreChatPlanningOptions } from '../public/next/chat/options-model.mjs';
+import { normalizeChatOptions } from '../public/next/chat/options-model.mjs';
 
 const waitFor=async(fn)=>{for(let i=0;i<150;i++){const result=fn();if(result?.settled)return result;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Run did not settle');};
 const content=response=>JSON.parse(response.contentItems[0].text);
 
-test('selectable modules retain On/Off choices while retired delegation choices use the default',()=>{
+test('retained historical policy parser preserves records; new chat does not expose module choices',()=>{
   const base=normalizePlanningOntology();
   assert.equal(base.version,2);assert.equal(Object.hasOwn(base,'autoSelect'),false);
   assert.equal(PLANNING_ONTOLOGY_MODULES.length,10);
@@ -40,24 +40,11 @@ test('selectable modules retain On/Off choices while retired delegation choices 
   for(const value of [{modules:{unknown:true}},{modules:{inference:'forced'}},{autoSelect:'yes'},
     {version:3},{version:2,autoSelect:false},{version:2,modules:{inference:'mandatory'}}])
     assert.throws(()=>normalizePlanningOntology(value),{code:'PLANNING_ONTOLOGY_INVALID'});
-  assert.equal(normalizeChatOptions({}).planningMode,'ontology');
-  assert.deepEqual(normalizeChatOptions({}).planningOntology,base);
+  assert.equal(normalizeChatOptions({}).planningMode,'off');
+  assert.equal(normalizeChatOptions({}).planningOntology,undefined);
   assert.equal(createMissionWorkflow({task:'Do useful work'}).settings.planningMode,'off');
 });
 
-test('old Forced new-chat preference migrates to Modules even when it had an explicit stored policy',()=>{
-  const defaultPolicy=normalizePlanningOntology({modules:{inference:'mandatory',anti_overalignment:'mandatory'}});
-  const migrated=restoreChatPlanningOptions({model:'default',planningMode:'forced',planningExecutionMode:'automatic'},defaultPolicy);
-  assert.equal(migrated.planningMode,'ontology');
-  assert.deepEqual(migrated.planningOntology,defaultPolicy);
-  const explicitLegacy=restoreChatPlanningOptions({planningMode:'forced',planningOntology:defaultPolicy},null);
-  assert.equal(explicitLegacy.planningMode,'ontology');
-  const explicitOff=restoreChatPlanningOptions({planningMode:'off'},defaultPolicy);
-  assert.equal(explicitOff.planningMode,'off');
-  const newChat=restoreChatPlanningOptions({},defaultPolicy);
-  assert.equal(newChat.planningMode,'ontology');
-  assert.deepEqual(newChat.planningOntology,defaultPolicy);
-});
 
 test('anti-overalignment calibrates inference without records-only gates and preserves local real blockers',()=>{
   const instruction=ANTI_OVERALIGNMENT_STOP_CALIBRATION.join(' ');
@@ -82,7 +69,7 @@ test('anti-overalignment calibrates inference without records-only gates and pre
   assert.match(planningOntologyInstructions(explicitOverride),/OFF:[\s\S]*Anti-overalignment calibration/);
 });
 
-test('direct ChatGPT ontology tool reads and saves the same runtime default atomically',async t=>{
+test('retained legacy ontology helper reads and saves its historical settings atomically',async t=>{
   const dir=await mkdtemp(path.join(tmpdir(),'blackice-ontology-tool-'));
   const settings=await new RuntimeSettingsStore({dataDir:dir}).init();
   t.after(async()=>{await settings.close();await rm(dir,{recursive:true,force:true});});
@@ -103,7 +90,7 @@ test('direct ChatGPT ontology tool reads and saves the same runtime default atom
   assert.deepEqual(settings.get().planningOntology,result.policy);
 });
 
-test('new ontology chats retain Planning choices and default delegation on continuation',async t=>{
+test('retired module requests preserve ordinary authoring, delegation and continuation',async t=>{
   const directory=await mkdtemp(path.join(tmpdir(),'blackice-ontology-runtime-'));
   const cwd=path.join(directory,'workspace');await mkdir(cwd);
   const tasks=await new TaskStateStore({dataDir:directory}).init();
@@ -111,22 +98,18 @@ test('new ontology chats retain Planning choices and default delegation on conti
     constructor(){super();this.calls=[];}
     status(){return{connected:true,authenticated:true,defaultModel:'fixture-model',models:[{id:'fixture-model',supportsTools:true}]};}
     async runAgent(options){
-      const review=fixtureOutcomeReview(options);if(review)return review;
+      assert.notEqual(options.responseOnly,true,'No automatic reviewer turn is admitted.');
       this.calls.push(options);
       const policyReceipt = await options.onToolCall({name:'relay_control',arguments:{action:'describe'}});
       assert.equal(policyReceipt.success,true,JSON.stringify(policyReceipt));
       const admittedPolicy = JSON.parse(policyReceipt.contentItems.find(item=>item.type==='inputText').text).activeTaskPolicy;
-      assert.equal(admittedPolicy.source,'admitted-run');
+      assert.equal(admittedPolicy,undefined);
+      assert.equal(options.onBeforeFinal,undefined);
       assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
-      assert.deepEqual(admittedPolicy.planningOntology,policy);
-      assert.equal(admittedPolicy.instructions,planningOntologyInstructions(policy));
-      assert.match(admittedPolicy.instructions,/MINIMUM-SCOPE BLOCKING/);
-      assert.match(admittedPolicy.instructions,/SOURCE AND INFERENCE CALIBRATION/);
-      assert.match(admittedPolicy.instructions,/continue other applications/i);
-      assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_task'), 'forbidden decomposition removes task plan tool');
-      assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_delegate'), 'retired subagent choice cannot silently remove default delegation');
-      const forbidden=await options.onToolCall({name:'relay_control',arguments:{action:'planning_cycle_create'}});
-      assert.equal(forbidden.code,'ONTOLOGY_MODULE_FORBIDDEN','a hidden planning-cycle action may not bypass Forbidden');
+      assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_task'));
+      assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_delegate'));
+      const retired=await options.onToolCall({name:'relay_control',arguments:{action:'planning_cycle_create'}});
+      assert.equal(retired.success,false);assert.match(JSON.parse(retired.contentItems[0].text).error,/Planning cycle is retired/);
       const receipt=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'ontology-proof.txt',text:'tool works without plan'}});
       assert.equal(receipt.success,true,JSON.stringify(receipt));
       return finishFixtureCandidate(options,{output:'Acted without a planning contract.',threadId:'ontology-fixture-thread'});
@@ -143,13 +126,13 @@ test('new ontology chats retain Planning choices and default delegation on conti
   const complete=await waitFor(()=>engine.getRun(run.id));
   assert.equal(complete.status,'completed',complete.error||complete.nodes.agent?.error);
   assert.equal(complete.planningMode,'off');
-  assert.deepEqual(complete.planningOntology,policy);
+  assert.equal(complete.planningOntology,null);
   assert.equal(complete.runtimeSettings.planningGuardrails,false);
   assert.equal(await readFile(path.join(cwd,'ontology-proof.txt'),'utf8'),'tool works without plan');
-  assert.equal(runtime.calls.length,1,'one execution turn; read-only outcome review is tracked separately');
+  assert.equal(runtime.calls.length,1,'one execution turn with no automatic outcome review');
   const next=engine.continueRun(complete.id,{nodeId:'agent',message:'Continue',planningMode:'ontology'});
   const continued=await waitFor(()=>engine.getRun(next.id));
   assert.equal(continued.status,'completed',continued.error||continued.nodes.agent?.error);
-  assert.deepEqual(continued.planningOntology,policy);
-  assert.equal(runtime.calls.length,2,'one execution turn per response, excluding read-only outcome review');
+  assert.equal(continued.planningOntology,null);
+  assert.equal(runtime.calls.length,2,'one execution turn per response with no hidden reviewer');
 });

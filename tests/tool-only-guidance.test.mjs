@@ -7,25 +7,20 @@ import {KnowledgeStore,createKnowledgeToolHandler} from '../lib/knowledge.mjs';
 import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 import {BROWSER_TOOL} from '../lib/browser.mjs';
 import {capabilityGuidance} from '../lib/tool-routing.mjs';
-test('built-in skills are absent while saved skill search, read, update and removal remain available',async t=>{
+test('release skills are on-demand and immutable; legacy user skill mutations are unavailable',async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'blackice-tool-guidance-'));
  const store=await new KnowledgeStore({dataDir:dir}).init();
  t.after(async()=>{await store.writeChain.catch(()=>{});await rm(dir,{recursive:true,force:true});});
  const invoke=args=>createKnowledgeToolHandler({store,cwd:dir})({name:'relay_skills',arguments:args});
  const decode=r=>JSON.parse(r.contentItems[0].text);
- assert.deepEqual(decode(await invoke({action:'search'})).entries,[]);
- for(const id of ['builtin:browser','builtin:job-search','builtin:planning-v4','builtin:planning-v5','builtin:autonomy'])
-  await assert.rejects(invoke({action:'read',id}));
- const approve=async response=>{const result=decode(response);assert.equal(result.pendingApproval,true);return (await store.decideApproval(result.approvalId,{decision:'approve'})).entry;};
- const saved=await approve(await invoke({action:'save',title:'User procedure',content:'Original method'}));
- assert.equal(decode(await invoke({action:'read',id:saved.id})).entry.content,'Original method');
- await approve(await invoke({action:'patch',id:saved.id,oldText:'Original',newText:'Updated',expectedRevision:saved.revision}));
- assert.equal(decode(await invoke({action:'search',query:'Updated'})).entries.length,1);
+ const entries=decode(await invoke({action:'search'})).entries;
+ assert.ok(entries.length>0);assert.ok(entries.every(e=>e.immutable&&e.source==='bundled'));
+ const selected=entries[0],read=decode(await invoke({action:'read',id:selected.id}));
+ assert.equal(read.entry.id,selected.id);assert.ok(read.entry.content);
+ for(const action of ['save','patch','remove'])await assert.rejects(invoke({action,id:selected.id,title:'Altered',content:'Altered'}));
  const catalog=createSkillsCatalog({knowledge:store,defaultCwd:dir});
- assert.equal((await catalog.list()).entries.length,1);
- assert.equal((await catalog.list({source:'bundled'})).entries.length,0);
- assert.equal((await catalog.detail({id:'saved:'+saved.id})).content,'Updated method');
- await approve(await invoke({action:'remove',id:saved.id}));
+ assert.deepEqual((await catalog.list()).entries,entries);
+ assert.equal((await catalog.detail({id:selected.id})).content,read.entry.content);
  assert.equal(store.status().count,0);
 });
 test('browser and job guidance belongs to the browser tool rather than global skill discovery',()=>{
@@ -36,7 +31,7 @@ test('browser and job guidance belongs to the browser tool rather than global sk
  const general=capabilityGuidance([{name:'relay_skills'},{name:'relay_browser'}],{planningMode:'off'});
  assert.doesNotMatch(general,/BUNDLED TASK SKILLS|builtin:browser|job boards|BROWSER STATE RECOVERY|relay_browser:/);
 });
-test('no packaged built-in skill files or loaders remain',async()=>{
+test('superseded built-in skill files and old loaders remain absent',async()=>{
  for(const relative of ['lib/bundled-task-skills.mjs','lib/planning-skill.mjs','skills/browser/SKILL.md','skills/job-search/SKILL.md','skills/planning/SKILL.md','skills/planning/CONTRACT-V2.md','skills/autonomy/SKILL.md'])
   await assert.rejects(access(new URL('../'+relative,import.meta.url)),{code:'ENOENT'});
 });

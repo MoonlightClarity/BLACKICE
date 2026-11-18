@@ -63,7 +63,7 @@ test('new production runs preserve optional schema 14 authoring and actual reads
       workItems: [{ id: 'inspect-input', title: 'Inspect input', objective: 'Read the current input file and report its contents.', owner: 'agent', resourceKeys: [resourceKey], effects: ['observe'], dependsOn: [], criterionIds: ['read-input'] }], instructions: [] };
     await send('relay_task', { action: 'plan', expectedRevision: state.revision, contract });
     await send('relay_workspace', { action: 'read', path: 'input.txt' });
-    assert.equal(typeof options.onBeforeFinal, 'function');
+    assert.equal(typeof options.onBeforeFinal, 'undefined');
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_compatibility' };
   });
   const run = await f.run('forced');
@@ -144,7 +144,7 @@ test('schema 14 legacy Forced delegation preserves optional canonical owners wit
     const accepted = payload(await send('relay_task', { action: 'plan', expectedRevision: state.revision, contract }));
     await send('relay_task', { action: 'focus', expectedPlanEpoch: accepted.contract.planEpoch, workItemId: 'coordinate' });
     await send('relay_delegate', { tasks: [{ id: 'reader', stepId: 'inspect-input', readOnly: true, prompt: 'Read input.txt and report its actual contents.' }, { id: 'independent-reader', stepId: 'inspect-independent', readOnly: true, prompt: 'Read independent.txt and report its actual contents.' }] });
-    assert.equal(typeof options.onBeforeFinal, 'function');
+    assert.equal(typeof options.onBeforeFinal, 'undefined');
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_parent' };
   }, { subagents: true });
   const run = await f.run('forced');
@@ -173,7 +173,7 @@ test('schema 14 publishes optional material edits without falsely completing cri
     const current = payload(await send('relay_task', { action: 'read' }));
     await send('relay_task', { action: 'plan', expectedRevision: current.revision, contract: { ...contract, goal: 'Read the supplied input file and report its actual contents.' } });
     revised = { visible: engine.getRun(state.taskId).taskState, saved: await tasks.get(state.taskId) };
-    assert.equal(typeof options.onBeforeFinal, 'function');
+    assert.equal(typeof options.onBeforeFinal, 'undefined');
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_live_projection' };
   });
   const run = await f.run('forced');

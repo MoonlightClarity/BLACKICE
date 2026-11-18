@@ -25,7 +25,7 @@ for(const scenario of [
    assert.equal(Boolean(browserTool),scenario.available);
    if(browserTool)assert.equal(browserTool.description,BROWSER_TOOL.description);
    const response=await options.onToolCall({name:'relay_skills',callId:'search-saved',arguments:{action:'search'}});
-   assert.deepEqual(JSON.parse(response.contentItems[0].text).entries,[]);
+   const entries=JSON.parse(response.contentItems[0].text).entries; assert.ok(entries.length>0);assert.ok(entries.every(entry=>entry.immutable&&entry.source==='bundled'));
    inspected=true;
    return{output:'Synthetic delivery checked; no live website operation',threadId:'skill-engine-fixture'};
   }

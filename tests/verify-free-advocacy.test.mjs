@@ -57,7 +57,7 @@ test('missing or nonzero catalog pricing stops setup before a provider turn', as
   }
 });
 
-test('direct modular execution preserves the isolated configured budget and actual wire reserve without calling a model', async t => {
+test('direct execution preserves the isolated configured budget and actual wire reserve without calling a model', async t => {
   const root = await temporary(t), bodies = [];
   const setup = await createFreeEvaluationRuntime({ root, fetchImpl: async (_url, options) => {
     if ((options.method || 'GET') === 'GET') return new Response(JSON.stringify(catalog({ prompt: '0', completion: '0' })), { headers: { 'content-type': 'application/json' } });
@@ -78,7 +78,7 @@ test('direct modular execution preserves the isolated configured budget and actu
   assert.equal(result.planningConfiguration.effectiveMode, 'off');
   assert.equal(result.planningConfiguration.enforcement, null);
   assert.equal(result.planningConfiguration.guardrails, false);
-  assert.deepEqual(result.planningConfiguration.ontology, DEFAULT_PLANNING_ONTOLOGY);
+  assert.deepEqual(result.planningConfiguration.ontology, null);
   assert.equal(result.responseCycle, null); assert.equal(result.planningGraph, null); assert.equal(result.viability, null);
   assert.equal(result.assessment.objective, 'fail'); assert.equal(result.assessment.checks.caseDeadline, true);
   assert.equal(result.inputIntegrity, true); assert.deepEqual(result.externalDispatches, []);
@@ -90,9 +90,9 @@ test('direct modular execution preserves the isolated configured budget and actu
     assert.equal(body.response_format, undefined);
     assert.ok(body.tools.some(tool => tool.function.name === 'relay_browser'));
     const workspaceTool=body.tools.find(tool=>tool.function.name==='relay_workspace').function;
-    assert.match(workspaceTool.description,/list without path or cwd to read full activeTaskPolicy/);
+    assert.doesNotMatch(workspaceTool.description,/activeTaskPolicy/);
     assert.ok(workspaceTool.parameters.properties.action.enum.includes('list'));
-    assert.match(body.tools.find(tool=>tool.function.name==='relay_control').function.description,/catalog or describe for activeTaskPolicy/);
+    assert.doesNotMatch(body.tools.find(tool=>tool.function.name==='relay_control').function.description,/activeTaskPolicy/);
     assert.ok(!body.messages.filter(message=>['system','developer'].includes(message.role)).some(message=>/BLACKICE PLANNING MODULES/.test(message.content||'')));
   }
   assert.equal(setup.budgets.providerMaxTokens, 32768);
@@ -157,7 +157,7 @@ test('the whole-case deadline aborts the real isolated provider transport and se
   assert.equal(result.status, 'cancelled'); assert.equal(result.settled, true); assert.equal(result.timedOut, true);
   assert.equal(result.assessment.objective, 'fail'); assert.equal(result.assessment.checks.caseDeadline, false);
   assert.equal(result.planningConfiguration.requestedMode, 'ontology'); assert.equal(result.planningConfiguration.effectiveMode, 'off');
-  assert.deepEqual(result.planningConfiguration.ontology, DEFAULT_PLANNING_ONTOLOGY);
+  assert.deepEqual(result.planningConfiguration.ontology, null);
   assert.equal(result.responseCycle, null); assert.equal(result.planningGraph, null);
   assert.equal(result.form.calls.length, 0); assert.equal(result.form.submitted, false); assert.equal(result.form.submissionCount, 0);
   assert.equal(result.inputIntegrity, true); assert.deepEqual(result.externalDispatches, []);
@@ -165,7 +165,7 @@ test('the whole-case deadline aborts the real isolated provider transport and se
   assert.equal(setup.requests.filter(request => request.method === 'POST').length, 1);
 });
 
-test('actual modular policy read reaches isolated provider transport before a synthetic error', async t => {
+test('actual workspace read reaches isolated transport without retired policy before a synthetic error', async t => {
   const root = await temporary(t), bodies = [];
   const setup = await createFreeEvaluationRuntime({ root, fetchImpl: async (_url, options) => {
     if ((options.method || 'GET') === 'GET') return new Response(JSON.stringify(catalog({ prompt: '0', completion: '0' })), { headers: { 'content-type': 'application/json' } });
@@ -187,7 +187,7 @@ test('actual modular policy read reaches isolated provider transport before a sy
   assert.equal(result.planningConfiguration.effectiveMode, 'off');
   assert.equal(result.planningConfiguration.enforcement, null);
   assert.equal(result.planningConfiguration.guardrails, false);
-  assert.deepEqual(result.planningConfiguration.ontology, DEFAULT_PLANNING_ONTOLOGY);
+  assert.deepEqual(result.planningConfiguration.ontology, null);
   assert.equal(result.responseCycle, null); assert.equal(result.planningGraph, null); assert.equal(result.viability, null);
   assert.equal(result.assessment.objective, 'fail'); assert.equal(result.assessment.checks.caseDeadline, true);
   assert.equal(result.inputIntegrity, true); assert.deepEqual(result.externalDispatches, []);
@@ -196,18 +196,16 @@ test('actual modular policy read reaches isolated provider transport before a sy
   const policyMessage=bodies[1].messages.find(message=>message.role==='tool'&&message.tool_call_id==='read-policy');
   assert.ok(policyMessage,'The actual tool result is serialized back to the provider.');
   const delivered=JSON.parse(policyMessage.content).activeTaskPolicy;
-  assert.equal(delivered.source,'admitted-run');
-  assert.deepEqual(delivered.planningOntology,DEFAULT_PLANNING_ONTOLOGY);
-  assert.equal(delivered.instructions,planningOntologyInstructions(DEFAULT_PLANNING_ONTOLOGY));
+  assert.equal(delivered,undefined,'Retired policy is absent in actual serialized tool results.');
   for (const body of bodies) {
     assert.equal(body.model, FREE_MODEL_ID);
     assert.equal(body.max_tokens, 8192, 'The direct execution wire reserve remains distinct from the configured 32768-token ceiling.');
     assert.equal(body.response_format, undefined);
     assert.ok(body.tools.some(tool => tool.function.name === 'relay_browser'));
     const workspaceTool=body.tools.find(tool=>tool.function.name==='relay_workspace').function;
-    assert.match(workspaceTool.description,/list without path or cwd to read full activeTaskPolicy/);
+    assert.doesNotMatch(workspaceTool.description,/activeTaskPolicy/);
     assert.ok(workspaceTool.parameters.properties.action.enum.includes('list'));
-    assert.match(body.tools.find(tool=>tool.function.name==='relay_control').function.description,/catalog or describe for activeTaskPolicy/);
+    assert.doesNotMatch(body.tools.find(tool=>tool.function.name==='relay_control').function.description,/activeTaskPolicy/);
     assert.ok(!body.messages.filter(message=>['system','developer'].includes(message.role)).some(message=>/BLACKICE PLANNING MODULES/.test(message.content||'')));
   }
   assert.equal(setup.budgets.providerMaxTokens, 32768);

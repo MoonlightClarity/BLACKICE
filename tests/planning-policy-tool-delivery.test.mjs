@@ -17,7 +17,7 @@ class NoNativeProcess extends EventEmitter {
 }
 const routes=[['relay_control','describe'],['relay_control','catalog'],['relay_workspace','list']];
 for(const type of ['openai','anthropic','compatible'])for(const scenario of ['modular-on','modular-legacy-off','no-policy-off'])for(const [name,action] of routes)
-test(type+': '+scenario+' admitted module policy delivered by '+name+' '+action+' through provider tool results',async t=>{
+test(type+': '+scenario+' retired module policy absent from '+name+' '+action+' through provider tool results',async t=>{
  const directory=await mkdtemp(path.join(tmpdir(),'blackice-policy-wire-')),requests=[];
  const planningMode=scenario==='modular-on'?'on':'off';
  const policy=scenario==='no-policy-off'?null:normalizePlanningOntology({version:2,modules:{time_management:true,anti_overalignment:true,decomposition:false,verification:false}});
@@ -50,19 +50,8 @@ test(type+': '+scenario+' admitted module policy delivered by '+name+' '+action+
    try{calls++;const result=await (call.name==='relay_control'?control:workspace)(call);
    assert.equal(result.success,true);
    const decoded=JSON.parse(result.contentItems[0].text);
-   assert.deepEqual(decoded.activeTaskPolicy,expected);
-   if(policy)assert.equal(decoded.activeTaskPolicy.planningOntology.modules.decomposition,false);
-   else assert.equal(decoded.activeTaskPolicy.planningOntology,null);
-   assert.equal(decoded.activeTaskPolicy.planningMode,planningMode);
-   if(policy){
-   assert.equal(decoded.activeTaskPolicy.instructions,planningOntologyInstructions(policy));
-   assert.match(decoded.activeTaskPolicy.instructions,/IMMEDIATE EFFORT CALIBRATION/);
-   assert.match(decoded.activeTaskPolicy.instructions,/MINIMUM-SCOPE BLOCKING/);
-   assert.match(decoded.activeTaskPolicy.instructions,/OFF:/);
-   }else{
-    assert.match(decoded.activeTaskPolicy.instructions,/All Planning method modules are Off/);
-    assert.doesNotMatch(decoded.activeTaskPolicy.instructions,/IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
-   }
+   assert.equal(decoded.activeTaskPolicy,undefined);
+   assert.doesNotMatch(JSON.stringify(decoded),/IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING|BLACKICE PLANNING MODULES/);
    return result;
    }catch(error){callbackError=error;throw error;}
   }});
@@ -75,7 +64,7 @@ test(type+': '+scenario+' admitted module policy delivered by '+name+' '+action+
    const actual=definitions.find(item=>item.name===tool.name);
    assert.equal(actual.description,tool.description);
    assert.deepEqual(type==='anthropic'?actual.input_schema:actual.parameters,tool.inputSchema);
-   assert.match(actual.description,/policy/i);
+   assert.doesNotMatch(actual.description,/activeTaskPolicy/);
   }
   const instructions=type==='openai'?body.instructions:type==='anthropic'?body.system:body.messages.find(message=>message.role==='system')?.content;
   assert.equal(instructions,developerInstructions);
@@ -87,13 +76,5 @@ test(type+': '+scenario+' admitted module policy delivered by '+name+' '+action+
   messages.filter(item=>item.role==='tool').map(item=>item.content);
  assert.equal(receipts.length,1);
  const serialized=JSON.stringify(receipts);
- assert.ok(serialized.includes('admitted-policy-run'));
- if(policy){
- assert.ok(serialized.includes('IMMEDIATE EFFORT CALIBRATION'));
- assert.ok(serialized.includes('MINIMUM-SCOPE BLOCKING'));
- assert.ok(serialized.includes('OFF:'));
- }else{
-  assert.ok(serialized.includes('All Planning method modules are Off'));
-  assert.ok(!serialized.includes('IMMEDIATE EFFORT CALIBRATION'));
- }
+ assert.doesNotMatch(serialized,/IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING|activeTaskPolicy/);
 });
