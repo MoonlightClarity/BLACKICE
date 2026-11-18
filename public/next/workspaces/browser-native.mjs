@@ -1,4 +1,4 @@
-import {browserFoldersMarkup,createBrowserFolders} from './browser-folders.mjs';
+import {createBrowserFolders} from './browser-folders.mjs';
 import { text } from '../core/dom.mjs';
 import { normalizeBrowserAddress } from '../../browser-address.mjs';
 import { browserOwnershipMarkup, createBrowserOwnershipControls, browserTabOwnerLabel } from './browser-ownership-ui.mjs';
@@ -111,7 +111,6 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
     '<div class="next-native-browser" data-browser-mode="native">',
     '<div class="next-browser-navigation" aria-label="Browser navigation">',
     browserOwnershipMarkup(),
-    browserFoldersMarkup(),
     '<div class="next-browser-tabs" id="next-browser-tabs" role="tablist" aria-label="Browser tabs"></div>',
     '<form id="next-browser-form" class="next-row next-browser-address" role="search">',
     '<button type="button" id="next-browser-back" aria-label="Back" title="Back">←</button>',

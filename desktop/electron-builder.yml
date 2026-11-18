@@ -38,7 +38,6 @@ files:
   - desktop/**/*.ps1
   - desktop/browser-compatibility/**/*
   - desktop/password-manager/**/*
-  - desktop/tab-folders/**/*
   - '!desktop/build-icon.mjs'
   - CHAT-MODE.md
   - RELEASE-NOTES-2.40.5.md

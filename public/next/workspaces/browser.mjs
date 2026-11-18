@@ -1,4 +1,4 @@
-import {browserFoldersMarkup,createBrowserFolders} from './browser-folders.mjs';
+import {createBrowserFolders} from './browser-folders.mjs';
 import { text } from '../core/dom.mjs';
 import { normalizeBrowserAddress } from '../../browser-address.mjs';
 import { browserFrame, pagePoint, browserInputGuard, wheelPixels, pendingDialog } from './browser-model.mjs';
@@ -19,7 +19,6 @@ export function createBrowserWorkspace(options) {
     '<button type="button" id="next-browser-refresh">Refresh tabs</button></header>',
     '<div class="next-browser-navigation" id="next-browser-navigation" aria-label="Browser navigation">',
     browserOwnershipMarkup(),
-    browserFoldersMarkup(),
     '<div class="next-browser-tabs" id="next-browser-tabs" role="tablist" aria-label="Contained tabs"></div>',
     '<form id="next-browser-form" class="next-row next-browser-address" role="search">',
     '<button type="button" id="next-browser-back" aria-label="Back" title="Back">←</button>',

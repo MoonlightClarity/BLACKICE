@@ -1,0 +1,78 @@
+{
+  "appOwnedFolders": true,
+  "liveUserData": false,
+  "checks": [
+    "App-owned folder controller loaded without extension; remote native-tab session unchanged",
+    "App creates nested folders and moves real native tab through existing host collection action",
+    "App stylesheet loaded for nested folder tree",
+    "At 780px width folder controls remain visible with no horizontal tree overflow",
+    "Child folders are nested inside parent tabstrip with descendant counts, and parent collapse across refresh",
+    "Real app dragstart/drop handlers move native tab out of and back into folder",
+    "One intrinsic tabstrip, no duplicate folder panel; local collapse survives host refresh; ownership unchanged",
+    "Rename/remove keeps real tabs; app preserves native select/close handlers",
+    "Existing host persistence restores membership and same tab ID after driver restart"
+  ],
+  "electron": "44.7.2",
+  "geometry": {
+    "viewport": 780,
+    "width": 742,
+    "scroll": 742,
+    "overflow": []
+  },
+  "hidden": true,
+  "ok": true,
+  "actions": [
+    {
+      "browser": "relay",
+      "action": "collection_create",
+      "name": "Research",
+      "parentCollectionId": null
+    },
+    {
+      "browser": "relay",
+      "action": "collection_create",
+      "name": "Companies",
+      "parentCollectionId": "collection_135a2b13-d46f-4bdd-9031-ca63ed45920c"
+    },
+    {
+      "browser": "relay",
+      "action": "tab_collect",
+      "tabId": "5e85284d-35d7-4361-a73e-dbd40d04610a",
+      "collectionId": "collection_b88bbbbc-908e-40c6-8b04-5b29ddd47780"
+    },
+    {
+      "browser": "relay",
+      "action": "tab_collect",
+      "tabId": "5e85284d-35d7-4361-a73e-dbd40d04610a",
+      "collectionId": null
+    },
+    {
+      "browser": "relay",
+      "action": "tab_collect",
+      "tabId": "5e85284d-35d7-4361-a73e-dbd40d04610a",
+      "collectionId": "collection_b88bbbbc-908e-40c6-8b04-5b29ddd47780"
+    },
+    {
+      "browser": "relay",
+      "action": "collection_rename",
+      "collectionId": "collection_b88bbbbc-908e-40c6-8b04-5b29ddd47780",
+      "name": "Targets",
+      "parentCollectionId": "collection_135a2b13-d46f-4bdd-9031-ca63ed45920c"
+    },
+    {
+      "browser": "relay",
+      "action": "collection_remove",
+      "collectionId": "collection_b88bbbbc-908e-40c6-8b04-5b29ddd47780"
+    },
+    {
+      "action": "tab_select",
+      "browser": "relay",
+      "tabId": "5e85284d-35d7-4361-a73e-dbd40d04610a"
+    },
+    {
+      "action": "close",
+      "browser": "relay",
+      "tabId": "d67527c3-a916-42e2-85fb-1ed1ae03dc9f"
+    }
+  ]
+}

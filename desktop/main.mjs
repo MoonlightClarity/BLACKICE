@@ -484,10 +484,6 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
   process.on('SIGTERM', () => app.quit());
   process.on('SIGINT', () => app.quit());
   app.whenReady().then(async () => {
-    // App-shell extension only: no third-party pages or separate folder storage.
-    try { await session.defaultSession.extensions.loadExtension(path.join(DESKTOP_DIR, 'tab-folders')); }
-    catch (error) { console.warn('Tab folders extension unavailable; ordinary browser tabs remain usable.', error); }
-
     // Begin best-effort tracing before profile recovery. Diagnostic source reads
     // or checkpoint I/O must never delay the startup indicator or profile work.
     // If the first checkpoint cannot persist, health reports the limitation.

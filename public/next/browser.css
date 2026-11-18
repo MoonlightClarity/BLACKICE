@@ -179,37 +179,22 @@
 @media(max-width:800px){.next-browser-ownership{gap:6px;flex-wrap:wrap}.next-browser-conversation-label{max-width:none;flex-basis:calc(100% - 220px)}.next-browser-conversation-label>span{display:none}.next-browser-move{flex-basis:170px}.next-browser-owner-hint{font-size:10px}.next-browser-tab-owner{max-width:80px}}
 @media(max-width:570px){.next-browser-scopes{order:0}.next-browser-move{order:1}.next-browser-conversation-label{order:2;flex-basis:100%}.next-browser-owner-hint{display:none}}
 
-/* Organizational folders never transfer browser task ownership. */
-.next-browser-folders{border:1px solid var(--next-border,#39434c);border-radius:8px;margin:6px 0;padding:6px 10px;background:var(--next-surface,#151b21)}
-.next-browser-folders summary{cursor:pointer;font-weight:600;font-size:13px}
-#next-browser-folders-body>.next-row{margin:7px 0}
-.next-browser-folder-tree{max-height:210px;overflow:auto;display:flex;flex-direction:column;gap:3px}
-.next-browser-folder-heading{display:flex;gap:6px;align-items:center}
-.next-browser-folder-heading button,.next-browser-folder-tab{min-height:28px;padding:3px 8px;font-size:12px}
-.next-browser-folder-toggle{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.next-browser-folder-children{border-left:1px solid var(--next-border,#39434c);margin-left:10px;padding-left:12px}
-.next-browser-folder-tab{display:block;text-align:left;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;border-color:transparent}
-.next-browser-folder-tab[aria-current="true"]{background:var(--next-surface-active,#253a49);border-color:var(--next-accent,#67bbdf)}
-.next-browser-folder-group h3{font-size:12px;margin:6px 8px}
-.next-browser-folder-editor{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-.next-browser-folder-editor input{flex:1;min-width:120px}
-.next-browser-folder-editor select{max-width:200px}
-@media(max-width:760px){.next-browser-folder-tree{max-height:150px}.next-browser-folder-editor>*{max-width:100%}}
 
-.next-browser-folder-icon{width:18px;height:18px;vertical-align:middle;fill:none;stroke:currentColor;stroke-width:1.6;margin-right:6px}
-
-/* One folder-aware tab strip. Organization controls stay closed until requested. */
-.next-browser-tab-collection{display:flex;align-items:center;flex:0 0 auto;min-width:0;gap:4px;border-inline-start:2px solid var(--accent,#678);padding-inline-start:4px}
-.next-browser-collection-toggle{display:flex;align-items:center;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 7px;min-height:30px;font-size:11px;flex:none}
-.next-browser-collection-tabs{display:flex;align-items:center;gap:4px}
-.next-browser-collection-tabs[hidden]{display:none}
-.next-browser-folders{margin:2px 0;padding:2px 6px;border:0;background:transparent}
-.next-browser-folders summary{font-size:11px;font-weight:400}
-.next-browser-folders[open]{max-height:190px;overflow:auto}
+/* App-owned folder tree. One renderer and stylesheet for desktop and server. */
+.next-browser-navigation .next-browser-folder-tree{box-sizing:border-box;display:flex;flex-direction:column;align-items:stretch;gap:4px;width:100%;max-height:230px;overflow:auto;flex-shrink:0;padding:5px;border:1px solid var(--line);border-radius:6px}
+.next-browser-folder-toolbar,.next-browser-folder-heading{display:flex;gap:5px;align-items:center;min-width:0}
+.next-browser-folder-toolbar{justify-content:space-between}
+.next-browser-folder-group{min-width:0;width:100%}
+.next-browser-folder-toggle{flex:1;text-align:left;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.next-browser-folder-children{padding-left:13px;margin-left:7px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:3px}
+.next-browser-folder-children[hidden]{display:none}
+.next-browser-folder-tree .next-browser-tab-group{width:100%;box-sizing:border-box}
+.next-browser-folder-tree .next-browser-tab{flex:1;max-width:none;min-width:0;text-align:left}
+.next-browser-folder-tree .next-browser-tab-move{flex:none;font-size:10px}
+.next-browser-folder-editor{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px;border:1px solid var(--line);background:var(--panel,#162334);border-radius:6px}
+.next-browser-folder-editor strong{flex-basis:100%}
+.next-browser-folder-editor input{flex:1;min-width:90px}
+.next-browser-folder-editor select{max-width:240px;min-width:0}
 .next-browser-navigation .next-browser-address{flex-wrap:wrap}
 .next-browser-navigation .next-browser-address #next-browser-url{flex:1 1 180px}
-.next-browser-navigation .next-browser-tabs{max-width:100%;flex-shrink:0}
-@media(max-width:800px){.next-browser-collection-toggle{max-width:120px}.next-browser-navigation .next-browser-address{gap:3px}.next-browser-address button{font-size:11px}.next-browser-folders[open]{max-height:130px}}
-
-.next-browser-collection-toggle .next-browser-folder-icon{flex:none}
-.next-browser-collection-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:800px){.next-browser-navigation .next-browser-folder-tree{max-height:170px}.next-browser-navigation .next-browser-address{gap:3px}.next-browser-address button{font-size:11px}.next-browser-folder-editor select{max-width:100%}}
