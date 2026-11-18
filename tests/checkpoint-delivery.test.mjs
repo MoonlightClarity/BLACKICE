@@ -39,3 +39,9 @@ test('real current task handler advertises and reads saved checkpoint without mu
  assert.deepEqual(value.decisions,checkpoint.decisions);assert.equal(value.provenance.runId,'original');assert.equal(value.provenance.nodeId,'agent');assert.equal(value.provenance.source,'agent');assert.equal(page.contractDelivery,undefined);
  assert.deepEqual(await readFile(store.file(initial.taskId)),before);
 });
+
+test('model-facing pinned-read guidance permits both current explicit paged views',()=>{
+ for(const field of ['action','expectedRevision']) assert.match(TASK_TOOL.inputSchema.properties[field].description,/only with view=contract or view=checkpoint/);
+ assert.ok(TASK_TOOL.inputSchema.properties.view.enum.includes('contract'));
+ assert.ok(TASK_TOOL.inputSchema.properties.view.enum.includes('checkpoint'));
+});
