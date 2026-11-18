@@ -109,7 +109,8 @@ test('retired module requests preserve ordinary authoring, delegation and contin
       assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_task'));
       assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_delegate'));
       const retired=await options.onToolCall({name:'relay_control',arguments:{action:'planning_cycle_create'}});
-      assert.equal(retired.success,false);assert.match(JSON.parse(retired.contentItems[0].text).error,/Planning cycle is retired/);
+      assert.equal(retired.success,false);assert.match(JSON.parse(retired.contentItems[0].text).error,/Choose an action from the current relay_control schema/);
+      assert.equal(options.dynamicTools.find(tool=>tool.name==='relay_control').inputSchema.properties.action.enum.includes('planning_cycle_create'),false,'Removed cycle actions are not advertised.');
       const receipt=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'ontology-proof.txt',text:'tool works without plan'}});
       assert.equal(receipt.success,true,JSON.stringify(receipt));
       return finishFixtureCandidate(options,{output:'Acted without a planning contract.',threadId:'ontology-fixture-thread'});
