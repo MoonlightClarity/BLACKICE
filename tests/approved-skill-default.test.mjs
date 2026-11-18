@@ -1,0 +1,28 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm,readFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+import {readReleaseSkill} from '../lib/release-skills.mjs';
+import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
+import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
+const id='builtin-task-grounding';
+const hash=x=>createHash('sha256').update(x).digest('hex');
+test('approved skill ships exact full attachment and fresh effective model read',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'approved-skill-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const catalog=createSkillsCatalog({dataDir:root}),base=readReleaseSkill(id),entry=await catalog.detail({id});
+ assert.equal(base.title,'Calibrated Depth and Action');assert.equal(Buffer.byteLength(base.content),54940);
+ assert.equal(hash(base.content),'5a0f2a99882ff9483f758e37da8ebfa01a9c964f2dea357b8c5d7f333e556576');
+ assert.ok(base.content.startsWith('name: calibrated-depth-and-action\ndescription: '));
+ assert.equal(entry.content,base.content);assert.equal(entry.source,'bundled');
+ const handler=createRetrievalToolHandler({cwd:root,dataDir:root});
+ const result=JSON.parse((await handler({name:'relay_skills',arguments:{action:'read',id}})).contentItems[0].text);
+ assert.equal(result.entry.content,base.content);
+ const {title,summary,appliesWhen,scope}=base;
+ const saved=await catalog.save({id,value:{title,summary,appliesWhen,scope,content:'Exact human draft\n',expectedRevision:entry.revision}});
+ assert.equal(saved.revision,2);const file=path.join(root,'skill-edits','skills.json'),before=await readFile(file);
+ const reopened=createSkillsCatalog({dataDir:root});assert.equal((await reopened.detail({id})).content,'Exact human draft\n');
+ assert.deepEqual(await readFile(file),before);assert.equal(hash(readReleaseSkill(id).content),hash(base.content));
+ await reopened.close();await catalog.close();
+});

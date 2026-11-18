@@ -5,12 +5,12 @@ import path from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {IdentityStore,DEFAULT_SOUL,createIdentityToolHandler,IDENTITY_INSTRUCTIONS} from '../lib/identity.mjs';
-const exact=await fs.readFile(new URL('./fixtures/soul-default-20261117.md',import.meta.url));
+const exact=await fs.readFile(new URL('./fixtures/soul-default-approved-20261118.md',import.meta.url));
 const previous=await fs.readFile(new URL('./fixtures/soul-default-20261115.md',import.meta.url),'utf8');
 async function fixture(t){const dataDir=await fs.mkdtemp(path.join(tmpdir(),'blackice-release-soul-'));const stores=[];const open=async()=>{const s=await new IdentityStore({dataDir}).init();stores.push(s);return s;};t.after(async()=>{for(const s of stores)await s.close();await fs.rm(dataDir,{recursive:true,force:true});});return {dataDir,open};}
 test('fresh profile receives exact concise default and restart is idempotent',async t=>{
  const {dataDir,open}=await fixture(t);const s=await open(),doc=await s.read('soul');
- assert.equal(createHash('sha256').update(exact).digest('hex'),'36c0582bb743d2759fe6d36e575975f7f92410ef5d24cbb3b74faca5feda3af8');
+ assert.equal(createHash('sha256').update(exact).digest('hex'),'ff7e24c0f0b38673ac413a534fe435c1f56edee0ca62f46f5d25755f498cdba1');
  assert.deepEqual(Buffer.from(DEFAULT_SOUL),exact);assert.deepEqual(await fs.readFile(path.join(dataDir,'identity','SOUL.md')),exact);
  assert.equal((await (await open()).read('soul')).revision,doc.revision);
  const snap=await s.snapshot();assert.equal(snap.documents.soul.truncated,false);assert.equal(snap.documents.soul.hash,doc.hash);assert.ok(Object.isFrozen(snap.documents.soul));
