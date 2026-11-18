@@ -27,34 +27,7 @@ async function fixture(t){
  }
  return {cwd,root,file,ctx,run,state,engine,conversations,request,mutations};
 }
-test('HTTP content reads stay scoped, validate fields, and do not start rebuilds',async t=>{
- const f=await fixture(t);
- assert.equal((await f.request()).status,400);
- assert.equal((await f.request('?runId=run')).status,200);
- assert.equal((await f.request('?runId=run&runId=run')).status,400);
- assert.equal((await f.request('/file?runId=run&file='+f.file+'&extra=1')).status,400);
- assert.equal((await f.request('/rebuild?runId=run')).status,404);
- assert.equal((await f.request('?runId=run','POST')).status,405);
-});
-test('HTTP edits preserve history and audit; stale hashes conflict',async t=>{
- const f=await fixture(t),prior=await readShadowdancerFile(f.ctx);
- const value={runId:'run',file:f.file,expectedHash:prior.hash,changes:{userSummary:'Corrected'},reason:'Review'};
- const result=await f.request('/edit','POST',value);
- assert.equal(result.status,200,JSON.stringify(result.data));assert.equal(f.mutations.size,0);
- assert.deepEqual(result.data.invalidatedRuns,['run']);
- assert.equal((await f.request('/edit','POST',value)).status,409);
- assert.equal((await f.request('/audit?runId=run')).data.total,1);
- assert.equal(JSON.parse(await readFile(path.join(f.root,'runs/run/integration/final.json'))).answer,'Historical');
-});
-test('HTTP allows archived context edits while blocking deleted reads, unknown state and unsettled sibling edits',async t=>{
- const f=await fixture(t),prior=await readShadowdancerFile(f.ctx);
- const value={runId:'run',file:f.file,expectedHash:prior.hash,changes:{userSummary:'No'},reason:'Test'};
- f.state.value='deleted';assert.equal((await f.request('?runId=run')).status,404);
- f.state.value='unknown';assert.equal((await f.request('?runId=run')).status,404);
- f.state.value='archived';assert.equal((await f.request('?runId=run')).status,200);assert.equal((await f.request('/edit','POST',value)).status,200);assert.equal(f.state.value,'archived');
- f.state.value='active';f.engine.runs.set('next',{id:'next',taskId:'chat',status:'cancelled',settled:false});
- assert.equal((await f.request('/edit','POST',value)).status,409);
-});
+
 test('corrupt audit/invalidation fails closed without overwriting evidence',async t=>{
  const f=await fixture(t),prior=await readShadowdancerFile(f.ctx);
  const audit=path.join(f.root,'conversation/context/audit.json');

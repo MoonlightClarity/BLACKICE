@@ -61,29 +61,7 @@ test('fresh semantic review can accept corrected response',async()=>{
  assert.equal(await c.beforeFinal({output:'corrected'}),null);
  assert.equal(calls,2);assert.equal((await c.assertReady()).ready,true);
 });
-test('Directory outer loop re-reviews changed report without another work phase',async t=>{
- const cwd=await mkdtemp(path.join(os.tmpdir(),'report-outer-'));
- t.after(()=>rm(cwd,{recursive:true,force:true}));
- const originalRun=ShadowdancerDirectory.prototype.run,originalRevision=ShadowdancerDirectory.prototype.reviseAnswer;
- t.after(()=>{ShadowdancerDirectory.prototype.run=originalRun;ShadowdancerDirectory.prototype.reviseAnswer=originalRevision;});
- let workRuns=0,revisions=0,reviews=0;
- ShadowdancerDirectory.prototype.run=async function(){
-   workRuns++;this.summary=async()=>{};this.label=async()=>{};this.work=[];
-   return {answer:'old report'};
- };
- ShadowdancerDirectory.prototype.reviseAnswer=async function(){revisions++;return {answer:'corrected report'};};
- const c=createModularCompletionController({policy,getSnapshot:()=>({policy,evidence:{records:[]}}),
-   review:async({candidate})=>{
-     reviews++;assert.equal(candidate.output,reviews===1?'old report':'corrected report');
-     return {decision:reviews===1?'revise_response':'respond',summary:'Exact candidate reviewed',
-       remaining:[],nextAction:'',evidenceRefs:['candidate'],blockers:[]};
-   }});
- const result=await runShadowdancerDirectory({cwd,runId:'report-outer',conversationId:'report-outer',model:'fixture',
-   runtime:{runAgent:async()=>{throw Error('Unexpected model execution in controlled fixture');}},
-   input:'Report',onBeforeFinal:candidate=>c.beforeFinal(candidate)});
- assert.equal(result.answer,'corrected report');assert.equal(workRuns,1);assert.equal(revisions,1);assert.equal(reviews,2);
- assert.equal((await c.assertReady()).ready,true);
-});
+
 async function fixture(t,changed){
  const dir=await mkdtemp(path.join(os.tmpdir(),'report-comparison-'));t.after(()=>rm(dir,{recursive:true,force:true}));
  const finalPath=path.join(dir,'final.json');await writeFile(finalPath,JSON.stringify({answer:'before'}));

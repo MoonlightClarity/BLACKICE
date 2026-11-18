@@ -1,37 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {ShadowdancerDirectory} from '../lib/shadowdancer-directory.mjs';
 import {listShadowdancerContext,readShadowdancerFile,editShadowdancerContext,contextAuditHistory} from '../lib/shadowdancer-context.mjs';
 
-class FakeRuntime {
-  constructor(replies){this.replies=[...replies];this.calls=[];}
-  async runAgent(args){this.calls.push(args);if(!this.replies.length)throw Error('Mock exhausted');return {output:JSON.stringify(this.replies.shift()),threadId:'provider_mock_'+this.calls.length};}
-}
-const codes='The marker code is ALPHA17.'.padEnd(1150,' ')+'The marker code is BETA29.'.padEnd(1080,' ');
 const note=(code)=>({summary:'Observed '+code,items:[{value:code,quote:'The marker code is '+code+'.'}]});
 const integrated={answer:'ALPHA17 and BETA29',used_refs:['page:1','page:2']};
-async function runShadowdancerDirectory(args) {
-  const runner=new ShadowdancerDirectory(args);
-  // Audit fixtures intentionally start with two saved pages. Runtime paging
-  // itself is tested against actual model capacity in directory-long-context.
-  runner.sourceChunks=async text=>[text.slice(0,1150),text.slice(1150)];
-  return runner.run(args.input);
-}
+
 async function fixture(t){
   const cwd=await mkdtemp(path.join(os.tmpdir(),'blackice-context-audit-'));
   t.after(()=>rm(cwd,{recursive:true,force:true}));
-  const runtime=new FakeRuntime([note('ALPHA17'),note('BETA29'),integrated]);
-  const conversationId='conversation-01',runId='run-01';
-  const done=await runShadowdancerDirectory({
-    cwd,conversationId,runId,model:'remote::model',runtime,
-    input:'/directory List all marker codes\nSOURCE:\n'+codes
-  });
-  return {cwd,conversationId,runId,done,runtime,
-    ctx:(extra={})=>({cwd,conversationId,...extra})};
+
+  const conversationId='conversation-01',runId='run-01',root=path.join(cwd,'.blackice','directory',conversationId);
+  const put=async(file,value)=>{const target=path.join(root,file);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,JSON.stringify(value));};
+  await put('conversation/context/summary.json',{conversationId,currentRun:runId,lastAnswer:'ALPHA17 and BETA29',totalTurns:8});
+  const turns=Array.from({length:8},(_,i)=>({id:'turn-'+i,runId,label:i===7?'final':'source',excerpt:'Saved fixture'}));
+  await put('conversation/context/turns.json',turns);
+  for(const turn of turns)await put('runs/run-01/turns/'+turn.id+'.json',turn);
+  for(const [page,code]of [['0001','ALPHA17'],['0002','BETA29']]){
+   const content='The marker code is '+code+'.';
+   await put('runs/run-01/sources/page-'+page+'/source.json',{content,sourceSha256:'original-'+page});
+   await put('runs/run-01/sources/page-'+page+'/result.json',{...note(code),anchoredItems:[code]});
+  }
+  const finalPath=path.join(root,'runs/run-01/integration/final.json');await put('runs/run-01/integration/final.json',integrated);
+  return {cwd,conversationId,runId,done:{finalPath},runtime:{calls:[]},ctx:(extra={})=>({cwd,conversationId,...extra})};
 }
+
 test('audit list shows provenance, field edits and replaceable generated context',async t=>{
   const f=await fixture(t);
   const list=await listShadowdancerContext(f.ctx());
@@ -67,7 +63,7 @@ test('summary user notes edit persists revision snapshots and stales historic an
   const overview=await listShadowdancerContext(f.ctx());
   assert.equal(overview.invalidation.staleRuns[f.runId].state,'stale');
   assert.equal(overview.invalidation.staleRuns[f.runId].editId,saved.editId);
-  assert.equal(f.runtime.calls.length,3,'editing has no implicit provider calls');
+  assert.equal(f.runtime.calls.length,0,'saved-record editing never starts provider calls');
 });
 
 test('optimistic hash rejects stale edits and concurrent lost updates',async t=>{
@@ -122,26 +118,10 @@ test('editing is blocked if the original run is active',async t=>{
   await assert.rejects(editShadowdancerContext(f.ctx({file,expectedHash:read.hash,changes:{userSummary:'something'},reason:'Edit during run',isActive:()=>true})),{code:'SHADOWDANCER_RUN_ACTIVE',status:409});
 });
 
-test('user-edited conversation summary is explicitly reloaded into a future fresh inference',async t=>{
-  const f=await fixture(t);
-  const file='conversation/context/summary.json';
-  const read=await readShadowdancerFile(f.ctx({file}));
-  await editShadowdancerContext(f.ctx({
-    file,expectedHash:read.hash,
-    changes:{userSummary:'User corrected both marker codes should be included',pinnedConstraints:['Retain BETA29 explicitly']},
-    reason:'Add user-controlled continuity information',
-  }));
-  const newer=new FakeRuntime([note('ALPHA17'),note('BETA29'),integrated]);
-  await runShadowdancerDirectory({
-    cwd:f.cwd,conversationId:f.conversationId,runId:'run-02',model:'remote::model',runtime:newer,
-    input:'/directory List all marker codes\nSOURCE:\n'+codes
-  });
-  assert.equal(newer.calls.length,3);
-  assert.ok(newer.calls[2].prompt.includes('"contextImport":'));
-  assert.ok(newer.calls[2].prompt.includes('Retain BETA29 explicitly'));
-  assert.ok(!newer.calls[0].prompt.includes('"contextImport":'));
-  const overview=await listShadowdancerContext(f.ctx());
-  const allTurns=JSON.parse(await readFile(path.join(f.cwd,'.blackice','directory',f.conversationId,'conversation','context','turns.json'),'utf8'));
-  assert.equal(overview.summary.totalTurns,allTurns.length);
-  assert.ok(allTurns.some(t=>t.label==='context-reload'&&t.runId==='run-02'));
+
+test('user-edited saved context cannot reenter retired execution',async t=>{
+ const f=await fixture(t),file='conversation/context/summary.json',prior=await readShadowdancerFile(f.ctx({file}));
+ await editShadowdancerContext(f.ctx({file,expectedHash:prior.hash,changes:{userSummary:'Owner correction'},reason:'Fixture'}));
+ assert.throws(()=>new ShadowdancerDirectory({cwd:f.cwd,conversationId:f.conversationId,runtime:{runAgent(){assert.fail('No provider');}}}),{code:'DIRECTORY_RETIRED'});
+ assert.equal((await readShadowdancerFile(f.ctx({file}))).value.userSummary,'Owner correction');
 });

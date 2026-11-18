@@ -1,14 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {mkdtemp,mkdir,rm} from 'node:fs/promises';
-import path from 'node:path';
-import {tmpdir} from 'node:os';
+
 import {ConversationGoals} from '../lib/conversation-goals.mjs';
 import {BrowserWorkspace,createBrowserToolHandler} from '../lib/browser.mjs';
 import {createSubagentToolHandler,SUBAGENT_TOOL} from '../lib/subagents.mjs';
-import {HarnessEngine} from '../lib/engine.mjs';
-import {ConversationArchive} from '../lib/conversations.mjs';
+
+
 import {computerDeadlineInput} from '../public/next/chat/goals.mjs';
 
 const cutoff='2026-11-15T11:00:00.000Z', ms=v=>Date.parse(v), tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -126,38 +124,4 @@ test('frontend refuses nonexistent and repeated DST wall times without inventing
    assert.equal(valid.deadlineAt,cutoff);
    assert.equal(valid.deadlineTimeZone,'America/New_York');
  }finally{if(old===undefined)delete process.env.TZ;else process.env.TZ=old;}
-});
-const graph=()=>({id:'deadline-directory',name:'Deadline Directory',nodes:[
- {id:'input',type:'input'}, {id:'agent',type:'agent',model:'fixture::remote',name:'Chat',prompt:'Do a synthetic task.',sandbox:'read-only'},
- {id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],
- settings:{maxParallel:1,planningMode:'off'}});
-test('Directory cannot admit a later model phase after the parent cutoff and retains UNKNOWN history',async t=>{
- const root=await mkdtemp(path.join(tmpdir(),'blackice-deadline-directory-')),cwd=path.join(root,'workspace'),dataDir=path.join(root,'data');await mkdir(cwd);
- const clock={now:ms('2026-11-15T10:59:45Z'),monotonic:0};
- const runtime=new EventEmitter();runtime.calls=[];
- runtime.status=()=>({connected:true,authenticated:true,defaultModel:'fixture::remote',models:[{id:'fixture::remote',supportsTools:true}]});
- let conversations;
- runtime.runAgent=async options=>{
-   runtime.calls.push(options);
-   if(runtime.calls.length!==1)throw Error('A second Directory provider turn passed the deadline gate.');
-   // A synthetic uncertain effect is retained as historical evidence, not replayed.
-   const parent=[...engine.runs.values()][0];
-   await conversations.changeState(parent.id,{goalUnresolvedEffects:structuredClone(pauseEvidence)});
-   clock.now=ms(cutoff);clock.monotonic+=15000;
-   return {output:JSON.stringify({atomic:true}),threadId:'directory-fixture'};
- };
- const engine=await new HarnessEngine({runtime,dataDir,defaultCwd:cwd}).init();
- conversations=await new ConversationArchive({dataDir,engine}).init();
- const goals=await new ConversationGoals({engine,conversations,now:()=>clock.now,monotonicNow:()=>clock.monotonic,
-   continuationDelayMs:10,deadlinePollMs:50}).init();
- t.after(async()=>{await goals.close();await engine.close();await conversations.close();await rm(root,{recursive:true,force:true});});
- const run=engine.startRun({workflow:graph(),input:{task:'Work until 6 AM EST.',directoryMode:'on',subagentsMode:'off',goal:{objective:'Work until 6 AM EST.'}}});
- const admitted=engine.executions.get(run.id);assert.ok(admitted);
- await admitted;
- assert.equal(runtime.calls.length,1,'only the first fake phase entered a provider');
- const saved=await goals.get(run.id);
- assert.equal(saved.status,'paused');
- assert.equal(saved.deadlineExpiredAt,cutoff);
- assert.deepEqual(conversations.states[run.id].goalUnresolvedEffects,pauseEvidence);
- assert.notEqual(engine.getRun(run.id).status,'completed');
 });

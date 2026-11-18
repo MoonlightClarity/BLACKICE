@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {IdentityStore} from '../lib/identity.mjs';
-for (const directoryMode of ['off','on']) test('identity delivered in '+directoryMode+' mode stays frozen during active turn, updates next turn', async t => {
+for (const directoryMode of ['off']) test('identity delivered in '+directoryMode+' mode stays frozen during active turn, updates next turn', async t => {
  const dir=await mkdtemp(path.join(tmpdir(),'blackice-soul-engine-'));
  const cwd=path.join(dir,'workspace'); await mkdir(cwd);
  const dataDir=path.join(dir,'data'), identity=await new IdentityStore({dataDir}).init();

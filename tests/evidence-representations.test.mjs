@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createEvidenceStore,evidenceResponseTokens} from '../lib/evidence-context.mjs';
 import {estimateContextTokens} from '../lib/context.mjs';
-import {ShadowdancerDirectory} from '../lib/shadowdancer-directory.mjs';
+
 import {reviewModularOutcome,createModularCompletionController} from '../lib/modular-completion.mjs';
 import {DEFAULT_PLANNING_ONTOLOGY} from '../public/planning-module-policy.mjs';
 
@@ -49,22 +49,6 @@ test('explicit raw encoded JSON preserves UTF-16 ranges and charges each seriali
     parts.push(raw.text);offset=raw.nextOffset;
   }while(offset!==null);
   assert.ok(parts.length>1);assert.equal(parts.join(''),encoded);assert.equal(await readFile(saved.file,'utf8'),encoded);
-});
-
-test('Directory charges conservative raw costs across reads rather than refunding them through the prose heuristic',async t=>{
-  const cwd=await workspace(t);let runner;
-  runner=new ShadowdancerDirectory({cwd,conversationId:'raw-budget',runId:'raw-budget-run',model:'fixture',inputBudgetTokens:7000,runtime:{async runAgent(options){
-    const payload=JSON.parse(options.prompt.split('CURRENT_DIRECTORY:\n').at(-1)).payload;
-    options.onEvent({type:'usage',usage:{last:{inputTokens:5000,outputTokens:0},total:{inputTokens:5000}}});
-    const args={action:'read',ref:payload.rawRef,representation:'raw'};
-    const first=await options.onToolCall({name:'relay_directory_context',callId:'raw-one',arguments:args});assert.equal(first.success,true);
-    assert.ok(evidenceResponseTokens(first)>estimateContextTokens(first));assert.notEqual(page(first).nextOffset,null);
-    const second=await options.onToolCall({name:'relay_directory_context',callId:'raw-two',arguments:{...args,offset:page(first).nextOffset}});
-    assert.equal(second.success,false,'The previous raw reply already spent the remaining byte-based capacity');
-    return {output:JSON.stringify({answer:'Only an encoded archive fragment was inspected; no image pixels were observed.',used_refs:[]})};
-  }}});
-  await runner.open();const raw=await runner.evidenceStore.save({image:{type:'inputImage',imageUrl:'data:image/png;base64,'+'ABCD'.repeat(10000)}},{kind:'original-archive'});
-  await runner.infer('integration','integration/raw-budget',{task:'Inspect encoded bytes only.',instructions:'No pixel claims.',rawRef:raw.ref,required_refs:[]});
 });
 
 test('552-record global review gives redirects no inspection credit and accepts an exact projected receipt read',async t=>{
