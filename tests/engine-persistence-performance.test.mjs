@@ -10,7 +10,7 @@ const turn = () => new Promise(resolve => setImmediate(resolve));
 const setup = async t => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'blackice-engine-persistence-'));
   const engine = new HarnessEngine({ runtime: {}, dataDir, defaultCwd: dataDir });
-  t.after(async () => { clearTimeout(engine.dirtyTimer); await engine.writeChain.catch(() => {}); await fs.rm(dataDir, { recursive: true, force: true }); });
+  t.after(async () => { clearTimeout(engine.dirtyTimer); await engine.writeChain.catch(() => {}); await engine.runStore.close(); await fs.rm(dataDir, { recursive: true, force: true }); });
   return { engine, dataDir };
 };
 
@@ -28,7 +28,7 @@ test('engine persistence batches a burst while retaining the newest state and bo
   await Promise.all(requests);
   assert.equal(snapshots, 1);
   assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, 'workflows.json')))[0].version, 49);
-  const saved = JSON.parse(await fs.readFile(path.join(dataDir, 'runs.json')));
+  const saved = (await engine.runStore.load()).runs;
   assert.equal(saved.length, 100);
   assert.equal(saved[0].id, 'run-0');
   assert.equal(saved.at(-1).id, 'run-139');
@@ -72,3 +72,4 @@ test('engine close drains a pending latest snapshot after an already-running wri
   assert.equal(engine.dirtyTimer, null);
   assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, 'workflows.json')))[0].name, 'saved at shutdown');
 });
+

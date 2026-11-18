@@ -313,7 +313,7 @@ test('long-running chats survive recent-history rollover and remain in the durab
     for (let index = 0; index < 100; index++) { const historical = structuredClone(snapshot); historical.id = `old-run-${index}`; historical.taskId = historical.id; historical.status = 'completed'; historical.settled = true; for (const state of Object.values(historical.nodes)) state.status = 'completed'; engine.runs.set(historical.id, historical); }
     const recent = engine.startRun({ workflow: workflow(), input: 'SHORT RUN' }); await engine.executions.get(recent.id); await engine.persist();
     assert.equal(engine.runs.size, 100); assert.equal(engine.getRun(long.id).status, 'running');
-    const saved = JSON.parse(await readFile(path.join(dataDir, 'runs.json'), 'utf8')); assert.equal(saved.length, 100); assert.equal(saved.find(run => run.id === long.id)?.status, 'running');
+    const saved = (await engine.runStore.load()).runs; assert.equal(saved.length, 100); assert.equal(saved.find(run => run.id === long.id)?.status, 'running');
     assert.deepEqual(engine.executionStatus().activeRunIds, [long.id]);
   } finally { hold.resolve({ output: 'Long complete.', threadId: 'long-thread' }); }
   await engine.executions.get(long.id);
@@ -763,7 +763,8 @@ test('restart marks interrupted runs failed without rerunning agents', async t =
   };
   const queued = structuredClone(interrupted); queued.id = 'interrupted-queued'; queued.status = 'queued'; queued.nodes.agent.status = 'queued';
   const finished = structuredClone(interrupted); finished.id = 'already-completed'; finished.status = 'completed'; for (const state of Object.values(finished.nodes)) state.status = 'completed';
-  await writeFile(path.join(dataDir, 'runs.json'), JSON.stringify([interrupted, queued, finished]));
+  await engine.runStore.write({rows:[interrupted,queued,finished].map(value=>({id:value.id,value})),deleted:[],initialize:true});
+  await engine.runStore.close();
   const restored = new HarnessEngine({ runtime, dataDir, defaultCwd: cwd });
   engines.push(restored);
   await restored.init();
@@ -772,7 +773,7 @@ test('restart marks interrupted runs failed without rerunning agents', async t =
   assert.equal(restored.getRun(queued.id).status, 'failed'); assert.equal(restored.getRun(queued.id).nodes.agent.status, 'cancelled'); assert.equal(restored.getRun(finished.id).status, 'completed');
   assert.equal(restored.executionStatus().activeCount, 0); assert.equal(restored.executionStatus().availableSlots, null); assert.equal(restored.executionStatus().unlimited, true);
   assert.equal(runtime.calls.length, 0);
-  const onDisk = JSON.parse(await readFile(path.join(dataDir, 'runs.json'), 'utf8'));
+  const onDisk = (await restored.runStore.load()).runs;
   assert.equal(onDisk[0].status, 'failed');
   assert.equal(onDisk[1].status, 'failed'); assert.equal(onDisk[2].status, 'completed');
 });
@@ -892,11 +893,13 @@ test('resume preserves workspace and provider checks without requiring retired d
   assert.throws(() => engine.startRun({ workflow: workflow(), input: { task: 'bad workspace', cwd: {} } }), /Workspace folder must be a path/);
 });
 
-test('history recovers a valid backup and preserves a corrupt live snapshot', async t => {
+test('legacy import recovers a valid backup and preserves a corrupt live snapshot', async t => {
   const { engine, cwd, dataDir, engines } = await harness(t);
   const run = engine.startRun({ workflow: workflow(), input: { task: 'recover history', cwd } });
   await waitFor(() => engine.getRun(run.id).settled, 'run settles before backup');
   await engine.close();
+  await rm(path.join(dataDir,'run-state.sqlite'));
+  await writeFile(path.join(dataDir,'runs.json.bak'),JSON.stringify([engine.getRun(run.id)]));
   await writeFile(path.join(dataDir, 'runs.json'), '{ interrupted write');
   const restored = new HarnessEngine({ runtime: new FakeRuntime(), dataDir, defaultCwd: cwd });
   engines.push(restored);
@@ -913,12 +916,9 @@ test('storage failures are visible, preserve valid history and recover after the
   const updates = []; const errors = [];
   engine.on('storage.updated', value => updates.push(value));
   engine.on('storage.error', error => errors.push(error));
-  const before = await readFile(path.join(dataDir, 'runs.json'), 'utf8');
-  const originalOpen = engine.snapshots.io.open;
-  engine.snapshots.io = { ...engine.snapshots.io, open: async (file, ...args) => {
-    if (file.startsWith(path.join(dataDir, 'runs.json.'))) throw Object.assign(new Error('Fixture storage device is full.'), { code: 'ENOSPC' });
-    return originalOpen(file, ...args);
-  } };
+  const before = (await engine.runStore.load()).runs;
+  const originalWrite = engine.runStore.write.bind(engine.runStore);
+  engine.runStore.write = async()=>{throw Object.assign(new Error('Fixture storage device is full.'),{code:'ENOSPC'});};
   engine.runs.set('storage-fixture', { id: 'storage-fixture', nodes: {}, events: [], status: 'completed' });
   try {
     await assert.rejects(engine.persist(), { code: 'ENOSPC' });
@@ -926,21 +926,23 @@ test('storage failures are visible, preserve valid history and recover after the
     assert.ok(engine.storageStatus().error);
     assert.equal(errors.length, 1);
     assert.equal(updates[0].healthy, false);
-    assert.equal(await readFile(path.join(dataDir, 'runs.json'), 'utf8'), before);
-  } finally { engine.snapshots.io = { ...engine.snapshots.io, open: originalOpen }; }
+    assert.deepEqual((await engine.runStore.load()).runs, before);
+  } finally { engine.runStore.write = originalWrite; }
   await engine.persist();
   assert.equal(engine.storageStatus().healthy, true);
   assert.equal(updates.at(-1).healthy, true);
 });
 
-test('unrecoverable corrupt history is preserved and reports a useful startup error', async t => {
+test('unrecoverable corrupt legacy import is preserved and reports a useful startup error', async t => {
   const { engine, cwd, dataDir } = await harness(t);
   await engine.close();
+  await rm(path.join(dataDir, 'run-state.sqlite'));
   await rm(path.join(dataDir, 'runs.json.bak'), { force: true });
   await writeFile(path.join(dataDir, 'runs.json'), 'not valid JSON');
   const restored = new HarnessEngine({ runtime: new FakeRuntime(), dataDir, defaultCwd: cwd });
   await assert.rejects(restored.init(), /Cannot load runs.json[^]*preserved/);
   assert.equal(await readFile(path.join(dataDir, 'runs.json'), 'utf8'), 'not valid JSON');
+  await restored.runStore.close();
 });
 
 test('models declaring no tool support receive an explicit limitation and persist an empty attached catalog', async t => {
