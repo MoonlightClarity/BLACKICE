@@ -1,14 +1,12 @@
 import { stableId } from '../core/dom.mjs';
 import { replyTarget, canContinueRun } from './model.mjs';
-import {normalizePlanningOntology} from '../../planning-module-policy.mjs';
 import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
 
 /** Send once; the existing server executes and persists the real run.
  * Failures preserve unsent drafts, and no mutation is silently replayed.
  */
-export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', planningMode, planningExecutionMode = 'automatic', planningOntology, directoryMode, cwd = '', attachmentIds=[], context, goal }) {
-  const executionModes={...(directoryMode===undefined?{}:{directoryMode}),subagentsMode:'default'};
-  const chosenPlanningMode = planningMode==='off'?'off':'ontology';
+export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', planningMode, planningExecutionMode = 'automatic', cwd = '', attachmentIds=[], context, goal }) {
+  const chosenPlanningMode = 'off';
   const latest=replyTarget(runs);
   planningExecutionMode=assertExecutablePlanningMode(planningExecutionMode,latest.run?.planningExecutionMode,latest.run?.workflow?.settings?.planningExecutionMode);
   if(!Array.isArray(attachmentIds)||attachmentIds.length>10||attachmentIds.some(id=>typeof id!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(id)))throw Error('Invalid attached files.');
@@ -25,7 +23,7 @@ export async function submitChat({ api, runs, task, model, effort = 'default', s
   if (latest.run && latest.nodeId && canContinueRun(latest.run)) {
     const requestId=stableId('chat');
     const result=await api('/api/runs/' + encodeURIComponent(latest.run.id) + '/continue','POST',
-      { ...executionModes,nodeId:latest.nodeId,message:content,...(chosenPlanningMode==='ontology'?{planningOntology:normalizePlanningOntology(planningOntology)}:{}),...(model&&model!=='default'?{model}:{}),effort,serviceTier,planningMode:chosenPlanningMode,planningExecutionMode,attachmentIds,requestId,...(context!==undefined?{context:structuredClone(context)}:{}) });
+      { nodeId:latest.nodeId,message:content,...(model&&model!=='default'?{model}:{}),effort,serviceTier,planningMode:chosenPlanningMode,planningExecutionMode,attachmentIds,requestId,...(context!==undefined?{context:structuredClone(context)}:{}) });
     return { mode:'continued',run:result?.run||result,requestId };
   }
   if (latest.run) throw Error(latest.run.settled === false ? 'This response is still settling. Wait for it to finish before sending again.' : 'This conversation has no stopped agent to continue. Use Retry or start a new conversation.');
@@ -41,7 +39,7 @@ export async function submitChat({ api, runs, task, model, effort = 'default', s
   }
   const saved=await api('/api/workflows','POST',workflow);
   const result=await api('/api/runs','POST',{ workflow:saved?.workflow||saved,
-    input:{...executionModes,task:content,cwd,...(goal?{goal:structuredClone(goal)}:{}),planningMode:chosenPlanningMode,planningExecutionMode,...(chosenPlanningMode==='ontology'?{planningOntology:normalizePlanningOntology(planningOntology)}:{}),attachmentIds},requestId });
+    input:{task:content,cwd,...(goal?{goal:structuredClone(goal)}:{}),planningMode:chosenPlanningMode,planningExecutionMode,attachmentIds},requestId });
   return { mode:'started',run:result?.run||result,requestId };
 }
 export function replyState(runs) {

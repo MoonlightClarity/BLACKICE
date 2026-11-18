@@ -1,4 +1,4 @@
-import {applyWorkflowStageEdits,workflowSnapshot,WORKFLOW_REASONING_EFFORTS,WORKFLOW_PLANNING_MODES,WORKFLOW_PLAN_DETAILS} from './workflow-edit-model.mjs';
+import {applyWorkflowStageEdits,workflowSnapshot,WORKFLOW_REASONING_EFFORTS} from './workflow-edit-model.mjs';
 import {workflowStageIndex} from './workflow-overview-model.mjs';
 
 /** V2 stage editor for existing saved workflows. Only descriptive fields are
@@ -41,12 +41,6 @@ export function createWorkflowEditor({mount,api,getBusy=()=>false,onSaved=()=>{}
     '<p class="next-help">Codex continues to manage native automatic compaction. This option controls BLACKICE’s saved-history compression and API-provider summaries.</p>',
     '</fieldset><fieldset class="next-workflow-editor-fields"><legend>Workflow execution</legend>',
     '<label class="next-label">Maximum parallel stages<input type="number" id="next-workflow-edit-parallel" class="next-field" min="1" max="1000" step="1" placeholder="Blank: no application limit"></label>',
-    '<label class="next-label">Planning mode<select id="next-workflow-edit-planning" class="next-field"><option value="inherit">Use application default</option>',
-    ...WORKFLOW_PLANNING_MODES.map(value=>'<option value="'+value+'">'+value+'</option>'),
-    '</select></label>',
-    '<label class="next-label">Planning detail<select id="next-workflow-edit-detail" class="next-field"><option value="inherit">Use application default</option>',
-    ...WORKFLOW_PLAN_DETAILS.map(value=>'<option value="'+value+'">'+value+'</option>'),
-    '</select></label>',
     '</fieldset></details>',
     '<div class="next-row"><button id="next-workflow-edit-save" type="submit" class="next-primary">Save workflow edits</button>',
     '<button id="next-workflow-edit-discard" type="button">Discard unsaved edits</button></div>',
@@ -63,8 +57,7 @@ export function createWorkflowEditor({mount,api,getBusy=()=>false,onSaved=()=>{}
     model:$('next-workflow-edit-model'),effort:$('next-workflow-edit-effort'),
     tier:$('next-workflow-edit-tier'),context:$('next-workflow-edit-context'),
     contextTokens:$('next-workflow-edit-context-tokens'),compact:$('next-workflow-edit-compact'),
-    parallel:$('next-workflow-edit-parallel'),planning:$('next-workflow-edit-planning'),
-    detail:$('next-workflow-edit-detail'),
+    parallel:$('next-workflow-edit-parallel'),
     assignmentGroup:$('next-workflow-edit-assignment-group'),assignmentFields:$('next-workflow-edit-assignment-fields'),
     assignmentCreate:$('next-workflow-edit-assignment-create'),assignmentRemove:$('next-workflow-edit-assignment-remove'),
     assignmentScope:$('next-workflow-edit-assignment-scope'),assignmentInputs:$('next-workflow-edit-assignment-inputs'),
@@ -123,11 +116,6 @@ export function createWorkflowEditor({mount,api,getBusy=()=>false,onSaved=()=>{}
     const option=field=>Object.hasOwn(edits,field)?edits[field]:currentSettings[field];
     ui.parallel.value=option('maxParallel')===null||option('maxParallel')===undefined
       ?'':String(option('maxParallel'));
-    const policy = Object.hasOwn(edits,'planningMode') && edits.planningMode !== null
-      ? edits.planningMode : Object.hasOwn(edits,'planningMode') && edits.planningMode === null
-        ? 'inherit' : currentSettings.planningEnforcement || (currentSettings.planningMode === 'off' ? 'off' : currentSettings.planningMode === 'on' ? 'advisory' : 'inherit');
-    ui.planning.value=policy;
-    ui.detail.value=option('planDetail')??'inherit';
   }
   function populateStages(preferred=''){
     ui.stage.replaceChildren();
@@ -246,10 +234,6 @@ export function createWorkflowEditor({mount,api,getBusy=()=>false,onSaved=()=>{}
   }
   ui.parallel.addEventListener('input',()=>setWorkflowSetting('maxParallel',
     ui.parallel.value===''?null:Number(ui.parallel.value)));
-  ui.planning.addEventListener('change',()=>setWorkflowSetting('planningMode',
-    ui.planning.value==='inherit'?null:ui.planning.value));
-  ui.detail.addEventListener('change',()=>setWorkflowSetting('planDetail',
-    ui.detail.value==='inherit'?null:ui.detail.value));
   ui.discard.addEventListener('click',()=>{
     if(!current)return;
     drafts.delete(current.id);show(current);alert('Unsaved edits discarded.');

@@ -1,37 +1,18 @@
 import { reasoningChoices, reasoningSupport } from '../../reasoning-model.mjs';
 import { serviceTierSupport } from '../../service-tier-model.mjs';
 import { UNKNOWN_CHAT_MODEL } from './model.mjs';
-import {normalizePlanningOntology} from '../../planning-module-policy.mjs';
 import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
 
 export const DEFAULT_CHAT_OPTIONS=Object.freeze({
-  model:'default',effort:'default',serviceTier:'default',planningMode:'ontology',planningExecutionMode:'automatic',planningOntology:normalizePlanningOntology(),directoryMode:'off',subagentsMode:'default',
+  model:'default',effort:'default',serviceTier:'default',planningMode:'off',planningExecutionMode:'automatic',
 });
-export const PLANNING_MODES=Object.freeze(['ontology','off']);
 export function normalizeChatOptions(value={}){
   const model=typeof value?.model==='string'&&value.model.length<=400?value.model:'default';
   const effort=typeof value?.effort==='string'&&value.effort.length<=25?value.effort:'default';
   const serviceTier=['default','fast'].includes(value?.serviceTier)?value.serviceTier:'default';
-  const planningMode=value?.planningMode==='off'?'off':'ontology';
+  const planningMode='off';
   const planningExecutionMode=value?.planningExecutionMode??'automatic';
-  const directoryMode=value?.directoryMode==='on'||value?.directoryMode==='auto'?'on':'off';
-  const subagentsMode='default';
-  return {model,effort,serviceTier,planningMode,planningExecutionMode,directoryMode,subagentsMode,...(planningMode==='ontology'||value?.planningOntology!==undefined?{planningOntology:normalizePlanningOntology(value?.planningOntology)}:{})};
-}
-/**
- * A legacy persisted Forced draft had no module policy because Forced was the
- * default before this release. Upgrade only that old new-chat preference; an
- * explicit modern Legacy Forced choice includes the ontology field and survives.
- * Saved historical run contracts are never rewritten by this draft migration.
- */
-export function restoreChatPlanningOptions(raw={},runtimeDefault){
-  const saved=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{};
-  const oldForcedDefault=['forced','advisory','on','auto','maximal'].includes(saved.planningMode);
-  return normalizeChatOptions({
-    ...saved,
-    ...(oldForcedDefault?{planningMode:'ontology'}:{}),
-    planningOntology:saved.planningOntology??runtimeDefault,
-  });
+  return {model,effort,serviceTier,planningMode,planningExecutionMode};
 }
 /** Reading a saved run must not erase a no-execution constraint. */
 export function savedChatExecutionMode(run,fallback='automatic'){

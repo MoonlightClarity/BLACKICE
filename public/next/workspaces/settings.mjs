@@ -44,9 +44,6 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '</div>',
     '<label class="next-row"><input type="checkbox" id="next-runtime-gmail" aria-describedby="next-runtime-gmail-help"> Use connected Gmail</label>',
     '<p class="next-help" id="next-runtime-gmail-help">Allow native agents to read your connected Gmail for authorized tasks, including email verification. This uses your existing connection.</p>',
-    '<details class="next-compatibility"><summary>Older-task compatibility</summary>',
-     '<label class="next-row"><input type="checkbox" id="next-runtime-guardrails" aria-describedby="next-runtime-guardrails-help"> External-action checkpoints</label>',
-    '<p class="next-help" id="next-runtime-guardrails-help">Retain execution checkpoints used by older saved tasks. This does not enable Modules or create a plan.</p></details>',
     '<div id="next-runtime-context"></div></details>',
     '<div class="next-row"><button type="submit" class="next-primary">Save response settings</button>',
     '<span class="next-help" id="next-runtime-feedback" role="status"></span></div>',
@@ -84,7 +81,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     restartCard:$('next-settings-restart-card'),forceRestart:$('next-settings-force-restart'),checkRestart:$('next-settings-check-restart'),restartFeedback:$('next-settings-restart-feedback'),
     runtime:$('next-runtime-settings-form'),effort:$('next-runtime-effort'),tier:$('next-runtime-tier'),
     verbosity:$('next-runtime-verbosity'),idle:$('next-runtime-idle'),timeout:$('next-runtime-timeout'),
-    gmail:$('next-runtime-gmail'),guardrails:$('next-runtime-guardrails'),
+    gmail:$('next-runtime-gmail'),
     runtimeFeedback:$('next-runtime-feedback'),
   };
   let active=false,destroyed=false,generation=0,status=getStatus?.()||{},section='general',sectionRevision=0,
@@ -236,7 +233,6 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     f.idle.value=Number.isFinite(config.providerIdleTimeoutMs)?String(config.providerIdleTimeoutMs/60000):'5';
     f.timeout.value=Number.isFinite(config.runTimeoutMs)?String(config.runTimeoutMs/60000):'';
     f.gmail.checked=config.connectedGmail===true;
-    f.guardrails.checked=config.executionGuardrails===true;
     f.runtimeFeedback.textContent='';
   }
   async function load(){
@@ -317,7 +313,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
       defaultEffort:f.effort.value,defaultServiceTier:f.tier.value,
       verbosity:f.verbosity.value,providerIdleTimeoutMs:Math.round(idle*60000),
       runTimeoutMs:timeout===null?null:Math.round(timeout*60000),
-      connectedGmail:f.gmail.checked,executionGuardrails:f.guardrails.checked,
+      connectedGmail:f.gmail.checked,
       defaultContext,
     };
     const revision=runtimeRevision;

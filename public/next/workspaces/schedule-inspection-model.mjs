@@ -122,7 +122,7 @@ export function scheduleUpdateFromDraft(deployment, draft) {
     const saved=chatProfileFromDeployment(deployment);
     assertExecutablePlanningMode(draft.chatProfile.options?.planningExecutionMode);
     const profile=normalizeChatOptions(draft.chatProfile.options);
-    const profileChanged=Object.keys(saved.options).some(key=>key==='planningOntology'?JSON.stringify(profile[key])!==JSON.stringify(saved.options[key]):profile[key]!==saved.options[key]);
+    const profileChanged=Object.keys(saved.options).some(key=>profile[key]!==saved.options[key]);
     const contextChanged=JSON.stringify(draft.chatProfile.context)!==JSON.stringify(saved.context);
     if(profileChanged||contextChanged){
       const proposed=applyChatProfileToWorkflow(deployment.workflow,profile,
@@ -157,8 +157,6 @@ export const scheduleChatOptionsMarkup=()=>[
   '<label class="next-label">Model<select class="next-field" name="agentModel"></select></label>',
   '<label class="next-label">Reasoning<select class="next-field" name="agentEffort"></select></label>',
   '<label class="next-label">Speed<select class="next-field" name="agentServiceTier"></select></label>',
-  '<label class="next-label">Planning<select class="next-field" name="planningMode">',
-    '<option value="ontology">Modules</option><option value="off">Off</option></select></label>',
   '<input type="hidden" name="planningExecutionMode" value="automatic">',
   '<details data-schedule-context><summary>Context and compression settings</summary>',
     '<label class="next-label">Context budget<select class="next-field" name="contextPreset">',
@@ -177,10 +175,9 @@ export const scheduleChatOptionsMarkup=()=>[
 export function chatProfileFromDeployment(deployment={}){
   const workflow=deployment.workflow||{},node=agents(workflow)[0]||{};
   const settings=workflow.settings||{};
-  const planningMode=settings.planningOntology?'ontology':settings.planningMode==='off'&&!settings.planningEnforcement?'off':'ontology';
   return {options:normalizeChatOptions({
     model:node.model||'default',effort:node.effort||'default',serviceTier:node.serviceTier||'default',
-    planningMode,planningExecutionMode:'automatic',...(settings.planningOntology?{planningOntology:settings.planningOntology}:{})
+    planningExecutionMode:settings.planningExecutionMode??'automatic'
   }),context:contextOptions(node.context||settings.context||{}),agentCount:agents(workflow).length};
 }
 
@@ -192,19 +189,11 @@ export function applyChatProfileToWorkflow(workflow,options,context,previousOpti
   const node=agentNodes[0];
   for(const key of ['model','effort','serviceTier'])
     if(profile[key]!==previousOptions[key])node[key]=profile[key];
-  const planningChanged=profile.planningMode!==previousOptions.planningMode;
-  const ontologyChanged=JSON.stringify(profile.planningOntology)!==JSON.stringify(previousOptions.planningOntology);
-  if(planningChanged){
-    copy.settings??={};
-    copy.settings.planningMode='off';
-    delete copy.settings.planningEnforcement;
-  }
-  // Missing policy means inherit runtime settings. Unrelated edits must not pin a UI default.
-  if(planningChanged||ontologyChanged){
-    copy.settings??={};
-    if(profile.planningMode==='ontology')copy.settings.planningOntology=profile.planningOntology;
-    else delete copy.settings.planningOntology;
-  }
+  copy.settings??={};
+  copy.settings.planningMode='off';
+  delete copy.settings.planningEnforcement;
+  delete copy.settings.planningOntology;
+  delete copy.settings.directoryMode;
   if(profile.planningExecutionMode!==previousOptions.planningExecutionMode){
     copy.settings??={};
     copy.settings.planningExecutionMode=profile.planningExecutionMode;
@@ -231,12 +220,12 @@ export function initScheduleChatOptions(mount,{getStatus=()=>({}),options=DEFAUL
   if(!mount?.querySelector('[data-schedule-chat-options]'))throw Error('Missing schedule Chat controls.');
   const field=name=>mount.querySelector('[name="'+name+'"]');
   const f={model:field('agentModel'),effort:field('agentEffort'),tier:field('agentServiceTier'),
-    planning:field('planningMode'),execution:field('planningExecutionMode'),
+    execution:field('planningExecutionMode'),
     preset:field('contextPreset'),window:field('contextWindowTokens'),
     auto:field('contextAutoCompact'),trigger:field('contextCompactAtTokens'),recent:field('contextKeepRecentTokens'),
     reserve:field('contextOutputReserveTokens'),headroom:field('contextHeadroomTokens')};
   const saved=normalizeChatOptions(options),savedContext=contextOptions(context||getStatus()?.runtimeSettings?.defaultContext||{});
-  f.planning.value=saved.planningMode;f.execution.value=saved.planningExecutionMode;
+  f.execution.value=saved.planningExecutionMode;
   f.preset.value=savedContext.preset;
   f.window.value=String(savedContext.windowTokens||'');
   f.auto.checked=savedContext.autoCompact;
@@ -255,7 +244,7 @@ export function initScheduleChatOptions(mount,{getStatus=()=>({}),options=DEFAUL
   };
   const sync=({first=false}={})=>{
     const old={model:first?saved.model:f.model.value,effort:first?saved.effort:f.effort.value,
-      serviceTier:first?saved.serviceTier:f.tier.value,planningMode:f.planning.value,
+      serviceTier:first?saved.serviceTier:f.tier.value,
       planningExecutionMode:f.execution.value};
     const choices=chatOptionChoices(getStatus()||{},old);
     fill(f.model,choices.models,old.model);
@@ -283,8 +272,8 @@ export function initScheduleChatOptions(mount,{getStatus=()=>({}),options=DEFAUL
   return{
     read(){
       const status=getStatus()||{};
-      const chosen={model:f.model.value,effort:f.effort.value,serviceTier:f.tier.value,planningOntology:saved.planningOntology,
-        planningMode:f.planning.value,planningExecutionMode:f.execution.value};
+      const chosen={model:f.model.value,effort:f.effort.value,serviceTier:f.tier.value,
+        planningExecutionMode:f.execution.value};
       // Preserve pinned selections when editing unrelated fields, even if the catalog has changed.
       const sameSavedModel=context!==undefined&&chosen.model===saved.model;
       let profile;

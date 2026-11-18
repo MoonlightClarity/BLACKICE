@@ -18,7 +18,7 @@ test('scheduled Chat keeps model and context while retiring Forced under explici
   assert.equal(workflow.settings.planningMode,'off');
   assert.equal(workflow.settings.planningEnforcement,undefined);
   assert.equal(workflow.settings.planningExecutionMode,'automatic');
-  assert.equal(workflow.settings.planningOntology.modules.anti_overalignment,false);
+  assert.equal(workflow.settings.planningOntology,undefined);
   assert.deepEqual(nodes[0].context,context);
   assert.deepEqual(workflow.settings.context,context);
   assert.equal(workflow.nodes.length,3);
@@ -27,7 +27,7 @@ test('scheduled Chat keeps model and context while retiring Forced under explici
   assert.equal(workflow.settings.cwd,'C:\\workspace');
 });
 
-test('scheduled Module and Off choices remain separate from model reasoning effort',()=>{
+test('scheduled chats discard obsolete module choices without changing model reasoning effort',()=>{
   const off=createScheduledChatWorkflow({task:'Check results',cwd:'C:\\work',
     options:{...oldProfile,planningMode:'off',planningExecutionMode:'automatic'}});
   assert.equal(off.settings.planningMode,'off');
@@ -37,12 +37,12 @@ test('scheduled Module and Off choices remain separate from model reasoning effo
   const policy=normalizePlanningOntology({modules:{subagents:'forbidden',anti_overalignment:'mandatory'}});
   const modern=createScheduledChatWorkflow({task:'Review report',cwd:'C:\\work',
     options:{...oldProfile,planningMode:'ontology',planningExecutionMode:'automatic',planningOntology:policy}});
-  assert.deepEqual(modern.settings.planningOntology,policy);
+  assert.equal(modern.settings.planningOntology,undefined);
   assert.equal(modern.settings.planningExecutionMode,'automatic');
   assert.throws(()=>createScheduledChatWorkflow({task:'Continue unaffected branches',cwd:'C:\\work',options:{...oldProfile,planningMode:'off',planningExecutionMode:'plan_only'}}),{code:'PLANNING_EXECUTION_MODE_RETIRED'});
 });
 
-test('schedule edits preserve original identity, custom agent instructions and pinned modules',()=>{
+test('schedule edits preserve original identity, custom agent instructions while removing modules',()=>{
   const before=createScheduledChatWorkflow({task:'Analyze reports',cwd:'C:\\work',
     options:{...oldProfile,planningMode:'ontology',planningExecutionMode:'automatic'}});
   before.nodes[1].prompt='User-authored agent behavior';
@@ -54,7 +54,7 @@ test('schedule edits preserve original identity, custom agent instructions and p
   assert.equal(updated.nodes[1].prompt,'User-authored agent behavior');
   assert.equal(updated.nodes[1].desktop,true);
   assert.equal(updated.settings.planningExecutionMode,'automatic');
-  assert.deepEqual(updated.settings.planningOntology,policy);
+  assert.equal(updated.settings.planningOntology,undefined);
   assert.deepEqual(before,original);
   const restored=chatProfileFromDeployment({workflow:updated,planningExecutionMode:'plan_only'});
   assert.deepEqual(restored.options,normalizeChatOptions(selected));
@@ -69,13 +69,13 @@ test('multi-agent saved workflow never silently retargets multiple agents',()=>{
   assert.equal(workflow.nodes[3].model,'different-model');
 });
 
-test('schedule editor exposes only Modules and Off and no Plan-only or Forced choices',()=>{
+test('schedule editor exposes core settings without module selectors',()=>{
   const html=scheduleChatOptionsMarkup();
-  for(const name of ['agentModel','agentEffort','agentServiceTier','planningMode','planningExecutionMode',
+  for(const name of ['agentModel','agentEffort','agentServiceTier','planningExecutionMode',
     'contextPreset','contextWindowTokens','contextAutoCompact','contextCompactAtTokens',
     'contextKeepRecentTokens','contextOutputReserveTokens','contextHeadroomTokens'])
     assert.match(html,new RegExp('name="'+name+'"'),name);
-  for(const value of ['ontology','off','automatic','extended','custom'])
+  for(const value of ['automatic','extended','custom'])
     assert.match(html,new RegExp('value="'+value+'"'));
-  assert.doesNotMatch(html,/value="(?:forced|advisory|plan_only)"/);
+  assert.doesNotMatch(html,/name="planningMode"|value="(?:ontology|forced|advisory|plan_only)"/);
 });
