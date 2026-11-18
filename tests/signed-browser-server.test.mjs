@@ -52,6 +52,6 @@ test('legacy native discovery preserves its manual connection while background r
   assert.doesNotMatch(runtime.prompts[0], /EXISTING BROWSER SESSION/, 'ordinary tasks use the configured connection instructions instead of the legacy session block');
   assert.doesNotMatch(runtime.prompts[0], /Use only the BLACKICE contained browser via relay_browser/,'no browser usage block is injected into an unavailable-module task');
   assert.doesNotMatch(runtime.prompts[0],/Do not call host Chrome, Neo, imported native profiles/);
-  assert.ok(runtime.calls[0].dynamicTools.some(tool=>tool.name==='relay_connections'),'attached gateway rejects the native browser route without dispatching');
+  assert.ok(!runtime.calls[0].dynamicTools.some(tool=>tool.name==='relay_connections'),'generic gateway is absent; specialized browser discovery remains separate');
   assert.equal(methods.filter(method => method === 'tools/call').length, 4, 'Discovery and explicit reconnect/start only read the browser inventory');
 });

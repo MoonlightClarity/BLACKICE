@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ConnectionManager, createConnectionToolHandler } from '../lib/mcp.mjs';
+import { ConnectionManager, executeConnectedBrowser } from '../lib/mcp.mjs';
 import { discoverSignedBrowserEndpoints, nativeBrowserMetadataPaths, registerSignedBrowser, createSignedBrowserIntegration, signedBrowserEndpoint, isSignedBrowserCatalog, signedBrowserInstructions } from '../lib/signed-browser.mjs';
 
 const tools = [
@@ -68,10 +68,9 @@ test('real MCP registration discovers the existing browser without opening, navi
   assert.deepEqual(calls.at(-1).params, { name: 'tabs', arguments: { action: 'list' } });
   assert.doesNotMatch(JSON.stringify(status), /example\.test|Existing profile/);
   assert.equal(manager.list()[0].url, url); assert.equal(manager.list()[0].timeoutMs, 30000);
-  const gateway = createConnectionToolHandler({ manager });
-  const catalog = await gateway({ name: 'relay_connections', arguments: { action: 'tools', connectionId: status.connectionId, query: 'tabs' } });
+  const catalog = await executeConnectedBrowser({ manager, action: 'tools', connectionId: status.connectionId, query: 'tabs' });
   assert.equal(catalog.success, true); assert.equal(catalog.receipt.browser, 'neo'); assert.deepEqual(JSON.parse(catalog.contentItems[0].text).tools.map(tool => tool.name), ['tabs']);
-  const listing = await gateway({ name: 'relay_connections', arguments: { action: 'call', connectionId: status.connectionId, name: 'tabs', arguments: { action: 'list' } } });
+  const listing = await executeConnectedBrowser({ manager, action: 'call', connectionId: status.connectionId, name: 'tabs', arguments: { action: 'list' } });
   assert.equal(listing.success, true); assert.equal(listing.receipt.actionDispatched, true); assert.equal(listing.receipt.outcome, 'completed');
   assert.equal(calls.length, 9, 'discovery reuses the real catalog and one explicit native action reaches the transport');
   assert.equal(manager.list()[0].agentAvailable, true); assert.equal(manager.list()[0].agentUnavailableReason, undefined);
@@ -80,7 +79,7 @@ test('real MCP registration discovers the existing browser without opening, navi
   assert.match(signedBrowserInstructions(status), /does not mean every site is signed in/);
 });
 
-test('registration preserves conflicting and user-disabled settings and reuses matching connection IDs', async t => {
+test('registration preserves conflicting and user-disabled specialized settings and rejects generic aliases', async t => {
   const { manager, calls, url } = await harness(t);
   await manager.save({ id: 'browseros-neo', transport: 'http', url, enabled: false });
   const disabled = await registerSignedBrowser({ connections: manager, endpoints: [{ url }] });
@@ -88,9 +87,9 @@ test('registration preserves conflicting and user-disabled settings and reuses m
   const conflict = await registerSignedBrowser({ connections: manager, endpoints: [{ url: 'http://127.0.0.1:12345/mcp' }] });
   assert.match(conflict.reason, /preserved/); assert.equal(manager.list()[0].url, url);
   await manager.remove('browseros-neo');
-  await manager.save({ id: 'my-browser', transport: 'http', url });
+  await assert.rejects(manager.save({ id: 'my-browser', transport: 'http', url }), {code:'BROWSER_CONNECTION_REQUIRED'});
   const reused = await registerSignedBrowser({ connections: manager, endpoints: [{ url }] });
-  assert.equal(reused.connectionId, 'my-browser'); assert.equal(manager.list().length, 1);
+  assert.equal(reused.connectionId, 'browseros-neo'); assert.equal(manager.list().length, 1);
 });
 
 test('a reachable unrelated MCP server is not reported as the authenticated browser', async t => {

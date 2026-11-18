@@ -51,14 +51,12 @@ import { ProviderRuntime } from './lib/providers.mjs';
 import { CHAT_MODE_RETIRED_MESSAGE } from './lib/retired-models.mjs';
 import { IdentityStore } from './lib/identity.mjs';
 import { ConnectionManager } from './lib/mcp.mjs';
-import { searchMCPRegistry } from './lib/mcp-registry-catalog.mjs';
 import { AttachmentStore } from './lib/attachments.mjs';
 import { TaskStateStore } from './lib/task-state.mjs';
 import { TaskInbox } from './lib/inbox.mjs';
 import { RuntimeSettingsStore } from './lib/runtime-settings.mjs';
 import { handleIdleInterruptionsHttp } from './lib/idle-interruptions-http.mjs';
 import { createMissionWorkflow } from './public/mission-model.mjs';
-import { parseConnectionImport } from './lib/connection-import.mjs';
 import {LiveEditJournal} from './lib/live-edits.mjs';
 import { createSignedBrowserIntegration } from './lib/signed-browser.mjs';
 import { chromeBrowserStatus, registerChromeBrowser } from './lib/chrome-browser.mjs';
@@ -1088,26 +1086,6 @@ export async function createHarnessServer(options = {}) {
       const identityMatch = pathname.match(/^\/api\/identity\/(soul|user)(?:\/(versions|restore))?$/);
       if (identityMatch && req.method === 'GET' && identityMatch[2] !== 'restore') return json(res, 200, identityMatch[2] === 'versions' ? await identity.versions(identityMatch[1]) : await identity.read(identityMatch[1]));
       if (identityMatch && (req.method === 'PUT' && !identityMatch[2] || req.method === 'POST' && identityMatch[2] === 'restore')) { const value = await body(req); const result = identityMatch[2] === 'restore' ? await identity.restore({ ...value, kind: identityMatch[1], provenance: { source: 'user' } }) : await identity.update({ ...value, kind: identityMatch[1], provenance: { source: 'user' } }); sendEvent({ type: 'identity.updated', data: identity.status(), at: new Date().toISOString() }); return json(res, 200, result); }
-      if (pathname === '/api/tool-registry' && req.method === 'GET') {
-        const search = new URL(req.url, `http://${host}`).searchParams;
-        return json(res, 200, await searchMCPRegistry({query:search.get('query') || '', cursor:search.get('cursor') || ''}));
-      }
-      if (pathname === '/api/connections' && req.method === 'GET') return json(res, 200, connections.list());
-      if (pathname === '/api/connections/import' && req.method === 'POST') {
-        const value = await body(req), parsed = parseConnectionImport(value.configuration, { existingIds: connections.list().map(item => item.id), maxConnections: 40 });
-        if (value.apply !== true) return json(res, 200, { preview: parsed.preview, warnings: parsed.warnings });
-        const imported = [];
-        for (const config of parsed.candidates) {
-          try { imported.push(await connections.save(config)); }
-          catch (error) { return json(res, 409, { error: `${imported.length} of ${parsed.candidates.length} servers were saved. Import stopped at ${config.name}: ${connections.redact(error.message)}. Reload the server list before importing the remaining servers.`, imported }); }
-        }
-        return json(res, 201, { imported, warnings: parsed.warnings });
-      }
-      if (pathname === '/api/connections' && req.method === 'POST') return json(res, 200, await connections.save(await body(req)));
-      const connectionMatch = pathname.match(/^\/api\/connections\/([a-z][a-z0-9_-]{0,39})(?:\/(connect|disconnect|tools))?$/);
-      if (connectionMatch && !connectionMatch[2] && req.method === 'DELETE') { await body(req); return json(res, 200, await connections.remove(connectionMatch[1])); }
-      if (connectionMatch?.[2] === 'tools' && req.method === 'GET') return json(res, 200, await connections.tools(connectionMatch[1], { query: new URL(req.url, `http://${host}`).searchParams.get('query') || '' }));
-      if (['connect','disconnect'].includes(connectionMatch?.[2]) && req.method === 'POST') { const value = await body(req); if (connectionMatch[2] === 'disconnect') return json(res, 200, await connections.disconnect(connectionMatch[1])); await connections.connect(connectionMatch[1], { reconnect: value.reconnect === true }); return json(res, 200, connections.list().find(item => item.id === connectionMatch[1])); }
       if (pathname === '/api/local-models' || /^\/api\/local-models\/(?:load|unload|import|downloads|config|activate)$/.test(pathname)) {
         const result = await localModelHTTP({
           manager: localModels, runtime, pathname, method: req.method,
