@@ -124,9 +124,8 @@ test('Cronjobs opens directly on schedules without mounting the general task das
   await f.clickReady('#next-cronjobs-manage-workflows');
   assert.deepEqual(f.navigation.at(-1),['workflows'],'advanced workflow editing stays reachable');
   await f.key(f.$('#next-tasks-tab-schedules'),'ArrowRight');await settle();
-  assert.equal(f.$('#next-tasks-tab-results').getAttribute('aria-selected'),'true');
-  await f.key(f.$('#next-tasks-tab-results'),'End');await settle();
-  assert.equal(f.$('#next-tasks-tab-jobs').getAttribute('aria-selected'),'true');
+  assert.equal(f.$('#next-tasks-tab-schedules').getAttribute('aria-selected'),'true');
+  for(const section of ['results','jobs']){assert.equal(f.$('#next-tasks-tab-'+section),null);assert.equal(f.$('#next-tasks-panel-'+section),null);}
   f.component.leave();assert.equal(f.listeners.size,0);
 });
 
@@ -163,7 +162,7 @@ test('Tasks tabs support keyboard navigation, preserve schedule drafts, and rele
 });
 
 test('Results are locally available without claiming delivery or auto-acknowledging a read',async t=>{
-  const f=fixture(t);f.component.enter();await settle();
+  const f=fixture(t,{cronjobs:false});f.component.enter();await settle();
   await f.clickReady('#next-tasks-tab-results');
   assert.match(f.$('#next-tasks-results-count').textContent,/1 awaiting review/);
   assert.match(f.$('#next-tasks-results').textContent,/A verification step failed/);
@@ -186,7 +185,7 @@ test('Results are locally available without claiming delivery or auto-acknowledg
 });
 
 test('Job history is bounded and opens the latest linked attempt instead of the job identity',async t=>{
-  const f=fixture(t);f.component.enter();await settle();await f.clickReady('#next-tasks-tab-jobs');
+  const f=fixture(t,{cronjobs:false});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-jobs');
   assert.equal(f.calls.some(call=>call.path.startsWith('/api/workflows/')),false,'Job history must not load full workflow graphs');assert.equal(f.mount.querySelectorAll('[data-job-id]').length,35);
   await f.clickReady('[data-job-run-id="actual-0"]');assert.deepEqual(f.navigation.at(-1),['chat',{conversationId:'actual-0'}]);
   await f.clickReady('#next-tasks-jobs-more');assert.equal(f.mount.querySelectorAll('[data-job-id]').length,70);
@@ -342,8 +341,8 @@ test('Schedule revision conflicts preserve unsaved edits until explicit reload',
   await f.clickReady('[data-schedule-edit-open="schedule-a"]');
   const form=f.$('[data-schedule-edit="schedule-a"]'),name=form.querySelector('[name="name"]');
   name.value='Keep local draft';
-  await f.clickReady('#next-tasks-tab-results');await f.clickReady('#next-tasks-tab-schedules');
-  assert.strictEqual(f.$('[data-schedule-edit="schedule-a"]'),form,'refresh preserves form');
+  f.component.leave();f.component.enter();await settle();
+  assert.strictEqual(f.$('[data-schedule-edit="schedule-a"]'),form,'leaving and reentering preserves form');
   f.schedule.revision=3;
   await f.clickReady('#next-tasks-refresh');
   assert.strictEqual(f.$('[data-schedule-edit="schedule-a"]'),form);
@@ -375,7 +374,7 @@ test('a timing edit preserves the legacy Chat context preset with an unavailable
 });
 
 test('Saved job receipts are expandable without a run-history fetch',async t=>{
-  const f=fixture(t);f.component.enter();await settle();await f.clickReady('#next-tasks-tab-jobs');
+  const f=fixture(t,{cronjobs:false});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-jobs');
   const receipt=f.$('[data-job-inspect="job-0"]');
   assert.ok(receipt);assert.match(receipt.textContent,/Job ID|Source|Schedule revision|Attempt 2/);
   assert.equal(f.calls.some(call=>call.path==='/api/runs'),false);
@@ -482,7 +481,7 @@ test('a paused Run now points to the action that resumes both the scheduler and 
 
 test('job summaries translate incompatible model requests while keeping the exact receipt',async t=>{
   const detail='{"error":{"code":"invalid_json_schema","message":"criteria.items.not is unsupported"}}';
-  const f=fixture(t,{hook:async(call,{jobs})=>{
+  const f=fixture(t,{cronjobs:false,hook:async(call,{jobs})=>{
     if(call.path==='/api/operations'){jobs[0].error=detail;jobs[0].delivery.error=detail;}
   }});f.component.enter();await settle();await f.clickReady('#next-tasks-tab-jobs');
   const row=f.$('[data-job-id="job-0"]');
@@ -730,11 +729,9 @@ test('Cronjobs puts its optional Title before instructions and uses saved names 
   assert.equal(title.getAttribute('maxlength'),'160');
   assert.equal(form.querySelectorAll('[name="name"]').length,1,'existing storage field is reused');
   assert.ok(form.children.indexOf(title.parentElement)<form.children.indexOf(instructions.parentElement));
-  await f.clickReady('#next-tasks-tab-results');
-  assert.equal(f.$('#next-tasks-results').querySelector('.next-task-job-title').textContent,'Scheduled review');
-  await f.clickReady('#next-tasks-tab-jobs');
-  assert.equal(f.$('[data-job-id="job-0"]').querySelector('.next-task-job-title').textContent,'Scheduled review');
-  await f.clickReady('#next-tasks-tab-schedules');
+  const row=f.$('[data-schedule-id="schedule-a"]');assert.equal(row.querySelector('.next-cronjob-name').textContent,'Scheduled review');
+  row.open=true;await row.dispatch('toggle');await settle();assert.ok(row.querySelector('[data-schedule-result-run="actual-0"]'));
+  assert.equal(f.$('#next-tasks-tab-results'),null);assert.equal(f.$('#next-tasks-tab-jobs'),null);
   await f.clickReady('[data-schedule-inspect="schedule-a"]');
   await f.clickReady('[data-schedule-edit-open="schedule-a"]');
   const edit=f.$('[data-schedule-edit="schedule-a"]').querySelector('[name="name"]');
@@ -744,8 +741,8 @@ test('Cronjobs puts its optional Title before instructions and uses saved names 
   assert.ok(f.calls.every(call=>call.method==='GET'),'inspection and editing do not admit jobs');
 });
 
-test('cronjob results and history render newest dates first independently of stored insertion order',async t=>{
- const f=fixture(t);
+test('general Tasks results and history render newest dates first independently of stored insertion order',async t=>{
+ const f=fixture(t,{cronjobs:false});
  f.jobs[0].createdAt='2026-10-24T10:00:00Z';
  f.jobs[0].attempts[1].startedAt='2026-10-29T10:00:00Z';
  f.jobs[1].createdAt='2026-10-28T10:00:00Z';
@@ -759,7 +756,7 @@ test('cronjob results and history render newest dates first independently of sto
 });
 
 test('older unread results beyond summary100 remain reachable and can be reviewed without changing order',async t=>{
- const f=fixture(t,{hook:({path},{jobs,schedule})=>{
+ const f=fixture(t,{cronjobs:false,hook:({path},{jobs,schedule})=>{
   if(path!=='/api/operations')return;
   const available=jobs.filter(x=>x.delivery?.state==='available').length;
   return {status:{paused:false},deployments:[schedule],jobs:structuredClone(jobs),results:{total:jobs.length,available,acknowledged:jobs.length-available,items:structuredClone(jobs.slice(1,101))}};
@@ -785,4 +782,13 @@ test('Cronjobs renders schedules chronologically and keeps inspection actions bo
  f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
  assert.deepEqual(f.$('#next-tasks-deployments').querySelectorAll('[data-schedule-inspect]').map(x=>x.dataset.scheduleInspect),['early','late','none']);
  assert.deepEqual(rows,before);assert.equal(f.calls.some(x=>x.method!=='GET'),false);
+});
+
+test('Cron outline shows only this schedule saved conversations without result acknowledgement or fabricated links',async t=>{
+ const f=fixture(t);f.jobs.splice(2);f.jobs[0].attempts[1].startedAt='2026-10-29T10:00:00Z';f.jobs[1].attempts[1].startedAt='2026-10-28T10:00:00Z';f.jobs.push({id:'unlinked',deploymentId:'schedule-a',status:'queued',attempts:[]},{id:'foreign',deploymentId:'other-schedule',attempts:[{runId:'foreign-run'}]});const before=structuredClone(f.jobs);
+ f.component.enter();await settle();let row=f.$('[data-schedule-id="schedule-a"]');assert.equal(row.open,false);row.open=true;await row.dispatch('toggle');await settle();
+ const links=row.querySelectorAll('[data-schedule-result-run]');assert.deepEqual(links.map(x=>x.dataset.scheduleResultRun),['actual-0','actual-1']);assert.match(row.textContent,/No conversation recorded/);assert.equal(row.querySelector('[data-schedule-result-run="foreign-run"]'),null);
+ await f.clickReady(links[0]);assert.deepEqual(f.navigation.at(-1),['chat',{conversationId:'actual-0'}]);
+ await f.clickReady('#next-tasks-refresh');row=f.$('[data-schedule-id="schedule-a"]');assert.equal(row.open,true);assert.equal(row.querySelectorAll('[data-schedule-result-run]').length,2);
+ assert.deepEqual(f.jobs,before);assert.ok(f.calls.every(call=>call.method==='GET'));assert.equal(f.calls.some(call=>call.path==='/api/runs'),false);assert.equal(f.$('[data-result-acknowledge]'),null);assert.equal(f.$('#next-tasks-results'),null);assert.equal(f.$('#next-tasks-jobs'),null);
 });
