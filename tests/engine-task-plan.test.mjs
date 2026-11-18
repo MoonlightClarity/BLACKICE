@@ -238,14 +238,14 @@ test('provider continuations receive current optional tools when saved schema is
   assert.equal(next.nodes.agent.taskSchemaVersion, TASK_SCHEMA_VERSION); assert.equal(f.runtime.calls[1].threadId, f.threadId);
 });
 
-test('project workers retain explicit method authoring without recursive project orchestration', async t => {
+test('project workers retain manually authored method metadata without recursive project orchestration', async t => {
   const f = await fixture(t, async (options, number, context) => {
     assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_project'));
     const description = await taskCall(options, { action: 'describe' });
     assert.ok(description.actionFields.plan.includes('contract'));
     const state = await saveManualPlan(context, options, [leaf('inspect', 'Inspect assigned task')], { taskType: 'software', method: { id: 'software-feature', revision: 1 } });
-    await context.tasks.setStep(state.taskId, 'inspect', { status: 'done', evidence: 'Observed the software-feature guidance and no recursive project tool.' }, { expectedRevision: state.revision, source: 'human' });
-    return { output: 'Assigned task method checked.' };
+    await context.tasks.setStep(state.taskId, 'inspect', { status: 'done', evidence: 'Observed the current contract schema and no recursive project tool; retained manually authored software-feature metadata.' }, { expectedRevision: state.revision, source: 'human' });
+    return { output: 'Current task authoring and manual method metadata checked.' };
   }, { workflowId: 'project-plan-worker' });
   f.engine.projects = {}; f.engine.capabilities = {};
   const run = await f.settled(f.start().id); completed(run);
