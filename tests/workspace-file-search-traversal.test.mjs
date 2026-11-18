@@ -117,3 +117,32 @@ test('cleanup denial never masks an in-flight cancellation',async t=>{
  mock.mock.restore();for(const dir of scratch)await rm(dir,{recursive:true,force:true});
 });
 
+
+test('only owned scratch is excluded across sessions and aliases; ordinary temp lookalikes remain',async t=>{
+ const {root,search}=await fixture(t);
+ const ordinary=path.join(root,'blackice-file-search-not-owned');await fs.mkdir(ordinary);
+ const ordinaryFile=path.join(ordinary,'frontier.sqlite');await fs.writeFile(ordinaryFile,'ordinary fixture');
+ const source=path.join(root,'source');await fs.mkdir(source);await fs.writeFile(path.join(source,'wanted1'),'');await fs.writeFile(path.join(source,'wanted2'),'');
+ const scratch=[];const mkdtemp=fs.mkdtemp;
+ t.mock.method(fs,'mkdtemp',async(prefix,...a)=>{
+  const dir=await mkdtemp(String(prefix).includes('blackice-file-search-')?path.join(root,'blackice-file-search-'):prefix,...a);
+  if(String(prefix).includes('blackice-file-search-'))scratch.push(dir);return dir;
+ });
+ const parked=await search({path:source,query:'wanted',limit:1});assert.ok(parked.cursor);
+ const foreignScratch=scratch[0],alias=path.join(root,'scratch-alias');
+ await fs.symlink(foreignScratch,alias,process.platform==='win32'?'junction':'dir');
+ const observer=createFileSearch({cwd:root,scope:randomUUID()});
+ const pages=await drain(observer,{path:root,query:'frontier.sqlite',timeoutMs:10000});
+ assert.deepEqual(pages.flatMap(p=>p.matches.map(m=>m.path)),[ordinaryFile]);
+ assert.equal(pages.at(-1).scanComplete,true);assert.equal(pages.at(-1).searchComplete,false);
+ assert.ok(pages.at(-1).excludedScratchCount>=3,'own scratch, other session scratch and alias are counted');
+ assert.equal(pages.at(-1).errorCount,0);
+ assert.match(pages.at(-1).coverage,/owned temporary traversal databases are excluded/);
+ for(const file of [path.join(foreignScratch,'frontier.sqlite'),path.join(alias,'frontier.sqlite')]){
+  const direct=await observer({path:file,query:'frontier.sqlite'});
+  assert.deepEqual(direct.matches,[]);assert.equal(direct.excludedScratchCount,1);assert.equal(direct.searchComplete,false);
+ }
+ const normal=await observer({path:ordinaryFile,query:'frontier.sqlite'});assert.equal(normal.matches[0].path,ordinaryFile);assert.equal(normal.searchComplete,true);
+ await drain(search,{cursor:parked.cursor});
+});
+
