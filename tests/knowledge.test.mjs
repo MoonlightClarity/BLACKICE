@@ -221,54 +221,11 @@ test('unrecoverable or oversized knowledge fails usefully without silently disca
   await assert.rejects(new KnowledgeStore({ dataDir }).init(), /storage limit/);
 });
 
-test('memory and skills tools explicitly write scoped records with immutable run provenance and semantic trace events', async t => {
-  const { store, cwd } = await harness(t);
-  const events = [];
-  const handler = createKnowledgeToolHandler({ store, cwd, runId: 'run-original', nodeId: 'researcher', onEvent: event => events.push(event) });
-  const remembered = await approveTool(store, await handler(call('relay_memory', { action: 'remember', title: 'Test command', content: 'Run node --test.' })));
-  assert.equal(remembered.cwd, cwd);
-  assert.deepEqual({ source: remembered.provenance.source, runId: remembered.provenance.runId, nodeId: remembered.provenance.nodeId }, { source: 'agent', runId: 'run-original', nodeId: 'researcher' });
-  assert.equal(decode(await handler(call('relay_memory', { action: 'search', query: 'test' }))).entries.length, 1);
-  assert.equal(decode(await handler(call('relay_memory', { action: 'read', id: remembered.id }))).entry.content, 'Run node --test.');
-  const skill = await approveTool(store, await handler(call('relay_skills', { action: 'save', title: 'Review procedure', content: '# Review\nRead, test, report.' })));
-  const catalog = decode(await handler(call('relay_skills', { action: 'search', query: 'review' }))).entries;
-  assert.equal(catalog[0].content, undefined);
-  assert.equal(decode(await handler(call('relay_skills', { action: 'read', id: skill.id }))).entry.content, '# Review\nRead, test, report.');
-  assert.equal((await approveTool(store, await handler(call('relay_skills', { action: 'remove', id: skill.id })))).ok,true);
-  assert.equal((await approveTool(store, await handler(call('relay_memory', { action: 'forget', id: remembered.id })))).ok,true);
-  assert.ok(events.every(event => event.type === 'knowledge' && event.tool.startsWith('relay_')));
-  assert.ok(events.some(event => event.action === 'remember' && event.status === 'pending_approval'));
-  assert.ok(events.find(event => event.action === 'remember' && event.status === 'pending_approval').approvalId);
-  assert.equal(events.find(event => event.action === 'read' && event.status === 'completed').revision, 1);
-  assert.equal(events.some(event => Object.hasOwn(event, 'content')), false, 'trace stores action metadata rather than full knowledge bodies');
-});
+test('release skill reads emit metadata-only trace events without storing task knowledge',async t=>{const {store,cwd}=await harness(t),events=[];const handler=createKnowledgeToolHandler({store,cwd,onEvent:e=>events.push(e)});const catalog=decode(await handler(call('relay_skills',{action:'search'})));assert.ok(catalog.entries.every(e=>!('content'in e)));const detail=decode(await handler(call('relay_skills',{action:'read',id:'builtin-browser'})));assert.equal(detail.entry.immutable,true);assert.equal(store.list().length,0);assert.equal(store.listApprovals().length,0);assert.ok(events.some(e=>e.action==='read'&&e.status==='completed'));assert.ok(events.every(e=>!('content'in e)));});
 
-test('agents cannot read another workspace, forge provenance, or modify a shared entry without explicit global scope', async t => {
-  const { store, cwd, otherCwd } = await harness(t);
-  const other = await store.upsert(memory('other project', { cwd: otherCwd }));
-  const shared = await store.upsert(memory('shared global fact'));
-  const handler = createKnowledgeToolHandler({ store, cwd, runId: 'run-current', nodeId: 'agent' });
-  await assert.rejects(handler(call('relay_memory', { action: 'read', id: other.id })), /selected scope/);
-  await assert.rejects(handler(call('relay_memory', { action: 'remember', title: 'forged', content: 'fact', cwd: otherCwd })), /Unknown knowledge tool argument/);
-  await assert.rejects(handler(call('relay_memory', { action: 'remember', title: 'forged', content: 'fact', provenance: { runId: 'forged' } })), /Unknown knowledge tool argument/);
-  assert.equal(decode(await handler(call('relay_memory', { action: 'read', id: shared.id }))).entry.content, 'shared global fact');
-  await assert.rejects(handler(call('relay_memory', { action: 'forget', id: shared.id })), /global scope explicitly/);
-  await assert.rejects(handler(call('relay_memory', { action: 'remember', id: shared.id, title: 'Changed', content: 'changed' })), /global scope explicitly/);
-  assert.equal((await approveTool(store, await handler(call('relay_memory', { action: 'forget', id: shared.id, scope: 'global' })))).ok,true);
-  const global = await approveTool(store, await handler(call('relay_memory', { action: 'remember', scope: 'global', title: 'Shared preference', content: 'Prefer short status updates.' })));
-  assert.equal(global.cwd, null);
-});
+test('model cannot retrieve legacy saved knowledge or forge skill content and provenance',async t=>{const {store,cwd,otherCwd}=await harness(t);const other=await store.upsert(memory('other project',{cwd:otherCwd}));const handler=createKnowledgeToolHandler({store,cwd});await assert.rejects(handler(call('relay_memory',{action:'read',id:other.id})),/Unknown knowledge tool/);await assert.rejects(handler(call('relay_skills',{action:'read',id:other.id})),/not found/);for(const extra of [{scope:'global'},{content:'injected'},{provenance:{source:'user'}},{cwd:otherCwd}])await assert.rejects(handler(call('relay_skills',{action:'read',id:'builtin-browser',...extra})),/Unknown knowledge tool argument/);});
 
-test('cancellation before or during trace delivery prevents explicit knowledge mutations', async t => {
-  const { store, cwd } = await harness(t);
-  const controller = new AbortController(); controller.abort();
-  const stopped = createKnowledgeToolHandler({ store, cwd, signal: controller.signal });
-  await assert.rejects(stopped(call('relay_memory', { action: 'remember', title: 'No write', content: 'no' })), { name: 'AbortError' });
-  const midCall = new AbortController();
-  const handler = createKnowledgeToolHandler({ store, cwd, signal: midCall.signal, onEvent: event => { if (event.status === 'running') midCall.abort(); } });
-  await assert.rejects(handler(call('relay_skills', { action: 'save', title: 'No skill', content: 'no' })), { name: 'AbortError' });
-  assert.equal(store.list().length, 0);
-});
+test('cancellation before or during trace delivery stops skill reads',async t=>{const {store,cwd}=await harness(t);const pre=new AbortController();pre.abort();await assert.rejects(createKnowledgeToolHandler({store,cwd,signal:pre.signal})(call('relay_skills',{action:'read',id:'builtin-browser'})),{name:'AbortError'});const mid=new AbortController();const handler=createKnowledgeToolHandler({store,cwd,signal:mid.signal,onEvent:event=>{if(event.status==='running')mid.abort();}});await assert.rejects(handler(call('relay_skills',{action:'search'})),{name:'AbortError'});assert.equal(store.list().length,0);});
 
 test('a mutation cancelled while queued cannot commit after another agent finishes saving', async t => {
   const { store, cwd } = await harness(t);
@@ -328,36 +285,7 @@ test('history discovery is workspace scoped, excludes the current run, returns a
   assert.deepEqual(capped.results, result.results);
 });
 
-test('knowledge searches cap oversized positive limits and report whether results were omitted', async t => {
-  const { store, cwd } = await harness(t);
-  for (const kind of ['memory', 'skill']) {
-    for (let index = 0; index < 12; index++) await store.upsert({ kind, title: `Match ${index}`, content: `matching record ${index}`, cwd });
-  }
-  const handler = createKnowledgeToolHandler({ store, cwd, getRuns: () => [] });
-  for (const [name, kind] of [['relay_memory', 'memory'], ['relay_skills', 'skill']]) {
-    const capped = decode(await handler(call(name, { action: 'search', query: 'matching', limit: 20 })));
-    assert.equal(capped.requestedLimit, 20);
-    assert.equal(capped.appliedLimit, 10);
-    assert.equal(capped.truncated, true);
-    assert.deepEqual(capped.entries, store.list({ kind, query: 'matching', cwd, limit: 10 }));
-    const standard = decode(await handler(call(name, { action: 'search', query: 'matching' })));
-    assert.equal(standard.requestedLimit, 10);
-    assert.deepEqual(standard.entries, capped.entries);
-    const few = decode(await handler(call(name, { action: 'search', query: 'record 11', limit: 20 })));
-    assert.equal(few.truncated, false);
-    for (const invalid of [0, -1, 1.5, '20', Number.MAX_SAFE_INTEGER + 1]) {
-      await assert.rejects(handler(call(name, { action: 'search', limit: invalid })), /Limit/);
-    }
-  }
-  const history = decode(await handler(call('relay_history', { action: 'search', limit: 20 })));
-  assert.equal(history.truncated, false);
-  assert.equal(history.appliedLimit, 10);
-  for (const invalid of [0, -1, 1.5, '20', Number.MAX_SAFE_INTEGER + 1]) {
-    await assert.rejects(handler(call('relay_history', { action: 'search', limit: invalid })), /Limit/);
-  }
-  await assert.rejects(handler(call('relay_memory', { action: 'remember', title: 'Invalid', content: 'unchanged', limit: 20 })), /Limit/);
-  assert.equal(store.list({ kind: 'memory', cwd, limit: 20 }).length, 12);
-});
+test('release skill discovery is bounded independently of retained history',async t=>{const {store,cwd}=await harness(t);const handler=createKnowledgeToolHandler({store,cwd,getRuns:()=>[]});const all=decode(await handler(call('relay_skills',{action:'search'})));assert.equal(all.entries.length,13);assert.equal(all.truncated,false);const limited=decode(await handler(call('relay_skills',{action:'search',limit:2})));assert.equal(limited.entries.length,2);assert.equal(limited.truncated,true);for(const invalid of [0,-1,1.5,'20',51])await assert.rejects(handler(call('relay_skills',{action:'search',limit:invalid})),/Limit/);const history=decode(await handler(call('relay_history',{action:'search',limit:20})));assert.equal(history.appliedLimit,10);assert.equal(history.truncated,false);});
 
 test('history reads bound large outcomes and node handoffs and preserve observed completion status', async t => {
   const { store, cwd } = await harness(t);
@@ -372,27 +300,6 @@ test('history reads bound large outcomes and node handoffs and preserve observed
   assert.ok(result.run.nodes.every(node => node.output.length <= 2000));
 });
 
-test('published dynamic tool schemas match their runtime names and disallow unbounded extra fields', () => {
-  assert.deepEqual(KNOWLEDGE_TOOLS.map(tool => tool.name), ['relay_memory', 'relay_skills', 'relay_history']);
-  for (const tool of KNOWLEDGE_TOOLS) {
-    assert.equal(tool.type, 'function');
-    assert.equal(tool.inputSchema.additionalProperties, false);
-    assert.equal(tool.inputSchema.properties.limit.maximum, Number.MAX_SAFE_INTEGER);
-    assert.match(tool.inputSchema.properties.limit.description, /at most 10/);
-    assert.equal(tool.inputSchema.properties.query.maxLength, 256);
-  }
-});
+test('published dynamic tools expose only skill reads and history with closed schemas',()=>{assert.deepEqual(KNOWLEDGE_TOOLS.map(t=>t.name),['relay_skills','relay_history']);for(const tool of KNOWLEDGE_TOOLS){assert.equal(tool.type,'function');assert.equal(tool.inputSchema.additionalProperties,false);assert.deepEqual(tool.inputSchema.properties.action.enum,['search','read']);assert.equal(tool.inputSchema.properties.query.maxLength,256);}assert.equal(KNOWLEDGE_TOOLS[0].inputSchema.properties.limit.maximum,50);assert.equal(KNOWLEDGE_TOOLS[1].inputSchema.properties.limit.maximum,Number.MAX_SAFE_INTEGER);});
 
-test('queued agent proposals cancelled before admission leave no approval or active entry', async t => {
-  const {store,cwd,dataDir}=await harness(t);
-  const entered=deferred(),release=deferred(),persist=store.persistApprovals.bind(store);
-  let first=true;store.persistApprovals=async()=>{if(first){first=false;entered.resolve();await release.promise;}return persist();};
-  const handler=createKnowledgeToolHandler({store,cwd,runId:'first'});
-  const staging=handler(call('relay_memory',{action:'remember',title:'First proposal',content:'First pending fact'}));
-  await entered.promise;
-  const controller=new AbortController(),cancelledHandler=createKnowledgeToolHandler({store,cwd,runId:'cancelled',signal:controller.signal});
-  const cancelled=cancelledHandler(call('relay_memory',{action:'remember',title:'Cancelled proposal',content:'Must never be queued'}));
-  const stopped=assert.rejects(cancelled,{name:'AbortError'});controller.abort();release.resolve();
-  const pending=decode(await staging);await stopped;assert.equal(pending.pendingApproval,true);assert.equal(store.list().length,0);assert.equal(store.listApprovals().length,1);
-  const reopened=await new KnowledgeStore({dataDir}).init();assert.equal(reopened.list().length,0);assert.equal(reopened.listApprovals().length,1);assert.equal(reopened.listApprovals()[0].title,'First proposal');
-});
+test('retired model mutation requests cannot create pending approvals or saved entries',async t=>{const {store,cwd,dataDir}=await harness(t);const handler=createKnowledgeToolHandler({store,cwd});for(const action of ['save','patch','remove'])await assert.rejects(handler(call('relay_skills',{action,id:'builtin-browser'})));await assert.rejects(handler(call('relay_memory',{action:'remember',title:'Unwanted fact',content:'Must not persist'})));assert.equal(store.list().length,0);assert.equal(store.listApprovals().length,0);const reopened=await new KnowledgeStore({dataDir}).init();assert.equal(reopened.list().length,0);assert.equal(reopened.listApprovals().length,0);});
