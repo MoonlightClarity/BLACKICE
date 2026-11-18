@@ -107,7 +107,7 @@ export class BrowserRouter extends EventEmitter {
     if (args.action === 'downloads') return { downloads: args.browser ? status.downloads.filter(item => item.browser === args.browser) : status.downloads };
     const independent = ['collection_create','collection_rename','collection_move','collection_remove','open', 'folder_create', 'folder_rename', 'folder_close'].includes(args.action);
     const selected = independent ? { browser: args.browser || 'relay' } : this.owner(args, status);
-    if (['folder_create', 'folder_rename', 'folder_close', 'tab_move', 'tab_select', 'suspend'].includes(args.action) && selected.browser !== 'relay') throw fail('Browser folders and saved pages belong to the contained BLACKICE browser.', 'BROWSER_CONTAINED_ONLY');
+    if (['tab_mark','folder_create', 'folder_rename', 'folder_close', 'tab_move', 'tab_select', 'suspend'].includes(args.action) && selected.browser !== 'relay') throw fail('Browser folders and saved pages belong to the contained BLACKICE browser.', 'BROWSER_CONTAINED_ONLY');
     if (selected.browser !== 'relay' && (args.action === 'type' || args.expectedDocumentId !== undefined || args.expectedUrl !== undefined)) throw fail('Direct page typing is available only in the contained BLACKICE browser.', 'BROWSER_CONTAINED_INPUT_REQUIRED');
     const driver = this.drivers[selected.browser];
     if (!driver) throw fail('This browser is not available.', 'BROWSER_UNAVAILABLE');
@@ -121,7 +121,7 @@ export class BrowserRouter extends EventEmitter {
     if (this.closed) throw fail('The browser workspace closed before the action finished. Inspect before repeating the action.', 'BROWSER_CLOSED');
     if (options.signal?.aborted) throw cancelled();
     const merged = this.status();
-    if (['collection_create','collection_rename','collection_move','collection_remove','tab_collect','close', 'folder_create', 'folder_rename', 'folder_close', 'tab_move', 'suspend'].includes(args.action)) return { ...merged, ...(result?.folder ? { folder: result.folder } : {}), ...(result?.receipt ? { receipt: result.receipt } : {}) };
+    if (['tab_mark','collection_create','collection_rename','collection_move','collection_remove','tab_collect','close', 'folder_create', 'folder_rename', 'folder_close', 'tab_move', 'suspend'].includes(args.action)) return { ...merged, ...(result?.folder ? { folder: result.folder } : {}), ...(result?.receipt ? { receipt: result.receipt } : {}) };
     const tabId = result?.tabId != null ? externalId(selected.browser, result.tabId) : selected.tabId;
     // The original action still returns its own receipt; it must not reselect
     // the parent after a native child appeared while that action was finishing.

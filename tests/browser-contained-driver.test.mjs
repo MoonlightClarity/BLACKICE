@@ -2756,3 +2756,51 @@ test('organizational folders preserve ownership and persist independently',async
  await workspace.perform({action:'collection_remove',collectionId:child.id},{source:'user'});
  assert.equal(driver.tabs.size,1);assert.equal(tab.collectionId,root.id);assert.deepEqual(tab.owner,original.owner);
 });
+
+
+test('explicit in-use marks persist without activating pages or changing ownership, and guard cleanup',async t=>{
+ const {driver,directory,windows}=await fixture(t);await driver.init();
+ const owner={taskId:'in-use-task',runId:'run1',nodeId:'reader'};
+ const tab=driver.newTab('https://fixture.invalid/needed',{restore:true,owner});
+ const before={owner:structuredClone(tab.owner),folderId:tab.folderId,revision:tab.revision,active:driver.activeTab};
+ const mark={action:'tab_mark',tabId:tab.id,inUse:true};
+ const saved=await driver.perform(mark,{source:'agent',owner});
+ assert.equal(saved.tabs.find(x=>x.tabId===tab.id).inUse,true);assert.deepEqual(saved.receipt.inUseBy,{kind:'task',taskId:owner.taskId,nodeId:owner.nodeId});
+ assert.equal(windows.length,0);assert.equal(tab.window,null);assert.equal(tab.revision,before.revision);assert.deepEqual(tab.owner,before.owner);assert.equal(tab.folderId,before.folderId);assert.equal(driver.activeTab,before.active);
+ await assert.rejects(driver.perform({action:'close',tabId:tab.id},{source:'agent',owner}),{code:'BROWSER_TAB_IN_USE'});
+ await assert.rejects(driver.perform({action:'close',tabId:tab.id},{source:'user',protectInUse:true}),{code:'BROWSER_TAB_IN_USE'});
+ await assert.rejects(driver.perform({action:'folder_close',folderId:tab.folderId},{source:'user'}),{code:'BROWSER_TAB_IN_USE'});
+ const released=await driver.releaseOwner(owner,{status:'cancelled'});assert.ok(released.retained.some(x=>x.tabId===tab.id));assert.deepEqual(tab.owner,before.owner);
+ const file=JSON.parse(await readFile(path.join(directory,'browser-tabs.json'),'utf8'));assert.equal(file.tabs[0].inUse,true);
+ await driver.close();const restored=new driver.constructor({dataDir:directory,downloadDir:path.join(directory,'downloads')});
+ try{await restored.init();const status=restored.status().tabs.find(x=>x.tabId===tab.id);assert.equal(status.inUse,true);assert.deepEqual(status.inUseBy,saved.receipt.inUseBy);assert.equal(status.suspended,true);
+ await restored.perform({action:'tab_mark',tabId:tab.id,inUse:false},{source:'agent',owner:{...owner,runId:'continued-run'}});
+ assert.equal(restored.status().tabs.find(x=>x.tabId===tab.id).inUse,false);
+ await restored.perform(mark,{source:'user'});
+ await assert.rejects(restored.perform({action:'tab_mark',tabId:tab.id,inUse:false},{source:'agent',owner}),{code:'BROWSER_TAB_IN_USE'});
+ await restored.perform({action:'close',tabId:tab.id},{source:'user'});assert.equal(restored.tabs.has(tab.id),false);
+ }finally{await restored.close();}
+});
+
+test('in-use mark blocks automatic suspension and survives save failure without false success',async t=>{
+ const {driver,directory}=await fixture(t);await driver.init();const owner={taskId:'mark-task',runId:'run1',nodeId:'agent'};
+ const tab=driver.newTab('https://fixture.invalid/mark',{owner});await driver.perform({action:'tab_mark',tabId:tab.id,inUse:true},{source:'agent',owner});
+ await assert.rejects(driver.perform({action:'suspend',tabId:tab.id},{source:'agent',owner}),{code:'BROWSER_TAB_IN_USE'});
+ assert.equal(driver.suspendTab(tab,{automatic:true}).suspended,false);assert.ok(tab.window);assert.match(driver.cleanupRuntimeReason(tab),/in use/);
+ const target=path.join(directory,'browser-tabs.json');await rm(target);await mkdir(target);
+ await assert.rejects(driver.perform({action:'tab_mark',tabId:tab.id,inUse:false},{source:'agent',owner}),{code:'BROWSER_SAVE_FAILED'});
+ assert.equal(driver.status().tabs.find(x=>x.tabId===tab.id).inUse,false);assert.equal(driver.status().persistence.healthy,false);
+ await rm(target,{recursive:true});await driver.flushPersistence();
+});
+
+
+test('model browser tool marks exact owned tab through host/router without navigation and releases its own mark',async t=>{
+ const {driver,windows}=await fixture(t);await driver.init();const owner={taskId:'tool-mark',runId:'run',nodeId:'worker'};
+ const tab=driver.newTab('https://fixture.invalid/tool-mark',{restore:true,owner});
+ const router=new BrowserRouter({independent:driver}),browser=new BrowserWorkspace({driver:router}),handler=createBrowserToolHandler({browser,owner});
+ const call=inUse=>handler({name:'relay_browser',arguments:{action:'tab_mark',browser:'relay',tabId:tab.id,inUse}});
+ const receipt=await call(true);assert.equal(receipt.success,true);assert.equal(driver.tabs.get(tab.id).inUse,true);assert.equal(windows.length,0);
+ await call(false);assert.equal(driver.tabs.get(tab.id).inUse,false);
+ await driver.perform({action:'tab_mark',tabId:tab.id,inUse:true},{source:'user'});
+ const denied=await call(false);assert.equal(denied.success,false);assert.equal(driver.tabs.get(tab.id).inUse,true);
+});
