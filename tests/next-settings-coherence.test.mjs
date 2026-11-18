@@ -1,4 +1,6 @@
 import test from 'node:test';
+import {renderMcpApps} from '../public/next/workspaces/settings-mcp-apps.mjs';
+test('incoming app guidance does not point to removed Tools settings',()=>{assert.doesNotMatch(renderMcpApps(),/Settings → Tools/);});
 import assert from 'node:assert/strict';
 import {planningDOM} from './fixture-planning-dom.mjs';
 import {createSettingsWorkspace,responseDefaultCapabilities} from '../public/next/workspaces/settings.mjs';
@@ -50,3 +52,5 @@ test('response controls expose only advertised reasoning and Fast support withou
  assert.deepEqual([...f.$('#next-runtime-effort').children].filter(x=>!x.disabled).map(x=>x.value),['default','high']);
  assert.match(f.$('#next-runtime-capabilities').textContent,/prompt guidance, not a guaranteed/);assert.equal(f.calls.some(x=>x.method!=='GET'),false);
 });
+
+test('saved reasoning remains a disabled choice when selection is unsupported',()=>{const caps=responseDefaultCapabilities({defaultModel:'fixed',models:[{id:'fixed',supportsReasoningSelection:false}]},'high');assert.deepEqual(caps.reasoning.map(x=>[x.value,x.available]),[['default',true],['high',false]]);});

@@ -10,7 +10,10 @@ import { serviceTierSupport } from '../../service-tier-model.mjs';
 const REASONING=['default','none','minimal','low','medium','high','xhigh','max','ultra'];
 const VERBOSITY=['concise','balanced','detailed'];
 export function responseDefaultCapabilities(status={},selected='default'){
-  return {reasoning:reasoningChoices(status,'default',selected).map(choice=>({...choice,available:choice.value==='default'||choice.available&&choice.verified})),fast:serviceTierSupport(status,'default','fast')};
+  const reasoning=reasoningChoices(status,'default',selected).map(choice=>({...choice,available:choice.value==='default'||choice.available&&choice.verified}));
+  // Preserve saved preferences even when the current model cannot use them.
+  if(selected&&!reasoning.some(choice=>choice.value===selected))reasoning.push({value:selected,label:selected,available:false,verified:false});
+  return {reasoning,fast:serviceTierSupport(status,'default','fast')};
 }
 
 export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{}}) {
