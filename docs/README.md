@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: 2.40.3 candidate source index.** Package version is **2.40.3**, not an installed or published artifact. See [2.40.3 source notes](../RELEASE-NOTES-2.40.3.md) and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
+> **Status: 2.40.4 candidate source index.** Package version is **2.40.4**, not an installed or published artifact. See [2.40.4 source notes](../RELEASE-NOTES-2.40.4.md) and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
@@ -14,13 +14,13 @@ Start with the [project README](../README.md). A named document's date, original
 | Remote access and connection scope | [Remote access](../REMOTE-ACCESS.md) |
 | Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md), [stopped-task tab adoption](stopped-task-tab-adoption.md) |
 | Keep work moving within a conversation | [Goal mode](GOAL-MODE.md) |
-| Choose *optional* reasoning | [Current On/Off Planning modules](MODULAR-PLANNING-ONTOLOGY.md) and [benchmark trade-offs](PLANNING-TRADEOFFS.md) |
-| Coordinate projects and inspect saved work | [Swarm project lifecycle](swarm-project-lifecycle.md); [Goal mode](GOAL-MODE.md). The retained [Planning screen source](../public/next/workspaces/planning-current.mjs) is a legacy route, not the primary navigation tab. |
+| Current architecture and verification limits | [2.40.4 candidate scope](../RELEASE-NOTES-2.40.4.md) |
+| Organize work | To-do outlines, My workflows and [Goal mode](GOAL-MODE.md). No automatic Swarm dispatch. |
 | Build or publish a Windows release | [Signing and release](../SIGNING-AND-RELEASE.md) and [third-party notices](../THIRD-PARTY-NOTICES.md) |
 
-**Planning controls today:** nine selectable Planning modules use **On/Off**; Directory uses **On/Off** separately. Time management defaults On; the other eight and Directory default Off. Explicit saved Off is preserved. Delegation is an available tool capability, not an extra toggle. Older Forced/Advisory, Mandatory/Optional/Forbidden/Auto, and forced per-operation plan instructions are **not current controls**. Saved choices remain subject to their actual migration/compatibility semantics. See the current [Planning module guide](MODULAR-PLANNING-ONTOLOGY.md).
+**Current candidate:** Directory, old module controls, automatic learning and old Autonomy/Swarm execution are retired. Skills are release-owned and read-only; workflows are owner-authored. Historical documents below do not reactivate those features.
 
-**Workspace navigation:** Swarm is the visible project coordination tab. The retained Planning route exposes saved Current work and graph-plan views for compatibility; it is not a separate primary navigation tab. Reading those records does not create a plan or start a model. See [Swarm lifecycle](swarm-project-lifecycle.md); older organization views are [historical reference](../PLANNING-ORGANIZATION.md).
+**Workspace navigation:** Chat, To-do, Cronjobs, Browser, My workflows, Skills and Settings. To-do is an outline, not a task dispatcher.
 
 **Workbench retirement:** earlier BLACKICE releases documented an optional Windows VM Workbench and native-display paths. Those are **not current setup features** in 2.39.82 source: the VM UI, APIs and installer inputs were retired. The [retirement regression](../tests/workbench-retired.test.mjs) checks this boundary. Historical [2.39.26 pairing notes](../RELEASE-NOTES-2.39.26.md) are retained for provenance, not as instructions to install a missing Workbench component.
 

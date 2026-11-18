@@ -1,6 +1,6 @@
 # Planning modules in current BLACKICE
 
-> **Status: Current source guide (2.40.0).** The source contract is [planning-module-policy.mjs](../public/planning-module-policy.mjs), with the visible choices in [Chat](../public/next/chat/chat.mjs). A source version is not proof that an older installed application has received it. See [release 2.40.0](../RELEASE-NOTES-2.40.0.md).
+> **Status: Historical.** These controls and execution paths are retired in the 2.40.4 candidate. See [current candidate scope](../RELEASE-NOTES-2.40.4.md); retained records are not permission to resume old execution.
 
 BLACKICE provides **nine optional Planning modules**, each with an explicit **On** or **Off** choice. **Directory** is a separate On/Off execution choice. In the 2.40.0 source, Time management starts **On** when absent, while the other eight module choices and Directory start **Off**; explicit current selections and saved user choices are preserved. This favors straightforward tool use unless additional reasoning has a demonstrated purpose for the task.
 
@@ -40,6 +40,6 @@ The old [canonical recursive-planning guide](RECURSIVE-PLANNING.md), [planning-d
 
 ## Evidence and maintenance
 
-The current behavior is implemented and exercised by [the module policy](../public/planning-module-policy.mjs), [the Chat controls](../public/next/chat/chat.mjs), [binary policy tests](../tests/planning-binary-runtime.test.mjs), and [Chat grid tests](../tests/next-chat-ontology-grid.test.mjs). Tests establish their reported source behavior, not success on every provider or installed runtime.
+The current behavior is implemented and exercised by [the module policy](../public/planning-module-policy.mjs), [the Chat controls](../public/next/chat/chat.mjs), [binary policy tests](../tests/planning-binary-runtime.test.mjs), and [current control-retirement tests](../tests/next-chat-module-retirement.test.mjs). Tests establish their reported source behavior, not success on every provider or installed runtime.
 
 For the full guide map and document-status labels, return to the [documentation index](README.md).

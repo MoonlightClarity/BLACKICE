@@ -3,7 +3,6 @@
   "policy": "Classification is for repository main, not proof of the installed binary or publication of a release. History is retained for audit; reference notes require source verification before operational use.",
   "current": [
     "docs/connections-model-onboarding.md",
-    "docs/swarm-project-lifecycle.md",
     "docs/stopped-task-tab-adoption.md",
     "BROWSER-IMPORT.md",
     "BROWSER-PASSWORDS.md",
@@ -18,7 +17,6 @@
     "docs/CLAUDE-CONNECTOR.md",
     "docs/GEMINI-CONNECTOR.md",
     "docs/GOAL-MODE.md",
-    "docs/MODULAR-PLANNING-ONTOLOGY.md",
     "docs/PLANNING-TRADEOFFS.md",
     "docs/README.md",
     "docs/local-models.md",
@@ -68,7 +66,8 @@
     "docs/design/swarm-workbook.md",
     "docs/ux-concept-audit-20261117.md",
     "docs/ux-directory-visibility-20261117.md",
-    "docs/context-architecture-reset.md"
+    "docs/context-architecture-reset.md",
+    "docs/browser-stability-20261118.md"
   ],
   "historical": [
     "APPLICATION-COMPATIBILITY.md",
@@ -108,6 +107,8 @@
     "docs/provider-structured-output-20261030.md",
     "docs/response-cycles-20261030.md",
     "docs/task-relative-accuracy-20261030.md",
-    "docs/three-subscription-runtimes-20261031.md"
+    "docs/three-subscription-runtimes-20261031.md",
+    "docs/MODULAR-PLANNING-ONTOLOGY.md",
+    "docs/swarm-project-lifecycle.md"
   ]
 }

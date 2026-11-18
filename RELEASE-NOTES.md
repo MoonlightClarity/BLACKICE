@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.3 candidate source, not an installation or publication receipt.** Package version is **2.40.3**. Start with the [2.40.3 notes](RELEASE-NOTES-2.40.3.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.4 candidate source, not an installation or publication receipt.** Package version is **2.40.4**. Start with the [2.40.4 notes](RELEASE-NOTES-2.40.4.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.4](RELEASE-NOTES-2.40.4.md) - first-class file search, clean context retirement, owner workflows and nested outlines
 
 - [2.40.3](RELEASE-NOTES-2.40.3.md) - browser/job tool guidance, file discovery, owner-approved knowledge, profile boundaries and responsive interruption
 

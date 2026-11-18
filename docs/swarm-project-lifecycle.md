@@ -1,5 +1,7 @@
 # Swarm project lifecycle
 
+> **Status: Historical.** Swarm execution is retired in the 2.40.4 candidate. See [current scope](../RELEASE-NOTES-2.40.4.md).
+
 Swarm's project header exposes Edit project, Archive project and Delete project.
 The project rail separates Active, Archive and Trash, with counts. Delete is a
 recoverable move to Trash, not a permanent purge. Restore returns a project to
