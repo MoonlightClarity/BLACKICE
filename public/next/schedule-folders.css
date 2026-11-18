@@ -36,3 +36,5 @@
 .next-cronjob-conversation{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0}
 
 .next-schedule-drop-target{outline:2px solid var(--accent);outline-offset:-2px;background:var(--next-selection-background)}
+
+.next-schedule-folder-name{border:0;background:none;color:inherit;font:inherit;padding:0;cursor:text;text-align:left}.next-schedule-folder-name:focus-visible{outline:2px solid currentColor;outline-offset:3px}.next-schedule-folder-name-input{width:min(24rem,65%);min-width:6rem}

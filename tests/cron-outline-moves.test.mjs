@@ -14,7 +14,7 @@ async function fixture(t){
  render();
  const folder=id=>list.querySelector('[data-schedule-folder="'+id+'"]').querySelector('summary'),job=()=>list.querySelector('[data-schedule-id="job"]').querySelector('summary');
  async function drag(from,to){const dataTransfer={setData(){}};await from.dispatch('dragstart',{dataTransfer});await to.dispatch('drop',{dataTransfer});await settle();}
- return{component,calls,folder,job,drag,state:()=>organization,fail(){fail=true;},list};
+ return{refresh:render,advance(){organization={...organization,revision:organization.revision+1};render();},component,calls,folder,job,drag,state:()=>organization,fail(){fail=true;},list};
 }
 test('outline moves schedules and nested folders through CAS without changing jobs',async t=>{
  const f=await fixture(t);await f.drag(f.job(),f.folder('b'));assert.equal(f.state().assignments.job,'b');assert.equal(document.activeElement,f.job());assert.equal(f.calls[0].body.expectedRevision,1);
@@ -29,4 +29,17 @@ test('external drops, leave and conflict cannot silently reapply a move',async t
  await f.job().dispatch('dragstart',{dataTransfer:{setData(){}}});f.component.leave();await f.folder('b').dispatch('drop',{});assert.equal(f.calls.length,0);
  f.fail();await f.drag(f.job(),f.folder('b'));assert.equal(f.calls.length,1);assert.equal(f.state().assignments.job,'a');
  await settle();assert.equal(f.calls.length,1,'conflict refresh never replays mutation');
+});
+
+test('folder names edit inline without toggling, moving or running schedules',async t=>{
+ const f=await fixture(t);let summary=f.folder('a'),label=summary.querySelector('.next-schedule-folder-name'),input=summary.querySelector('input');
+ await label.dispatch('click',{});assert.equal(input.hidden,false);assert.equal(document.activeElement,input);
+ input.value='Changed';await input.dispatch('input',{});await input.dispatch('keydown',{key:'Escape'});assert.equal(f.calls.length,0);assert.equal(input.hidden,true);
+ await label.dispatch('click',{});input.value='Renamed';await input.dispatch('input',{});await input.dispatch('keydown',{key:'Enter'});await settle();
+ assert.equal(f.state().folders.find(row=>row.id==='a').name,'Renamed');assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.action,'update');assert.equal(f.calls[0].body.parentId,null);
+ summary=f.folder('a');label=summary.querySelector('.next-schedule-folder-name');input=summary.querySelector('input');await label.dispatch('click',{});input.value='';await input.dispatch('keydown',{key:'Enter'});assert.equal(f.calls.length,1);
+});
+
+test('inline rename preserves edit-start revision across refresh',async t=>{
+ const f=await fixture(t);await f.folder('a').querySelector('.next-schedule-folder-name').dispatch('click',{});let input=f.folder('a').querySelector('input');input.value='My draft';await input.dispatch('input',{});f.advance();input=f.folder('a').querySelector('input');assert.equal(input.value,'My draft');assert.equal(input.hidden,false);f.fail();await input.dispatch('keydown',{key:'Enter'});await settle();assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.expectedRevision,1);assert.equal(f.state().folders.find(row=>row.id==='a').name,'Alpha');assert.equal(f.folder('a').querySelector('input').value,'My draft');
 });

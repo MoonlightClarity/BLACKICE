@@ -4,6 +4,7 @@ import { text } from '../core/dom.mjs';
 export function createScheduleFolders({ mount, api, notify, refresh }) {
   let organization = { revision: 0, folders: [], assignments: {} }, pending = false, lastRevision = -1;
   const closed = new Set();
+  const renameDrafts = new Map();
   let fileSelects = [], folderButtons = [], activeDrag = null;
   let knownDeployments = new Set(), outlineContainer = null;
   const add = (parent, tag, value, cls) => text(parent, value, tag, cls);
@@ -42,12 +43,12 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
     parent.parentElement.firstChild.textContent = folder ? 'Move inside' : 'Create inside';
   }
   selected.addEventListener('change', editSelection);
-  async function mutate(payload) {
+  async function mutate(payload, expectedRevision = organization.revision) {
     if (pending) return false;
     for (const select of [...fileSelects,...folderButtons]) select.disabled = true;
     pending = true; save.disabled = remove.disabled = selected.disabled = name.disabled = parent.disabled = true; notice.textContent = '';
     try {
-      organization = await api('/api/operations/folders', 'POST', { ...payload, expectedRevision: organization.revision });
+      organization = await api('/api/operations/folders', 'POST', { ...payload, expectedRevision });
       await refresh(); return true;
     } catch (error) {
       notice.textContent = error.message; notify?.(error.message, true);
@@ -76,6 +77,7 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
   function focusItem(item){
     const attribute=item.kind==='folder'?'scheduleFolder':'scheduleId';
     const row=[...(outlineContainer?.querySelectorAll(item.kind==='folder'?'[data-schedule-folder]':'[data-schedule-id]')||[])].find(value=>value.dataset[attribute]===item.id);
+    for(let ancestor=row?.parentElement;ancestor;ancestor=ancestor.parentElement){if(ancestor.tagName==='DETAILS'){ancestor.open=true;if(ancestor.dataset.scheduleFolder)closed.delete(ancestor.dataset.scheduleFolder);}}
     row?.querySelector('summary')?.focus();
   }
   async function move(item,parentId){
@@ -96,14 +98,14 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
   function draggable(element,item){
     element.draggable=true;
     element.addEventListener('dragstart',event=>{
-      if(pending){event.preventDefault();return;}
+      if(pending||event.target?.tagName==='INPUT'){event.preventDefault();return;}
       event.stopPropagation();activeDrag=item;
       event.dataTransfer?.setData('application/x-blackice-schedule',JSON.stringify(item));
       if(event.dataTransfer)event.dataTransfer.effectAllowed='move';
     });
     element.addEventListener('dragend',()=>{activeDrag=null;});
     element.addEventListener('keydown',event=>{
-      if(!(event.ctrlKey||event.metaKey)||event.key!=='Enter')return;
+      if(event.target?.tagName==='INPUT'||!(event.ctrlKey||event.metaKey)||event.key!=='Enter')return;
       event.preventDefault();event.stopPropagation();
       const parentId=currentParent(item);
       if(event.shiftKey){
@@ -145,7 +147,26 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
           const details = add(host, 'details', '', 'next-schedule-folder-branch');
           details.open = !closed.has(folder.id);
           details.dataset.scheduleFolder = folder.id;
-          const summary = add(details, 'summary', folder.name);
+          const summary = add(details, 'summary', '');
+          const label = add(summary,'button',folder.name,'next-schedule-folder-name');label.type='button';label.disabled=pending;folderButtons.push(label);label.title='Rename folder';
+          const input = add(summary,'input','','next-field next-schedule-folder-name-input');input.maxLength=120;input.setAttribute('aria-label','Rename folder '+folder.name);input.hidden=!renameDrafts.has(folder.id);input.value=renameDrafts.get(folder.id)?.name??folder.name;label.hidden=!input.hidden;
+          function cancelRename(){renameDrafts.delete(folder.id);input.hidden=true;label.hidden=false;label.focus();}
+          label.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();if(pending)return;renameDrafts.set(folder.id,{name:folder.name,revision:organization.revision,parentId:folder.parentId||null});input.value=folder.name;label.hidden=true;input.hidden=false;input.focus();input.select?.();});
+          input.addEventListener('input',()=>{const draft=renameDrafts.get(folder.id);if(draft)draft.name=input.value;});
+          input.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();});
+          input.addEventListener('dragstart',event=>{event.preventDefault();event.stopPropagation();});
+          input.addEventListener('keydown',async event=>{
+            event.stopPropagation();
+            if(event.key==='Escape'){event.preventDefault();cancelRename();return;}
+            if(event.key!=='Enter')return;event.preventDefault();if(pending)return;
+            const nextName=input.value.trim();if(!nextName){input.setCustomValidity?.('Enter a folder name.');input.reportValidity?.();return;}input.setCustomValidity?.('');
+            if(nextName===folder.name){cancelRename();return;}
+            input.disabled=true;
+            const draft=renameDrafts.get(folder.id);
+            const ok=await mutate({action:'update',id:folder.id,name:nextName,parentId:draft?.parentId??null},draft?.revision??organization.revision);
+            input.disabled=false;
+            if(ok){renameDrafts.delete(folder.id);await refresh();focusItem({kind:'folder',id:folder.id});}
+          });
           draggable(summary,{kind:'folder',id:folder.id});dropTarget(summary,folder.id);
           summary.title='Drag to move. Ctrl+Enter indents; Ctrl+Shift+Enter moves out one level.';
           const direct = deployments.filter(item => organization.assignments?.[item.id] === folder.id).length;

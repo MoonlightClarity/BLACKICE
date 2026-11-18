@@ -37,9 +37,13 @@ const until=async s=>{for(let i=0;i<100;i++){if(await run(s))return;await sleep(
  await run('(()=>{const from=document.querySelector("[data-schedule-id=earlier]>summary"),to=document.querySelector("[data-schedule-folder=research]>summary"),dataTransfer=new DataTransfer();from.dispatchEvent(new DragEvent("dragstart",{bubbles:true,dataTransfer}));to.dispatchEvent(new DragEvent("drop",{bubbles:true,cancelable:true,dataTransfer}));})()');
  await until('document.querySelector("[data-schedule-id=earlier]").closest("[data-schedule-folder=research]")!==null');
  assert.equal(organization.assignments.earlier,'research');
+  await until('document.activeElement===document.querySelector("[data-schedule-id=earlier]>summary")');
+  assert.equal(await run('document.querySelector("[data-schedule-folder=research]").open'),true);
  await run('document.querySelector("[data-schedule-id=earlier]>summary").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",ctrlKey:true,shiftKey:true,bubbles:true,cancelable:true}))');
  await until('document.querySelector("[data-schedule-id=earlier]").closest("[data-schedule-folder]").dataset.scheduleFolder==="work"');
  assert.equal(organization.assignments.earlier,'work');
+  await run('document.querySelector("[data-schedule-folder=research]").open=false');
+  await new Promise(resolve=>setTimeout(resolve,50));
  await run('document.querySelector("[data-schedule-id=earlier]>summary").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",ctrlKey:true,bubbles:true,cancelable:true}))');
  await until('document.querySelector("[data-schedule-id=earlier]").closest("[data-schedule-folder]").dataset.scheduleFolder==="research"');
  assert.equal(organization.assignments.earlier,'research');
@@ -49,6 +53,14 @@ const until=async s=>{for(let i=0;i<100;i++){if(await run(s))return;await sleep(
  await run('(()=>{const from=document.querySelector("[data-schedule-folder=research]>summary"),to=document.querySelector("[data-schedule-folder=work]>summary"),dataTransfer=new DataTransfer();from.dispatchEvent(new DragEvent("dragstart",{bubbles:true,dataTransfer}));to.dispatchEvent(new DragEvent("drop",{bubbles:true,cancelable:true,dataTransfer}));})()');
  await until('document.querySelector("[data-schedule-folder=research]").closest("[data-schedule-folder=work]")!==null');
  assert.equal(organization.folders.find(folder=>folder.id==='research').parentId,'work');
+  await run('document.querySelector("[data-schedule-folder=research] .next-schedule-folder-name").click()');
+  await run('(()=>{const input=document.querySelector("[data-schedule-folder=research] .next-schedule-folder-name-input");input.value="Research renamed";input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));})()');
+  await until('document.querySelector("[data-schedule-folder=research] .next-schedule-folder-name").textContent==="Research renamed"');
+  assert.equal(organization.folders.find(folder=>folder.id==='research').name,'Research renamed');
+  await run('document.querySelector("[data-schedule-folder=research] .next-schedule-folder-name").click()');
+  await run('document.querySelector("[data-schedule-folder=research] input").dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true}))');
+  assert.equal(await run('document.querySelector("[data-schedule-folder=research] input").hidden'),true);
+
  assert.equal(fixture.state.deployments.length,4);
  assert.equal(fixture.state.scheduledWrites.length,0);
  await run('document.querySelector("[data-schedule-result-run=sample-run-0]").click()');
