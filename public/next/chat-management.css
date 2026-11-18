@@ -44,7 +44,6 @@
 
 .next-chat-folder-manage{flex:none;padding:2px 7px;min-height:26px;line-height:1.2}
 
-.next-chat-folder-heading>span::before{content:'';display:inline-block;width:16px;height:14px;margin-right:7px;vertical-align:-2px;background:currentColor;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 20'%3E%3Cpath d='M2 2h7l3 3h10v13H2z' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}
 
 #next-chat-mobile-list{display:none}@media(max-width:650px){#next-chat-mobile-list{display:inline-flex;align-self:flex-start}}
 
@@ -52,9 +51,6 @@
 /* Compact navigation: the folder tree is primary; management stays on demand. */
 .next-chat .next-sidebar-head{padding:10px;gap:7px}
 .next-chat .next-sidebar-row>strong{font-size:12px}
-.next-chat .next-chat-folder-settings>summary{font-size:12px;cursor:pointer;color:var(--muted);padding:5px 0}
-.next-chat .next-chat-folder-settings[open]{display:grid;gap:6px}
-.next-chat .next-chat-folder-settings .next-chat-folder-picker{margin-top:6px}
 .next-chat .next-conversation{padding:6px 8px;gap:3px}
 .next-chat .next-conversation-title{font-size:12px;font-weight:400;line-height:1.4}
 .next-chat .next-conversation-meta{font-size:10px;line-height:1.3}
@@ -106,3 +102,8 @@
  .next-chat .next-chat-main,.next-chat .next-chat-sidebar,.next-chat .next-chat-head,.next-chat .next-chat-composer-area,.next-chat .next-chat-compose{background:Canvas;color:CanvasText;box-shadow:none}
  .next-chat .next-chat-intro p{color:CanvasText}
 }
+.next-chat .next-chat-folder-heading>.next-chat-tree-folder-icon{display:inline-block;flex:none;width:17px;height:14px;border:1px solid #c6ad70;border-radius:2px;background:#c6ad7022;position:relative;margin:0 3px}
+.next-chat .next-chat-folder-heading>.next-chat-tree-folder-icon::before{content:"";position:absolute;width:7px;height:3px;top:-4px;left:1px;border:1px solid #c6ad70;border-bottom:0;border-radius:2px 2px 0 0}
+.next-chat .next-chat-folder-remove{padding:2px 5px;opacity:.65;flex:none;min-height:26px}
+.next-chat .next-chat-folder-heading:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+.next-chat .next-chat-folder-heading>small{display:none}

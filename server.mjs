@@ -602,27 +602,6 @@ export async function createHarnessServer(options = {}) {
         try {return json(res,200,{folderOrganization:await pending});}
         finally {fileMutations.delete(pending);}
       }
-      if(pathname==='/api/conversation-folders/auto-step'&&req.method==='POST'){
-        const input=await body(req,16384);
-        const activeRoots=new Set([...engine.runs.values()].filter(run=>
-          ['queued','running','waiting'].includes(run.status)||run.settled===false).map(run=>run.taskId||run.id));
-        // Stable root-title lookup, not transcript reads and not client titles.
-        // Legacy aliases are handled through the visible list when needed.
-        let fallback=null;
-        const resolve=id=>{
-          const entry=conversations.entries.get(id);
-          const item=entry&&conversations.rootIdFor(entry)===id?{
-            rootId:id,title:conversations.states[id]?.title||entry.title,
-            state:conversations.states[id]?.state||'active',status:entry.status,settled:entry.settled
-          }:(fallback??=new Map(conversations.list('all').map(row=>[row.rootId,row]))).get(id);
-          return item?{...item,busy:activeRoots.has(id)||
-            ['queued','running','waiting'].includes(item.status)||item.settled===false}:null;
-        };
-        const pending=conversationFolders.autoStep({...input,resolve});
-        fileMutations.add(pending);
-        try {return json(res,200,{folderOrganization:await pending});}
-        finally {fileMutations.delete(pending);}
-      }
       if(await handleVisualHttp({req,res,pathname,body,json,store:visuals,mutations:fileMutations}))return;
       if(await handleConversationGoalsHttp({req,res,pathname,goals,body,json,mutations:fileMutations}))return;
       if(/^\/api\/conversations\/[a-zA-Z0-9_-]+\/autonomy$/.test(pathname))return json(res,410,{code:'AUTONOMY_RETIRED',error:'Autonomy is retired. Use an explicit Goal or scheduled task.'});

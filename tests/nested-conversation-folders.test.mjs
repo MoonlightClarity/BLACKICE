@@ -29,10 +29,10 @@ test('bounded windows retain selected chat nested in its folder',t=>{
 test('folder management is named and matching searches expose collapsed rows',t=>{
  const d=fixture(t),list=d.element('div');d.mount.append(list);
  const items=[{rootId:'a',title:'Alpha',folderId:'work'}];
- const options={groupFolders:true,folderNames:new Map([['work','Work']]),onFolderManage:()=>{}};
+ const options={groupFolders:true,folderNames:new Map([['work','Work']]),onFolderDelete:()=>{}};
  paintIndex({list},items,null,()=>{},options);
  const group=list.querySelector('[data-chat-folder="work"]');
- assert.equal(group.querySelector('.next-chat-folder-manage').getAttribute('aria-label'),'Manage Work folder');
+ assert.equal(group.querySelector('.next-chat-folder-remove').getAttribute('aria-label'),'Delete empty Work folder');
  group.open=false;
  assert.equal(paintIndex({list},items,null,()=>{},options).length,0);
  assert.equal(paintIndex({list},items,null,()=>{},{...options,expandFolders:true}).length,1);
@@ -40,30 +40,9 @@ test('folder management is named and matching searches expose collapsed rows',t=
  paintIndex({list},items,null,()=>{},options);assert.equal(group.open,false);
 });
 
-test('folder controls are on demand while the primary folder tree remains visible',t=>{
- const d=fixture(t),view=createChatFrame(d.mount);
- assert.equal(view.folderSettings.open,false);
- assert(view.folderSettings.contains(view.folderFilter));
- assert(view.folderSettings.contains(view.folderAuto));
- assert.equal(view.folderSettings.contains(view.list),false);
- assert.equal(view.folderSettings.contains(view.folderStatus),false,'operation feedback remains visible');
-});
 
-test('active folder remains evident without reopening manually collapsed options on refresh',async t=>{
- const {createConversationFolderUI}=await import('../public/next/chat/folders.mjs');
- const d=fixture(t),view=createChatFrame(d.mount);
- const ui=createConversationFolderUI({view,api:async()=>{},getItems:()=>[],getBucket:()=> 'active',getSelectedRoot:()=>null});
- t.after(()=>ui.destroy());
- const snapshot={healthy:true,revision:1,autoEnabled:false,folders:[{id:'work',name:'Work'}]};
- ui.accept(snapshot);ui.manage('work');
- assert.equal(view.folderSettings.open,true);
- view.folderSettings.open=false;
- ui.refresh();ui.accept(snapshot);ui.onListLoaded([],snapshot);
- assert.equal(view.folderSettings.open,false);
- assert.equal(view.folderSettings.querySelector('summary').textContent,'Folder options: Work');
- view.folderFilter.value='all';await view.folderFilter.dispatch('change');
- assert.equal(view.folderSettings.open,false);
- assert.equal(view.folderSettings.querySelector('summary').textContent,'Folder options');
- ui.manage('work');
- assert.equal(view.folderSettings.open,true,'explicit management still opens its controls');
+test('real hierarchy preserves nested rows, collapses ancestors, moves with contents and keeps editor identity',t=>{
+ const d=fixture(t),list=d.element('div');d.mount.append(list);const folders=[{id:'a',name:'A'},{id:'b',name:'B',parentId:'a'},{id:'c',name:'C',parentId:'b'}],items=[{rootId:'r',title:'Nested',folderId:'c'}];const opts={folders,folderNames:new Map(folders.map(f=>[f.id,f.name])),groupFolders:true,onFolderRename:()=>async()=>true};
+ const paint=chosen=>paintIndex({list},items,chosen,()=>{},opts);paint(null);const a=list.querySelector('[data-chat-folder="a"]'),b=list.querySelector('[data-chat-folder="b"]'),c=list.querySelector('[data-chat-folder="c"]');assert(a.contains(b));assert(b.contains(c));a.open=false;assert.equal(paint(null).length,0);assert.equal(paint('r').length,1);assert.equal(a.open,true);
+ folders[1].parentId=null;paint('r');assert.equal(a.contains(b),false);assert(b.contains(c));assert(c.contains(list.querySelector('[data-conversation="r"]')));
 });

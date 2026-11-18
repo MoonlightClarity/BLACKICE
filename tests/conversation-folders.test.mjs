@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, readFile, writeFile, mkdir, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {performance} from 'node:perf_hooks';
-import {ConversationFolders, AUTO_BATCH_LIMIT, AUTO_FOLDER_LIMIT} from '../lib/conversation-folders.mjs';
+import {ConversationFolders} from '../lib/conversation-folders.mjs';
 
 const fresh=async t=>{
   const dir=await mkdtemp(path.join(os.tmpdir(),'blackice-conversation-folders-'));
@@ -19,157 +18,6 @@ const add=async(store,name)=> {
   await edit(store,[{type:'create_folder',name}]);
   return store.snapshot().folders.find(folder=>!old.has(folder.id));
 };
-const status=(title,rootId,state='active')=>({title,rootId,state,busy:false});
-const runAuto=(store,items,options={})=>store.autoStep({
-  rootIds:items.map(item=>item.rootId),resolve:id=>items.find(item=>item.rootId===id),...options
-});
-
-test('missing .98 metadata migrates in place without touching legacy archive/state files',async t=>{
-  const {dir,store}=await fresh(t);
-  assert.equal(store.snapshot().revision,0);
-  assert.equal(store.snapshot().autoEnabled,true);
-  assert.equal(store.forConversation('r1').folderId,null);
-  const legacy=path.join(dir,'conversation-state.json');
-  await writeFile(legacy,'{"r1":{"state":"archived","title":"Original"}}');
-  const folder=await add(store,'BLACKICE');
-  await edit(store,[{type:'assign',rootId:'r1',folderId:folder.id}],['r1']);
-  assert.deepEqual(JSON.parse(await readFile(legacy,'utf8')), {r1:{state:'archived',title:'Original'}});
-  const reloaded=await new ConversationFolders({dataDir:dir}).init();
-  assert.equal(reloaded.forConversation('r1').folderId,folder.id);
-  assert.equal(reloaded.forConversation('r1').source,undefined);
-  assert.equal(reloaded.forConversation('r1').folderSource,'manual');
-});
-
-test('unversioned folders prototype migrates and does not create one folder per chat',async t=>{
-  const {dir}=await fresh(t);
-  await writeFile(path.join(dir,'conversation-folders-v1.json'),JSON.stringify({folders:[],assignments:{},revision:0,autoEnabled:true}));
-  const migrated=await new ConversationFolders({dataDir:dir}).init();
-  assert.equal(migrated.status().healthy,true);
-  assert.equal(migrated.snapshot().version,1);
-  const single=[status('Apollo analysis','a')];
-  await runAuto(migrated,single);
-  assert.equal(migrated.snapshot().folders.length,0);
-});
-
-test('manual assign including Ungrouped stays sticky against automatic classification until reset',async t=>{
-  const {store}=await fresh(t);
-  const folder=await add(store,'BLACKICE');
-  await edit(store,[{type:'assign',rootId:'x',folderId:null}],['x']);
-  const items=[status('BLACKICE performance investigation','x')];
-  await runAuto(store,items);
-  assert.equal(store.forConversation('x').folderId,null);
-  assert.equal(store.forConversation('x').folderSource,'manual');
-  await edit(store,[{type:'reset_auto',rootId:'x'}],['x']);
-  await runAuto(store,items);
-  assert.equal(store.forConversation('x').folderId,folder.id);
-  assert.equal(store.forConversation('x').folderSource,'automatic');
-  assert.match(store.forConversation('x').folderReason,/title/i);
-});
-
-test('manual move undo restores actual previous source and membership',async t=>{
-  const {store}=await fresh(t);
-  const one=await add(store,'BLACKICE');
-  const two=await add(store,'Phoenix');
-  const items=[status('BLACKICE diagnostics','r1')];
-  await runAuto(store,items);
-  assert.equal(store.forConversation('r1').folderId,one.id);
-  const prior=store.data.assignments.r1;
-  await edit(store,[{type:'assign',rootId:'r1',folderId:two.id}],['r1']);
-  assert.equal(store.forConversation('r1').folderSource,'manual');
-  await edit(store,[{type:'restore_assignment',rootId:'r1',previous:prior}],['r1']);
-  assert.equal(store.forConversation('r1').folderSource,'automatic');
-  assert.equal(store.forConversation('r1').folderId,one.id);
-});
-
-test('delete folder retains conversations in Ungrouped, leaves legacy archived/deleted untouched, suppresses recreation',async t=>{
-  const {dir,store}=await fresh(t);
-  const folder=await add(store,'Phoenix');
-  const legacy=path.join(dir,'conversation-state.json');
-  const content='{"a":{"state":"archived"},"b":{"state":"deleted"}}';
-  await writeFile(legacy,content);
-  await edit(store,[
-    {type:'assign',rootId:'a',folderId:folder.id},
-    {type:'assign',rootId:'b',folderId:folder.id}
-  ],['a','b']);
-  await edit(store,[{type:'delete_folder',folderId:folder.id}]);
-  assert.equal(store.forConversation('a').folderSource,'manual');
-  assert.equal(store.forConversation('b').folderId,null);
-  assert.equal(store.snapshot().folders.length,0);
-  assert.equal(await readFile(legacy,'utf8'),content);
-  const items=['a','b','c','d'].map(rootId=>status('Phoenix research',rootId));
-  await runAuto(store,items);
-  assert.equal(store.snapshot().folders.length,0);
-});
-
-test('repeated subject generates one capped folder, ambiguous mixed-topic stays ungrouped with suggestion',async t=>{
-  const {store}=await fresh(t);
-  const items=['alpha','beta','gamma','mix'].map((rootId,i)=>
-    status(i===3?'BLACKICE and Phoenix architecture':'BLACKICE '+['tooling','debugging','release'][i],rootId));
-  await runAuto(store,items);
-  assert.equal(store.snapshot().folders.length,1);
-  assert.equal(store.snapshot().folders[0].name,'BLACKICE');
-  assert.equal(store.snapshot().folders[0].origin,'automatic');
-  for(const id of ['alpha','beta','gamma'])assert.equal(store.forConversation(id).folderId,store.snapshot().folders[0].id);
-  const mixed=store.forConversation('mix');
-  assert.equal(mixed.folderId,null);
-  assert.equal(mixed.folderSuggestion,store.snapshot().folders[0].id);
-  assert.match(mixed.folderReason,/mixed/i);
-});
-
-test('a common umbrella product does not absorb separately repeated named subprojects',async t=>{
-  const {store}=await fresh(t);
-  const umbrella=await add(store,'BLACKICE');
-  const items=['Swarm','Skills'].flatMap(project=>[1,2,3].map(n=>status(
-    'BLACKICE '+project+' detailed work '+n,project.toLowerCase()+n
-  )));
-  await runAuto(store,items);
-  const names=store.snapshot().folders.map(folder=>folder.name);
-  assert.ok(names.includes('BLACKICE'));
-  assert.ok(names.includes('Swarm'));
-  assert.ok(names.includes('Skills'));
-  const swarmId=store.snapshot().folders.find(folder=>folder.name==='Swarm').id;
-  const skillsId=store.snapshot().folders.find(folder=>folder.name==='Skills').id;
-  assert.notEqual(swarmId,umbrella.id);
-  assert.notEqual(skillsId,umbrella.id);
-  for(const item of items)assert.equal(store.forConversation(item.rootId).folderId,
-    item.rootId.startsWith('swarm')?swarmId:skillsId);
-  const mixed=status('BLACKICE Swarm and Skills integration','mixed');
-  await runAuto(store,[mixed]);
-  assert.equal(store.forConversation('mixed').folderId,null);
-  assert.match(store.forConversation('mixed').folderReason,/Mixed topics/);
-});
-
-test('title change alone does not oscillate automatically assigned folders; reset is meaningful explicit trigger',async t=>{
-  const {store}=await fresh(t);
-  const blackice=await add(store,'BLACKICE');
-  const phoenix=await add(store,'Phoenix');
-  const one=[status('BLACKICE internal refactor','root')];
-  await runAuto(store,one);
-  assert.equal(store.forConversation('root').folderId,blackice.id);
-  one[0].title='Phoenix roadmap';
-  await runAuto(store,one);
-  assert.equal(store.forConversation('root').folderId,blackice.id);
-  await edit(store,[{type:'reset_auto',rootId:'root'}],['root']);
-  await runAuto(store,one);
-  assert.equal(store.forConversation('root').folderId,phoenix.id);
-});
-
-test('no auto when disabled, busy, excluded current, archived auto can be organized and trash excluded',async t=>{
-  const {store}=await fresh(t);
-  const folder=await add(store,'BLACKICE');
-  const items=[status('BLACKICE one','root'),status('BLACKICE two','busy'),status('BLACKICE three','open'),
-    status('BLACKICE archive','archived','archived'),status('BLACKICE trash','trash','deleted')];
-  items[1].busy=true;
-  await edit(store,[{type:'toggle_auto',enabled:false}]);
-  await runAuto(store,items);
-  assert.equal(Object.keys(store.data.scans).length,0);
-  await edit(store,[{type:'toggle_auto',enabled:true}]);
-  await runAuto(store,items,{excludeRootId:'open'});
-  assert.equal(store.forConversation('root').folderId,folder.id);
-  assert.equal(store.forConversation('archived').folderId,folder.id);
-  for(const id of ['busy','open','trash'])assert.equal(store.data.scans[id],undefined);
-});
-
 test('concurrent revisions and locks reject stale or ambiguous edits without replay',async t=>{
   const {dir,store}=await fresh(t);
   const another=await new ConversationFolders({dataDir:dir}).init();
@@ -216,34 +64,20 @@ test('distinct profile data directories cannot leak catalog or manual assignment
   assert.equal(a.snapshot().folders[0].name,'Personal');
 });
 
-test('budget maximum 40, automatic folders maximum 8 and active exclusion',async t=>{
-  const {store}=await fresh(t);
-  await assert.rejects(runAuto(store,Array.from({length:41},(_,i)=>status('BLACKICE '+i,'a'+i))),
-    error=>error.status===400&&error.code==='FOLDER_AUTO_BATCH');
-  let all=[];
-  for(const label of ['BLACKICE','Phoenix','Apollo','Mercury','Neptune','Jupiter','Saturn','Venus','Mars']) {
-    for(let n=0;n<3;n++)all.push(status(label+' detailed '+n,'r'+all.length));
-  }
-  for(let i=0;i<all.length;i+=AUTO_BATCH_LIMIT)await runAuto(store,all.slice(i,i+AUTO_BATCH_LIMIT));
-  assert.ok(store.snapshot().folders.filter(f=>f.origin==='automatic').length<=AUTO_FOLDER_LIMIT);
-});
 
-test('synthetic 2,400 titles, bounded 40-item scans, scaling time and serialized byte footprint',async t=>{
-  const {store}=await fresh(t);
-  const items=Array.from({length:2400},(_,i)=>status('BLACKICE synthetic note '+i,'s'+i));
-  const started=performance.now();
-  let maxBatchMs=0;
-  for(let i=0;i<items.length;i+=AUTO_BATCH_LIMIT) {
-    const now=performance.now();
-    await runAuto(store,items.slice(i,i+AUTO_BATCH_LIMIT));
-    maxBatchMs=Math.max(maxBatchMs,performance.now()-now);
-  }
-  const elapsedMs=Math.round(performance.now()-started);
-  const bytes=(await readFile(store.file)).byteLength;
-  assert.equal(Object.keys(store.data.scans).length,2400);
-  assert.equal(store.snapshot().folders.length,1);
-  assert.ok(bytes<8*1024*1024);
-  console.log(JSON.stringify({case:'synthetic-title-only',chats:2400,batch:AUTO_BATCH_LIMIT,
-    elapsedMs,maxBatchMs:Math.ceil(maxBatchMs),storedBytes:bytes,
-    modelCalls:0,transcriptReads:0,measuredCategorizationAccuracy:null}));
+test('manual hierarchy moves whole branches, rejects cycles, reloads and preserves assignments',async t=>{
+ const {dir,store}=await fresh(t);let parent=null;const ids=[];
+ for(let i=0;i<20;i++){await edit(store,[{type:'create_folder',name:'Level '+i,parentId:parent}]);parent=store.snapshot().folders.at(-1).id;ids.push(parent);}
+ await edit(store,[{type:'assign',rootId:'a',folderId:parent}],['a']);const other=await add(store,'Other');
+ await edit(store,[{type:'move_folder',folderId:ids[0],parentId:other.id}]);assert.equal(store.forConversation('a').folderId,parent);
+ const before=await readFile(store.file,'utf8');await assert.rejects(edit(store,[{type:'move_folder',folderId:other.id,parentId:parent}]),e=>e.code==='FOLDER_PARENT');assert.equal(await readFile(store.file,'utf8'),before);
+ await assert.rejects(edit(store,[{type:'create_folder',name:'Missing',parentId:'unknown'}]),e=>e.code==='FOLDER_PARENT');
+ const loaded=await new ConversationFolders({dataDir:dir}).init();assert.equal(loaded.snapshot().folders.find(f=>f.id===ids[0]).parentId,other.id);assert.equal(loaded.forConversation('a').folderId,parent);
+ await assert.rejects(edit(loaded,[{type:'delete_folder',folderId:ids[0]}]),e=>e.code==='FOLDER_NOT_EMPTY');await edit(loaded,[{type:'move_folder',folderId:ids[1],parentId:other.id}]);await edit(loaded,[{type:'delete_folder',folderId:ids[0]}]);assert.equal(loaded.forConversation('a').folderId,parent);
 });
+test('existing saved folders and provenance are read unchanged but no automation exists',async t=>{
+ const {dir,store}=await fresh(t);const folder=await add(store,'Saved');await edit(store,[{type:'assign',rootId:'a',folderId:folder.id}],['a']);const saved=JSON.parse(await readFile(store.file,'utf8'));saved.autoEnabled=true;saved.scans={a:{title:'Old'}};saved.folders[0].origin='automatic';saved.assignments.a.source='automatic';const bytes=JSON.stringify(saved);await writeFile(store.file,bytes);
+ const loaded=await new ConversationFolders({dataDir:dir}).init();assert.equal(await readFile(store.file,'utf8'),bytes);assert.equal(loaded.forConversation('a').folderId,folder.id);assert.equal(loaded.autoStep,undefined);assert.equal(loaded.snapshot().autoEnabled,undefined);
+ for(const type of ['toggle_auto','reset_auto'])await assert.rejects(edit(loaded,[{type,rootId:'a',enabled:true}],['a']),e=>e.code==='FOLDER_EDIT');assert.equal(await readFile(store.file,'utf8'),bytes);
+});
+test('same folder names may exist under different parents, but sibling collisions reject atomically',async t=>{const {store}=await fresh(t);const a=await add(store,'A'),b=await add(store,'B');await edit(store,[{type:'create_folder',name:'Child',parentId:a.id}]);const child=store.snapshot().folders.at(-1);await edit(store,[{type:'create_folder',name:'Child',parentId:b.id}]);await assert.rejects(edit(store,[{type:'move_folder',folderId:child.id,parentId:b.id}]));assert.equal(store.snapshot().folders.find(f=>f.id===child.id).parentId,a.id);});

@@ -20,3 +20,7 @@ test('folder assignment waits for accepted conversation capture before validatin
  const result=await pending;assert.equal(result.status,200);const saved=(await request('/api/conversations?state=active')).body.conversations;
  assert.equal(saved.find(item=>item.rootId==='new-root').folderSource,'manual');
 });
+
+test('removed automatic folder API cannot create folders or alter saved organization',async t=>{
+ const dir=await mkdtemp(path.join(os.tmpdir(),'blackice-manual-folders-')),app=await createHarnessServer({runtime:new Runtime(),dataDir:dir,defaultCwd:dir,port:0,remoteAccess:false});t.after(async()=>{await app.close();await rm(dir,{recursive:true,force:true});});const url=await app.listen(),home=await fetch(url),cookie=home.headers.get('set-cookie').split(';')[0];await home.text();const response=await fetch(url+'/api/conversation-folders/auto-step',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({rootIds:['a','b','c']})});assert.equal(response.status,404);const snapshot=await(await fetch(url+'/api/conversation-folders?state=active',{headers:{Cookie:cookie}})).json();assert.deepEqual(snapshot.folderOrganization.folders,[]);assert.equal(snapshot.folderOrganization.revision,0);assert.equal(snapshot.folderOrganization.autoEnabled,undefined);
+});

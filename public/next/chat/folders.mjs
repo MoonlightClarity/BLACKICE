@@ -1,7 +1,6 @@
+import {folderRows,descendants} from '../core/folder-tree.mjs';
 import {rootId} from './model.mjs';
 
-const AUTO_BATCH = 40;
-const SESSION_BUDGET = 600;
 const safeGet = key => { try {return localStorage.getItem(key);} catch {return null;} };
 const safeSet = (key,value) => {try {localStorage.setItem(key,value);} catch {}};
 const choice = (doc,value,label) => {
@@ -10,13 +9,12 @@ const choice = (doc,value,label) => {
 const short = error => String(error?.message||error||'Folder change failed.').slice(0,300);
 
 // UI controller for *saved conversation* folder membership. The server is the
-// sole authority for persisted revision, source and automatic classification.
+// sole authority for persisted revision, manual folder membership.
 export function createConversationFolderUI({view,api,notify=()=>{},getItems,getBucket,getSelectedRoot,
   isBusy=()=>false,isActive=()=>true,onChanged=()=>{},onRefresh=()=>{},onError=()=>{}}) {
-  let organization={revision:0,healthy:true,autoEnabled:true,folders:[],counts:{byId:{},ungrouped:0,total:0}};
+  let organization={revision:0,healthy:true,folders:[],counts:{byId:{},ungrouped:0,total:0}};
   let selected=safeGet('blackice.next.chatFolder')||'all';
-  let localBusy=false, destroyed=false, formKind='create', formId=null, movingRoot=null, deletingId=null, lastUndo=null;
-  let autoTimer=null,autoBusy=false,considered=new Set(),queue=[],processed=0,budget=SESSION_BUDGET;
+  let localBusy=false, destroyed=false, formRevision=0, movingRoot=null, deletingId=null, lastUndo=null;
   const isWritable=()=>!destroyed&&!localBusy&&!isBusy()&&organization.healthy!==false;
   const folderById=id=>organization.folders.find(folder=>folder.id===id)||null;
   const nameOf=id=>folderById(id)?.name||'Unfiled';
@@ -39,32 +37,28 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     view.folderFilter.replaceChildren(
       choice(doc,'all','All chats ('+counts.total+')'),
       choice(doc,'ungrouped','Unfiled ('+counts.ungrouped+')'),
-      ...organization.folders.map(folder=>choice(doc,folder.id,folder.name+' ('+(counts.byId[folder.id]||0)+')'))
+      ...folderRows(organization.folders).map(folder=>choice(doc,folder.id,folder.path+' ('+(counts.byId[folder.id]||0)+')'))
     );
     if(oldSelected!=='all'&&oldSelected!=='ungrouped'&&!folderById(oldSelected)){
       selected='all';safeSet('blackice.next.chatFolder',selected);
     }
-    view.folderFilter.value=selected;
-    const summary=view.folderSettings?.querySelector('summary'); if(summary)summary.textContent=selected==='all'?'Folder options':'Folder options: '+(selected==='ungrouped'?'Unfiled':nameOf(selected));
-    const named=Boolean(selectedFolder()),disabled=localBusy||isBusy()||organization.healthy===false;
-    view.folderRename.hidden=!named;view.folderDelete.hidden=!named;
-    for(const element of [view.folderNew,view.folderRename,view.folderDelete])element.disabled=disabled;
-    view.folderAuto.checked=organization.autoEnabled!==false;
-    view.folderAuto.disabled=disabled;
+    view.folderFilter.value=selected;view.folderNew.title=selectedFolder()?'New subfolder in '+nameOf(selected):'New top-level folder';
+    const disabled=localBusy||isBusy()||organization.healthy===false;
+
+    for(const element of [view.folderNew])element.disabled=disabled;
     view.folderUndo.hidden=!lastUndo;
     view.folderUndo.disabled=disabled;
     if(organization.healthy===false)notice(organization.error||'Folder metadata cannot be read. Existing chats are safe.',true);
   }
   function accept(snapshot) {
     if(!snapshot || !Array.isArray(snapshot.folders))return;
-    const changed=snapshot.generation!==organization.generation;
     organization=snapshot;
-    if(changed)for(const item of getItems())if(!item.folderId&&item.folderSource!=='manual')considered.delete(rootId(item));
     refresh();
   }
   function filtered(items) {
     if(selected==='all')return items;
-    return items.filter(item=>selected==='ungrouped'?!item.folderId:item.folderId===selected);
+    const ids=descendants(organization.folders,selected);
+    return items.filter(item=>selected==='ungrouped'?!item.folderId:ids.has(item.folderId));
   }
   const folderNames=()=>new Map(organization.folders.map(folder=>[folder.id,folder.name]));
   async function save(operations,{success,after,expectedRevision=organization.revision,retryConflict=true}={}) {
@@ -97,28 +91,25 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
       return false;
     } finally {localBusy=false;refresh();}
   }
-  function formOpen(kind,id=null) {
+  function formOpen(parentId=null) {
     if(!isWritable())return;
-    formKind=kind;formId=id;
-    const folder=folderById(id);
-    view.folderDialogTitle.textContent=kind==='create'?'Create folder':'Rename folder';
-    view.folderSave.textContent=kind==='create'?'Create folder':'Save name';
-    view.folderName.value=folder?.name||'';
+    formRevision=organization.revision;
+    view.folderDialogTitle.textContent='Create folder';
+    view.folderSave.textContent='Create folder';
+    view.folderParent.replaceChildren(choice(view.folderParent.ownerDocument,'','Top level'),...folderRows(organization.folders).map(f=>choice(view.folderParent.ownerDocument,f.id,f.path)));
+    view.folderParent.value=parentId||'';
+    view.folderName.value='';
     view.folderDialogError.hidden=true;
     view.folderDialog.showModal();view.folderName.focus();
-    if(kind==='rename')view.folderName.select();
   }
   function moveOpen(item) {
     if(!item||!isWritable())return;
     movingRoot=rootId(item);
     view.folderMoveTitle.textContent='Organize: '+String(item.title||'Conversation').slice(0,80);
-    view.folderMoveReason.textContent=item.folderSource==='automatic'?
-      (item.folderReason||'Automatically placed using its saved title.'):
-      item.folderSource==='manual'?(item.folderReason||'Manually placed.'):
-      (item.folderReason||'No confident automatic assignment.');
+    view.folderMoveReason.textContent='Choose where to keep this chat. Moving it does not share context.';
     const doc=view.folderMoveTarget.ownerDocument;
     view.folderMoveTarget.replaceChildren(choice(doc,'','Unfiled'),
-      ...organization.folders.map(folder=>choice(doc,folder.id,folder.name)));
+      ...folderRows(organization.folders).map(folder=>choice(doc,folder.id,folder.path)));
     view.folderMoveTarget.value=item.folderId||'';
     view.folderMoveDialog.showModal();view.folderMoveTarget.focus();
   }
@@ -133,74 +124,12 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     });
     return ok;
   }
-  async function resetAuto(id) {
-    const ok=await save([{type:'reset_auto',rootId:id}],{
-      success:'Manual placement cleared. Automatic grouping will check the title if enabled.',
-      after:()=>{lastUndo=null;considered.delete(id);queue.unshift(id);}
-    });
-    if(ok)scheduleAuto();
-    return ok;
-  }
-  function onRowAction(item,action) {
-    if(action==='move_folder')moveOpen(item);
-    else if(action==='reset_folder_auto')void resetAuto(rootId(item));
-  }
-  // Foreground-only bounded title scans. No implicit provider call, history
-  // transcript scan, job start or workflow execution.
-  function eligible(item) {
-    return rootId(item)!==getSelectedRoot() && item.state!=='deleted' && item.folderSource!=='manual' && !item.folderId && !['queued','running','waiting'].includes(item.status) && item.settled!==false;
-  }
-  function enqueue(items) {
-    if(!isActive()||!organization.autoEnabled||organization.healthy===false)return;
-    const old=new Set(queue);
-    for(const item of items) {
-      const id=rootId(item);
-      if(!id||considered.has(id)||old.has(id)||!eligible(item))continue;
-      queue.push(id);old.add(id);
-    }
-    scheduleAuto();
-  }
-  function scheduleAuto() {
-    if(destroyed||autoTimer||autoBusy||!isActive()||!organization.autoEnabled||organization.healthy===false)return;
-    if(queue.length&&processed<budget)autoTimer=setTimeout(()=>{autoTimer=null;void stepAuto();},180);
-    else if(queue.length&&processed>=budget){
-      view.folderMore.hidden=false;
-      notice('Automatic title scan paused after '+processed+' chats this visit. You can organize more.',false);
-    }
-  }
-  async function stepAuto() {
-    if(autoBusy||localBusy||isBusy()||!isActive()){scheduleAuto();return;}
-    const batch=queue.splice(0,Math.min(AUTO_BATCH,budget-processed)).filter(id=>{const item=getItem(id);return item&&eligible(item);});
-    if(!batch.length){scheduleAuto();return;}
-    autoBusy=true;
-    try{
-      const earlierGeneration=organization.generation;
-      const response=await api('/api/conversation-folders/auto-step','POST',{
-        rootIds:batch,excludeRootId:getSelectedRoot()||null
-      });
-      if(!response.folderOrganization)throw Error('No folder scan receipt.');
-      const updates=new Map((response.folderOrganization.updated||[]).map(item=>[item.rootId,item]));
-      for(const item of getItems()) {
-        const current=updates.get(rootId(item));
-        if(current)for(const key of ['folderId','folderSource','folderReason','folderSuggestion'])
-          item[key]=current[key];
-      }
-      accept(response.folderOrganization);
-      const accepted=new Set(response.folderOrganization.acceptedRootIds||[]);
-      for(const id of batch)if(accepted.has(id))considered.add(id);
-      processed+=batch.length;
-      if(organization.generation!==earlierGeneration)enqueue(getItems());
-      onChanged();
-    }catch(error){notice('Automatic title scan stopped: '+short(error),true);queue=[];}
-    finally{autoBusy=false;scheduleAuto();}
-  }
+  function onRowAction(item,action) { if(action==='move_folder')moveOpen(item); }
   function onListLoaded(items,snapshot) {
     accept(snapshot);
     refresh();
-    enqueue(items);
   }
   function stop() {
-    clearTimeout(autoTimer);autoTimer=null;queue=[];
     for(const dialog of [view.folderDialog,view.folderMoveDialog,view.folderDeleteDialog])if(dialog.open)dialog.close();
     movingRoot=null;deletingId=null;
   }
@@ -209,27 +138,22 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     selected=view.folderFilter.value;safeSet('blackice.next.chatFolder',selected);
     refresh();onChanged();
   });
-  view.folderNew.addEventListener('click',()=>formOpen('create'));
-  view.folderRename.addEventListener('click',()=>{if(selectedFolder())formOpen('rename',selected);});
-  view.folderDelete.addEventListener('click',()=>{
-    if(!selectedFolder()||!isWritable())return;
-    deletingId=selected;view.folderDeleteLabel.textContent='Delete "'+selectedFolder().name+'"?';
-    view.folderDeleteDialog.showModal();
-  });
+  view.folderNew.addEventListener('click',()=>formOpen(selectedFolder()?.id||null));
   view.folderCancel.addEventListener('click',()=>view.folderDialog.close());
-  view.folderForm.addEventListener('submit',event=>{
+  view.folderForm.addEventListener('submit',async event=>{
     event.preventDefault();
-    const name=view.folderName.value.trim(),kind=formKind,id=formId;
+    const name=view.folderName.value.trim();
     if(!name)return;
-    view.folderDialog.close();
     const beforeIds=new Set(organization.folders.map(folder=>folder.id));
-    void save([kind==='create'?{type:'create_folder',name}:{type:'rename_folder',folderId:id,name}],{
-      success:kind==='create'?'Folder created.':'Folder renamed.',
-      after:()=>{if(kind==='create'){
+    const parentId=view.folderParent.value||null;
+    const ok=await save([{type:'create_folder',name,parentId}],{expectedRevision:formRevision,retryConflict:false,
+      success:'Folder created.',
+      after:()=>{
         const added=organization.folders.find(folder=>!beforeIds.has(folder.id));
         if(added){selected=added.id;safeSet('blackice.next.chatFolder',selected);}
-      }}
+      }
     });
+    if(ok)view.folderDialog.close();else{view.folderDialogError.hidden=false;view.folderDialogError.textContent=view.folderStatus.textContent;}
   });
   view.folderDeleteCancel.addEventListener('click',()=>{deletingId=null;view.folderDeleteDialog.close();});
   view.folderDeleteConfirm.addEventListener('click',()=>{
@@ -247,17 +171,6 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     movingRoot=null;view.folderMoveDialog.close();
     if(item)void moveChat(item,destination);
   });
-  view.folderMoveAuto.addEventListener('click',()=>{
-    const id=movingRoot;movingRoot=null;view.folderMoveDialog.close();
-    if(id)void resetAuto(id);
-  });
-  view.folderAuto.addEventListener('change',()=>{
-    const enabled=view.folderAuto.checked;
-    void save([{type:'toggle_auto',enabled}],{
-      success:enabled?'Automatic title grouping enabled.':'Automatic grouping disabled; existing placements remain.',
-      after:()=>{if(enabled){considered.clear();processed=0;enqueue(getItems());}else stop();}
-    });
-  });
   view.folderUndo.addEventListener('click',()=>{
     if(!lastUndo)return;
     const undo=lastUndo;
@@ -266,20 +179,22 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
       after:()=>{lastUndo=null;}
     });
   });
-  view.folderMore.addEventListener('click',()=>{
-    budget+=SESSION_BUDGET;view.folderMore.hidden=true;notice('');
-    enqueue(getItems());scheduleAuto();
-  });
-  function manage(id){if(!folderById(id)||!isWritable())return;selected=id;safeSet('blackice.next.chatFolder',selected);refresh();onChanged();if(view.folderSettings)view.folderSettings.open=true;view.folderRename.focus();}
+
   function beginRename(id){
     if(!folderById(id)||!isWritable())return null;
+    selected=id;safeSet('blackice.next.chatFolder',selected);refresh();
     const revision=organization.revision,before=folderById(id).name;
     return async name=>{
       if(organization.revision!==revision||folderById(id)?.name!==before){notice('Folder changed while editing. Your draft was kept. Press Escape and reopen to edit the current name.',true);return false;}
       return save([{type:'rename_folder',folderId:id,name}],{success:'Folder renamed.',expectedRevision:revision,retryConflict:false});
     };
   }
-  return {beginRename,manage,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
+  function beginMove(kind,id){
+    if(!isWritable())return null;const revision=organization.revision;
+    return parentId=>save([kind==='folder'?{type:'move_folder',folderId:id,parentId}:{type:'assign',rootId:id,folderId:parentId}],{expectedRevision:revision,retryConflict:false,success:'Moved.'});
+  }
+  function removeFolder(id){if(!isWritable())return;deletingId=id;view.folderDeleteLabel.textContent='Delete "'+nameOf(id)+'"?';view.folderDeleteDialog.showModal();}
+  return {beginMove,removeFolder,beginRename,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
     get selected(){return selected;},get organization(){return organization;}};
 }
 

@@ -27,10 +27,9 @@ export function createChatFrame(mount) {
     '<input class="next-field next-sidebar-search" type="search" id="next-chat-search" placeholder="Search" aria-label="Find a conversation">',
     '<div class="next-sidebar-views"><select class="next-field next-sidebar-filter" id="next-chat-bucket" aria-label="Conversation view">',
     '<option value="active">Active</option><option value="archived">Archive</option><option value="deleted">Trash</option></select><button id="next-chat-select" type="button" aria-controls="next-chat-bulk" aria-expanded="false">Multi-select</button></div>',
-    '<details id="next-chat-folder-settings" class="next-chat-folder-settings"><summary>Folder options</summary><div class="next-chat-folder-picker"><select id="next-chat-folder-filter" class="next-field" aria-label="Conversation folder"><option value="all">All folders</option><option value="ungrouped">Unfiled</option></select><button id="next-chat-folder-new" type="button">+ Folder</button></div>',
-    '<div class="next-chat-folder-tools"><button id="next-chat-folder-rename" type="button" hidden>Rename folder</button><button id="next-chat-folder-delete" type="button" hidden>Delete folder</button></div>',
-    '<label class="next-chat-folder-auto"><input id="next-chat-folder-auto" type="checkbox" checked> Automatically group chats</label></details>',
-    '<p id="next-chat-folder-status" class="next-chat-folder-status" role="status" hidden></p><button id="next-chat-folder-undo" type="button" hidden>Undo last move</button><button id="next-chat-folder-more" type="button" hidden>Organize more</button>',
+    '<div class="next-chat-folder-picker"><select id="next-chat-folder-filter" class="next-field" aria-label="Conversation folder"><option value="all">All folders</option><option value="ungrouped">Unfiled</option></select><button id="next-chat-folder-new" type="button">+ Folder</button></div>',
+    '',
+    '<p id="next-chat-folder-status" class="next-chat-folder-status" role="status" hidden></p><button id="next-chat-folder-undo" type="button" hidden>Undo last move</button>',
     '<section id="next-chat-bulk" class="next-chat-bulk" aria-label="Selected conversations" hidden>',
     '<div class="next-chat-bulk-heading"><span id="next-chat-bulk-count" role="status">0 selected</span><button id="next-chat-bulk-cancel" type="button">Cancel</button></div>',
     '<button id="next-chat-bulk-all" type="button">Select visible</button>',
@@ -68,17 +67,17 @@ export function createChatFrame(mount) {
     '<dialog id="next-chat-rename-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-rename-title">',
     '<form id="next-chat-rename-form"><h2 id="next-chat-rename-title">Rename chat</h2><label class="next-label">Chat title<input id="next-chat-rename-input" class="next-field" maxlength="120" required></label>',
     '<p id="next-chat-rename-error" role="alert" hidden></p><div class="next-chat-dialog-actions"><button id="next-chat-rename-cancel" type="button">Cancel</button><button id="next-chat-rename-save" type="submit" class="next-primary">Save</button></div></form></dialog>',
-    '<dialog id="next-chat-folder-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-folder-dialog-title"><form id="next-chat-folder-form"><h2 id="next-chat-folder-dialog-title">Create folder</h2><label class="next-label">Folder name<input id="next-chat-folder-name" class="next-field" maxlength="60" required></label><p id="next-chat-folder-dialog-error" role="alert" hidden></p><div class="next-chat-dialog-actions"><button id="next-chat-folder-cancel" type="button">Cancel</button><button id="next-chat-folder-save" type="submit" class="next-primary">Save folder</button></div></form></dialog>',
-    '<dialog id="next-chat-folder-move-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-folder-move-title"><form id="next-chat-folder-move-form"><h2 id="next-chat-folder-move-title">Organize chat</h2><p id="next-chat-folder-move-reason"></p><label class="next-label">Move to<select id="next-chat-folder-move-target" class="next-field"><option value="">Unfiled</option></select></label><p class="next-help">Manual placement stays put until you reset it to automatic. This never shares context with other chats.</p><div class="next-chat-dialog-actions"><button id="next-chat-folder-move-cancel" type="button">Cancel</button><button id="next-chat-folder-move-auto" type="button">Reset to automatic</button><button id="next-chat-folder-move-save" type="submit" class="next-primary">Move</button></div></form></dialog>',
-    '<dialog id="next-chat-folder-delete-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-folder-delete-title"><h2 id="next-chat-folder-delete-title">Delete folder?</h2><p id="next-chat-folder-delete-label"></p><p>Every saved conversation stays intact, in the same Archive or Trash state. Only its folder membership is removed.</p><div class="next-chat-dialog-actions"><button id="next-chat-folder-delete-cancel" type="button">Cancel</button><button id="next-chat-folder-delete-confirm" type="button" class="next-primary">Delete folder only</button></div></dialog>',
+    '<dialog id="next-chat-folder-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-folder-dialog-title"><form id="next-chat-folder-form"><h2 id="next-chat-folder-dialog-title">Create folder</h2><label class="next-label">Folder name<input id="next-chat-folder-name" class="next-field" maxlength="60" required></label><label class="next-label">Parent folder<select id="next-chat-folder-parent" class="next-field"></select></label><p id="next-chat-folder-dialog-error" role="alert" hidden></p><div class="next-chat-dialog-actions"><button id="next-chat-folder-cancel" type="button">Cancel</button><button id="next-chat-folder-save" type="submit" class="next-primary">Save folder</button></div></form></dialog>',
+    '<dialog id="next-chat-folder-move-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-folder-move-title"><form id="next-chat-folder-move-form"><h2 id="next-chat-folder-move-title">Organize chat</h2><p id="next-chat-folder-move-reason"></p><label class="next-label">Move to<select id="next-chat-folder-move-target" class="next-field"><option value="">Unfiled</option></select></label><p class="next-help">Folder placement changes only when you move the chat. This never shares context with other chats.</p><div class="next-chat-dialog-actions"><button id="next-chat-folder-move-cancel" type="button">Cancel</button><button id="next-chat-folder-move-save" type="submit" class="next-primary">Move</button></div></form></dialog>',
+    '<dialog id="next-chat-folder-delete-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-folder-delete-title"><h2 id="next-chat-folder-delete-title">Delete folder?</h2><p id="next-chat-folder-delete-label"></p><p>Every saved conversation stays intact, in the same Archive or Trash state. Only empty folders can be deleted. Move their chats and subfolders first.</p><div class="next-chat-dialog-actions"><button id="next-chat-folder-delete-cancel" type="button">Cancel</button><button id="next-chat-folder-delete-confirm" type="button" class="next-primary">Delete folder only</button></div></dialog>',
     '</div>',
   ].join('');
   const find = id => mount.querySelector('#'+id);
   return { shell:find('next-chat'),list:find('next-chat-list'),search:find('next-chat-search'),bucket:find('next-chat-bucket'),
-    folderSettings:find('next-chat-folder-settings'),folderFilter:find('next-chat-folder-filter'),folderNew:find('next-chat-folder-new'),folderRename:find('next-chat-folder-rename'),folderDelete:find('next-chat-folder-delete'),
-    folderAuto:find('next-chat-folder-auto'),folderStatus:find('next-chat-folder-status'),folderUndo:find('next-chat-folder-undo'),folderMore:find('next-chat-folder-more'),
-    folderDialog:find('next-chat-folder-dialog'),folderForm:find('next-chat-folder-form'),folderDialogTitle:find('next-chat-folder-dialog-title'),folderName:find('next-chat-folder-name'),folderDialogError:find('next-chat-folder-dialog-error'),folderCancel:find('next-chat-folder-cancel'),folderSave:find('next-chat-folder-save'),
-    folderMoveDialog:find('next-chat-folder-move-dialog'),folderMoveForm:find('next-chat-folder-move-form'),folderMoveTitle:find('next-chat-folder-move-title'),folderMoveReason:find('next-chat-folder-move-reason'),folderMoveTarget:find('next-chat-folder-move-target'),folderMoveCancel:find('next-chat-folder-move-cancel'),folderMoveAuto:find('next-chat-folder-move-auto'),folderMoveSave:find('next-chat-folder-move-save'),
+    folderFilter:find('next-chat-folder-filter'),folderNew:find('next-chat-folder-new'),
+    folderStatus:find('next-chat-folder-status'),folderUndo:find('next-chat-folder-undo'),
+    folderDialog:find('next-chat-folder-dialog'),folderForm:find('next-chat-folder-form'),folderDialogTitle:find('next-chat-folder-dialog-title'),folderName:find('next-chat-folder-name'),folderParent:find('next-chat-folder-parent'),folderDialogError:find('next-chat-folder-dialog-error'),folderCancel:find('next-chat-folder-cancel'),folderSave:find('next-chat-folder-save'),
+    folderMoveDialog:find('next-chat-folder-move-dialog'),folderMoveForm:find('next-chat-folder-move-form'),folderMoveTitle:find('next-chat-folder-move-title'),folderMoveReason:find('next-chat-folder-move-reason'),folderMoveTarget:find('next-chat-folder-move-target'),folderMoveCancel:find('next-chat-folder-move-cancel'),folderMoveSave:find('next-chat-folder-move-save'),
     folderDeleteDialog:find('next-chat-folder-delete-dialog'),folderDeleteLabel:find('next-chat-folder-delete-label'),folderDeleteCancel:find('next-chat-folder-delete-cancel'),folderDeleteConfirm:find('next-chat-folder-delete-confirm'),
     mobileClose:find('next-chat-mobile-close'),newButton:find('next-chat-new'),mobileList:find('next-chat-mobile-list'),
     title:find('next-chat-title'),subtitle:find('next-chat-subtitle'),rename:find('next-chat-rename'),archive:find('next-chat-archive'),closeChat:find('next-chat-close'),
@@ -98,17 +97,21 @@ export function createChatFrame(mount) {
 // exposed window, so the full searchable catalog never becomes a DOM cache.
 const indexViews = new WeakMap();
 
-export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATCH,onMore,selecting=false,selection=new Map(),onToggle,onAction,busy=false,folderNames=new Map(),groupFolders=false,showEmptyFolders=true,onFolderToggle,onFolderManage,onFolderRename,onFolderNew,expandFolders=false}={}) {
+export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATCH,onMore,selecting=false,selection=new Map(),onToggle,onAction,busy=false,folderNames=new Map(),folders=[],groupFolders=false,showEmptyFolders=true,onFolderToggle,onFolderDelete,onFolderMove,onFolderRename,onFolderNew,expandFolders=false}={}) {
   const list=view.list,doc=list.ownerDocument;
   let cache=indexViews.get(list);
   if(!cache){cache={rows:new Map(),groups:new Map()};indexViews.set(list,cache);}
   cache.onMore=onMore;
+  cache.onFolderMove=onFolderMove;
+  if(!cache.dropBound){cache.dropBound=true;list.addEventListener('dragover',e=>{if(cache.drag&&e.target===list)e.preventDefault();});list.addEventListener('drop',e=>{if(e.target!==list||!cache.drag)return;e.preventDefault();const drag=cache.drag;cache.drag=null;void drag.commit(null);});}
+
   const {shown,hidden,pinned}=conversationIndexWindow(items,limit,chosen);
   const visible=pinned?[pinned,...shown]:shown,order=[],retained=new Set();
   const groupedRows=new Map(),groupCounts=new Map();let moved=false;
   const folderKey=item=>folderNames.has(item.folderId)?item.folderId:'';
   if(groupFolders)for(const item of items){const key=folderKey(item);groupCounts.set(key,(groupCounts.get(key)||0)+1);}
-  const exposed=()=>visible.filter(item=>cache.groups.get(folderKey(item))?.node.open);
+  const parentOf=id=>folders.find(folder=>folder.id===id)?.parentId??null;
+  const exposed=()=>visible.filter(item=>{let key=folderKey(item);while(key!==null){if(!cache.groups.get(key)?.node.open)return false;key=parentOf(key);}return true;});
   const focused=list.contains(doc.activeElement)?doc.activeElement:null,scrollTop=list.scrollTop;
   const setText=(node,value)=>{if(node.textContent!==value)node.textContent=value;};
   const marker=(key,label,className,tag='p')=>{
@@ -133,6 +136,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
       }
       const button=text(row,'','button','next-conversation');
       button.type='button';button.dataset.conversation=id;
+      button.draggable=true;button.addEventListener('dragstart',event=>{const commit=cache.onFolderMove?.('chat',id);if(!commit){event.preventDefault();return;}cache.drag={commit};event.dataTransfer?.setData('text/plain',id);event.stopPropagation();});button.addEventListener('dragend',()=>cache.drag=null);
       entry.button=button;entry.titleNode=text(button,'','span','next-conversation-title');
       const foot=text(button,'','span','next-conversation-meta');
       entry.statusNode=text(foot,'');entry.dateNode=text(foot,'');
@@ -142,7 +146,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
         const menu=text(row,'','details','next-conversation-actions');entry.menu=menu;
         entry.summary=text(menu,'…','summary');
         const contents=text(menu,'','div','next-conversation-menu');
-        for(const [action,label]of [...(bucket!=='deleted'?[['rename','Rename']]:[]),['move_folder','Move to folder...'],['reset_folder_auto','Reset to automatic'],[bucket==='active'?'archive':'restore',bucket==='active'?'Archive':'Restore'],...(bucket!=='deleted'?[['delete','Move to Trash']]:[])]){
+        for(const [action,label]of [...(bucket!=='deleted'?[['rename','Rename']]:[]),['move_folder','Move to folder...'],[bucket==='active'?'archive':'restore',bucket==='active'?'Archive':'Restore'],...(bucket!=='deleted'?[['delete','Move to Trash']]:[])]){
           const control=text(contents,label,'button');control.type='button';control.dataset.chatAction=action;
           entry.controls.set(action,control);
           control.addEventListener('click',()=>{menu.open=false;entry.onAction?.(entry.item,action);});
@@ -166,8 +170,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
     const date=item.updatedAt||item.createdAt;
     if(entry.date!==date){setText(entry.dateNode,formatDate(date));entry.date=date;}
     const folderName=item.folderId?folderNames.get(item.folderId)||'Folder':null;
-    const suggestedName=item.folderSuggestion?folderNames.get(item.folderSuggestion):null;
-    const badge=item.folderSource==='automatic'?'Auto: '+(folderName||'Unfiled'):item.folderSource==='manual'?'Manual: '+(folderName||'Unfiled'):suggestedName?'Consider: '+suggestedName:'';
+    const badge=folderName?folderName:'';
     setText(entry.folderNode,badge);
     entry.folderNode.hidden=!badge;
     entry.folderNode.title=item.folderReason||'';
@@ -198,15 +201,18 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
       if(!groupedRows.has(key))groupedRows.set(key,[]);groupedRows.get(key).push(entry.row);
     }else order.push(entry.row);
   }
+  const renderedGroups=[];
   if(groupFolders){
     const allGroups=[...folderNames.entries(),['','Unfiled']];
     for(const [key,name] of allGroups){
       const rows=groupedRows.get(key)||[],total=groupCounts.get(key)||0;
-      if(!total&&(key===''||!showEmptyFolders))continue;
+      const hasContent=id=>items.some(item=>{let p=folderKey(item);while(p){if(p===id)return true;p=parentOf(p);}return false;});
+      if(!total&&(key===''||!showEmptyFolders&&!hasContent(key)))continue;
       let group=cache.groups.get(key);
       if(!group){
         const node=doc.createElement('details');node.className='next-chat-folder-group';node.dataset.chatFolder=key;
         const summary=text(node,'','summary','next-chat-folder-heading');
+        const icon=text(summary,'','span','next-chat-tree-folder-icon');icon.setAttribute('aria-hidden','true');
         const label=text(summary,'',key?'button':'span',key?'next-chat-folder-name':''),count=text(summary,'','small');
         if(key){label.type='button';label.addEventListener('click',event=>{
           event.preventDefault();event.stopPropagation();if(group.editor)return;
@@ -224,31 +230,46 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
           });input.focus();input.select();
         });}
         const body=text(node,'','div','next-chat-folder-children');
-        const manage=key?text(summary,'…','button','next-chat-folder-manage'):null;
-        if(manage){manage.type='button';manage.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();group.onManage?.();});}
         const newChat=text(summary,'+ New','button','next-chat-folder-new-chat');newChat.type='button';newChat.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();group.onNew?.();});
-        group={node,label,count,body,manage,newChat};cache.groups.set(key,group);node.open=true;
+        const remove=key?text(summary,'×','button','next-chat-folder-remove'):null;
+        if(remove){remove.type='button';remove.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();group.onDelete?.();});}
+        summary.draggable=Boolean(key);summary.tabIndex=0;
+        summary.addEventListener('dragstart',event=>{if(group.editor){event.preventDefault();return;}const commit=group.beginMove?.();if(!commit){event.preventDefault();return;}cache.drag={commit};event.dataTransfer?.setData('text/plain',key);event.stopPropagation();});
+        summary.addEventListener('dragend',()=>cache.drag=null);
+        summary.addEventListener('dragover',event=>{if(cache.drag){event.preventDefault();event.stopPropagation();}});
+        summary.addEventListener('drop',event=>{if(!cache.drag)return;event.preventDefault();event.stopPropagation();const drag=cache.drag;cache.drag=null;void drag.commit(key||null);});
+        summary.addEventListener('keydown',event=>{if(event.target!==summary||!event.ctrlKey||event.key!=='Enter'||!key)return;event.preventDefault();event.stopPropagation();group.keyboardMove?.(event.shiftKey);});
+        group={node,label,count,body,newChat,remove};cache.groups.set(key,group);node.open=true;
         node.addEventListener('toggle',()=>{group.onToggle?.();});
       }
       group.onToggle=()=>onFolderToggle?.(exposed());
-      group.onManage=()=>onFolderManage?.(key);
+      group.onDelete=()=>onFolderDelete?.(key);
+      group.beginMove=()=>onFolderMove?.('folder',key);
+      group.keyboardMove=out=>{const commit=group.beginMove();if(!commit)return;const parent=parentOf(key),siblings=folders.filter(f=>(f.parentId??null)===parent),index=siblings.findIndex(f=>f.id===key);if(out){if(parent)void commit(parentOf(parent));}else if(index>0)void commit(siblings[index-1].id);};
+      if(group.remove){group.remove.disabled=busy;group.remove.hidden=!onFolderDelete;group.remove.setAttribute('aria-label','Delete empty '+name+' folder');}
       group.onRename=()=>onFolderRename?.(key);
       group.onNew=()=>onFolderNew?.(key||null);group.newChat.hidden=!onFolderNew;group.newChat.disabled=busy;group.newChat.setAttribute('aria-label','New chat in '+name);
       if(key){group.label.disabled=busy||!onFolderRename;group.label.setAttribute('aria-label','Rename '+name+' folder');group.label.title='Rename folder';}
-      if(group.manage){group.manage.hidden=!onFolderManage;group.manage.disabled=busy;group.manage.setAttribute('aria-label','Manage '+name+' folder');group.manage.title='Manage '+name+' folder';}
       if(expandFolders&&total){if(!group.searchExpanded)group.beforeSearchOpen=group.node.open;group.searchExpanded=true;group.node.open=true;}
       else if(group.searchExpanded){group.node.open=group.beforeSearchOpen;group.searchExpanded=false;}
       setText(group.label,name);setText(group.count,String(total));
       const containsChosen=visible.some(item=>rootId(item)===chosen&&(folderNames.has(item.folderId)?item.folderId:'')===key);
       if(containsChosen&&group.chosen!==chosen)group.node.open=true;
       group.chosen=containsChosen?chosen:null;
-      const children=[...rows];
-      if(!rows.length){if(!group.empty)group.empty=text(doc.createElement('div'),'','p','next-chat-folder-empty');setText(group.empty,total?'Load more chats below to see this folder.':'No chats in this folder.');children.push(group.empty);}
+      const children=[...rows,...folders.filter(f=>f.parentId===key&&(showEmptyFolders||hasContent(f.id))).map(f=>cache.groups.get(f.id)?.node).filter(Boolean)];
+      if(!rows.length&&!folders.some(f=>f.parentId===key)){if(!group.empty)group.empty=text(doc.createElement('div'),'','p','next-chat-folder-empty');setText(group.empty,total?'Load more chats below to see this folder.':'No chats in this folder.');children.push(group.empty);}
       for(let i=0;i<children.length;i++)if(group.body.childNodes[i]!==children[i]){group.body.insertBefore(children[i],group.body.childNodes[i]||null);moved=true;}
       while(group.body.childNodes.length>children.length)group.body.lastChild.remove();
-      order.push(group.node);
+      renderedGroups.push([key,group]);
     }
   }
+  if(groupFolders){
+    for(const [key,group] of renderedGroups){
+      const parent=parentOf(key),container=parent?cache.groups.get(parent):null;
+      if(container){if(group.node.parentElement!==container.body)container.body.append(group.node);if(group.chosen||expandFolders)container.node.open=true;}else order.push(group.node);
+    }
+  }
+  if(groupFolders&&cache.chosen!==chosen){let parent=parentOf(folderKey(items.find(item=>rootId(item)===chosen)||{}));while(parent){const group=cache.groups.get(parent);if(group)group.node.open=true;parent=parentOf(parent);}cache.chosen=chosen;}
   if(hidden>0){
     const more=marker('more','Show '+Math.min(CHAT_INDEX_BATCH,hidden)+' more ('+hidden+' remaining)','next-conversation-more','button');
     if(!cache.moreBound){more.type='button';more.addEventListener('click',()=>cache.onMore?.());cache.moreBound=true;}

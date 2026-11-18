@@ -179,8 +179,6 @@
 .next-chat-folder-picker button{height:33px;font-size:11px;padding:4px 7px}
 .next-chat-folder-tools{display:flex;gap:6px}
 .next-chat-folder-tools button{font-size:10px;flex:1;padding:4px 6px}
-.next-chat-folder-auto{display:flex;gap:7px;align-items:center;color:var(--muted);font-size:11px;line-height:1.4}
-.next-chat-folder-auto input{accent-color:#7db6d5}
 .next-chat-folder-status{color:#a7cadd;font-size:11px;line-height:1.35;overflow-wrap:anywhere;margin:1px 0 0}
 .next-chat-folder-status[data-error=true]{color:#efb5b0}
 #next-chat-folder-undo,#next-chat-folder-more{font-size:11px;align-self:flex-start;padding:4px 8px}

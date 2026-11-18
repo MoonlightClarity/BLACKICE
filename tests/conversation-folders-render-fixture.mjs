@@ -70,15 +70,6 @@ fixture.server.on('request',async(req,res)=>{
       const result=await store.edit(input,{exists:id=>table.has(id)});
       return json(res,{folderOrganization:result});
     }
-    if(pathname==='/api/conversation-folders/auto-step'&&req.method==='POST'){
-      audits.auto++;const input=await payload(req);
-      const result=await store.autoStep({...input,resolve:id=>{
-        const row=table.get(id);
-        return row?{rootId:row.rootId,title:row.title,state:row.state,
-          busy:!row.settled}:null;
-      }});
-      return json(res,{folderOrganization:result});
-    }
     if(pathname==='/fixture/folders'&&req.method==='GET')
       return json(res,{...projection('active'),audit:audits,
         legacyStates:Object.fromEntries(records.map(item=>[item.rootId,item.state]))});

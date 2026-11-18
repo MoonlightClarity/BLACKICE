@@ -196,9 +196,9 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       limit:state.indexLimit,
       onMore:()=>{state.indexLimit+=CHAT_INDEX_BATCH;indexPaint();},
       selecting:state.selecting,selection:state.selection,busy:state.managing||state.pending,
-      folderNames:folderUI.folderNames(),groupFolders:true,onFolderManage:id=>folderUI.manage(id),onFolderRename:id=>folderUI.beginRename(id),onFolderNew:id=>startNew(id),expandFolders:Boolean(query),showEmptyFolders:!query&&folderUI.selected==='all',onFolderToggle:visible=>{state.visible=visible;drawManagement();},
+      folders:folderUI.organization.folders,folderNames:folderUI.folderNames(),groupFolders:true,onFolderDelete:id=>folderUI.removeFolder(id),onFolderMove:(kind,id)=>folderUI.beginMove(kind,id),onFolderRename:id=>folderUI.beginRename(id),onFolderNew:id=>startNew(id),expandFolders:Boolean(query),showEmptyFolders:!query&&folderUI.selected==='all',onFolderToggle:visible=>{state.visible=visible;drawManagement();},
       onToggle:(item,checked)=>{if(state.managing)return;if(checked){const target=managementTarget(rootId(item));state.selection.set(target.id,{runId:target.runId,state:target.state});}else state.selection.delete(rootId(item));managementMessage('');drawManagement();},
-      onAction:(item,action)=>['move_folder','reset_folder_auto'].includes(action)?folderUI.onRowAction(item,action):action==='rename'?startRename(item):void requestManagement(action,selectionFor(item)),
+      onAction:(item,action)=>action==='move_folder'?folderUI.onRowAction(item,action):action==='rename'?startRename(item):void requestManagement(action,selectionFor(item)),
     });
     drawManagement();
   }
