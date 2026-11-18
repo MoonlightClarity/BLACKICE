@@ -25,3 +25,13 @@ Structured tool read-only rules do not create an operating-system boundary again
 ## Verification
 
 Focused directory-retirement.test.mjs covers admission, inherited configuration, direct/prepared/class runner, managed context and HTTP routes. Existing tests asserting successful Directory execution are superseded and require retirement during integration. No aggregate pass or install is claimed by this milestone.
+
+## Engine follow-up
+
+Automatic learning reads, catalog prompt insertion, post-run extraction and module review/time-management loops are removed from engine execution. The ordinary engine fixture checks that stored guidance is not accessed and exactly one normal provider call occurs. Tool and workflow retrieval remain explicit read operations.
+
+Old Directory-derived run lineage cannot retry, continue with Off, or dispatch into an ordinary provider session. This uses saved run metadata; it is not an operating-system security boundary against manual record tampering. Fresh ordinary conversations remain available.
+
+The engine accepts no native Swarm provider and exposes no Swarm tool. Core delegation remains. Autonomy admission, tool wrappers and provider hooks are removed; stale automatic wake requests reject with AUTONOMY_RETIRED. Ordinary Goals remain separate. Server timer/routes and UI removal are coordinated in separate changes.
+
+Approved user workflow list/read/execute is wired only when the host supplies the workflow store. Execute returns the exact approved method to the current task, not a hidden new run or proof of completion. There is no automatic workflow prompt insertion.
