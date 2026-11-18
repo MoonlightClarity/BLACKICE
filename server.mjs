@@ -1,6 +1,6 @@
 import { stoppedBrowserOwnerStatus, activeBrowserOwnerStatus, readStoppedTabEffects } from './lib/browser-stopped-adoption.mjs';
 import {VisualArtifacts,visualTool,nativeVisualTools,handleVisualHttp} from './lib/visual-artifacts.mjs';
-import {handleShadowdancerContextHttp} from './lib/shadowdancer-context-http.mjs';
+import {handleConversationActivityHttp} from './lib/conversation-activity-http.mjs';
 import {createNativePlanningTools} from './lib/native-planning-tools.mjs';
 import {NativeTaskContextBridge,createNativeTaskContextTool} from './lib/native-task-context-bridge.mjs';
 import http from 'node:http';
@@ -628,7 +628,7 @@ export async function createHarnessServer(options = {}) {
       if(await handleVisualHttp({req,res,pathname,body,json,store:visuals,mutations:fileMutations}))return;
       if(await handleConversationGoalsHttp({req,res,pathname,goals,body,json,mutations:fileMutations}))return;
       if(/^\/api\/conversations\/[a-zA-Z0-9_-]+\/autonomy$/.test(pathname))return json(res,410,{code:'AUTONOMY_RETIRED',error:'Autonomy is retired. Use an explicit Goal or scheduled task.'});
-      if(await handleShadowdancerContextHttp({req,res,pathname,host,conversations,engine,body,json,fileMutations,onUpdated:sendEvent}))return;
+      if(await handleConversationActivityHttp({req,res,pathname,conversations,json}))return;
       if (await handlePlanningDiagnosticsHttp({req,res,pathname,service:planningDiagnostics,body,json,fileMutations})) return;
       if (pathname === '/api/planning-browser' || pathname.startsWith('/api/planning-browser/')) {
         const client = remoteAccess?.authorizeForward?.(req);
