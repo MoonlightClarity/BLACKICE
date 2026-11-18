@@ -47,7 +47,25 @@ for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent s
       throw new Error('Provider transport deliberately failed.');
     }
     assert.equal(options.threadId, threadId, 'continuation must resume, not construct another conversation'); assert.match(options.prompt, /Finish project ALPHA/); assert.deepEqual((await tasks.get(original.id)).checkpoint.decisions,['Keep the existing implementation.']); assert.match(options.prompt, /Verify the current workspace/); assert.deepEqual(options.usageBaseline, { totalTokens: ending === 'cancelled' ? 25 : 20 });
-    let state = await taskCall(options, { action: 'read' }); const saved=await tasks.get(original.id);assert.equal(saved.interruption.status, ending);assert.equal(saved.checkpoint.completed.length,2);assert.equal(saved.artifacts[0].id,artifactId);
+    let state = await taskCall(options, { action: 'read' });
+    assert.equal(state.savedCheckpoint.available,true,'Current task read advertises the explicitly saved checkpoint');
+    assert.equal(state.savedCheckpoint.nextRead.view,'checkpoint');
+    let checkpointRead={...state.savedCheckpoint.nextRead,charCount:64},checkpointText='',checkpointPages=0;
+    while(checkpointRead){
+      assert.ok(++checkpointPages<100,'Checkpoint pagination must terminate');
+      const page=await taskCall(options,checkpointRead);
+      assert.equal(page.checkpointDelivery.kind,'page');
+      assert.equal(page.contractDelivery,undefined,'Checkpoint reads cannot acknowledge canonical intent');
+      checkpointText+=page.text;checkpointRead=page.nextRead;
+    }
+    assert.ok(checkpointPages>1,'The continuation consumed all pinned pages, not only the first fragment');
+    const deliveredCheckpoint={checkpoint:JSON.parse(checkpointText)};
+    assert.deepEqual(deliveredCheckpoint.checkpoint.decisions,['Keep the existing implementation.'],'The real continuation callback receives the saved decision, not only a test-side store read');
+    assert.equal(deliveredCheckpoint.checkpoint.provenance.runId,original.id);
+    assert.equal(deliveredCheckpoint.checkpoint.provenance.nodeId,'agent');
+    assert.equal(deliveredCheckpoint.checkpoint.provenance.source,'agent');
+    assert.doesNotMatch(options.prompt,/Keep the existing implementation/,'Saved task checkpoint prose is retrieved explicitly, not injected as a current instruction');
+    const saved=await tasks.get(original.id);assert.equal(saved.interruption.status, ending);assert.equal(saved.checkpoint.completed.length,2);assert.equal(saved.artifacts[0].id,artifactId);
     state = await taskCall(options, { action: 'read' });
     assert.equal((await workspaceCall(options, 'read-preserved-partial', { action: 'read', path: 'deliverable.txt' })).content, '1: Actual partial work.');
     assert.equal((await workspaceCall(options, 'write-finished', { action: 'write', path: 'deliverable.txt', text: 'Actual finished work.' })).bytesWritten, Buffer.byteLength('Actual finished work.'));
