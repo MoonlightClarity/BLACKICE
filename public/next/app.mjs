@@ -109,7 +109,8 @@ window.addEventListener('hashchange',()=>{
   const name=location.hash.slice(1);
   if(name==='activity'||name==='tasks'||(modules[name]&&current!==name))void show(name);
 });
-window.addEventListener('beforeunload',()=>{
+// Tear down only after navigation is accepted; a dirty editor can veto beforeunload.
+window.addEventListener('pagehide',()=>{
   for(const {instance} of spaces.values())instance?.leave?.();
   for(const timer of notifications)clearTimeout(timer);
   events.close();

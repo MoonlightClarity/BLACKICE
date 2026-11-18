@@ -35,7 +35,7 @@ export function createNativeParentCloseHandler({ host, retain, closeWindow, onAl
 
 /** Owned/uncertain sessions never enter shutdown or acquire an exit watchdog. */
 export function createNativeSafeQuitHandler({ host, retain, shutdown, onReleased, onRetained, onBlocked, onFailure, onTimeout, onTimeoutBlocked = () => {},
-  timeoutMs = 25000, setTimer = setTimeout, clearTimer = clearTimeout }) {
+  prepareQuit = async () => true, timeoutMs = 25000, setTimer = setTimeout, clearTimer = clearTimeout }) {
   let pending = null;
   return event => {
     event.preventDefault();
@@ -45,6 +45,7 @@ export function createNativeSafeQuitHandler({ host, retain, shutdown, onReleased
       if(nativeOwnershipPossible(host)){
         const result=await retain();if(result.retained){onRetained();return;}
       }
+      if(!await prepareQuit()){onRetained();return;}
       timer=setTimer(()=>{
         if(nativeOwnershipPossible(host)){onTimeoutBlocked();return;}
         void onTimeout();

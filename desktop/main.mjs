@@ -1,3 +1,4 @@
+import { createQuitWindowGate } from './quit-window-gate.mjs';
 import { app, BrowserWindow, BaseWindow, WebContentsView, Menu, dialog, globalShortcut, ipcMain, nativeTheme, screen, shell, safeStorage, session, clipboard, crashReporter } from 'electron';
 import { spawn } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
@@ -454,7 +455,9 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     } catch (error) { void diagnostics.recordError('desktop', 'lifecycle_request_failed', error); }
   });
   app.on('window-all-closed',launcherWindowClosed);
+  const prepareQuit = createQuitWindowGate({getWindow:()=>mainWindow});
   const handleSafeQuit = createNativeSafeQuitHandler({host:nativeApps,retain:retainNativeParent,shutdown,
+    prepareQuit:async()=>{try{return await prepareQuit();}catch(error){void diagnostics.recordError('desktop','request_failed',error);return false;}},
     onReleased:()=>{didClose=true;app.quit();},
     onRetained:()=>desktopLifecycle.cancelQuit(),
     onBlocked:async error=>{shutdownPromise=null;desktopLifecycle.cancelQuit();void diagnostics.recordError('native-apps','parent_retained',error);if(nativeOwnershipPossible(nativeApps))await retainNativeParent().catch(hideError=>diagnostics.recordError('native-apps','hide_failed',hideError));},
