@@ -399,8 +399,11 @@ test('actual direct schema admits new provider revisions and rejects secret/head
 });
 
 test('actual direct ledger and HTTP adapter share scope validation, saved receipts and same-ID no replay', async t => {
+  let api;
+  // Register before the fixture removes its directory: SQLite must close first, even after assertion failure.
+  t.after(() => api?.close());
   const { store, directory } = await storeFixture(t), saved = await store.save({ id: 'freeapi', preset: 'openrouter' });
-  let calls = 0, api;
+  let calls = 0;
   const runtime = { store, listProviders: () => store.list(), saveProvider: (input, options) => store.save(input, options) };
   const browser = { providerKeySource: async (_target, options) => { calls++; return options.consume(SECRET, {}); } };
   const tools = createDirectProviderSetupTools({ runtime, browser, reauthorize: (identity, { scopes }) => api.require(identity, scopes), isEncryptionAvailable: () => true });

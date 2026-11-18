@@ -1,3 +1,4 @@
+import {readSavedDirectJobBytes} from './fixtures/read-direct-sqlite.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
@@ -84,22 +85,22 @@ for (const observed of [false, true]) test(`durable denied launch replay preserv
   assert.equal(launch.securityBlockConfirmed, false); assert.equal(launch.securityBlockPossible, true);
   assert.equal(first.effects.possible, true); assert.equal(first.effects.confirmed, false);
   assert.deepEqual(f.counts(), { launches: 1, preparedExecutions: 1 });
-  const receiptPath = path.join(f.directory, 'direct-execution-jobs', admitted.jobId + '.json');
-  const bytes = await fs.readFile(receiptPath);
+  const readReceipt = () => readSavedDirectJobBytes(api.jobs.databaseFile,admitted.jobId);
+  const bytes = readReceipt();
   const replays = await Promise.all(Array.from({ length: 8 }, () => api.call('blackice_run_command', { ...args }, client)));
   for (const replay of replays) { assert.equal(replay.existing, true); assert.equal(replay.jobId, first.jobId); assert.equal(replay.status, 'failed'); }
   assert.equal((await settle(api, first.jobId)).result.text.text, first.result.text.text);
-  assert.deepEqual(await fs.readFile(receiptPath), bytes);
+  assert.deepEqual(readReceipt(), bytes);
   await assert.rejects(api.call('blackice_run_command', { ...args, command: 'different-fixture' }, client), { code: 'DIRECT_REQUEST_CONFLICT' });
   // Read/status/list/cancel and an invalid interaction cannot reopen a failed action.
   await api.call('blackice_direct_status', {}, client); await api.call('blackice_list_jobs', {}, client);
   await api.call('blackice_cancel_job', { jobId: first.jobId }, client);
   await assert.rejects(api.resolveInteraction(first.jobId, 'nonexistent'), { code: 'DIRECT_INTERACTION_CHANGED' });
-  assert.deepEqual(await fs.readFile(receiptPath), bytes); assert.deepEqual(f.counts(), { launches: 1, preparedExecutions: 1 });
+  assert.deepEqual(readReceipt(), bytes); assert.deepEqual(f.counts(), { launches: 1, preparedExecutions: 1 });
   await api.close();
   const reopened = f.open();
   const replay = await reopened.call('blackice_run_command', { ...args }, client);
   assert.equal(replay.existing, true); assert.equal(replay.status, 'failed');
   assert.equal((await settle(reopened, first.jobId)).result.text.text, first.result.text.text);
-  assert.deepEqual(await fs.readFile(receiptPath), bytes); assert.deepEqual(f.counts(), { launches: 1, preparedExecutions: 1 });
+  assert.deepEqual(readReceipt(), bytes); assert.deepEqual(f.counts(), { launches: 1, preparedExecutions: 1 });
 });
