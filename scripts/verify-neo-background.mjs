@@ -6,7 +6,7 @@ import {writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {createHash,randomUUID} from 'node:crypto';
 import path from 'node:path';
-import {ConnectionManager,createConnectionToolHandler} from '../lib/mcp.mjs';
+import {ConnectionManager,executeConnectedBrowser} from '../lib/mcp.mjs';
 import {createSignedBrowserIntegration} from '../lib/signed-browser.mjs';
 
 const USAGE='node scripts/verify-neo-background.mjs --live-neo [--capture] [--output-dir ABSOLUTE_FRESH_PATH]';
@@ -175,7 +175,7 @@ async function main({output,capture:requestCapture}){
     if(requestCapture){
       stage='guarded bounded screenshot';
       try{
-        const gateway=createConnectionToolHandler({manager}),capture=await bounded(stage,signal=>gateway({name:'relay_connections',arguments:{action:'call',connectionId,name:'screenshot',arguments:{page:page.pageId,fullPage:false,format:'jpeg',quality:70,size:{width:1024,height:768}},imageOutputPath:path.join(output,'background-check.jpg')}},{signal}),CAPTURE_MS);
+        const capture=await bounded(stage,signal=>executeConnectedBrowser({manager,signal,action:'call',connectionId,name:'screenshot',arguments:{page:page.pageId,fullPage:false,format:'jpeg',quality:70,size:{width:1024,height:768}},imageOutputPath:path.join(output,'background-check.jpg')}),CAPTURE_MS);
         ensure(capture?.success===true,'SCREENSHOT_REFUSED','The guarded bounded capture did not complete. '+(capture?.contentItems||[]).filter(item=>item.type==='inputText').map(item=>item.text).join(' ').slice(0,1600)+' No screenshot bypass or repeated click was attempted.');
         let saved;for(const item of capture.contentItems||[])if(item.type==='inputText')try{const parsed=JSON.parse(item.text);if(parsed.savedImage)saved=parsed.savedImage;}catch{}
         ensure(saved?.mimeType==='image/jpeg'&&saved.bytes>0&&saved.width>0&&saved.width<=1920&&saved.height>0&&saved.height<=1200,'SCREENSHOT_MISSING','The guarded capture returned no checked JPEG preview within the accepted pixel bounds.');const bytes=await readFile(path.join(output,'background-check.jpg'));ensure(createHash('sha256').update(bytes).digest('hex')===saved.sha256,'SCREENSHOT_MISMATCH','Saved JPEG bytes did not match their checked receipt.');
