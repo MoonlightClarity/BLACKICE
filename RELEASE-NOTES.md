@@ -1,6 +1,6 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.4 candidate source, not an installation or publication receipt.** Package version is **2.40.4**. Start with the [2.40.4 notes](RELEASE-NOTES-2.40.4.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.5 candidate source, not an installation or publication receipt.** Package version is **2.40.5**. Start with the [2.40.5 notes](RELEASE-NOTES-2.40.5.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
 
