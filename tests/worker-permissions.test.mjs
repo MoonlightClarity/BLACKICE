@@ -48,7 +48,7 @@ async function harness(t, execute) {
   return context;
 }
 
-test('a legacy delegate assignment flag does not reduce the normal workspace capabilities', async t => {
+test('removed assignment flags reject while current workers retain normal workspace capabilities', async t => {
   const f = await harness(t, async (options, context) => {
     if (options.prompt.startsWith('You are a short-lived')) {
       assert.equal(options.sandbox, 'danger-full-access');
@@ -69,11 +69,13 @@ test('a legacy delegate assignment flag does not reduce the normal workspace cap
     }
     const definition = options.dynamicTools.find(tool => tool.name === 'relay_delegate');
     assert.equal(Object.hasOwn(definition.inputSchema.properties.tasks.items.properties,'canWrite'),false);
-    const delegated = await call(options, 'relay_delegate', { tasks: [{ id: 'review', prompt: 'Inspect evidence only', canWrite: false }, { id: 'source-read', prompt: 'Read the independent evidence file only.', canWrite: false }] });
+    const rejected = await call(options, 'relay_delegate', { tasks: [{ id: 'review', prompt: 'Inspect evidence only', canWrite: false }, { id: 'source-read', prompt: 'Read the independent evidence file only.', canWrite: false }] });
+    assert.equal(rejected.success,false,'Removed fields are not silently accepted');
+    const delegated = await call(options, 'relay_delegate', { tasks: [{ id: 'review', prompt: 'Inspect evidence and save a worker result' }, { id: 'source-read', prompt: 'Read the independent evidence file only.' }] });
     assert.equal(delegated.success, true, delegated.contentItems[0].text); assert.equal(data(delegated).allCompleted, true);
     return { output: 'Review completed.' };
   });
-  const saved = await f.run('Review research without changing files.');
+  const saved = await f.run('Review research and save the checked worker result.');
   assert.equal(saved.nodes.agent.subagentSchemaVersion, SUBAGENT_SCHEMA_VERSION);
   assert.deepEqual(f.effects, { emailDrafts: 0, connections: 0, browserInputs: 0 });
   await access(path.join(f.cwd, 'worker-result.txt'));
