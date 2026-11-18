@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
@@ -53,7 +53,6 @@ async function application(t, options = {}) {
   const close = async () => { if (!closed) { await app.close(); closed = true; } };
   t.after(async () => {
     await close();
-    await app.knowledge.writeChain.catch(() => {});
     assert.match(path.basename(directory), /^relay-session-test-/);
     await rm(directory, { recursive: true, force: true });
   });
@@ -149,25 +148,6 @@ test('HTTP directions target the working agent and capacity one retains cancella
   assert.ok(app.engine.getRun(start.data.id).events.some(event => event.data.type === 'steer'));
 });
 
-test('retired knowledge HTTP is authenticated and cannot mutate durable legacy records',async t=>{
- const{api,request,app,cwd,otherCwd,close,dataDir}=await application(t);
- const records=[{id:'project-note',cwd},{id:'other-note',cwd:otherCwd},{id:'global-note',cwd:null}];
- for(const value of records)await app.knowledge.upsert({...value,kind:'memory',title:value.id,content:'Preserved legacy content.'});
- const before=app.knowledge.list({includeDeleted:true});
- assert.equal((await request('/api/knowledge')).status,401);
- assert.equal((await request('/api/knowledge',{method:'POST',body:{kind:'memory',title:'Denied',content:'No'}})).status,401);
- for(const [route,method,body] of [
- ['/api/knowledge','POST',{id:'project-note',kind:'memory',title:'Changed',content:'No',cwd,provenance:{source:'agent',runId:'forged'}}],
- ['/api/knowledge?cwd='+encodeURIComponent(cwd),'GET'],['/api/knowledge?cwd='+encodeURIComponent(otherCwd),'GET'],
- ['/api/knowledge/project-note','GET'],['/api/knowledge/project-note','DELETE',{}],
- ['/api/knowledge/project-note/restore','POST',{revision:1}],['/api/knowledge?limit=301','GET']
- ]){
-  const result=await api(route,{method,body});assert.equal(result.status,410);assert.equal(result.data.code,'KNOWLEDGE_RETIRED');
- }
- assert.deepEqual(app.knowledge.list({includeDeleted:true}),before);await close();
- const{KnowledgeStore}=await import('../lib/knowledge.mjs'),restarted=await new KnowledgeStore({dataDir}).init();
- assert.deepEqual(restarted.list({includeDeleted:true}),before);assert.equal(restarted.get('project-note').revision,1);
-});
 
 test('attached tools retain read-only release skills and scoped history without exposing legacy memory',async t=>{
  const runtime=new FakeRuntime(async options=>{
@@ -184,50 +164,25 @@ test('attached tools retain read-only release skills and scoped history without 
   await assert.rejects(options.onToolCall(tool('relay_skills',{action:'save'})),/Unknown knowledge action/);
   return{output:'Read-only catalog inspected',threadId:'knowledge-thread'};
  });
- const{api,app,cwd,otherCwd,settled}=await application(t,{runtime});
- await app.knowledge.upsert({id:'local-note',kind:'memory',title:'LOCAL_LEGACY_SECRET',content:'LOCAL_LEGACY_SECRET',cwd});
- await app.knowledge.upsert({id:'other-note',kind:'memory',title:'OTHER_LEGACY_SECRET',content:'OTHER_LEGACY_SECRET',cwd:otherCwd});
- await app.knowledge.upsert({kind:'skill',title:'legacy-skill-secret',content:'Legacy mutable method',cwd});
- const before=app.knowledge.list({includeDeleted:true});
+ const{api,app,dataDir,settled}=await application(t,{runtime});
+ const saved=path.join(dataDir,'knowledge.json'),bytes='LOCAL_LEGACY_SECRET OTHER_LEGACY_SECRET legacy-skill-secret';await writeFile(saved,bytes);
  const started=await api('/api/runs',{method:'POST',body:{workflow:singleAgentGraph(),input:'Inspect the available release methods.'}});
  assert.equal(started.status,201);const run=await settled(started.data.id);assert.equal(run.status,'completed',run.error);
- assert.deepEqual(app.knowledge.list({includeDeleted:true}),before);assert.equal(app.knowledge.listApprovals().length,0);
+ assert.equal(await readFile(saved,'utf8'),bytes);assert.equal(Object.hasOwn(app,'knowledge'),false);
  assert.equal(runtime.calls.length,1);assert.equal(run.events.some(event=>event.data?.status==='pending_approval'),false);
 });
 
-test('cancellation blocks late tools and cancels a queued legacy proposal without mutation',async t=>{
+test('cancellation blocks late tool writes without memory machinery',async t=>{
  const entered=deferred(),release=deferred(),runtime=new FakeRuntime(async options=>{entered.resolve(options);return release.promise;});
  const{api,app,settled}=await application(t,{runtime});
- await app.knowledge.upsert({id:'queued-agent-note',kind:'memory',title:'Prior fact',content:'Must remain unchanged.',cwd:app.engine.defaultCwd});
  const started=await api('/api/runs',{method:'POST',body:{workflow:singleAgentGraph(),input:'Await cancellation.'}}),active=await entered.promise;
- const blocker=deferred();app.knowledge.approvalChain=app.knowledge.approvalChain.then(()=>blocker.promise);
- const pending=app.knowledge.upsert({id:'queued-agent-note',kind:'memory',title:'Queued fact',content:'Must not commit.'},{source:'agent',runId:started.data.id},{signal:active.signal});pending.catch(()=>{});
  try{
-  await api('/api/runs/'+started.data.id+'/cancel',{method:'POST',body:{}});blocker.resolve();
-  await assert.rejects(pending,{name:'AbortError'});
+  await api('/api/runs/'+started.data.id+'/cancel',{method:'POST',body:{}});
   await assert.rejects(active.onToolCall(tool('relay_workspace',{action:'write',path:'late.txt',text:'Must not persist.'})),{name:'AbortError'});
-  assert.equal(app.knowledge.get('queued-agent-note').content,'Must remain unchanged.');assert.equal(app.knowledge.get('queued-agent-note').revision,1);
-  assert.equal(app.knowledge.list().length,1);assert.equal(app.knowledge.listApprovals().length,0);
- }finally{blocker.resolve();release.resolve({output:'Late output',threadId:'cancelled-knowledge-thread'});}
+ }finally{release.resolve({output:'Late output',threadId:'cancelled-knowledge-thread'});}
  assert.equal((await settled(started.data.id)).status,'cancelled');
 });
 
-test('shutdown drains an admitted legacy storage write while retired HTTP never admits a new save',async t=>{
- const{api,app,cwd,dataDir,close}=await application(t),entered=deferred(),release=deferred();
- const writeSnapshot=app.knowledge.writeSnapshot.bind(app.knowledge);
- app.knowledge.writeSnapshot=async(...args)=>{entered.resolve();await release.promise;return writeSnapshot(...args);};
- const denied=await api('/api/knowledge',{method:'POST',body:{id:'http-note',kind:'memory',title:'Retired',content:'No',cwd}});
- assert.equal(denied.status,410);assert.equal(denied.data.code,'KNOWLEDGE_RETIRED');
- const pending=app.knowledge.upsert({id:'closing-note',kind:'memory',title:'Closing fact',content:'Legacy storage finishes before shutdown.',cwd});pending.catch(()=>{});
- await entered.promise;let finished=false;const closing=close().then(()=>{finished=true;});
- try{
-  const late=await api('/api/knowledge',{method:'POST',body:{kind:'memory',title:'Late save',content:'No'}});
-  assert.equal(late.status,503);assert.equal(finished,false);
- }finally{release.resolve();}
- await pending;await closing;
- const{KnowledgeStore}=await import('../lib/knowledge.mjs'),restored=await new KnowledgeStore({dataDir}).init();
- assert.equal(restored.get('closing-note').content,'Legacy storage finishes before shutdown.');assert.equal(restored.list().length,1);
-});
 
 test('retired knowledge rejects incomplete mutation bodies without waiting for or writing their contents',async t=>{
  const{app,auth,close}=await application(t),payload=JSON.stringify({id:'late-body-note',kind:'memory',title:'Late body',content:'Never consumed'});
@@ -238,7 +193,7 @@ test('retired knowledge rejects incomplete mutation bodies without waiting for o
   });
   pendingRequest.setTimeout(4000,()=>pendingRequest.destroy(new Error('Retired endpoint waited for a body')));pendingRequest.on('error',reject);pendingRequest.write(payload.slice(0,1));
  });
- try{const result=await response;assert.equal(result.status,410);assert.equal(result.data.code,'KNOWLEDGE_RETIRED');assert.throws(()=>app.knowledge.get('late-body-note'),{status:404});}
+ try{const result=await response;assert.equal(result.status,404);assert.equal(Object.hasOwn(app,'knowledge'),false);}
  finally{pendingRequest.destroy();}
  await close();
 });
