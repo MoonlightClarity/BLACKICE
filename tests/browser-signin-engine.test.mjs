@@ -5,7 +5,7 @@ import {EventEmitter} from 'node:events';
 import {mkdtemp,mkdir,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {HarnessEngine} from './fixture-legacy-planning-engine.mjs';
+import {HarnessEngine} from '../lib/engine.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 
 test('contained sign-in blocks external browser fallback while independent integrations remain usable',async t=>{
@@ -129,8 +129,8 @@ test('guarded delegated workers preserve the contained challenge while independe
     assert.ok(!options.dynamicTools.some(t=>t.name==='relay_delegate'));
     assert.ok(options.dynamicTools.some(t=>t.name==='relay_connections'));
     assert.ok(!options.dynamicTools.some(t=>t.name==='relay_task'));
-    assert.match(options.developerInstructions,/The coordinator owns the final remote send/);
-    assert.match(options.developerInstructions,/Return the actual evidence and any uncertain existing effects/);
+    assert.match(options.developerInstructions,/assigned canonical work-item IDs|assigned.*scope/);
+    assert.match(options.prompt,/actual results, evidence and uncertainty/);
     if(options.prompt.includes('Read the independent synthetic local note.')){
      const independent=await options.onToolCall({name:'relay_connections',arguments:{action:'call',connectionId:'fixture-notes',name:'read_note',arguments:{}}});
      assert.equal(independent.success,true);return {output:'Independent synthetic local note checked.'};

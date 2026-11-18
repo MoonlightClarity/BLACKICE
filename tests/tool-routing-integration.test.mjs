@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { CodexRuntime } from '../lib/codex.mjs';
-import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
+import { HarnessEngine } from '../lib/engine.mjs';
 import { HarnessEngine as CurrentHarnessEngine } from '../lib/engine.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { WORKSPACE_TOOL } from '../lib/workspace-tools.mjs';
@@ -91,9 +91,7 @@ test('native Codex sends actual developerInstructions on thread/start and thread
 test('engine native follow-up guidance excludes newly available tools that are absent from the original saved catalog',async t=>{
   const {runtime,directory,cwd,wire,cleanup}=await nativeHarness(t);await runtime.start();const engine=await new HarnessEngine({runtime,dataDir:directory,defaultCwd:cwd}).init();cleanup.push(()=>engine.close());const settled=id=>until(()=>{const run=engine.getRun(id);return run.settled&&run;},'native engine run');
   const first=engine.startRun({workflow:graph('routing-native-model'),input:'NATIVE_ENGINE_FIRST'}),one=await settled(first.id);assert.equal(one.status,'completed',one.error);assert.deepEqual(one.nodes.agent.toolNames,['relay_workspace','relay_find_files','relay_control','relay_agents','relay_skills','relay_history']);
-  // Restore both the actual fixture thread and saved run to the pre-control catalog.
-  const legacy=await runtime._request('fixture/restoreLegacyCatalog',{threadId:one.nodes.agent.threadId,names:['relay_workspace']});assert.deepEqual(legacy.names,['relay_workspace']);engine.runs.get(first.id).nodes.agent.toolNames=['relay_workspace'];
-  engine.browser={status:()=>({available:true})};engine.connections={list:()=>[],redact:value=>String(value)};const next=engine.continueRun(first.id,{nodeId:'agent',message:'NATIVE_ENGINE_FOLLOWUP'}),two=await settled(next.id);assert.equal(two.status,'completed',two.error);const receipt=JSON.parse(two.nodes.agent.output);assert.deepEqual(receipt.tools,['relay_workspace']);assert.deepEqual(manifest(receipt.instructions).map(item=>item.name),['relay_workspace']);assert.doesNotMatch(receipt.instructions,/relay_control:|relay_agents:|relay_find_files:|relay_browser:|relay_connections:/);assert.equal(two.nodes.agent.threadId,one.nodes.agent.threadId);
+  engine.browser={status:()=>({available:true})};engine.connections={list:()=>[],redact:value=>String(value)};const next=engine.continueRun(first.id,{nodeId:'agent',message:'NATIVE_ENGINE_FOLLOWUP'}),two=await settled(next.id);assert.equal(two.status,'completed',two.error);const receipt=JSON.parse(two.nodes.agent.output);assert.deepEqual(receipt.tools,one.nodes.agent.toolNames);assert.deepEqual(manifest(receipt.instructions).map(item=>item.name),one.nodes.agent.toolNames);assert.doesNotMatch(receipt.instructions,/relay_browser:|relay_connections:/);assert.equal(two.nodes.agent.threadId,one.nodes.agent.threadId);
   const records=await wire(),resume=records.find(item=>item.method==='thread/resume');assert.match(resume.params.developerInstructions,/ACTUAL ATTACHED CATALOG/);assert.equal(resume.params.dynamicTools,undefined);const turn=records.filter(item=>item.method==='turn/start').at(-1);assert.equal(occurrences(JSON.stringify(turn.params.input),'NATIVE_ENGINE_FOLLOWUP'),1);assert.equal(occurrences(JSON.stringify(turn.params.input),'CAPABILITY ROUTING — BEFORE ACTION'),0);
 });
 

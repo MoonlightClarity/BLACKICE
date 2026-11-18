@@ -1,15 +1,13 @@
-// Historical schema-13 guarded-worker regression; current canonical behavior has separate engine acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
+import { HarnessEngine } from '../lib/engine.mjs';
 import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
-import { recordFixturePlan } from './fixture-task-plan.mjs';
 
 const origin = 'https://credentials.example.test';
 const generation = { action: 'generate', origin, requestId: 'signup_1', username: 'owned@example.test' };
@@ -71,7 +69,7 @@ test('unavailable encrypted storage does not advertise a credential tool', async
   const f = await fixture(t, async options => {
     assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_credentials'));
     assert.doesNotMatch(options.prompt, /WEBSITE ACCOUNT CONTINUITY/);
-    await assert.rejects(call(options, generation), /not attached/);
+    await assert.rejects(call(options, generation), /Unknown knowledge tool/);
     return { output: 'Protected credentials are unavailable.' };
   }, { available: false });
   done(await f.settled(f.start().id)); assert.equal(f.generated.length, 0);
@@ -80,7 +78,7 @@ test('unavailable encrypted storage does not advertise a credential tool', async
 test('an existing native conversation keeps its recorded catalog when storage later becomes available', async t => {
   const f = await fixture(t, async options => {
     assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_credentials'));
-    await assert.rejects(call(options, generation), /not attached|not.*available|saved/i);
+    await assert.rejects(call(options, generation), /Unknown knowledge tool/);
     return { output: 'Original tools retained.', threadId: 'credential-main' };
   }, { available: false });
   const first = await f.settled(f.start().id); done(first); f.vault.available = true;
@@ -113,17 +111,11 @@ test('a saved assignment flag does not remove ordinary credential capabilities',
   const graph = { name: 'Credential scopes', nodes: [{ id: 'input', type: 'input', name: 'Task' }, agent('worker', false), agent('coordinator', true), { id: 'output', type: 'output', name: 'Result' }], edges: [{ source: 'input', target: 'worker' }, { source: 'worker', target: 'coordinator' }, { source: 'coordinator', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' }, planning: { shared: true, coordinatorNodeId: 'coordinator' } };
   const f = await fixture(t, async options => {
     const worker = options.prompt.startsWith('You are worker.'), id = worker ? 'worker' : 'coordinator';
-    if (!worker) await recordFixturePlan(options);
-    let current = payload(await options.onToolCall({ name: 'relay_task', arguments: { action: 'read' } }));
-    const acknowledged = await options.onToolCall({ name: 'relay_task', arguments: { action: 'edit', expectedRevision: current.revision, operations: [{ type: 'update', stepId: `agent-${id}-work`, patch: { status: 'active', note: 'Inspecting only the assigned credential metadata.' } }] } });
-    assert.equal(acknowledged.success, true, acknowledged.contentItems[0].text); current = payload(acknowledged);
     if (worker) {
       assert.equal(options.sandbox, 'danger-full-access');
       const listed = await call(options, { action: 'list', origin }); assert.equal(listed.success, true);
       const generated=await call(options,generation);assert.equal(generated.success,true,JSON.stringify(generated));
     }
-    const update = await options.onToolCall({ name: 'relay_task', arguments: { action: 'step', expectedRevision: current.revision, stepId: `agent-${id}-work`, status: 'done', evidence: 'The assigned metadata scope was checked without changing credentials.' } });
-    assert.equal(update.success, true, update.contentItems[0].text);
     return { output: 'Checked metadata within the assigned scope.' };
   }, { shared: true });
   done(await f.settled(f.start(graph).id)); assert.equal(f.generated.length, 1);

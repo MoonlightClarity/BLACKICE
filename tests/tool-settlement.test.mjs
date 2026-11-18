@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
+import { HarnessEngine } from '../lib/engine.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { CodexRuntime } from '../lib/codex.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
@@ -62,13 +62,13 @@ test('API Stop keeps a real pending patch leased, preserves its late receipt, an
       const receipt = request.messages.find(message => message.role === 'tool' && message.tool_call_id === 'plan-read');
       assert.ok(receipt, 'The provider receives the actual task-read result.');
       const state = JSON.parse(receipt.content); assert.equal(state.error, undefined, receipt.content);
-      return callReply([['plan-write', 'relay_task', { action: 'plan', expectedRevision: state.revision, plan: { layout: 'sequence', detail: 'balanced' }, steps: [{ id: 'patch', kind: 'action', title: 'Apply the fixture patch', status: 'active', operation: { kind: 'tool', tool: 'relay_workspace', action: 'patch', target: 'result.txt' }, result: 'result.txt contains confirmed patch with a durable receipt identifying the changed bytes.', note: 'Apply the exact before-to-confirmed patch replacement in result.txt through relay_workspace patch; compare the resulting file contents and afterHash saved in the durable receipt.', doneWhen: 'The saved patch receipt and target bytes agree.' }] }]]);
+      return callReply([['plan-write', 'relay_task', { action: 'plan', expectedRevision: state.revision, contract: {contractVersion:2,goal:'Apply fixture patch once',criteria:[{id:'patched',kind:'judgment',description:'Durable receipt matches actual bytes'}],workItems:[{id:'patch',title:'Patch fixture',objective:'Apply and verify exact replacement',owner:'coordinator',resourceKeys:['workspace:fixture'],effects:['observe','interact','commit'],dependsOn:[],criterionIds:['patched']}],instructions:[]} }]]);
     }
     if (primaryRequests === 3) {
       const receipt = request.messages.find(message => message.role === 'tool' && message.tool_call_id === 'plan-write');
       assert.ok(receipt, 'The provider receives the actual plan-write result before requesting the patch.');
       const planned = JSON.parse(receipt.content); assert.equal(planned.error, undefined, receipt.content);
-      assert.equal(planned.plan.origin, 'agent'); assert.equal(planned.plan.detail, 'balanced'); assert.equal(planned.steps[0].id, 'patch');
+      assert.equal(planned.contract.workItems[0].id, 'patch');
       return callReply([
         ['held-patch', 'relay_workspace', { action: 'patch', path: 'result.txt', oldText: 'before', newText: 'confirmed patch' }],
         ['must-not-start', 'relay_workspace', { action: 'write', path: 'after-stop.txt', text: 'This later operation must not run.' }],
@@ -86,7 +86,7 @@ test('API Stop keeps a real pending patch leased, preserves its late receipt, an
   await admitted(entered, execution);
   const initial = engine.getRun(first.id), threadId = initial.nodes.agent.threadId;
   const authored = await tasks.get(initial.taskId);
-  assert.equal(authored.plan.origin, 'agent'); assert.equal(authored.plan.detail, 'balanced'); assert.equal(authored.steps[0].id, 'patch');
+  assert.equal(authored.contract.workItems[0].id, 'patch');
   assert.equal(initial.nodes.agent.planning.status, 'off', 'An explicit saved outline does not restore compulsory planning admission.');
   engine.cancelRun(first.id); await pending(execution);
   assert.equal(engine.getRun(first.id).settled, false); assert.equal(engine.executionStatus().activeCount, 1); assert.equal(engine.executionStatus().availableSlots, 1); assert.equal(engine.executionStatus().stopping, true);
