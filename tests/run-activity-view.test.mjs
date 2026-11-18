@@ -25,12 +25,11 @@ test('internal source-page search exposes continuation even when page has no mat
  const found=await searchDirectoryOutputs({runId:'r'},{q:'missing'},{list:async()=>({files:sources}),read:async()=>({value:{parsed:{status:'complete',finding:'other'}}})});
  assert.equal(found.items.length,0);assert.equal(found.nextOffset,10);assert.equal(found.coverage.scannedFiles,10);assert.equal(found.coverage.sourceFiles,13);
 });
-test('activity HTTP uses existing selected-conversation access and rejects foreign/trash scope',async()=>{
- const conversations={get:async()=>run,list:()=>[{id:'r',rootId:'r',state:'active'}]},responses=[];
- const invoke=url=>handleShadowdancerContextHttp({req:{method:'GET',url},res:{},pathname:'/api/shadowdancer/context/activity',host:'fixture',conversations,json:(_res,status,body)=>responses.push({status,body})});
- await invoke('/api/shadowdancer/context/activity?runId=r&view=tools');assert.equal(responses.at(-1).status,200);assert.equal(responses.at(-1).body.items.length,1);
- conversations.list=()=>[{id:'r',state:'trashed'}];await invoke('/api/shadowdancer/context/activity?runId=r');assert.equal(responses.at(-1).status,404);
- await invoke('/api/shadowdancer/context/activity?runId=r&q=a&q=b');assert.equal(responses.at(-1).status,400);
+test('retired Directory activity route refuses reads without opening saved conversation context',async()=>{
+ let reads=0;const responses=[];const conversations={get:async()=>{reads++;return run;},list:()=>{reads++;return [{id:'r',state:'active'}];}};
+ for(const url of ['/api/shadowdancer/context/activity?runId=r&view=tools','/api/shadowdancer/context/activity?runId=r&q=a&q=b']){
+ await handleShadowdancerContextHttp({req:{method:'GET',url},res:{},pathname:'/api/shadowdancer/context/activity',host:'fixture',conversations,json:(_res,status,body)=>responses.push({status,body})});assert.equal(responses.at(-1).status,410);}
+ assert.equal(reads,0);
 });
 
 test('internal output ignores arbitrary labels and nested values and skips oversized files',async()=>{

@@ -7,6 +7,10 @@ import { randomUUID, createHash } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import { EventEmitter } from 'node:events';
 import vm from 'node:vm';
+import {managedContextPaths} from '../lib/managed-context-paths.mjs';
+import {createFileSearch} from '../lib/workspace-file-search.mjs';
+import {homedir} from 'node:os';
+import {describeHostOperation,normalizeHostOperationResult} from '../lib/operation-descriptors.mjs';
 import * as ledger from '../lib/direct-execution-jobs.mjs';
 
 // Actual frozen ledger/API and candidate workspace implementation. Only their
@@ -16,7 +20,7 @@ const sources = Object.fromEntries(await Promise.all(['workspace-tools', 'direct
   [name, await fs.readFile(new URL(`../lib/${name}.mjs`, import.meta.url), 'utf8')])));
 const forbidden = () => { throw Error('Unexpected external adapter in inert replay test'); };
 function evaluate(name, globals, exports) {
-  const sandbox = { fs, path, createHash, randomUUID, StringDecoder, Buffer, TextDecoder,
+  const sandbox = { managedContextPaths, createFileSearch, homedir, describeHostOperation, normalizeHostOperationResult, fs, path, createHash, randomUUID, StringDecoder, Buffer, TextDecoder,
     structuredClone, setTimeout, clearTimeout, queueMicrotask, AbortController, AbortSignal,
     process: { pid: process.pid, platform: 'linux', env: {}, kill: forbidden }, ...globals };
   vm.runInNewContext(sources[name].replace(/^import .*;\n/gm, '').replace(/^export /gm, '') +
