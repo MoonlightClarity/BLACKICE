@@ -32,7 +32,7 @@ async function fixture(t){
  const remoteAccess=new RemoteAccessManager({dataDir:directory,transport:transport.transport,defaultHttpsPort:8443});
  let app;t.after(async()=>{try{await app?.close();}finally{await rm(directory,{recursive:true,force:true});}});
  app=await createHarnessServer({port:0,dataDir:directory,defaultCwd:directory,runtime,desktop:new Desktop(),remoteAccess,autoAttachDesktop:false});
- await app.learning.updateSettings({mode:'manual'});
+
  const url=new URL(await app.listen()),page=await request(url,'/'),cookie=page.headers['set-cookie'][0].split(';')[0];
  const local=(route,{authenticated=true,...options}={})=>request(url,route,{...options,headers:{...(authenticated?{Cookie:cookie}:{}),...options.headers}});
  return {app,runtime,local,directory};

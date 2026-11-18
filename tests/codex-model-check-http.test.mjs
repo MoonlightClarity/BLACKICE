@@ -68,7 +68,7 @@ async function application(t) {
   await runtime.store.pinAutomaticDefault(AUTOMATIC_MODEL);
   await runtime.store.setDefaultModel(DEFAULT_MODEL);
   app = await createHarnessServer({ runtime, port: 0, dataDir, defaultCwd: cwd, autoAttachDesktop: false });
-  await app.learning.updateSettings({ mode: 'manual' });
+
   const target = new URL(await app.listen());
   const request = (route, options = {}) => new Promise((resolve, reject) => {
     const payload = options.body === undefined ? undefined : JSON.stringify(options.body);

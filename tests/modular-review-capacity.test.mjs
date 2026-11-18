@@ -49,7 +49,7 @@ test('engine completion review keeps Directory extended capacity and ordinary Ch
   const root=await mkdtemp(path.join(os.tmpdir(),'modular-review-window-')),runtime=new Runtime();
   const app=await createHarnessServer({runtime,port:0,dataDir:path.join(root,'data'),defaultCwd:path.join(root,'workspace')});
   t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});
-  await app.learning.updateSettings({mode:'manual'});
+
   const authored={preset:'custom',windowTokens:36000,outputReserveTokens:2000,headroomTokens:1000};
   for(const directoryMode of ['on','off']){
     const context=directoryMode==='on'?{preset:'model'}:authored;
@@ -226,7 +226,7 @@ test('ordinary Chat returns original partial candidate when optional reviewer is
   work++;assert.equal((await options.onBeforeFinal(candidate))??null,null);return candidate;
  }}
  const runtime=new UnavailableRuntime();const app=await createHarnessServer({runtime,port:0,dataDir:path.join(root,'data'),defaultCwd:path.join(root,'workspace')});
- t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});await app.learning.updateSettings({mode:'manual'});
+ t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});
  const workflow={name:'Unreviewed Chat fixture',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture',prompt:'Perform the task.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{planningMode:'ontology',planningOntology:policy}};
  const run=app.engine.startRun({workflow,input:{task:'Apply to up to three roles.',directoryMode:'off',subagentsMode:'off',planningMode:'ontology',planningOntology:policy}});
  await app.engine.executions.get(run.id);const saved=app.engine.getRun(run.id);

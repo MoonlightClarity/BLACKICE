@@ -25,7 +25,7 @@ test('large Directory messages reach the model through start and continue HTTP a
   const root=await mkdtemp(path.join(os.tmpdir(),'directory-input-capacity-')),runtime=new Runtime();
   const app=await createHarnessServer({runtime,port:0,dataDir:path.join(root,'data'),defaultCwd:path.join(root,'workspace')});
   t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});
-  await app.learning.updateSettings({mode:'manual'});
+
   const base=await app.listen(),home=await fetch(base),cookie=home.headers.get('set-cookie').split(';')[0];
   const post=async(route,value)=>{
     const response=await fetch(new URL(route,base),{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify(value)});

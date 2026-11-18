@@ -21,7 +21,7 @@ test('real Planning HTTP preserves cross-domain judgment and criterion evidence 
   t.after(async()=>{await app?.close().catch(()=>{});await rm(dir,{recursive:true,force:true});});
   const open=async()=>{
     app=await createHarnessServer({port:0,dataDir,defaultCwd,runtime:new Runtime(),remoteAccess:false,autoAttachDesktop:false});
-    await app.learning.updateSettings({mode:'off'});
+
     return app.listen();
   };
   let origin=await open();

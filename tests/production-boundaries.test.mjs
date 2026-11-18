@@ -42,7 +42,7 @@ async function fixture(t, { hold = false } = {}) {
   class Browser extends EventEmitter { status() { return { available: false, tabs: [{ url: `https://${SECRET}.invalid/` }] }; } async perform() { effects.browser++; return {}; } async cancel() {} async close() {} }
   async function boot() {
     runtime = new Runtime(); app = await createHarnessServer({ port: 0, dataDir, defaultCwd: cwd, runtime, desktop: new Desktop(), browser: new Browser() }); apps.push(app);
-    await app.learning.updateSettings({ mode: 'manual' }); url = await app.listen();
+     url = await app.listen();
     const home = await fetch(url); cookie = home.headers.get('set-cookie').split(';', 1)[0]; await home.arrayBuffer();
     await until(() => effects.reconnects >= apps.length, 'initial provider startup'); return app;
   }
@@ -100,16 +100,14 @@ test('support lifecycle metadata survives a real server restart without exportin
   assert.equal((await context.request('/api/diagnostics/export', { headers: { Cookie: oldCookie } })).status, 401); assert.equal(context.calls.length, 0);
 });
 
-test('maintenance refuses an actual running chat and an actual learning review before setting its admission latch', async t => {
+test('maintenance refuses an actual running chat and allows admission after settlement without background learning', async t => {
   const context = await fixture(t, { hold: true }), { app } = context;
   const admitted = await context.start(); await until(() => context.calls.length === 1);
   await assert.rejects(app.beginMaintenance(), error => error.status === 409 && /active work/.test(error.message)); assert.notEqual(app.engine.maintenanceRequested, true);
   context.waiting[0].resolve(); await until(() => app.engine.getRun(admitted.data.id).settled);
-  app.learning.delayMs = 60000; await app.learning.learnNow(admitted.data.id); const reviewWork = app.learning.pump();
-  await until(() => app.learning.active && context.calls.length === 2);
-  await assert.rejects(app.beginMaintenance(), error => error.status === 409 && /active work/.test(error.message)); assert.notEqual(app.engine.maintenanceRequested, true);
-  context.waiting[1].resolve(); await reviewWork;
-  assert.equal(app.learning.active, null); assert.equal(app.learning.listReviews()[0].status, 'no_changes');
+  assert.equal(app.learning.status().retired,true);assert.equal(app.learning.active,false);assert.equal(context.calls.length,1);
+  await app.beginMaintenance();assert.equal(app.engine.maintenanceRequested,true);app.endMaintenance();
+
 });
 
 test('maintenance atomically blocks direct engine and delayed HTTP admission, rejects duplicate calls and keeps queues paused after release', async t => {
@@ -152,13 +150,13 @@ test('maintenance rejects valid webhook deliveries before they mutate durable jo
   app.endMaintenance(); assert.equal(app.operations.status().paused, true);
 });
 
-test('a queued learning review cannot start while maintenance pause writes are still settling', async t => {
+test('retired learning cannot enqueue provider work while maintenance pause writes are settling', async t => {
   const context = await fixture(t), { app } = context;
   const first = await context.start(); await until(() => app.engine.getRun(first.data.id).settled);
-  app.learning.delayMs = 60000; const review = await app.learning.learnNow(first.data.id); assert.equal(review.status, 'queued');
+  const retired=await context.request('/api/learning/review',{method:'POST',body:{runId:first.data.id}});assert.equal(retired.status,410);assert.equal(retired.data.code,'LEARNING_RETIRED');
   const paused = deferred(), release = deferred(), original = app.inbox.pause.bind(app.inbox);
   app.inbox.pause = async (...args) => { const value = await original(...args); paused.resolve(); await release.promise; return value; };
   const maintenance = app.beginMaintenance(); await paused.promise;
-  try { await app.learning.pump(); assert.equal(app.learning.active, null); assert.equal(app.learning.getReview(review.id).status, 'queued'); assert.equal(context.calls.length, 1); }
+  try { assert.equal(app.engine.maintenanceRequested,true);assert.equal(app.learning.active,false);assert.equal(app.learning.status().retired,true);assert.equal(context.calls.length,1); }
   finally { release.resolve(); await maintenance; app.inbox.pause = original; app.endMaintenance(); }
 });

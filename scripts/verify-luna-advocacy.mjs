@@ -141,7 +141,7 @@ export async function runAdvocacyCase({ runtime, root, item, planningMode = 'ont
     } });
     app = await createHarnessServer({ runtime: borrowedRuntime, tasks, browser, connections, runtimeSettings: settings,
       dataDir, defaultCwd: cwd, remoteAccess: false, autoAttachDesktop: false, maxConcurrentRuns: 1 });
-    await app.learning.updateSettings({ mode: 'manual' });
+
     engine = app.engine;
   } else {
     engine = await new HarnessEngine({ runtime, tasks, browser, connections, dataDir, defaultCwd: cwd }).init();

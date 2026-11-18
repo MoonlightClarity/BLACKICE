@@ -19,7 +19,7 @@ async function fixture(t,{prepare,runtime,emailClient,defaultEmailStore=false}={
   let cliCalls=0;
   const email=defaultEmailStore?undefined:await new AgentEmailStore({dataDir,runner:async()=>{cliCalls++;throw Error('Unexpected CLI request in local-draft fixture.');}}).init();
   const app=await createHarnessServer({port:0,dataDir,defaultCwd:path.join(root,'workspace'),runtime:runtime||new Runtime(),desktop:new Desktop(),email,emailClient,autoAttachDesktop:false});
-  await app.learning.updateSettings({mode:'manual'});
+
   const url=await app.listen(),page=await fetch(url),cookie=page.headers.get('set-cookie').split(';')[0];await page.text();
   t.after(async()=>{await app.close();assert.equal(cliCalls,0);await rm(root,{recursive:true,force:true});});
   const request=(route,{method='GET',body,headers={}}={})=>fetch(url+route,{method,headers:{Cookie:cookie,...headers,...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});

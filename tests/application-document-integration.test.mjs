@@ -85,7 +85,7 @@ async function fixture(t) {
   });
   async function start({ platform = 'win32', availableCatalog = catalog } = {}) {
     runtime = new PrivateRuntime(); model = new ModelRuntime(); workspace = await new ApplicationWorkspace({ dataDir, runtime, platform, catalog: availableCatalog }).init();
-    app = await createHarnessServer({ port: 0, dataDir, defaultCwd: cwd, runtime: model, desktop: new NoDesktop(), autoAttachDesktop: false, signedBrowser: false, applicationWorkspace: workspace }); startedApps.push(app); await app.learning.updateSettings({ mode: 'off' });
+    app = await createHarnessServer({ port: 0, dataDir, defaultCwd: cwd, runtime: model, desktop: new NoDesktop(), autoAttachDesktop: false, signedBrowser: false, applicationWorkspace: workspace }); startedApps.push(app);
     url = new URL(await app.listen()); const home = await request('/'); cookie = home.headers['set-cookie'][0].split(';', 1)[0];
   }
   await start();

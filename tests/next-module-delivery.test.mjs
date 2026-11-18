@@ -28,7 +28,7 @@ test('every reachable V2 browser import is actually served over HTTP, including 
   app = await createHarnessServer({ port: 0, dataDir: path.join(directory, 'data'),
     defaultCwd: path.join(directory, 'workspace'), runtime: new FixtureRuntime(),
     desktop: new FixtureDesktop(), autoAttachDesktop: false });
-  await app.learning.updateSettings({ mode: 'off' });
+
   const origin = new URL(await app.listen());
   const queue = [{ route: '/next/app.mjs', importer: 'workspace entry point' }], visited = new Set();
   for (let index = 0; index < queue.length; index++) {

@@ -268,7 +268,7 @@ export async function run(options) {
     const email = await new AgentEmailStore({ dataDir, runner: async value => { cliCalls.push({ args: value.args }); throw Error('UI acceptance forbids all email CLI and mailbox execution.'); } }).init();
     report.emailCliCalls = cliCalls;
     app = await createHarnessServer({ port: 0, dataDir, defaultCwd: cwd, runtime, email, autoAttachDesktop: false, ...disabledControllers() });
-    await app.learning.updateSettings({ mode: 'manual' });
+
     origin = await app.listen(); const home = await fetch(origin); cookie = home.headers.get('set-cookie').split(';', 1)[0]; await home.arrayBuffer();
     const status = await api('/api/status'); report.version = status.version;
     check('The server owns disposable task storage and uses only the explicit local fixture model', status.qaFixture === true && status.cwd === cwd && !status.providers.length && app.engine.listRuns().length === 0);

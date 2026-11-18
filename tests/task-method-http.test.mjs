@@ -19,7 +19,7 @@ class Desktop extends EventEmitter { status() { return { available: false, enabl
 async function fixture(t) {
   const root = await mkdtemp(path.join(tmpdir(), 'blackice-task-method-http-')), runtime = new Runtime();
   const app = await createHarnessServer({ runtime, desktop: new Desktop(), port: 0, dataDir: path.join(root, 'data'), defaultCwd: path.join(root, 'workspace'), autoAttachDesktop: false });
-  await app.learning.updateSettings({ mode: 'off' }); const base = await app.listen();
+   const base = await app.listen();
   t.after(async () => { await app.close(); assert.equal(runtime.calls, 0); assert.match(path.basename(root), /^blackice-task-method-http-/); await rm(root, { recursive: true, force: true }); });
   const home = await fetch(base), cookie = home.headers.getSetCookie()[0].split(';')[0]; await home.text();
   const request = async (route, body, { authenticated = true, origin, method = 'POST' } = {}) => {

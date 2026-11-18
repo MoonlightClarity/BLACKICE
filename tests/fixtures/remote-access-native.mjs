@@ -151,7 +151,7 @@ async function run() {
   const lifecycle = { status: () => ({ available: true, mode: 'headless', windowVisible: false, localManagement: true, sameProfile: true }) };
   harness = await createHarnessServer({ port: 0, dataDir, defaultCwd: path.join(profile, 'workspace'), runtime: new Runtime(), desktop: new Desktop(), email, emailExecutableHint: '', remoteAccess: manager, installPath: path.dirname(process.execPath), desktopLifecycle: lifecycle, autoAttachDesktop: false });
   harness.server.prependListener('request', request => { if (request.method === 'POST') hostActions.push(new URL(request.url, 'http://127.0.0.1').pathname); });
-  await harness.learning.updateSettings({ mode: 'manual' });
+
   localUrl = await harness.listen();
   const version = JSON.parse(await fs.readFile(path.join(ROOT, 'package.json'), 'utf8')).version;
   const marker = { pid: process.pid, executable: process.execPath, url: localUrl, version, startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(), profileMode: 'custom', capabilities: { electron: true, encryptedSecretsAvailable: true }, lifecycle: lifecycle.status() };

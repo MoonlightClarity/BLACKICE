@@ -51,7 +51,7 @@ function newRuntime(){
 async function open(){
  runtime=newRuntime();const status=await runtime.start();receipt.runtime={connected:status.connected,authenticated:status.authenticated,version:status.version,defaultModel:status.defaultModel};check('authenticatedRuntime',status.connected&&status.authenticated);check('requestedModelAvailable',status.models.some(item=>(item.model||item.id)===model));
  app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime,desktop:new NoDesktop(),autoAttachDesktop:false,signedBrowser:false,maxConcurrentRuns:1,showBrowserOS:async()=>({shown:false,focused:false,started:false})});
- await app.learning.updateSettings({mode:'manual'});await app.runtimeSettings.update({subagentsEnabled:false,defaultEffort:'low',runTimeoutMs:180000,verbosity:'concise'});url=await app.listen();const home=await fetch(url,{signal:AbortSignal.timeout(15000)});cookie=home.headers.get('set-cookie')?.split(';',1)[0];await home.arrayBuffer();check('isolatedServerSession',Boolean(cookie));
+ await app.runtimeSettings.update({subagentsEnabled:false,defaultEffort:'low',runTimeoutMs:180000,verbosity:'concise'});url=await app.listen();const home=await fetch(url,{signal:AbortSignal.timeout(15000)});cookie=home.headers.get('set-cookie')?.split(';',1)[0];await home.arrayBuffer();check('isolatedServerSession',Boolean(cookie));
 }
 async function request(route,method='GET',value){
  const response=await fetch(new URL(route,url),{method,headers:{Cookie:cookie,...(value===undefined?{}:{'Content-Type':'application/json',Origin:url})},...(value===undefined?{}:{body:JSON.stringify(value)}),signal:AbortSignal.timeout(15000)}),data=await response.json();return{status:response.status,data};

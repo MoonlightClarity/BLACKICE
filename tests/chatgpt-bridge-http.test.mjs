@@ -22,7 +22,7 @@ async function fixture(t,{seed}={}){
   const dataDir=path.join(root,'data');await mkdir(dataDir);
   await seed?.(dataDir);
   const app=await createHarnessServer({port:0,dataDir,defaultCwd:path.join(root,'workspace'),runtime:new Runtime(),desktop:new Desktop(),autoAttachDesktop:false});
-  await app.learning.updateSettings({mode:'manual'});
+
   const url=await app.listen(),page=await fetch(url),cookie=page.headers.get('set-cookie').split(';')[0];
   await page.text();
   t.after(async()=>{await app.close();assert.match(path.basename(root),/^blackice-retired-bridge-/);await rm(root,{recursive:true,force:true});});

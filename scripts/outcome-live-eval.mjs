@@ -49,7 +49,7 @@ try {
     const app = await createHarnessServer({ port: 0, dataDir: path.join(root, 'data', variant), defaultCwd: path.join(root, 'cases', variant), remoteAccess: false, maxConcurrentRuns: 1 });
     apps[variant] = app;
     nativeRecorders[variant] = installNativeRequestRecorder(app.runtime.codex, { file: path.join(root, 'native-requests', variant + '.jsonl') });
-    await app.learning.updateSettings({ mode: 'manual' });
+
     await app.listen();
     const deadline = Date.now() + 120000;
     while (Date.now() < deadline) {

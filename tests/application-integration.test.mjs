@@ -75,7 +75,7 @@ async function fixture(t) {
   await mkdir(cwd);
   const privateRuntime = new PrivateRuntime(), model = new ModelRuntime(), workspace = await new ApplicationWorkspace({dataDir, runtime: privateRuntime, platform: 'win32', catalog}).init();
   const app = await createHarnessServer({port: 0, dataDir, defaultCwd: cwd, runtime: model, desktop: new NoDesktop(), autoAttachDesktop: false, signedBrowser: false, applicationWorkspace: workspace});
-  await app.learning.updateSettings({mode: 'off'});
+
   const url = new URL(await app.listen());
   t.after(async () => { await app.close(); assert.equal(privateRuntime.closed, true); assert.match(path.basename(directory), /^blackice-app-integration-/); await rm(directory, {recursive: true, force: true}); });
   const request = (route, {cookie, origin, method = 'GET', body} = {}) => new Promise((resolve, reject) => {

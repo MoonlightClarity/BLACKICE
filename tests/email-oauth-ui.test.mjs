@@ -142,7 +142,7 @@ test('the real OAuth HTTP conflict reaches the registration form and requires a 
   }).init();
   const email = await new AgentEmailStore({ dataDir, oauth, runner: async () => { cliCalls++; throw Error('Registration must not launch Himalaya.'); } }).init();
   app = await createHarnessServer({ port: 0, dataDir, defaultCwd: path.join(root, 'workspace'), runtime: new Runtime(), desktop: new Desktop(), email, emailOAuth: oauth, emailExecutableHint: process.execPath, autoAttachDesktop: false });
-  await app.learning.updateSettings({ mode: 'manual' });
+
   const url = await app.listen(), page = await fetch(url), cookie = page.headers.get('set-cookie').split(';')[0]; await page.text();
   const realApi = createApiClient({ fetcher: (route, options) => { const headers = new Headers(options.headers); headers.set('Cookie', cookie); return fetch(url + route, { ...options, headers }); } });
   const original = await realApi('/api/email'), f = fixture(t, { value: original });

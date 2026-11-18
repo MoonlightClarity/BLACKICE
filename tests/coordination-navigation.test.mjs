@@ -18,7 +18,7 @@ test('the real server serves navigation assets and the complete Planning, Swarms
   }
   class Desktop extends EventEmitter{status(){return{available:false,enabled:false};}async setEnabled(){return this.status();}}
   app=await createHarnessServer({port:0,dataDir:path.join(directory,'data'),defaultCwd:directory,runtime:new Runtime(),desktop:new Desktop()});
-  await app.learning.updateSettings({mode:'manual'});const base=await app.listen(),fetched=new Map();
+  const base=await app.listen(),fetched=new Map();
   async function asset(route,mime){
     const response=await fetch(new URL(route,base));assert.equal(response.status,200,route);assert.match(response.headers.get('content-type')||'',mime,route);
     const source=await response.text(),expected=await readFile(new URL('../public'+route,import.meta.url),'utf8');assert.equal(source,expected,route+' serves its actual source');

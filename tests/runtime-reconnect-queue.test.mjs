@@ -37,7 +37,7 @@ for (const paused of [false, true]) test(`successful reconnect wakes a persisted
   t.after(async () => { await app?.close(); await seed?.close(); assert.equal(path.dirname(directory), path.resolve(tmpdir())); assert.match(path.basename(directory), /^blackice-reconnect-queue-/); await rm(directory,{recursive:true,force:true}); });
 
   seed = await createHarnessServer({...options,runtime:new Runtime()});
-  await seed.learning.updateSettings({mode:'manual'});
+
   seed.inbox.delayMs = 60000;
   const saved = await seed.inbox.add({input:'Keep this task saved until I explicitly run it.',cwd:options.defaultCwd,workflow});
   const queued = await seed.inbox.queue({input:'Run this explicit queued conversation after recovery.',cwd:options.defaultCwd,workflow,enqueueKey:'reconnect:one-explicit-request'});

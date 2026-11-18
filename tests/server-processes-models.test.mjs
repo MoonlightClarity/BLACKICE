@@ -48,7 +48,7 @@ async function application(t) {
   // An existing explicit preference makes accidental default changes observable.
   await runtime.store.setDefaultModel(DEFAULT_MODEL);
   app = await createHarnessServer({ runtime, port: 0, dataDir, defaultCwd: cwd, autoAttachDesktop: false });
-  await app.learning.updateSettings({ mode: 'manual' });
+
   const url = await app.listen(), target = new URL(url);
   const request = (route, options = {}) => new Promise((resolve, reject) => {
     const payload = options.body === undefined ? undefined : JSON.stringify(options.body);

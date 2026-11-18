@@ -76,7 +76,7 @@ async function fixture(t, { remote = false, emailEnabled = true } = {}) {
   app = await createHarnessServer({ port: 0, dataDir, defaultCwd: path.join(root, 'workspace'), runtime: new Runtime(), desktop: new Desktop(), email, remoteAccess: manager, autoAttachDesktop: false });
   // Exercise the guarded planning worker receipts behind the HTTP awareness routes.
   await app.runtimeSettings.update({ executionGuardrails: true });
-  await app.learning.updateSettings({ mode: 'manual' });
+
   const url = new URL(await app.listen()), localTarget = { port: Number(url.port), host: url.host };
   const page = await requestAt(localTarget, '/'); assert.equal(page.status, 200);
   const cookie = page.headers['set-cookie'][0].split(';')[0];

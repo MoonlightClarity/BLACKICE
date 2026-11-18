@@ -91,7 +91,7 @@ test('execution settings API rejects invalid input and reports disk failures wit
 test('HTTP Stop all cancels every active chat, retains acknowledgement boundaries, and pauses queued starts', async t => {
   const holds = [deferred(), deferred(), deferred()], calls = [], runtime = new FakeRuntime();
   runtime.runAgent = async options => { const index = calls.length; calls.push(options); options.onEvent({ type: 'thread', threadId: `stop-all-thread-${index}` }); return holds[index].promise; };
-  const { app, request, auth } = await application(t, { runtime, maxConcurrentRuns: 2 }); await app.learning.updateSettings({ mode: 'manual' });
+  const { app, request, auth } = await application(t, { runtime, maxConcurrentRuns: 2 });
   const post = (route, body = {}, authenticated = true) => request(route, { method: 'POST', headers: authenticated ? auth : {}, body });
   try {
     const first = await post('/api/runs', { workflow: graph, input: 'FIRST STOP ALL CHAT' }), second = await post('/api/runs', { workflow: graph, input: 'SECOND STOP ALL CHAT' });
@@ -119,7 +119,7 @@ test('HTTP Stop for one chat leaves another chat and queued starts running indep
     calls[index] = options; arrivalOrder.push(index); if (index === 1) secondRecorded.resolve();
     options.onEvent({ type: 'thread', threadId: `isolated-stop-thread-${index}` }); return holds[index].promise;
   };
-  const { app, request, auth } = await application(t, { runtime, maxConcurrentRuns: 2 }); await app.learning.updateSettings({ mode: 'manual' });
+  const { app, request, auth } = await application(t, { runtime, maxConcurrentRuns: 2 });
   const post = (route, body = {}) => request(route, { method: 'POST', headers: auth, body });
   try {
     const first = await post('/api/runs', { workflow: graph, input: inputs[0] }), second = await post('/api/runs', { workflow: graph, input: inputs[1] }); assert.equal(first.status, 201); assert.equal(second.status, 201); await until(() => calls[0] && calls[1], 'both isolated chats start'); assert.deepEqual(arrivalOrder, [1, 0]);
@@ -139,7 +139,7 @@ test('HTTP Stop for one chat leaves another chat and queued starts running indep
 test('HTTP Stop all still stops every chat and waits for queue saves when browser and learning cleanup fail', async t => {
   const holds = [deferred(), deferred()], saved = deferred(), calls = [], events = [], runtime = new FakeRuntime();
   runtime.runAgent = async options => { const index = calls.length; calls.push(options); return holds[index].promise; };
-  const { app, request, auth } = await application(t, { runtime, maxConcurrentRuns: 2 }); await app.learning.updateSettings({ mode: 'manual' });
+  const { app, request, auth } = await application(t, { runtime, maxConcurrentRuns: 2 });
   const post = (route, body = {}) => request(route, { method: 'POST', headers: auth, body });
   const original = { browser: app.browser.cancel, learning: app.learning.cancelBackground, pause: app.inbox.pause, compactions: app.engine.cancelCompactions };
   let stopping;
@@ -172,7 +172,7 @@ test('live execution updates publish parallel admission, stopping acknowledgemen
     calls[index] = options; arrivalOrder.push(index); if (index === 1) secondRecorded.resolve();
     return holds[index].promise;
   };
-  const { app, request, auth, url } = await application(t, { runtime, maxConcurrentRuns: 2 }); await app.learning.updateSettings({ mode: 'manual' });
+  const { app, request, auth, url } = await application(t, { runtime, maxConcurrentRuns: 2 });
   const controller = new AbortController(), stream = await fetch(url + '/api/events', { headers: auth, signal: controller.signal }); assert.equal(stream.status, 200);
   const reader = stream.body.getReader(), events = []; let buffer = '';
   const execution = async predicate => {
@@ -226,7 +226,7 @@ test('HTTP submission receipts survive restart and recent-run eviction; rename s
   const runtime=()=>{const value=new FakeRuntime();value.runAgent=async options=>{turns++;return {output:'Delivered once',threadId:'fixture-receipt-thread'};};return value;};
   const first=await application(t,{runtime:runtime()});
   // Count submitted task executions, not the independent automatic learning review.
-  await first.app.learning.updateSettings({mode:'manual'});
+
   const payload={workflow:graph,input:'Receipt recovery check',requestId:'stable-http-request'};
   const send=(app,value=payload)=>app.request('/api/runs',{method:'POST',headers:app.auth,body:value});
   const started=await send(first);assert.equal(started.status,201);

@@ -28,7 +28,7 @@ test('real Planning HTTP catalogs empty active and paged archived plans without 
   });
   app = await createHarnessServer({ port: 0, dataDir: path.join(directory, 'data'), defaultCwd: path.join(directory, 'workspace'), runtime: new Runtime(), remoteAccess: false, autoAttachDesktop: false });
   originalListRuns = app.engine.listRuns;
-  await app.learning.updateSettings({ mode: 'off' });
+
   await app.operations.pause('Disposable metadata verification.');
   const ids = [], revisions = new Map();
   for (let index = 0; index < 43; index++) {

@@ -61,7 +61,7 @@ async function fixture(t, { canonical = true, cycleState = 'paused_after_plan', 
   Object.defineProperty(prototype, 'type', { get: type.get, set(value) { this.setAttribute('type', value); } });
   prototype.replaceChildren = function (...children) { for (const child of this.children) child.parentElement = null; this.children = []; this.rawText = ''; this.markup = ''; this.append(...children); };
   app = await createHarnessServer({ port: 0, dataDir: directory, defaultCwd: directory, runtime, desktop: new Desktop(), remoteAccess, autoAttachDesktop: false });
-  await app.learning.updateSettings({ mode: 'manual' });
+
   let document = await app.planningBrowser.create({ conversationId, title: 'Review a saved Plan', objective: 'Review the supplied source and obtain one observed confirmation.', cwd: directory });
   const stages = Object.fromEntries(RESPONSE_CYCLE_STAGES.map(stage => [stage.id, cycleId + '-' + stage.id]));
   const writer = app.planningBrowser.runtimeWriter();

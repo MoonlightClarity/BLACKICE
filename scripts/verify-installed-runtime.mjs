@@ -318,7 +318,7 @@ async function main() {
     class FixtureBrowser extends EventEmitter { status() { return { available: false, tabs: [{ url: `https://${canary}.invalid/` }] }; } async cancel() {} async close() {} }
     fixtureApp = await createHarnessServer({ port: 0, dataDir: path.join(diagnosticProfile, 'data'), defaultCwd: workspace,
       runtime: new FixtureRuntime(), desktop: new FixtureDesktop(), browser: new FixtureBrowser(), remoteAccess: false, emailExecutableHint: '' });
-    await fixtureApp.learning.updateSettings({ mode: 'manual' });
+
     await fixtureApp.engine.saveWorkflow({ id: 'release-redaction-fixture', name: canary,
       nodes: [{ id: 'fixture', type: 'agent', prompt: canary }], edges: [] });
     await fixtureApp.diagnostics.record({ component: 'browser', event: 'browser_failed', level: 'error', code: canary,

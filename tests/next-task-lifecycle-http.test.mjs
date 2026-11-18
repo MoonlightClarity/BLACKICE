@@ -30,7 +30,7 @@ async function fixture(t,{allowReadiness=false}={}){
   async function boot(){
     runtime=new QuietRuntime();runtime.allowReadiness=allowReadiness;runtime.readinessCalls=[];
     app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime,autoAttachDesktop:false});apps.push(app);
-    await app.learning.updateSettings({mode:'off'});await app.operations.pause('Disposable lifecycle verification.');
+    await app.operations.pause('Disposable lifecycle verification.');
     origin=await app.listen();const response=await fetch(origin);cookie=response.headers.get('set-cookie').split(';',1)[0];await response.arrayBuffer();
   }
   await boot();

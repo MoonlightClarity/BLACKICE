@@ -30,7 +30,7 @@ async function fixture(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-organization-http-')), transport = createRemoteTransportFixture(), remoteAccess = new RemoteAccessManager({ dataDir: directory, transport: transport.transport, defaultHttpsPort: 8443 }); let app, cliCalls = 0;
   t.after(async () => { try { await app?.close(); assert.equal(cliCalls, 0); } finally { await rm(directory, { recursive: true, force: true }); } });
   const email = await new AgentEmailStore({ dataDir: directory, runner: async () => { cliCalls++; throw new Error('No mail CLI is allowed in this fixture.'); } }).init();
-  app = await createHarnessServer({ port: 0, dataDir: directory, defaultCwd: directory, runtime: new Runtime(), desktop: new Desktop(), email, remoteAccess, autoAttachDesktop: false }); await app.learning.updateSettings({ mode: 'manual' });
+  app = await createHarnessServer({ port: 0, dataDir: directory, defaultCwd: directory, runtime: new Runtime(), desktop: new Desktop(), email, remoteAccess, autoAttachDesktop: false });
   for (const id of ['active-plan', 'archived-plan']) {
     await app.tasks.ensure({ taskId: id, runId: id, cwd: directory, goal: `Goal for ${id}`, defaultPlan: true });
     await app.conversations.capture({ id, taskId: id, input: `Original ${id}`, status: 'completed', settled: true, createdAt: new Date().toISOString(), workflow: { nodes: [{ id: 'agent', type: 'agent' }], edges: [] }, nodes: { agent: { status: 'completed', output: 'Saved fixture result.' } }, events: [] });

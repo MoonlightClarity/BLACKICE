@@ -46,7 +46,7 @@ async function fixture(t, extra = {}) {
   let app;
   t.after(async () => { try { await app?.close(); assert.equal(runtime.calls, 0); } finally { await rm(directory, { recursive: true, force: true }); } });
   app = await createHarnessServer({ port: 0, dataDir: directory, defaultCwd: directory, runtime, desktop: new Desktop(), remoteAccess, autoAttachDesktop: false, ...extra });
-  await app.learning.updateSettings({ mode: 'manual' });
+
   await app.tasks.ensure({ taskId: 'legacy-plan', runId: 'legacy-plan', cwd: directory, goal: 'Preserve this original task.', defaultPlan: true });
   await app.conversations.capture({
     id: 'legacy-plan', taskId: 'legacy-plan', input: 'An earlier conversation', status: 'completed', settled: true, createdAt: new Date().toISOString(),
@@ -175,9 +175,9 @@ test('profile maintenance accounts for active module workers', async t => {
   const { app } = await fixture(t, { planningBrowserRuntime: runner, taskViability: false });
   await assert.rejects(app.beginMaintenance(), error => error.status === 409 && /active work/i.test(error.message));
   assert.equal(activeCount, 1, 'ordinary maintenance admission must not silently cancel a module');
-  assert.equal(app.learning.isForegroundBusy(), true, 'background learning must yield to an active planning module');
+  assert.equal(app.learning.status().retired,true,'maintenance does not need a background learning scheduler');
   activeCount = 0;
-  assert.equal(app.learning.isForegroundBusy(), false, 'settled modules must release foreground capacity');
+  await app.beginMaintenance();assert.equal(app.engine.maintenanceRequested,true,'settled modules release maintenance admission');app.endMaintenance();
 });
 
 test('a committed graph edit remains successful when its notification fails', async () => {

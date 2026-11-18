@@ -109,7 +109,7 @@ class Desktop extends EventEmitter{status(){return{available:false,enabled:false
 async function fixture(t,execute,{currentCycleCatalog=false}={}){
   const directory=await mkdtemp(path.join(tmpdir(),'relay-control-tools-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace'),calls=[];
   class Runtime extends EventEmitter{status(){return{connected:true,authenticated:true,models:[{model:'control-fixture-model'}],defaultModel:'control-fixture-model'};}async start(){return this.status();}async close(){}async runAgent(options){calls.push(options);return execute?execute(options,calls.length):{output:'Control fixture completed.',threadId:'control-thread'};}}
-  const app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime:new Runtime(),desktop:new Desktop(),taskViability:false});await app.learning.updateSettings({mode:'manual'});
+  const app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime:new Runtime(),desktop:new Desktop(),taskViability:false});
   // Current-catalog compatibility cases need the actual cycle editing service.
   // Planning Off skips its automatic pipeline but preserves explicit management.
   const cycle=currentCycleCatalog?new ResponseCycleService({store:app.planningBrowser,runner:app.planningBrowserRuntime,engine:app.engine,getSettings:()=>app.runtimeSettings.get()}):null;

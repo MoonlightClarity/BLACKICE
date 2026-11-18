@@ -45,7 +45,7 @@ async function fixture(t,{execute,readinessFailure,modelStatus,modelResolver,run
       return{output:content,threadId:options.threadId||'http-fixture-thread'};
     }
   }
-  async function boot(){app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,maxConcurrentRuns,runtime:new Runtime(),desktop:new Desktop()});apps.push(app);await app.learning.updateSettings({mode:'manual'});url=await app.listen();const home=await fetch(url);cookie=home.headers.get('set-cookie').split(';',1)[0];await home.arrayBuffer();return app;}
+  async function boot(){app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,maxConcurrentRuns,runtime:new Runtime(),desktop:new Desktop()});apps.push(app);url=await app.listen();const home=await fetch(url);cookie=home.headers.get('set-cookie').split(';',1)[0];await home.arrayBuffer();return app;}
   await boot();t.after(async()=>{for(const value of apps)await value.close();assert.match(path.basename(directory),/^relay-operations-http-/);await rm(directory,{recursive:true,force:true});});
   const request=async(route,{method='GET',body,auth=true,headers={}}={})=>{const response=await fetch(new URL(route,url),{method,headers:{...(auth?{Cookie:cookie}:{}),...(body===undefined?{}:{'Content-Type':'application/json'}),...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,data:await response.json()};};
   const create=async extra=>{const response=await request('/api/operations/deployments',{method:'POST',body:{name:'HTTP fixture operation',input:'Write and verify the isolated fixture result.',cwd,workflow:workflow(planningMode),enabled:true,trigger:{type:'webhook'},...extra}});assert.equal(response.status,201,JSON.stringify(response.data));return response.data;};

@@ -24,15 +24,15 @@ class NoDesktop extends EventEmitter {status(){return{available:false,enabled:fa
 const tool=(options,name,args,context)=>options.onToolCall({name,arguments:args},context);
 const text=result=>result.contentItems.filter(item=>item.type==='inputText').map(item=>item.text).join('\n');
 const toolData=result=>{assert.equal(result.success,true,text(result));return JSON.parse(result.contentItems.find(item=>item.type==='inputText').text);};
-async function application(t,{execute,connectionsFactory,autoLearning=false,maxConcurrentRuns=4}={}){
+async function application(t,{execute,connectionsFactory,maxConcurrentRuns=4}={}){
   const directory=await mkdtemp(path.join(tmpdir(),'relay-agent-integration-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace');
   const runtime=new Runtime(execute),connections=connectionsFactory?await connectionsFactory({dataDir,cwd}):undefined;
   const app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime,desktop:new NoDesktop(),maxConcurrentRuns,...(connections?{connections}:{})});
-  await app.learning.updateSettings({mode:autoLearning?'auto':'manual'});
+  t.after(async()=>{await app.close();assert.match(path.basename(directory),/^relay-agent-integration-/);await rm(directory,{recursive:true,force:true});});
+  assert.equal(app.learning.status().retired,true);
   const url=await app.listen(),home=await fetch(url),cookie=home.headers.get('set-cookie').split(';',1)[0];await home.arrayBuffer();
   const request=async(route,{method='GET',body,authenticated=true}={})=>{const response=await fetch(new URL(route,url),{method,headers:{...(authenticated?{Cookie:cookie}:{}),...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,data:await response.json()};};
   const settled=id=>waitFor(()=>{const run=app.engine.getRun(id);return run.settled&&run;},'foreground run');
-  t.after(async()=>{await app.close();assert.match(path.basename(directory),/^relay-agent-integration-/);await rm(directory,{recursive:true,force:true});});
   return{app,runtime,request,settled,directory,dataDir,cwd};
 }
 
@@ -80,39 +80,27 @@ test('workflow and node context settings survive HTTP validation, reach the runt
   assert.equal((await outcome).name,'AbortError');assert.equal(app.engine.executions.size,0);
 });
 
-test('automatic review is scheduled only after settlement and its cancellation fully acknowledges before the next foreground runtime call',async t=>{
-  const release=deferred();let reflectionSignal,foregroundCalls=0;
-  const {app,runtime,settled}=await application(t,{autoLearning:true,execute:async options=>{
-    if(options.dynamicTools.some(item=>item.name==='relay_learn')){
-      reflectionSignal=options.signal;await new Promise(resolve=>options.signal.addEventListener('abort',resolve,{once:true}));await release.promise;throw Object.assign(new Error('Background reviewer stopped'),{name:'AbortError'});
-    }
-    foregroundCalls++;return{output:'Verified fixture result.',threadId:`foreground-${foregroundCalls}`};
+test('completed foreground tasks never schedule a background learning provider turn',async t=>{
+  const {app,runtime,settled,dataDir}=await application(t,{execute:async options=>{
+    assert.ok(!options.dynamicTools.some(item=>item.name==='relay_learn'));
+    return{output:'Verified fixture result.',threadId:'no-learning-'+runtime.calls.length};
   }});
-  app.learning.delayMs=0;const scheduled=[],schedule=app.learning.scheduleAfterRun.bind(app.learning);app.learning.scheduleAfterRun=run=>{scheduled.push({settled:run.settled,status:run.status,executions:app.engine.executions.size});return schedule(run);};
-  try{
-    const first=app.engine.startRun({workflow:graph(),input:'First foreground task'});await settled(first.id);await waitFor(()=>reflectionSignal,'automatic reflection start');
-    const second=app.engine.startRun({workflow:graph(),input:'Second foreground task'});assert.equal(reflectionSignal.aborted,true);await tick();assert.equal(foregroundCalls,1);assert.equal(app.engine.getRun(second.id).status,'queued');
-    const manual=app.learning.updateSettings({mode:'manual'});release.resolve();await manual;const done=await settled(second.id);assert.equal(done.status,'completed',done.error);assert.equal(foregroundCalls,2);assert.equal(runtime.calls.length,3);
-    assert.equal(scheduled.length,2);assert.ok(scheduled.every(item=>item.settled&&item.status==='completed'&&item.executions===0));
-  }finally{release.resolve();await app.learning.updateSettings({mode:'manual'});}
+  for(const input of ['First foreground task','Second foreground task']){
+    const run=await settled(app.engine.startRun({workflow:graph(),input}).id);assert.equal(run.status,'completed',run.error);
+  }
+  await tick();assert.equal(runtime.calls.length,2);assert.deepEqual(app.learning.status(),{available:false,retired:true,enabled:false});
+  assert.equal(app.learning.active,false);assert.equal(app.knowledge.listApprovals().length,0);assert.equal(app.knowledge.list().length,0);
+  await assert.rejects(readFile(path.join(dataDir,'learning.json')),{code:'ENOENT'});
 });
 
-test('reflection proposes a skill and only owner approval makes it inspectable by the next agent',async t=>{
-  let foreground=0,readSkill=false;
-  const {app,settled,cwd,request}=await application(t,{autoLearning:true,execute:async options=>{
-    if(options.dynamicTools.some(item=>item.name==='relay_learn')){
-      await tool(options,'relay_learn',{action:'record',kind:'skill',key:'verify-fixture',title:'Verify the fixture',summary:'Read the fixture result before reporting success.',content:'Read the current artifact and compare it with the requested result.',whenToUse:'When checking fixture exports in this folder.',verification:'Read the actual output file.',evidence:[{id:'node_agent',quote:'Verified fixture result.'}]});
-      await tool(options,'relay_learn',{action:'finish',summaryOfReview:'Recorded the observed fixture verification procedure.'});return{output:'Recorded evidence-backed skill.'};
-    }
-    foreground++;if(foreground===2){const lesson=app.learning.listLessons()[0];assert.doesNotMatch(options.prompt,new RegExp(lesson.knowledgeId));const receipt=await tool(options,'relay_skills',{action:'read',id:lesson.knowledgeId});assert.equal(receipt.success,true);assert.match(text(receipt),/Read the current artifact/);readSkill=true;}
-    return{output:'Verified fixture result.',threadId:`skill-thread-${foreground}`};
-  }});
-  app.learning.delayMs=0;const first=app.engine.startRun({workflow:graph(),input:'Verify the fixture export'});await settled(first.id);await waitFor(()=>app.knowledge.listApprovals().length&&app.learning.status().activeReviewId===null,'pending skill proposal');
-  assert.equal(app.learning.listLessons().length,0);assert.equal(app.knowledge.list().length,0);
-  const proposal=app.knowledge.listApprovals()[0];assert.equal(proposal.provenance.runId,first.id);
-  const decision=await request('/api/knowledge/approvals/'+proposal.id,{method:'POST',body:{decision:'approve'}});assert.equal(decision.status,200);assert.equal(decision.data.status,'approved');
-  const lesson=app.learning.listLessons()[0];assert.equal(app.knowledge.get(lesson.knowledgeId).provenance.runId,first.id);assert.equal(app.learning.getContext(cwd).skills.length,0); // Learned skills remain inspectable but are not auto-injected as authoritative context.
-  await app.learning.updateSettings({mode:'manual'});const second=app.engine.startRun({workflow:graph(),input:'Verify the next fixture export'});const next=await settled(second.id);assert.equal(next.status,'completed',next.error);assert.equal(readSkill,true);assert.deepEqual(next.nodes.agent.learningContext.skills,[]);
+test('retired learning routes cannot create a review or publish generated knowledge',async t=>{
+  const {app,runtime,request,settled,dataDir}=await application(t);
+  const run=await settled(app.engine.startRun({workflow:graph(),input:'Verify the fixture export'}).id);assert.equal(run.status,'completed',run.error);
+  for(const route of ['/api/learning/review','/api/learning/settings']){
+    const result=await request(route,{method:'POST',body:{runId:run.id,mode:'auto'}});assert.equal(result.status,410);assert.equal(result.data.code,'LEARNING_RETIRED');
+  }
+  await tick();assert.equal(runtime.calls.length,1);assert.equal(app.knowledge.list().length,0);assert.equal(app.knowledge.listApprovals().length,0);
+  await assert.rejects(readFile(path.join(dataDir,'learning.json')),{code:'ENOENT'});
 });
 
 test('connected capabilities are registered and call a real MCP transport through the engine with redacted API state and shutdown cleanup',async t=>{
@@ -139,14 +127,15 @@ test('connected capabilities are registered and call a real MCP transport throug
   const client=manager.clients.get('fixture-mcp');await app.close();assert.equal(client.closed,true);assert.equal(manager.closed,true);assert.equal(app.runtime.closed,true);
 });
 
-test('identity and learning HTTP edits are durable, restore actual revisions, and shutdown rejects further mutations',async t=>{
+test('owner identity edits stay durable while retired learning routes reject mutation and shutdown preserves identity boundaries',async t=>{
   const {app,request,dataDir}=await application(t);
   const initial=(await request('/api/identity/soul')).data;
   const saved=await request('/api/identity/soul',{method:'PUT',body:{content:'# Relay persona\n\nUse specific evidence in handoffs.\n',expectedRevision:initial.revision,expectedHash:initial.diskHash}});assert.equal(saved.status,200);
   const restored=await request('/api/identity/soul/restore',{method:'POST',body:{revision:initial.revision,expectedRevision:saved.data.revision,expectedHash:saved.data.diskHash}});assert.equal(restored.status,200);assert.equal(restored.data.content,initial.content);assert.equal(restored.data.provenance.restoredFrom,initial.revision);
-  assert.equal((await request('/api/learning/settings',{method:'POST',body:{mode:'off'}})).status,200);assert.equal((await request('/api/learning')).data.status.mode,'off');assert.equal(JSON.parse(await readFile(path.join(dataDir,'learning.json'),'utf8')).settings.mode,'off');
-  assert.equal((await request('/api/learning/settings',{method:'POST',body:{mode:'invalid'}})).status,400);
-  assert.equal((await request('/api/learning/review',{method:'POST',body:{runId:'missing'}})).status,409);
+  for(const [route,method,body] of [['/api/learning','GET'],['/api/learning/settings','POST',{mode:'off'}],['/api/learning/settings','POST',{mode:'invalid'}],['/api/learning/review','POST',{runId:'missing'}]]){
+    const result=await request(route,{method,body});assert.equal(result.status,410);assert.equal(result.data.code,'LEARNING_RETIRED');
+  }
+  await assert.rejects(readFile(path.join(dataDir,'learning.json')),{code:'ENOENT'});
   const entered=deferred(),release=deferred();app.desktop.setEnabled=async()=>{entered.resolve();await release.promise;return{enabled:false};};const closing=app.close();await entered.promise;
   try{assert.equal((await request('/api/learning/settings',{method:'POST',body:{mode:'auto'}})).status,503);assert.equal((await request('/api/identity/soul',{method:'PUT',body:{content:'Too late',expectedRevision:restored.data.revision}})).status,503);}finally{release.resolve();await closing;}
 });

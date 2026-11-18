@@ -57,7 +57,7 @@ async function fixture(t,{execute,externalReceipt=false}={}){
     // Project orchestration is the subject here; the real engine still performs every local action and review.
     const startRun=app.engine.startRun.bind(app.engine);
     app.engine.startRun=value=>startRun({...value,planningMode:'off'});
-    await app.learning.updateSettings({mode:'manual'});url=await app.listen();const home=await fetch(url);cookie=home.headers.get('set-cookie').split(';',1)[0];await home.arrayBuffer();
+    url=await app.listen();const home=await fetch(url);cookie=home.headers.get('set-cookie').split(';',1)[0];await home.arrayBuffer();
   };
   await boot();
   t.after(async()=>{for(const value of apps)await value.close();assert.match(path.basename(root),/^blackice-projects-http-/);await rm(root,{recursive:true,force:true});});

@@ -27,7 +27,7 @@ async function fixture(t, { desktop = true, launch } = {}) {
     signedBrowserOptions: { registerImpl: async () => ({ available: false, nativeIntegration: true, reason: 'No native browser connection is required to open import settings.' }) },
   });
   t.after(async () => { await app.close(); await rm(directory, { recursive: true, force: true }); });
-  await app.learning.updateSettings({ mode: 'manual' });
+
   const url = await app.listen(), response = await fetch(url), cookie = response.headers.get('set-cookie').split(';')[0]; await response.text();
   const request = (target, { method = 'GET', body, headers = {} } = {}) => fetch(url + target, { method, headers: { Cookie: cookie, ...headers, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return { app, bridge, calls, url, cookie, request };

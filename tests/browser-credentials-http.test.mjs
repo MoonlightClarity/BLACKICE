@@ -28,7 +28,7 @@ async function fixture(t, { encrypted = true, isEncryptionAvailable = () => true
     revealCredentialImportFile: async filePath => { revealed.push(filePath); },
   });
   t.after(async () => { await app.close(); await rm(directory, { recursive: true, force: true }); });
-  await app.learning.updateSettings({ mode: 'manual' });
+
   const url = await app.listen(), initial = await fetch(url), cookie = initial.headers.get('set-cookie').split(';')[0]; await initial.text();
   const request = (route = local, { method = 'GET', body, headers = {} } = {}) => fetch(url + route, { method, headers: { Cookie: cookie, ...headers, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const post = (route, body) => request(local + route, { method: 'POST', body });

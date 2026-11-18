@@ -289,7 +289,7 @@ export async function runRemoteAgentRuntimeQA(options = {}) {
       }
       manager = new RemoteAccessManager({ dataDir, transport: fixture.transport, defaultHttpsPort: 8443 });
       app = await createHarnessServer({ port: 0, dataDir, defaultCwd: workspace, runtime, remoteAccess: manager, autoAttachDesktop: false, ...disabledControllers() });
-      await app.learning.updateSettings({ mode: 'manual' });
+
       localOrigin = await app.listen();
       const page = await request({ port: new URL(localOrigin).port, route: '/', signal: controller.signal });
       expect(page, 200, 'Read actual local application');

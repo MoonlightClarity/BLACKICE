@@ -59,7 +59,7 @@ async function frontendAcceptance(contents) {
   const applications = new EventEmitter(); applications.status = () => ({ available: false, sessions: [], documents: [], supportedApps: [], documentStorage: { healthy: true } }); applications.close = async () => {};
   report.frontend = { widths: [], wheelRequests: [], wheelResponses: [], frontendEvents: [], externalRequests: 0, modelCalls: 0, pageErrors: [] };
   harness = await createHarnessServer({ port: 0, dataDir: path.join(root, 'frontend-data'), defaultCwd: workspace, runtime: new OfflineRuntime(), desktop, applicationWorkspace: applications, browser, autoAttachDesktop: false, remoteAccess: false, emailExecutableHint: '' });
-  await harness.learning.updateSettings({ mode: 'manual' });
+
   const base = await harness.listen();
   const frontendSession = session.fromPartition('persist:wheel-frontend-' + nonce);
   frontendSession.webRequest.onBeforeRequest((details, callback) => {
