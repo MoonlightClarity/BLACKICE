@@ -187,7 +187,7 @@ export async function createHarnessServer(options = {}) {
   engine.applicationWorkspace=applicationWorkspace;
   engine.nativeWindows=nativeWindows;
   const conversations=await startupPhase(diagnostics, 'conversations', () => new ConversationArchive({dataDir,engine}).init());
-  const conversationFolders=await startupPhase(diagnostics, 'conversation-folders', () => new ConversationFolders({dataDir}).init());
+  const conversationFolders=await startupPhase(diagnostics, 'conversation-folders', () => new ConversationFolders({dataDir,conversations}).init());
   browserConversations = conversations;
   browser.setConversationArchive?.(conversations);
   engine.conversationAdmission=run=>conversations.assertRunAdmission(run);
@@ -588,6 +588,14 @@ export async function createHarnessServer(options = {}) {
       if(pathname==='/api/conversation-folders'&&req.method==='GET'){
         const items=conversations.list(new URL(req.url,'http://'+host).searchParams.get('state')||'active');
         return json(res,200,{folderOrganization:{...conversationFolders.snapshot(),counts:conversationFolders.counts(items)}});
+      }
+      const folderAction=pathname.match(/^\/api\/conversation-folders\/(fld_[a-zA-Z0-9_-]+)\/(archive|delete|restore)$/);
+      if(folderAction&&req.method==='POST'){
+        const input=await body(req,32768);
+        if(closePromise||maintenanceRequested)return json(res,503,{error:'BLACKICE is closing.'});
+        const pending=conversationFolders.lifecycle(folderAction[1],folderAction[2],input);
+        fileMutations.add(pending);
+        try{return json(res,200,await pending);}finally{fileMutations.delete(pending);}
       }
       if(pathname==='/api/conversation-folders/edit'&&req.method==='POST'){
         const input=await body(req,32768);
