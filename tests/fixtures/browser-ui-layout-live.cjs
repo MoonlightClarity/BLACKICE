@@ -8,6 +8,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const watchdog=setTimeout(()=>{fs.mkdir(out,{recursive:true}).then(()=>fs.writeFile(path.join(out,'result.json'),JSON.stringify({...report,error:'watchdog'}))).finally(()=>app.exit(2));},45000);
 (app.isReady()?Promise.resolve():app.whenReady()).then(async()=>{
  await fs.mkdir(out,{recursive:true});const {makeFixture}=await import('../next-fixture-server.mjs');fixture=makeFixture({nativeBrowser:true});
+ fixture.state.tabs.push({...fixture.state.tabs[0],tabId:'fixture-other-task',title:'Other task tab',owner:{taskId:'other',nodeId:'worker'},ownershipKind:'ai',conversationId:'another',inUse:true});
  fixture.state.browserStatusGate=s=>{s.collections=[{id:'research',name:'Research'},{id:'companies',name:'Companies',parentId:'research'}];s.tabs[0].collectionId='companies';};
  await new Promise(r=>fixture.server.listen(0,'127.0.0.1',r));
  win=new BrowserWindow({show:false,width:1200,height:800,webPreferences:{offscreen:true,backgroundThrottling:false,contextIsolation:true,nodeIntegration:false}});
@@ -23,7 +24,7 @@ const watchdog=setTimeout(()=>{fs.mkdir(out,{recursive:true}).then(()=>fs.writeF
  await until(()=>js("!!window.__nativeBrowser?.status().attached"));
  await until(()=>js("!!document.querySelector('[data-collection-id=companies]')"));
  assert.equal(await js("document.querySelector('[data-collection-id=companies]').parentElement.closest('[data-collection-id]').dataset.collectionId"),'research');
- report.checks.push('Nested folders and native-surface attachment preserved');await js("document.querySelector('[data-folder-control=\"edit:research\"]').click()");assert.equal(await js("document.querySelector('.next-browser-folder-rename').value"),'Research');await js("document.querySelector('.next-browser-folder-rename').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");report.checks.push('Folder text starts rename without expanding or changing tabs');
+ assert.equal(await js("document.querySelectorAll('[data-tab-id]').length"),2);assert.equal(await js("!!document.querySelector('#next-browser-personal')"),false);assert.equal(await js("[...document.querySelectorAll('.next-browser-tab-owner')].some(n=>!n.hidden&&n.textContent==='In use')"),true);const beforeClose=fixture.state.browserActions.filter(a=>a.action==='close').length;await js("window.confirm=()=>false;document.querySelector('[data-close-tab=fixture-other-task]').click()");await sleep(50);assert.equal(fixture.state.browserActions.filter(a=>a.action==='close').length,beforeClose);report.checks.push('Marked tab close cancellation sends no close action');report.checks.push('All task and personal tabs share folder outline; in-use badge replaces conversation grouping');report.checks.push('Nested folders and native-surface attachment preserved');await js("document.querySelector('[data-folder-control=\"edit:research\"]').click()");assert.equal(await js("document.querySelector('.next-browser-folder-rename').value"),'Research');await js("document.querySelector('.next-browser-folder-rename').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");report.checks.push('Folder text starts rename without expanding or changing tabs');
  const click=s=>js('document.querySelector('+JSON.stringify(s)+').click()');
  assert.equal(await js("document.querySelector('#next-browser-tools').hidden"),true);
  await click('#next-browser-tools-toggle');
@@ -34,7 +35,7 @@ const watchdog=setTimeout(()=>{fs.mkdir(out,{recursive:true}).then(()=>fs.writeF
  report.checks.push('Tools disclosure and Escape focus restoration');
  await click('#next-browser-tools-toggle');await click('#next-browser-downloads-toggle');
  assert.equal(await js("document.querySelector('#next-browser-downloads').hidden"),false);
- await click('#next-browser-downloads-toggle');await click('#next-browser-cleanup-open');assert.equal(await js("document.querySelector('#next-browser-cleanup-panel').hidden"),false);await click('#next-browser-cleanup-cancel');await click('#next-browser-tools-toggle');
+ await click('#next-browser-downloads-toggle');await click('#next-browser-tools-toggle');
  await click('.next-browser-folder-add');
  await js("document.querySelector('[aria-label=\"Folder name\"]').value='Unsaved folder'");
  for(const width of [1200,780,640]){
