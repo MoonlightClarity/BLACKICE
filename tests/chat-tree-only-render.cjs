@@ -4,7 +4,7 @@ class Runtime extends EventEmitter{status(){return{connected:true,authenticated:
 (async()=>{await app.whenReady();const {createHarnessServer}=await import(pathToFileURL(path.join(root,'server.mjs')));server=await createHarnessServer({runtime:new Runtime(),dataDir:path.join(out,'data'),defaultCwd:out,port:0,remoteAccess:false});const url=await server.listen();const home=await fetch(url),cookie=home.headers.get('set-cookie').split(';')[0];await home.text();
 const request=async(body)=>{const r=await fetch(url+(body?'/api/operations/folders':'/api/operations'),{method:body?'POST':'GET',headers:{Cookie:cookie,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});if(!r.ok)throw Error(await r.text());const value=await r.json();return body?value:value.organization;};
 let org=await request();org=await request({action:'create',name:'Parent',expectedRevision:org.revision});const parent=org.folders.find(f=>f.name==='Parent').id;org=await request({action:'create',name:'Child',parentId:parent,expectedRevision:org.revision});
-win=new BrowserWindow({show:false,width:1200,height:900,webPreferences:{offscreen:true,backgroundThrottling:false}});await win.loadURL(url+'/next/#cronjobs');await until('!!document.querySelector(".next-schedule-folder-manager")');
+win=new BrowserWindow({show:false,width:1200,height:900,webPreferences:{offscreen:true,backgroundThrottling:false}});await win.loadURL(url+'/next/#cronjobs');await until('!!document.querySelector(".next-schedule-new-folder")');
 
 await run('document.querySelector(".next-tab[data-space=chat]").click();true');
 await until('!!document.querySelector("#next-chat-folder-new")');
