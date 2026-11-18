@@ -898,3 +898,11 @@ test('signup and login forms with passwords use ordinary field and submission de
     assert.equal(dispatched,0);
   } finally { globalThis.location=oldLocation;globalThis.FormData=oldFormData; }
 });
+
+test('filename callable has the same observed operation identity as legacy workspace find',async()=>{
+ const cwd=process.cwd(),args={query:'resume',path:cwd};
+ const narrow=await describeHostOperation(call('relay_find_files',args),{cwd});
+ const legacy=await describeHostOperation(call('relay_workspace',{...args,action:'find'}),{cwd});
+ assert.equal(narrow.effect,'observe');assert.equal(narrow.operationKey,legacy.operationKey);
+ assert.deepEqual(narrow.resources,legacy.resources);
+});

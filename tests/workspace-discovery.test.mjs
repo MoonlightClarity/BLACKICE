@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir,homedir} from 'node:os';
 import path from 'node:path';
-import {createWorkspaceToolHandler,WORKSPACE_INSTRUCTIONS,WORKSPACE_TOOL} from '../lib/workspace-tools.mjs';
+import {createWorkspaceToolHandler,WORKSPACE_INSTRUCTIONS,WORKSPACE_TOOL,FIND_FILES_TOOL} from '../lib/workspace-tools.mjs';
 const call=arguments_=>({name:'relay_workspace',arguments:arguments_});
 const parsed=r=>{assert.equal(r.success,true,r.contentItems?.[0]?.text);return JSON.parse(r.contentItems[0].text);};
 test('blank profile does not prevent native filename discovery and reading outside workspace',async t=>{
@@ -31,10 +31,11 @@ test('large Documents listing switches to native filename search from observed t
  const resumed=createWorkspaceToolHandler({cwd});const found=parsed(await resumed(call({action:'find',path:checkpoint.directory,query:checkpoint.query})));
  assert.equal(found.searchComplete,true);const file=found.matches[0].path;assert.equal(file,path.join(documents,'Z Synthetic Resume.txt'));
  assert.match(parsed(await resumed(call({action:'read',path:file}))).content,/verified outside large listing/);assert.equal(await readFile(path.join(cwd,'USER.md'),'utf8'),'');
- assert.match(WORKSPACE_INSTRUCTIONS,/Use find to locate filenames/);assert.match(WORKSPACE_INSTRUCTIONS,/continue with its cursor/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/Use relay_find_files to locate filenames/);assert.match(WORKSPACE_INSTRUCTIONS,/continue with its cursor/);
 });
 test('model guidance exposes native filename discovery without profile facts or new permissions',async()=>{
- assert.match(WORKSPACE_INSTRUCTIONS,/not a filesystem sandbox/);assert.match(WORKSPACE_INSTRUCTIONS,/Use find to locate filenames/);assert.match(WORKSPACE_INSTRUCTIONS,/search to match file contents/);assert.match(WORKSPACE_INSTRUCTIONS,/instead of guessing personal folders/);assert.match(WORKSPACE_INSTRUCTIONS,/searchComplete, skipped locations and errors/);
- assert.deepEqual(WORKSPACE_TOOL.inputSchema.properties.action.enum,['list','read','write','patch','patch_history','undo_patch','search','find','run']);
+ assert.match(WORKSPACE_INSTRUCTIONS,/not a filesystem sandbox/);assert.match(WORKSPACE_INSTRUCTIONS,/Use relay_find_files to locate filenames/);assert.match(WORKSPACE_INSTRUCTIONS,/search to match file contents/);assert.match(WORKSPACE_INSTRUCTIONS,/instead of guessing personal folders/);assert.match(WORKSPACE_INSTRUCTIONS,/searchComplete, skipped locations and errors/);
+ assert.deepEqual(WORKSPACE_TOOL.inputSchema.properties.action.enum,['list','read','write','patch','patch_history','undo_patch','search','run']);
+ assert.equal(FIND_FILES_TOOL.name,'relay_find_files');assert.deepEqual(FIND_FILES_TOOL.inputSchema.required,['query']);
  const engine=await readFile(new URL('../lib/engine.mjs',import.meta.url),'utf8');assert.match(engine,/WORKSPACE_INSTRUCTIONS/);
 });

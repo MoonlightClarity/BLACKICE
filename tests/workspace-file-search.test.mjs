@@ -5,7 +5,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { createWorkspaceToolHandler, WORKSPACE_TOOL } from '../lib/workspace-tools.mjs';
+import { createWorkspaceToolHandler, WORKSPACE_TOOL, FIND_FILES_TOOL } from '../lib/workspace-tools.mjs';
 import { createFileSearch } from '../lib/workspace-file-search.mjs';
 
 const call = args => ({ name: 'relay_workspace', arguments: JSON.stringify(args) });
@@ -47,7 +47,8 @@ test('find locates filename beyond a large outside-workspace listing with a blan
   const scanMs = performance.now() - started;
   t.diagnostic(JSON.stringify({ scanMs: Number(scanMs.toFixed(2)), entries: pages.at(-1).scannedEntries, results: pages.flatMap(x => x.matches).length, pages: pages.length }));
   assert.ok(scanMs < 15000, '1301-entry fixture should complete within 15 seconds');
-  assert.ok(WORKSPACE_TOOL.inputSchema.properties.action.enum.includes('find'));
+  assert.ok(!WORKSPACE_TOOL.inputSchema.properties.action.enum.includes('find'));
+  assert.equal(FIND_FILES_TOOL.name, 'relay_find_files');
 });
 
 test('find pages survive handler recreation, replay is stable, and continuation has no gaps or duplicates', async t => {

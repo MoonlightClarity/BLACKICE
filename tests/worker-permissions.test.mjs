@@ -137,3 +137,19 @@ test('native agent observations are read-only while coordination mutations remai
  for(const action of ['list','get']) assert.equal(readOnlyToolDenial({name:'relay_agents',arguments:{action}},false),null);
  for(const action of ['start','steer','stop','goal']) assert.equal(readOnlyToolDenial({name:'relay_agents',arguments:{action}},false)?.code,'TASK_PLAN_READ_ONLY');
 });
+test('native filename function is exposed and routed to the existing filesystem handler',async t=>{
+ const f=await harness(t,async(options,context)=>{
+  const search=options.dynamicTools.find(tool=>tool.name==='relay_find_files');
+  assert.ok(search);assert.deepEqual(search.inputSchema.required,['query']);
+  assert.equal(options.dynamicTools.find(tool=>tool.name==='relay_workspace').inputSchema.properties.action.enum.includes('find'),false);
+  const found=await call(options,'relay_find_files',{query:'evidence',path:context.cwd});
+  assert.equal(found.success,true,JSON.stringify(found));assert.equal(data(found).matches[0].path,path.join(context.cwd,'evidence.txt'));
+  return {output:'Found the evidence file with native filename search.'};
+ });
+ await f.run('Find the evidence file without shell commands.');
+});
+test('read-only workers admit the actionless filename observation without admitting action injection',()=>{
+ assert.equal(readOnlyToolDenial({name:'relay_find_files',arguments:{query:'resume'}},false),null);
+ for(const argumentsValue of ['{bad',{}, {query:'resume',action:'write'}])assert.equal(readOnlyToolDenial({name:'relay_find_files',arguments:argumentsValue},false)?.code,'TASK_PLAN_READ_ONLY');
+ assert.equal(readOnlyToolDenial({name:'relay_find_files',namespace:'fake',arguments:{query:'resume'}},false)?.code,'TASK_PLAN_READ_ONLY');
+});
