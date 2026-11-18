@@ -210,3 +210,5 @@
 .next-chat-folder-draft input{min-width:40px;width:0;flex:1}
 .next-chat-folder-draft button{padding:4px;width:28px;height:28px}
 .next-chat-folder-draft p{flex-basis:100%;color:#efb5b0;margin:0;font-size:11px}
+
+.next-chat-folder-heading .next-chat-folder-archive,.next-chat-folder-heading .next-chat-folder-restore{width:28px;min-width:28px;height:28px;padding:5px;display:inline-flex;align-items:center;justify-content:center}

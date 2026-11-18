@@ -12,7 +12,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
   isBusy=()=>false,isActive=()=>true,onChanged=()=>{},onRefresh=()=>{},onError=()=>{}}) {
   let organization={revision:0,healthy:true,folders:[],counts:{byId:{},ungrouped:0,total:0}};
   let draft=null;
-  let localBusy=false, destroyed=false, formRevision=0, movingRoot=null, deletingId=null, lastUndo=null;
+  let localBusy=false, destroyed=false, formRevision=0, movingRoot=null, pendingAction=null, lastUndo=null;
   const isWritable=()=>!destroyed&&!localBusy&&!isBusy()&&organization.healthy!==false;
   const folderById=id=>organization.folders.find(folder=>folder.id===id)||null;
   const nameOf=id=>folderById(id)?.name||'Unfiled';
@@ -27,7 +27,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     if(destroyed)return;
     const disabled=localBusy||isBusy()||organization.healthy===false;
 
-    for(const element of [view.folderNew])element.disabled=disabled||Boolean(draft);
+    for(const element of [view.folderNew])element.disabled=disabled||Boolean(draft)||getBucket()!=='active';
     view.folderSave.disabled=disabled;view.folderCancel.disabled=disabled;
     view.folderUndo.hidden=!lastUndo;
     view.folderUndo.disabled=disabled;
@@ -39,7 +39,8 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     refresh();
   }
   const filtered=items=>items;
-  const folderNames=()=>new Map(organization.folders.map(folder=>[folder.id,folder.name]));
+  const visibleFolders=()=>{const folders=organization.folders.filter(folder=>(folder.state||'active')===getBucket()),ids=new Set(folders.map(f=>f.id));return folders.map(f=>({...f,parentId:ids.has(f.parentId)?f.parentId:null}));};
+  const folderNames=()=>new Map(visibleFolders().map(folder=>[folder.id,folder.name]));
   async function save(operations,{success,after,expectedRevision=organization.revision,retryConflict=true}={}) {
     if(!isWritable())return false;
     localBusy=true;refresh();
@@ -72,7 +73,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
   }
   function closeDraft(){if(localBusy)return;draft=null;view.folderForm.hidden=true;onChanged();}
   function formOpen(parentId=null) {
-    if(!isWritable()||draft)return;
+    if(!isWritable()||draft||getBucket()!=='active')return;
     if(parentId&&!folderById(parentId))return;
     formRevision=organization.revision;
     draft={parentId,node:view.folderForm};
@@ -108,7 +109,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
   }
   function stop() {
     for(const dialog of [view.folderMoveDialog,view.folderDeleteDialog])if(dialog.open)dialog.close();
-    draft=null;view.folderForm.hidden=true;movingRoot=null;deletingId=null;
+    draft=null;view.folderForm.hidden=true;movingRoot=null;pendingAction=null;
   }
   function destroy() {destroyed=true;stop();}
   view.folderNew.addEventListener('click',()=>formOpen(null));
@@ -127,14 +128,17 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     });
     if(!ok){view.folderDialogError.hidden=false;view.folderDialogError.textContent=view.folderStatus.textContent;}
   });
-  view.folderDeleteCancel.addEventListener('click',()=>{deletingId=null;view.folderDeleteDialog.close();});
-  view.folderDeleteConfirm.addEventListener('click',()=>{
-    const id=deletingId;deletingId=null;view.folderDeleteDialog.close();
-    if(!id)return;
-    void save([{type:'delete_folder',folderId:id}],{
-      success:'Folder deleted; all chats and their Archive/Trash states were preserved.',
-      after:()=>{lastUndo=null;}
-    });
+  view.folderDeleteDialog.addEventListener('cancel',event=>{if(localBusy)event.preventDefault();else pendingAction=null;});
+  view.folderDeleteCancel.addEventListener('click',()=>{if(localBusy)return;pendingAction=null;view.folderDeleteDialog.close();});
+  view.folderDeleteConfirm.addEventListener('click',async()=>{
+    if(!pendingAction||!isWritable())return;
+    const request=pendingAction;localBusy=true;view.folderDeleteConfirm.disabled=true;view.folderDeleteCancel.disabled=true;refresh();
+    try{
+      const result=await api('/api/conversation-folders/'+encodeURIComponent(request.id)+'/'+request.action,'POST',{expectedRevision:request.revision,expectedMetadataRevision:request.lifecycleRevision});
+      accept(result.folderOrganization);pendingAction=null;lastUndo=null;view.folderDeleteDialog.close();notice(request.action==='delete'?'Folder and its chats moved to Trash.':request.action==='archive'?'Folder and its chats archived.':'Folder and its chats restored.');
+      onRefresh();onChanged();
+    }catch(error){view.folderDeleteError.hidden=false;view.folderDeleteError.textContent=short(error);}
+    finally{localBusy=false;view.folderDeleteConfirm.disabled=false;view.folderDeleteCancel.disabled=false;refresh();}
   });
   view.folderMoveCancel.addEventListener('click',()=>{movingRoot=null;view.folderMoveDialog.close();});
   view.folderMoveForm.addEventListener('submit',event=>{
@@ -153,7 +157,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
   });
 
   function beginRename(id){
-    if(!folderById(id)||!isWritable())return null;
+    if(!folderById(id)||!isWritable()||getBucket()!=='active')return null;
     refresh();
     const revision=organization.revision,before=folderById(id).name;
     return async name=>{
@@ -162,11 +166,21 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     };
   }
   function beginMove(kind,id){
-    if(!isWritable())return null;const revision=organization.revision;
+    if(!isWritable()||getBucket()!=='active')return null;const revision=organization.revision;
     return parentId=>save([kind==='folder'?{type:'move_folder',folderId:id,parentId}:{type:'assign',rootId:id,folderId:parentId}],{expectedRevision:revision,retryConflict:false,success:'Moved.'});
   }
-  function removeFolder(id){if(!isWritable())return;deletingId=id;view.folderDeleteLabel.textContent='Delete "'+nameOf(id)+'"?';view.folderDeleteDialog.showModal();}
-  return {createFolder:formOpen,get draft(){return draft;},beginMove,removeFolder,beginRename,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
+  function folderAction(id,action){
+    if(!isWritable()||!folderById(id))return;
+    if(draft){notice('Save or cancel the new folder first.',true);return;}
+    pendingAction={id,action,revision:organization.revision,lifecycleRevision:organization.lifecycleRevision};
+    const verb=action==='delete'?'Move to Trash':action==='archive'?'Archive':'Restore';
+    view.folderDeleteTitle.textContent=verb+' folder?';
+    view.folderDeleteLabel.textContent='"'+nameOf(id)+'" and every nested folder and chat will '+(action==='delete'?'move to Trash. You can restore them.':action==='archive'?'move to Archive. You can restore them.':'return to Active. Restore its parent folder first if needed.');
+    view.folderDeleteConfirm.textContent=verb;view.folderDeleteError.hidden=true;view.folderDeleteDialog.showModal();
+  }
+  const removeFolder=id=>folderAction(id,'delete');
+
+  return {folderAction,get folders(){return visibleFolders();},createFolder:formOpen,get draft(){return draft;},beginMove,removeFolder,beginRename,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
     get selected(){return 'all';},get organization(){return organization;}};
 }
 

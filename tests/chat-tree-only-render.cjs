@@ -71,5 +71,38 @@ for(const width of [1200,640,390]){
  fs.writeFileSync(path.join(out,'folders-'+width+'.png'),(await win.webContents.capturePage()).toPNG());
  if(width<=640)await run('document.querySelector("#next-chat-mobile-close").click();true');
 }
-fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:true,checks:['Manual nested creation, keyboard move, drag nesting and reload through actual UI','No automatic folder controls','Actual HTTP folder and global new placement','Close keeps draft and history','1200/640/390 no horizontal overflow','Folder action stays on one compact row','View and multiselect share one row','Mobile folder show/dismiss retained']},null,2));
+
+await run('document.querySelector("#next-chat-bucket").value="active";document.querySelector("#next-chat-bucket").dispatchEvent(new Event("change"));true');
+await until('!!document.querySelector(".next-chat-folder-archive")');
+await run('document.querySelector(".next-chat-folder-archive").click();true');
+assert.match(await run('document.querySelector("#next-chat-folder-delete-label").textContent'),/every nested folder and chat/);
+await run('document.querySelector("#next-chat-folder-delete-cancel").click();true');
+assert.equal(await run('document.querySelector("#next-chat-folder-delete-dialog").open'),false);
+await run('document.querySelector(".next-chat-folder-archive").click();document.querySelector("#next-chat-folder-delete-confirm").click();true');
+await until('!document.querySelector("#next-chat-folder-delete-dialog").open');
+await run('document.querySelector("#next-chat-bucket").value="archived";document.querySelector("#next-chat-bucket").dispatchEvent(new Event("change"));true');
+await until('!!document.querySelector(".next-chat-folder-restore")');
+let archived=await run('(async()=>await(await fetch("/api/conversations?state=archived")).json())()');assert.equal(archived.conversations.length,1);
+await run('document.querySelector(".next-chat-folder-restore").click();document.querySelector("#next-chat-folder-delete-confirm").click();true');
+await until('!document.querySelector("#next-chat-folder-delete-dialog").open');
+await run('document.querySelector("#next-chat-bucket").value="active";document.querySelector("#next-chat-bucket").dispatchEvent(new Event("change"));true');
+await until('!!document.querySelector(".next-chat-folder-remove")');
+await run('document.querySelector(".next-chat-folder-remove").click();document.querySelector("#next-chat-folder-delete-confirm").click();true');
+await until('!document.querySelector("#next-chat-folder-delete-dialog").open');
+await run('document.querySelector("#next-chat-bucket").value="deleted";document.querySelector("#next-chat-bucket").dispatchEvent(new Event("change"));true');
+await until('!!document.querySelector(".next-chat-folder-restore")');
+await win.reload();await until('!!document.querySelector("#next-chat-bucket")');await run('document.querySelector("#next-chat-bucket").value="deleted";document.querySelector("#next-chat-bucket").dispatchEvent(new Event("change"));true');await until('!!document.querySelector(".next-chat-folder-restore")');
+let deleted=await run('(async()=>await(await fetch("/api/conversations?state=deleted")).json())()');assert.equal(deleted.conversations.length,1);
+await run('document.querySelector(".next-chat-folder-restore").click();document.querySelector("#next-chat-folder-delete-confirm").click();true');
+await until('!document.querySelector("#next-chat-folder-delete-dialog").open');
+await run('document.querySelector("#next-chat-bucket").value="active";document.querySelector("#next-chat-bucket").dispatchEvent(new Event("change"));true');
+await until('!!document.querySelector(".next-chat-folder-new-chat")');
+saved=await run('(async()=>await(await fetch("/api/conversations?state=active")).json())()');assert.equal(saved.conversations.length,2);
+
+await run('document.querySelector("#next-chat-folder-new").click();document.querySelector("#next-chat-folder-name").value="Empty";document.querySelector("#next-chat-folder-form").requestSubmit();true');
+await until('[...document.querySelectorAll(".next-chat-folder-name")].some(n=>n.textContent==="Empty")');
+await run('const row=[...document.querySelectorAll(".next-chat-folder-name")].find(n=>n.textContent==="Empty").closest("details");row.querySelector(".next-chat-folder-remove").click();document.querySelector("#next-chat-folder-delete-confirm").click();true');
+await until('!document.querySelector("#next-chat-folder-delete-dialog").open');
+assert.equal(await run('[...document.querySelectorAll(".next-chat-folder-name")].some(n=>n.textContent==="Empty")'),false);
+fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:true,checks:['Manual nested creation, keyboard move, drag nesting and reload through actual UI','Recursive Archive/Trash/Restore and empty-folder Trash through actual HTTP UI; unrelated chat retained','No automatic folder controls','Actual HTTP folder and global new placement','Close keeps draft and history','1200/640/390 no horizontal overflow','Folder action stays on one compact row','View and multiselect share one row','Mobile folder show/dismiss retained']},null,2));
 })().catch(e=>{fs.writeFileSync(path.join(out,'error.txt'),e.stack);globalThis.failed=true;}).finally(async()=>{win?.destroy();if(server)await server.close();app.exit(globalThis.failed?1:0);});setTimeout(()=>app.exit(2),60000).unref();

@@ -32,7 +32,7 @@ test('folder management is named and matching searches expose collapsed rows',t=
  const options={groupFolders:true,folderNames:new Map([['work','Work']]),onFolderDelete:()=>{}};
  paintIndex({list},items,null,()=>{},options);
  const group=list.querySelector('[data-chat-folder="work"]');
- assert.equal(group.querySelector('.next-chat-folder-remove').getAttribute('aria-label'),'Delete empty Work folder');
+ assert.equal(group.querySelector('.next-chat-folder-remove').getAttribute('aria-label'),'Move Work folder and its chats to Trash');
  group.open=false;
  assert.equal(paintIndex({list},items,null,()=>{},options).length,0);
  assert.equal(paintIndex({list},items,null,()=>{},{...options,expandFolders:true}).length,1);
