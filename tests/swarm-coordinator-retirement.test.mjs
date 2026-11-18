@@ -49,7 +49,9 @@ for (const outcome of ['completed','failed','cancelled']) test('ordinary workers
  t.after(async()=>{await engine.close();await tasks.close?.();await rm(dir,{recursive:true,force:true});});
  const workflow=structuredClone(graph);workflow.nodes.find(node=>node.type==='agent').model='fixture::remote';
  const run=engine.startRun({workflow,input:'Inspect two independent synthetic inputs',planningMode:'off'});await engine.executions.get(run.id);
- assert.ok(workerCalls>0);assert.ok(denials.every(value=>value.success===false));
+ assert.ok(workerCalls>0);assert.ok(denials.every(value=>value.success===false && value.code==='SWARM_NATIVE_UNAVAILABLE')); 
  const children=cleanup.filter(row=>row.owner.nodeId!=='a');assert.ok(children.length>0);
  for(const row of children){assert.equal(row.status,outcome);assert.equal(row.retainForContinuation,outcome!=='completed');assert.ok(finished.some(value=>value.id===`${run.id}:${row.owner.nodeId}`&&value.status===outcome));}
 });
+
+
