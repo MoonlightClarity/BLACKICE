@@ -1,122 +1,28 @@
-// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import path from 'node:path';
-import { TaskStateStore, createTaskToolHandler, TASK_TOOL, TASK_TOOL_V7 } from './fixture-legacy-task-state.mjs';
-
-const payload = receipt => JSON.parse(receipt.contentItems[0].text);
-
-async function fixture(t) {
-  const directory = await mkdtemp(path.join(tmpdir(), 'blackice-completion-contract-'));
-  const cwd = path.join(directory, 'work');
-  await mkdir(cwd);
-  const store = await new TaskStateStore({ dataDir: directory }).init();
-  t.after(async () => { await store.close(); await rm(directory, { recursive: true, force: true }); });
-  const taskId = 'completion-contract';
-  await store.ensure({ taskId, runId: 'run-one', cwd, goal: 'Correct one exact phrase.', defaultPlan: true });
-  const handler = createTaskToolHandler({ store, taskId, runId: 'run-one', nodeId: 'agent', planningMode: 'on', executionGuardrails: true });
-  const call = args => handler({ name: 'relay_task', arguments: args });
-  const initial = payload(await call({ action: 'read' }));
-  return { store, taskId, call, initial };
-}
-
-test('stale revision and out-of-scope completion preserve the saved contract before an authorized completion', async t => {
-  const f = await fixture(t);
-  const prospective = {
-    id: 'correct_notice', kind: 'action', status: 'active', title: 'Correct the requested phrase in notice.txt',
-    operation: { kind: 'tool', tool: 'relay_workspace', action: 'write', target: 'notice.txt' },
-    result: 'The requested phrase is corrected with every other byte and file preserved.',
-    note: 'Write the previously inspected notice.txt bytes with the single specified ASCII phrase substitution.',
-    doneWhen: 'Read-back bytes equal the original bytes with only the requested substitution and the directory entries are unchanged.'
-  };
-  const planned = await f.call({ action: 'plan', expectedRevision: f.initial.revision, plan: { layout: 'sequence' }, steps: [prospective, { ...prospective, id: 'other', status: 'pending' }] });
-  assert.equal(planned.success, true, planned.contentItems[0].text);
-  const saved = payload(planned), before = await readFile(f.store.file(f.taskId));
-  // These observations reproduce the successful native case-03 work record.
-  const evidence = 'Replaced the single phrase at byte offset 19. Read-back comparison matched exactly; length stayed 73 bytes and the same three directory entries remain.';
-  const rejected = await f.call({ action: 'step', expectedRevision: saved.revision - 1, stepId: prospective.id, status: 'done', evidence });
-  assert.equal(rejected.success, false);
-  assert.equal(rejected.code, 'TASK_STATE_CONFLICT');
-  const worker = createTaskToolHandler({ store: f.store, taskId: f.taskId, runId: 'run-one', nodeId: 'worker', scopeStepId: 'other', worker: true, planningMode: 'on', executionGuardrails: true });
-  const denied = await worker({ name: 'relay_task', arguments: { action: 'step', expectedRevision: saved.revision, stepId: prospective.id, status: 'done', evidence } });
-  assert.equal(denied.success, false);
-  assert.equal(denied.code, 'TASK_PLAN_OWNERSHIP');
-  assert.deepEqual(await readFile(f.store.file(f.taskId)), before, 'A rejected completion changes neither saved bytes nor revision.');
-
-  const completed = await f.call({ action: 'step', expectedRevision: saved.revision, stepId: prospective.id, status: 'done', evidence });
-  assert.equal(completed.success, true, 'Correcting the payload requires no intervening plan edit or repeated operation.');
-  const state = payload(completed);
-  assert.equal(state.revision, saved.revision + 1);
-  assert.equal(state.steps[0].status, 'done');
-  assert.equal(state.steps[0].evidence, evidence);
-  for (const field of ['result', 'note', 'doneWhen']) assert.equal(state.steps[0][field], prospective[field]);
+import {TaskStateStore} from '../lib/task-state.mjs';
+const step={id:'inspect',kind:'action',status:'active',title:'Inspect result',operation:{kind:'reasoning',target:'Supplied observation'},result:'Checked result',note:'Compare observation with requested outcome',doneWhen:'Result and limits recorded'};
+async function fixture(t){const root=await mkdtemp(path.join(tmpdir(),'blackice-completion-store-')),store=await new TaskStateStore({dataDir:root}).init();t.after(async()=>{await store.close();assert.equal(path.dirname(root),path.resolve(tmpdir()));await rm(root,{recursive:true,force:true});});const state=await store.ensure({taskId:'completion',runId:'run',cwd:root,goal:'Check result'});return{store,state,options:revision=>({expectedRevision:revision,runId:'run',nodeId:'agent',schemaVersion:13,executionGuardrails:true,planningMode:'on'})};}
+test('stored completion rejects stale revision and out-of-scope ownership without changing bytes, then preserves planned output',async t=>{
+ const {store,state,options}=await fixture(t);const saved=await store.setPlan(state.taskId,{steps:[step,{...step,id:'other',status:'pending'}]},options(state.revision)),before=await readFile(store.file(state.taskId)),completion={status:'done',evidence:'Observed exact expected result'};
+ await assert.rejects(store.setStep(state.taskId,step.id,completion,options(saved.revision-1)),{code:'TASK_STATE_CONFLICT'});
+ await assert.rejects(store.setStep(state.taskId,step.id,completion,{...options(saved.revision),scopeStepId:'other'}),{code:'TASK_PLAN_OWNERSHIP'});assert.deepEqual(await readFile(store.file(state.taskId)),before);
+ const done=await store.setStep(state.taskId,step.id,completion,options(saved.revision));assert.equal(done.revision,saved.revision+1);assert.equal(done.steps[0].evidence,completion.evidence);for(const key of ['result','note','doneWhen'])assert.equal(done.steps[0][key],step[key]);
 });
-
-test('live describe supplies an executable completion example without changing the planned output', async t => {
-  const f = await fixture(t);
-  const described = payload(await f.call({ action: 'describe' }));
-  const planned = await f.call({ ...described.plan.example, expectedRevision: f.initial.revision });
-  assert.equal(planned.success, true);
-  const saved = payload(planned);
-  assert.equal(described.step.example.result, undefined);
-  assert.equal(described.step.example.note, undefined);
-  assert.equal(described.step.example.doneWhen, undefined);
-  const completed = await f.call({ ...described.step.example, expectedRevision: saved.revision });
-  assert.equal(completed.success, true);
-  assert.equal(payload(completed).steps[0].result, saved.steps[0].result);
-  assert.match(described.step.note, /without repeating/);
-  assert.match(TASK_TOOL.inputSchema.properties.result.description, /Step completion/);
-  assert.match(TASK_TOOL.inputSchema.properties.evidence.description, /actual observed finding/);
-  assert.equal(TASK_TOOL_V7.inputSchema.properties.result.description, 'The concrete result this action should produce.');
+test('stored completion evidence bounds preserve exact error details and permit repair without repeated work',async t=>{
+ const {store,state,options}=await fixture(t),saved=await store.setPlan(state.taskId,{steps:[step]},options(state.revision)),bytes=await readFile(store.file(state.taskId));
+ for(const evidence of ['x'.repeat(2001),'x'.repeat(2056),'é'.repeat(2002)]){
+ assert.throws(()=>store.setStep(state.taskId,step.id,{status:'done',evidence},options(saved.revision)),e=>e.code==='TASK_PLAN_EVIDENCE_TOO_LONG'&&e.actualLength===evidence.length&&e.maxLength===2000&&/Do not repeat work/.test(e.message));assert.deepEqual(await readFile(store.file(state.taskId)),bytes);
+ }
+ const done=await store.setStep(state.taskId,step.id,{status:'done',evidence:'x'.repeat(2000)},options(saved.revision));assert.equal(done.steps[0].evidence.length,2000);assert.equal(done.revision,saved.revision+1);
 });
-
-test('oversized evidence reports its exact length without changing the plan and a corrected completion succeeds', async t => {
-  const f = await fixture(t);
-  const step = { id: 'inspect', title: 'Inspect the result', kind: 'action', status: 'active', operation: { kind: 'reasoning', target: 'The supplied observation compared with the requested outcome.' }, result: 'A checked result', note: 'Compare the supplied observation with the stated requested outcome.', doneWhen: 'The result and its limits are recorded.' };
-  const planned = await f.call({ action: 'plan', expectedRevision: f.initial.revision, plan: { layout: 'sequence' }, steps: [step] });
-  assert.equal(planned.success, true, planned.contentItems[0].text);
-  const saved = payload(planned);
-  const before = await readFile(f.store.file(f.taskId));
-  for (const evidence of ['x'.repeat(2001), 'x'.repeat(2056), '😀'.repeat(1001)]) {
-    const rejected = await f.call({ action: 'step', expectedRevision: saved.revision, stepId: step.id, status: 'done', evidence });
-    assert.equal(rejected.success, false);
-    assert.equal(rejected.code, 'TASK_PLAN_EVIDENCE_TOO_LONG');
-    const error = payload(rejected);
-    assert.equal(error.actualLength, evidence.length);
-    assert.equal(error.maxLength, 2000);
-    assert.match(error.error, new RegExp(`${evidence.length - 2000} over`));
-    assert.match(error.error, /retry.*current revision/i);
-    assert.match(error.error, /Do not repeat work/);
-    assert.deepEqual(await readFile(f.store.file(f.taskId)), before);
-  }
-  const boundary = 'x'.repeat(2000);
-  const completed = await f.call({ action: 'step', expectedRevision: saved.revision, stepId: step.id, status: 'done', evidence: boundary });
-  assert.equal(completed.success, true);
-  assert.equal(payload(completed).steps[0].evidence, boundary);
-  assert.equal(payload(completed).revision, saved.revision + 1);
-});
-
-test('plan and edit reject oversized evidence with the same recoverable details', async t => {
-  const f = await fixture(t);
-  const step = { id: 'inspect', title: 'Inspect the result', kind: 'action', status: 'active', operation: { kind: 'reasoning', target: 'The supplied observation compared with the requested outcome.' }, result: 'A checked result', note: 'Compare the supplied observation with the stated requested outcome.', doneWhen: 'The result and its limits are recorded.' };
-  const beforePlan = await readFile(f.store.file(f.taskId));
-  const rejectedPlan = await f.call({ action: 'plan', expectedRevision: f.initial.revision, plan: { layout: 'sequence' }, steps: [{ ...step, evidence: 'x'.repeat(2056) }] });
-  assert.equal(rejectedPlan.code, 'TASK_PLAN_EVIDENCE_TOO_LONG');
-  assert.equal(payload(rejectedPlan).actualLength, 2056);
-  assert.equal(payload(rejectedPlan).maxLength, 2000);
-  assert.deepEqual(await readFile(f.store.file(f.taskId)), beforePlan);
-  const planned = await f.call({ action: 'plan', expectedRevision: f.initial.revision, plan: { layout: 'sequence' }, steps: [step] });
-  assert.equal(planned.success, true, planned.contentItems[0].text);
-  const saved = payload(planned);
-  const beforeEdit = await readFile(f.store.file(f.taskId));
-  const rejectedEdit = await f.call({ action: 'edit', expectedRevision: saved.revision, operations: [{ type: 'update', stepId: step.id, patch: { evidence: 'x'.repeat(2056) } }] });
-  assert.equal(rejectedEdit.code, 'TASK_PLAN_EVIDENCE_TOO_LONG');
-  assert.equal(payload(rejectedEdit).actualLength, 2056);
-  assert.equal(payload(rejectedEdit).maxLength, 2000);
-  assert.deepEqual(await readFile(f.store.file(f.taskId)), beforeEdit);
-  const corrected = await f.call({ action: 'edit', expectedRevision: saved.revision, operations: [{ type: 'update', stepId: step.id, patch: { evidence: 'Checked the result and retained its limits.' } }] });
-  assert.equal(corrected.success, true);
-  assert.equal(payload(corrected).revision, saved.revision + 1);
+test('stored plan and edit evidence rejection is atomic and recoverable',async t=>{
+ const {store,state,options}=await fixture(t),before=await readFile(store.file(state.taskId));
+ await assert.rejects(store.setPlan(state.taskId,{steps:[{...step,evidence:'x'.repeat(2056)}]},options(state.revision)),e=>e.code==='TASK_PLAN_EVIDENCE_TOO_LONG'&&e.actualLength===2056&&e.maxLength===2000);assert.deepEqual(await readFile(store.file(state.taskId)),before);
+ const saved=await store.setPlan(state.taskId,{steps:[step]},options(state.revision)),bytes=await readFile(store.file(state.taskId));
+ await assert.rejects(store.editPlan(state.taskId,{operations:[{type:'update',stepId:step.id,patch:{evidence:'x'.repeat(2056)}}]},options(saved.revision)),e=>e.code==='TASK_PLAN_EVIDENCE_TOO_LONG'&&e.actualLength===2056&&e.maxLength===2000);assert.deepEqual(await readFile(store.file(state.taskId)),bytes);
+ const next=await store.editPlan(state.taskId,{operations:[{type:'update',stepId:step.id,patch:{evidence:'Checked result and limits'}}]},options(saved.revision));assert.equal(next.revision,saved.revision+1);
 });

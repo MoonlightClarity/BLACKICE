@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ConversationArchive } from '../lib/conversations.mjs';
-import { TaskStateStore, createTaskToolHandler } from './fixture-legacy-task-state.mjs';
+import { TaskStateStore, createTaskToolHandler } from '../lib/task-state.mjs';
 import { projectFamily } from '../public/next/chat/reader-model.mjs';
 import { chatTimeline, projectPlanningActivity } from '../public/next/chat/planning-timeline.mjs';
 import { planningReturnRun } from './fixtures/planning-return-records.mjs';
@@ -70,17 +70,17 @@ test('quiet saved planning events are archived before a rolling execution window
   assert.equal(saved.planningActivity.filter(row => row.source === 'observation').length, 1);
 });
 
-test('real schema10 plan, finding, review and final-message start records survive reopening', async t => {
+test('stored plan, finding, review and final-message start records survive reopening', async t => {
   const base = planningReturnRun(), run = { ...base, id: 'schema10-records', taskId: 'schema10-records', events: [], taskState: null, output: '', status: 'running', settled: false, nodes: { agent: { status: 'running' } } };
   const f = await fixture(t, run), store = await new TaskStateStore({ dataDir: f.directory }).init();
   t.after(() => store.close());
   await store.ensure({ taskId: run.taskId, runId: run.id, nodeId: 'agent', cwd: f.directory, goal: 'Check the supplied $32 price plus $9 fee.', defaultPlan: true });
   const emit = data => { const event = { type: 'agent.event', runId: run.id, nodeId: 'agent', at: new Date().toISOString(), data }; run.events.push(event); if (data.type === 'task.state') run.taskState = data.state; f.engine.emit('event', event); return event; };
-  const handler = createTaskToolHandler({ store, taskId: run.taskId, runId: run.id, nodeId: 'agent', planningMode: 'on', onEvent: emit });
-  const write = async args => { const state = await store.get(run.taskId), result = await handler({ name: 'relay_task', arguments: { ...args, expectedRevision: state.revision } }); assert.equal(result.success, true, result.contentItems[0].text); return JSON.parse(result.contentItems[0].text); };
-  await write({ action: 'plan', plan: { layout: 'sequence' }, steps: [{ id: 'add', kind: 'action', status: 'active', title: 'Add the supplied price and delivery fee', operation: { kind: 'reasoning', target: 'The supplied $32 price and $9 delivery fee.' }, note: 'Add the two stated amounts and record the sum.', result: 'The checked total.', doneWhen: 'Both amounts are included in the saved sum.' }] });
-  await write({ action: 'step', stepId: 'add', status: 'done', evidence: '$32 + $9 = $41.' });
-  const reviewed = await write({ action: 'review', review: { decision: 'respond', summary: 'The arithmetic includes both the stated price and delivery fee.' } });
+  let state=await store.get(run.taskId);
+  const options=()=>({expectedRevision:state.revision,runId:run.id,nodeId:'agent',schemaVersion:13,planningMode:'on'});
+  state=await store.setPlan(run.taskId,{plan:{layout:'sequence'},steps:[{id:'add',kind:'action',status:'active',title:'Add price and delivery',operation:{kind:'reasoning',target:'Supplied price and fee'},note:'Add the amounts',result:'Checked total',doneWhen:'Both amounts included'}]},options());emit({type:'task.state',taskId:run.taskId,state});
+  state=await store.setStep(run.taskId,'add',{status:'done',evidence:'$32 + $9 = $41.'},options());emit({type:'task.state',taskId:run.taskId,state});
+  const reviewed=await store.review(run.taskId,{decision:'respond',summary:'The arithmetic includes both the stated price and delivery fee.'},options());emit({type:'task.state',taskId:run.taskId,state:reviewed});
   // The response-start receipt itself supplies the public composition boundary.
   // Waiting for a distinct millisecond exercises its strictly-after-review rule.
   while (Date.now() <= Date.parse(reviewed.planningReviews.at(-1).at)) await new Promise(resolve => setTimeout(resolve, 1));

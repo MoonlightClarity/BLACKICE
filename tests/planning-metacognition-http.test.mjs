@@ -5,7 +5,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
-import { TASK_SCHEMA_VERSION } from './fixture-legacy-task-state.mjs';
 
 class Runtime extends EventEmitter {
   status(){return{connected:true,authenticated:true,models:[{model:'metacognition-fixture'}],defaultModel:'metacognition-fixture'};}
@@ -30,7 +29,7 @@ test('real Planning HTTP preserves cross-domain judgment and criterion evidence 
   const saved=await app.tasks.setPlan(initial.taskId,{
     plan:{layout:'sequence'},steps:[{id:'judge',title:'Make a useful and reversible architecture choice',
       kind:'action',parentId:null,dependsOn:[],status:'pending',doneWhen:'An option is recommended with evidence and a reversible test.'}]
-  },{expectedRevision:initial.revision,runId:'design-decision',nodeId:'architect',schemaVersion:TASK_SCHEMA_VERSION});
+  },{expectedRevision:initial.revision,runId:'design-decision',nodeId:'architect',schemaVersion:13});
   // The HTTP editor intentionally scopes writes to an existing saved
   // conversation. This fixture supplies that real archive link.
   await app.conversations.capture({

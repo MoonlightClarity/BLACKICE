@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PlanningAwareness, planningRelevance, createPlanningWorkerGuard, wrapPlanningToolHandler } from '../lib/planning-awareness.mjs';
-import { TaskStateStore, createTaskToolHandler } from './fixture-legacy-task-state.mjs';
+import { TaskStateStore } from '../lib/task-state.mjs';
 import { readPlanningAwareness, updatePlanningPresence } from '../lib/planning-workspace.mjs';
 
 const action = (id, parentId = null) => ({ id, title: id, parentId, kind: 'action', status: 'pending', dependsOn: [], doneWhen: `${id} has an observed result.` });
@@ -24,8 +24,10 @@ async function fixture(t) {
     async guard(nodeId = 'left-worker', scopeStepId = 'left') {
       // This suite explicitly tests guarded correction delivery, not advisory defaults.
       const guard = await createPlanningWorkerGuard({ store, taskId: initial.taskId, runId: 'run-one', nodeId, label: nodeId, scopeStepId, executionGuardrails: true });
-      const handler = createTaskToolHandler({ store, taskId: initial.taskId, runId: 'run-one', nodeId, scopeStepId, worker: Boolean(scopeStepId), executionGuardrails: true });
-      return { guard, async task(args) { const call = tool('relay_task', args), denied = await guard.before(call); return denied || guard.after(call, await handler(call)); } };
+      const receipt=state=>({success:true,contentItems:[{type:'inputText',text:JSON.stringify(state)}]});
+      return {guard,async read(){const call=tool('relay_task',{action:'read'});return guard.after(call,receipt(await store.get(initial.taskId)));},
+       async step(args){const denied=await guard.before(tool('relay_task',{action:'step',...args}));if(denied)return denied;const state=await store.setStep(initial.taskId,args.stepId,args,{expectedRevision:args.expectedRevision,runId:'run-one',nodeId,scopeStepId,schemaVersion:13});return guard.after(tool('relay_task',{action:'step',...args}),receipt(state));}};
+
     }
   };
 }
@@ -58,7 +60,7 @@ test('read receipts begin unread; presence alone does not suspend a worker', asy
   assert.equal(f.store.awareness.snapshot(state).workers[0].state, 'unread');
   f.store.awareness.setPresence(state, { editorId: 'editor', stepId: 'left-work' }, human);
   assert.equal(await worker.guard.before(tool('relay_workspace', { action: 'write' })), null);
-  const read = await worker.task({ action: 'read' }); assert.equal(read.success, true);
+  const read = await worker.read(); assert.equal(read.success, true);
   const contents = decoded(read), receipt = contents.planningAwareness.worker;
   assert.equal(receipt.lastReadRevision, state.revision); assert.equal(receipt.state, 'current');
   assert.equal(contents.planningAwareness.presence[0].stepId, 'left-work');
@@ -66,22 +68,22 @@ test('read receipts begin unread; presence alone does not suspend a worker', asy
 });
 
 test('a saved human correction blocks the affected attached action until its real task read', async t => {
-  const f = await fixture(t), worker = await f.guard(); await worker.task({ action: 'read' });
+  const f = await fixture(t), worker = await f.guard(); await worker.read();
   const saved = await f.edit([{ type: 'update', stepId: 'left-work', patch: { note: 'Use the corrected input and verify its checksum.' } }]);
   let actualWrites = 0;
   const dispatch = async () => { const denied = await worker.guard.before(tool('relay_workspace', { action: 'write' })); if (!denied) actualWrites++; return denied; };
   const denied = await dispatch(); assert.equal(denied.code, 'TASK_PLAN_REVIEW_REQUIRED'); assert.equal(actualWrites, 0);
   assert.equal(decoded(denied).revision, saved.revision);
-  assert.equal((await worker.task({ action: 'step', expectedRevision: saved.revision, stepId: 'left-work', status: 'active' })).code, 'TASK_PLAN_REVIEW_REQUIRED');
+  assert.equal((await worker.step({ expectedRevision: saved.revision, stepId: 'left-work', status: 'active' })).code, 'TASK_PLAN_REVIEW_REQUIRED');
   assert.equal(f.store.awareness.snapshot(saved).workers[0].state, 'needs-review');
-  const read = await worker.task({ action: 'read' }); assert.equal(read.success, true); assert.match(decoded(read).steps.find(step => step.id === 'left-work').note, /corrected input/);
+  const read = await worker.read(); assert.equal(read.success, true); assert.match(decoded(read).steps.find(step => step.id === 'left-work').note, /corrected input/);
   assert.equal(await dispatch(), null); assert.equal(actualWrites, 1);
   assert.equal(f.store.awareness.snapshot(saved).workers[0].lastReadRevision, saved.revision);
 });
 
 test('unrelated parallel edits do not require another worker to reread or wait', async t => {
   const f = await fixture(t), left = await f.guard(), right = await f.guard('right-worker', 'right');
-  await left.task({ action: 'read' }); await right.task({ action: 'read' });
+  await left.read(); await right.read();
   const saved = await f.edit([{ type: 'update', stepId: 'right-work', patch: { doneWhen: 'The corrected right-side acceptance check succeeds.' } }]);
   assert.equal(await left.guard.before(tool('relay_browser', { action: 'navigate' })), null);
   assert.equal((await right.guard.before(tool('relay_browser', { action: 'navigate' }))).code, 'TASK_PLAN_REVIEW_REQUIRED');
@@ -90,19 +92,19 @@ test('unrelated parallel edits do not require another worker to reread or wait',
 });
 
 test('a newly saved prerequisite remains a runtime barrier after the worker reads it', async t => {
-  const f = await fixture(t), worker = await f.guard(); await worker.task({ action: 'read' });
+  const f = await fixture(t), worker = await f.guard(); await worker.read();
   await f.edit([{ type: 'dependencies', stepId: 'left', dependsOn: ['right'] }]);
   assert.equal((await worker.guard.before(tool('relay_workspace', { action: 'write' }))).code, 'TASK_PLAN_REVIEW_REQUIRED');
-  await worker.task({ action: 'read' });
+  await worker.read();
   const waiting = await worker.guard.before(tool('relay_workspace', { action: 'write' }));
   assert.equal(waiting.code, 'TASK_PLAN_NOT_READY'); assert.ok(decoded(waiting).dependencies.some(item => item.id === 'right'));
   await f.edit([{ type: 'update', stepId: 'right-work', patch: { status: 'done', evidence: 'The independent prerequisite result was checked in this unbound fixture.' } }]);
-  await worker.task({ action: 'read' });
+  await worker.read();
   assert.equal(await worker.guard.before(tool('relay_workspace', { action: 'write' })), null);
 });
 
 test('an in-flight tool keeps its actual receipt when a human saves, with a notice before the next action', async t => {
-  const f = await fixture(t), worker = await f.guard(); await worker.task({ action: 'read' });
+  const f = await fixture(t), worker = await f.guard(); await worker.read();
   let started, settle; const entered = new Promise(resolve => { started = resolve; }), held = new Promise(resolve => { settle = resolve; });
   const dispatch = wrapPlanningToolHandler(worker.guard, async call => {
     const denied = await worker.guard.before(call); if (denied) return denied;
@@ -125,8 +127,8 @@ test('saving while a read is in transit keeps the newer correction pending', asy
 });
 
 test('own successful narrow plan writes retain their returned context without fabricating a read', async t => {
-  const f = await fixture(t), worker = await f.guard(), first = decoded(await worker.task({ action: 'read' }));
-  const written = await worker.task({ action: 'step', expectedRevision: first.revision, stepId: 'left-work', status: 'active', note: 'I am now implementing the assigned result.' });
+  const f = await fixture(t), worker = await f.guard(), first = decoded(await worker.read());
+  const written = await worker.step({ expectedRevision: first.revision, stepId: 'left-work', status: 'active', note: 'I am now implementing the assigned result.' });
   assert.equal(written.success, true, written.contentItems[0].text);
   assert.equal(await worker.guard.before(tool('relay_workspace', { action: 'write' })), null);
   const current = f.store.awareness.snapshot(await f.get()).workers[0]; assert.equal(current.lastReadRevision, first.revision); assert.equal(current.state, 'current');
@@ -143,7 +145,7 @@ test('readiness context includes transitive prerequisites and enclosing branch c
 });
 
 test('completion and restart never invent a worker read receipt or runtime completion', async t => {
-  const f = await fixture(t), worker = await f.guard(); await worker.task({ action: 'read' });
+  const f = await fixture(t), worker = await f.guard(); await worker.read();
   const before = await f.get(); worker.guard.finish('cancelled');
   const finished = f.store.awareness.snapshot(before).workers[0]; assert.equal(finished.state, 'finished'); assert.equal(finished.status, 'cancelled');
   assert.equal((await worker.guard.before(tool('relay_workspace', { action: 'read' }))).code, 'TASK_PLAN_WORKER_FINISHED');

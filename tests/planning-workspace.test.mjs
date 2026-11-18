@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { TaskStateStore, createTaskToolHandler, TASK_SCHEMA_VERSION, TASK_TOOL_V5, taskToolForVersion } from './fixture-legacy-task-state.mjs';
+import { TaskStateStore, createTaskToolHandler } from '../lib/task-state.mjs';
 import { executionReadiness } from '../lib/planning-runtime.mjs';
 import { createSwarmWorkflow } from '../public/swarm-model.mjs';
 
 const action = (id, extra = {}) => ({ id, title: `Produce ${id}`, kind: 'action', parentId: null, status: 'pending', doneWhen: `The ${id} result is checked against the request.`, ...extra });
-const agent = revision => ({ expectedRevision: revision, runId: 'run-a', nodeId: 'coordinator', schemaVersion: TASK_SCHEMA_VERSION, executionGuardrails: true });
+const agent = revision => ({ expectedRevision: revision, runId: 'run-a', nodeId: 'coordinator', schemaVersion: 13, executionGuardrails: true });
 const human = revision => ({ expectedRevision: revision, source: 'human', executionGuardrails: true });
 const edit = (store, state, operations, options = human(state.revision)) => store.editPlan(state.taskId, { operations }, options);
 async function fixture(t) {
@@ -87,16 +87,11 @@ test('a worker edits only its saved assignment; human reports cannot complete it
   const { store, state } = await fixture(t);
   let saved = await store.bindWorkflow(state.taskId, sharedWorkflow(), { runId: 'run-a' });
   saved = await store.recordExecution(state.taskId, 'left', { status: 'running' }, { runId: 'run-a' });
-  const handler = createTaskToolHandler({ store, taskId: state.taskId, runId: 'run-a', nodeId: 'left', scopeStepId: 'agent-left', worker: true });
-  const call = args => handler({ name: 'relay_task', arguments: args });
-  for (const args of [
-    { action: 'edit', expectedRevision: saved.revision, operations: [{ type: 'update', stepId: 'agent-right-work', patch: { title: 'Stolen work' } }] },
-    { action: 'edit', expectedRevision: saved.revision, operations: [{ type: 'metadata', patch: { goal: 'Stolen goal' } }] },
-    { action: 'external', expectedRevision: saved.revision, external: { operation: 'attempt', receiptId: 'send' } },
-    { action: 'checkpoint', expectedRevision: saved.revision, goal: 'Stolen checkpoint' }
-  ]) { const result = await call(args); assert.equal(result.success, false); assert.equal(result.code, 'TASK_PLAN_OWNERSHIP'); }
-  const updated = await call({ action: 'edit', expectedRevision: saved.revision, operations: [{ type: 'update', stepId: 'agent-left-work', patch: { note: 'Checked my own input.' } }] });
-  assert.equal(updated.success, true, updated.contentItems[0].text); saved = await store.get(state.taskId);
+  const options={expectedRevision:saved.revision,runId:'run-a',nodeId:'left',scopeStepId:'agent-left',schemaVersion:13};
+  for(const operations of [[{type:'update',stepId:'agent-right-work',patch:{title:'Stolen work'}}],[{type:'metadata',patch:{goal:'Stolen goal'}}]])await assert.rejects(store.editPlan(state.taskId,{operations},options),{code:'TASK_PLAN_OWNERSHIP'});
+  const handler=createTaskToolHandler({store,taskId:state.taskId,runId:'run-a',nodeId:'left',worker:true});
+  const checkpoint=await handler({name:'relay_task',arguments:{action:'checkpoint',expectedRevision:saved.revision,goal:'Stolen checkpoint'}});assert.equal(checkpoint.code,'TASK_CONTRACT_OWNERSHIP');
+  saved=await store.editPlan(state.taskId,{operations:[{type:'update',stepId:'agent-left-work',patch:{note:'Checked my own input.'}}]},options);
   assert.equal(saved.steps.find(step => step.id === 'agent-left-work').note, 'Checked my own input.');
   saved = await edit(store, saved, [{ type: 'update', stepId: 'agent-left-work', patch: { status: 'done', evidence: 'A human recorded a result; the worker is still running.' } }]);
   assert.equal(saved.execution.nodes.left.status, 'running'); assert.equal(executionReadiness(saved, 'right').ready, false);
@@ -140,7 +135,6 @@ test('verified outside-agent provenance stays distinct from engine actors and ed
   const saved = await edit(store, state, [{ type: 'add', step: action('external-work') }], { expectedRevision: state.revision, source: 'agent', actor });
   assert.deepEqual(saved.provenance.actor, actor); assert.equal(saved.provenance.source, 'agent'); assert.equal(saved.provenance.runId, undefined); assert.equal(saved.plan.authoredBy, undefined);
   await assert.rejects(edit(store, saved, [{ type: 'update', stepId: 'external-work', patch: { title: 'Missing revision' } }], { source: 'agent', actor }), { code: 'TASK_STATE_CONFLICT', currentRevision: saved.revision });
-  assert.equal(taskToolForVersion(5, { executionGuardrails: true }), TASK_TOOL_V5); assert.equal(taskToolForVersion(5).inputSchema.properties.action.enum.includes('edit'), false); assert.equal(taskToolForVersion(6).inputSchema.properties.action.enum.includes('edit'), true);
 });
 
 test('a 48-worker shared swarm persists every real prerequisite without a dependency clamp or oversized initial state', async t => {
@@ -148,8 +142,6 @@ test('a 48-worker shared swarm persists every real prerequisite without a depend
   let saved = await store.bindWorkflow(state.taskId, workflow, { runId: 'run-a' });
   assert.equal(saved.steps.length, 98); assert.equal(saved.steps.find(step => step.id === 'agent-coordinator').dependsOn.length, 48);
   assert.equal(saved.availableWork.ready.length, 48); assert.equal(executionReadiness(saved, 'coordinator').ready, false);
-  assert.equal(taskToolForVersion(5).inputSchema.properties.steps.items.properties.dependsOn.maxItems, 40);
-  assert.equal(taskToolForVersion(6).inputSchema.properties.steps.items.properties.dependsOn.maxItems, 199);
   for (let index = 1; index <= 47; index++) await store.recordExecution(state.taskId, `specialist-${index}`, { status: 'completed' }, { runId: 'run-a' });
   saved = await store.get(state.taskId); assert.equal(executionReadiness(saved, 'coordinator').ready, false, 'every actual prerequisite matters');
   saved = await store.recordExecution(state.taskId, 'specialist-48', { status: 'completed' }, { runId: 'run-a' });

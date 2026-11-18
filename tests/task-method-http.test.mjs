@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHarnessServer } from '../server.mjs';
-import { createTaskToolHandler, TASK_SCHEMA_VERSION } from './fixture-legacy-task-state.mjs';
+import { createTaskToolHandler, TASK_SCHEMA_VERSION } from '../lib/task-state.mjs';
 
 class Runtime extends EventEmitter {
   calls = 0;
@@ -103,15 +103,15 @@ test('HTTP discovery returns bounded summaries, complete vocabulary, exact full 
   const detail = await request('/api/methods/catalyst-ach', undefined, { method: 'GET' }); assert.equal(detail.status, 200); assert.equal(detail.data.steps.length, 6); assert.ok(detail.data.steps[0].instructions.length > 100); assert.ok(detail.data.catalog.prerequisites.length); assert.ok(detail.data.provenance); assert.equal(app.engine.methods.status().custom, 0);
 });
 
-test('HTTP draft and save retain authored deep procedures with the same idempotent receipt exposed to relay_task v5', async t => {
+test('HTTP draft and save retain authored deep procedures with idempotent HTTP retries and no retired model save action', async t => {
   const { request, app, state } = await fixture(t), base = '/api/tasks/' + state.taskId;
   const preview = await request(base + '/method-draft', { expectedRevision: state.revision }), methodSteps = preview.data.method.steps.map(step => ({ ...step, instructions: 'Inspect the original evidence, record its date and source, compare contradictions, and preserve uncertainty while producing ' + step.result, inputs: ['Original records'], checks: [...step.checks, 'Each material statement is supported by the inspected original records.'] }));
   const options = { expectedRevision: state.revision, name: 'A deep adapted evidence method', description: 'Use original records and preserve contradictions.', methodSteps, catalog: { domain: 'research', phases: ['evaluate-evidence'], outputs: ['matrix'], prerequisites: ['Original records are available.'] } };
   const draft = await request(base + '/method-draft', options); assert.equal(draft.status, 200); assert.deepEqual(draft.data.method.steps, methodSteps); assert.equal(app.engine.methods.status().custom, 0);
   const saved = await request(base + '/method', options); assert.equal(saved.status, 201); assert.deepEqual(saved.data.method.steps, methodSteps); assert.deepEqual(saved.data.method.catalog, options.catalog);
-  const handler = createTaskToolHandler({ store: app.tasks, taskId: state.taskId, methods: app.engine.methods, schemaVersion: TASK_SCHEMA_VERSION });
-  const result = await handler({ name: 'relay_task', arguments: { action: 'save_method', expectedRevision: state.revision, methodName: options.name, methodDescription: options.description, methodSteps, methodCatalog: options.catalog } }); assert.equal(result.success, true, result.contentItems[0].text);
-  const retry = JSON.parse(result.contentItems[0].text); assert.equal(retry.created, false); assert.equal(retry.method.id, saved.data.method.id); assert.equal(app.engine.methods.status().custom, 1); assert.deepEqual(await app.tasks.get(state.taskId), state);
+  const handler = createTaskToolHandler({ store: app.tasks, taskId: state.taskId, methods: app.engine.methods });
+  const result = await handler({ name: 'relay_task', arguments: { action: 'save_method', expectedRevision: state.revision, methodName: options.name, methodDescription: options.description, methodSteps, methodCatalog: options.catalog } }); assert.equal(result.success, false); assert.equal(result.code, 'TASK_CONTRACT_INVALID');
+  const retry = await request(base + '/method', options); assert.equal(retry.status, 200); assert.equal(retry.data.reused, true); assert.equal(retry.data.method.id, saved.data.method.id); assert.equal(app.engine.methods.status().custom, 1); assert.deepEqual(await app.tasks.get(state.taskId), state);
   const malformed = structuredClone(options); malformed.methodSteps[0].evidence = 'Do not import this execution claim.';
   assert.equal((await request(base + '/method', malformed)).status, 400); assert.equal(app.engine.methods.status().custom, 1);
 });
@@ -119,6 +119,6 @@ test('HTTP draft and save retain authored deep procedures with the same idempote
 test('the task draft endpoint preserves the exact source procedure while reading only the referenced method revision', async t => {
   const { request, app } = await fixture(t), source = app.engine.methods.get('catalyst-ach');
   let state = await app.tasks.ensure({ taskId: 'exact-source-procedure', runId: 'method-source-run', cwd: app.engine.defaultCwd, goal: 'A private goal that does not belong in the reusable procedure.', defaultPlan: true });
-  state = await app.tasks.setPlan(state.taskId, { plan: { layout: 'sequence', taskType: source.taskType, method: { id: source.id, revision: source.revision } }, steps: source.steps.map(step => ({ id: step.id, title: step.title, kind: 'action', stepType: step.type, result: step.result, doneWhen: step.checks[0] })) }, { expectedRevision: state.revision, schemaVersion: TASK_SCHEMA_VERSION, runId: 'method-source-run', nodeId: 'agent' });
+  state = await app.tasks.setPlan(state.taskId, { plan: { layout: 'sequence', taskType: source.taskType, method: { id: source.id, revision: source.revision } }, steps: source.steps.map(step => ({ id: step.id, title: step.title, kind: 'action', stepType: step.type, result: step.result, doneWhen: step.checks[0] })) }, { expectedRevision: state.revision, schemaVersion: 13, runId: 'method-source-run', nodeId: 'agent' });
   const response = await request('/api/tasks/' + state.taskId + '/method-draft', { expectedRevision: state.revision }); assert.equal(response.status, 200); assert.deepEqual(response.data.method.steps, source.steps); assert.ok(!JSON.stringify(response.data.method).includes(state.goal));
 });
