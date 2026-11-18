@@ -33,8 +33,10 @@ test('keyboard navigation stays within the appropriate app or primary tab row',a
 
 test('app setup explains shared endpoint and independent app connections',async t=>{
  const f=await fixture(t);
- assert.match(f.$('#next-settings-apps').textContent,/One BLACKICE MCP server can serve multiple apps at the same time/);
- assert.match(f.$('#next-settings-apps').textContent,/does not switch or replace another connection/);
- assert.match(f.$('#next-settings-apps').textContent,/use Tools instead/);
+ assert.match(f.$('#next-settings-apps').textContent,/Each app has its own authorization/);
+ assert.match(f.$('#next-settings-apps').textContent,/Each app has a separate grant/);
+ assert.match(f.$('#next-settings-apps').textContent,/Tools connects external tools inside BLACKICE/);
  assert.equal(f.calls.some(x=>x.method!=='GET'),false);
 });
+
+test('Config keeps troubleshooting out of General and opens it read-only',async t=>{const f=await fixture(t);assert.equal(f.mount.querySelector('h1').textContent,'Config');assert.equal(f.$('#next-native-recovery').closest('#next-settings-general'),null);await f.click('#next-settings-section-troubleshooting');await settle();assert.equal(f.$('#next-settings-troubleshooting').hidden,false);assert.equal(f.$('#next-settings-general').hidden,true);await f.click('#next-settings-section-general');assert.equal(f.$('#next-settings-troubleshooting').hidden,true);assert.ok(f.calls.every(x=>x.method==='GET'));});

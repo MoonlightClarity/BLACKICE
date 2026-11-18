@@ -11,10 +11,10 @@ const VERBOSITY=['concise','balanced','detailed'];
 export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{}}) {
   mount.innerHTML=[
     '<div class="next-panel"><div class="next-panel-inner">',
-    '<header class="next-panel-head"><div><h1>Settings</h1><p>Choose how BLACKICE responds, which models it uses, and what it connects to.</p></div>',
+    '<header class="next-panel-head"><div><h1>Config</h1><p>Models, tools and app preferences.</p></div>',
     '<button type="button" id="next-settings-refresh">Refresh</button></header>',
-    '<nav class="next-settings-sections" role="tablist" aria-label="Settings sections">',
-    ...[['general','General'],['identity','Behavior & profile'],['models','Models'],['connections','Tools'],['passwords','Passwords'],['storage','Storage & Data'],['apps','App connections']].map(([id,label])=>
+    '<nav class="next-settings-sections" role="tablist" aria-label="Config sections">',
+    ...[['general','General'],['identity','Behavior & profile'],['models','Models'],['connections','Tools'],['passwords','Passwords'],['storage','Storage & Data'],['troubleshooting','Troubleshooting'],['apps','App connections']].map(([id,label])=>
       '<button type="button" id="next-settings-section-'+id+'" data-settings-section="'+id+'" role="tab" aria-controls="next-settings-'+id+'" aria-selected="'+(id==='general')+'" tabindex="'+(id==='general'?'0':'-1')+'">'+label+'</button>'),
     '</nav><div id="next-settings-general" role="tabpanel" aria-labelledby="next-settings-section-general">',
     '<div id="next-review-notice" hidden><p id="next-review-count"></p><button type="button" id="next-review-open">Review paused actions</button></div>',
@@ -30,13 +30,13 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<button type="button" class="next-primary" id="next-settings-save-model">Set default</button></div>',
     '<p id="next-settings-model-feedback" class="next-help" role="status"></p></section>',
     '<section class="next-card"><h2>Response defaults</h2>',
-    '<p class="next-help">Choose the starting settings for new agent turns. Individual tasks can keep their own choices.</p>',
+    '<p class="next-help">Defaults for Chat Mode. A chat’s explicit choices take precedence.</p>',
     '<form id="next-runtime-settings-form" class="next-stack">',
     '<div class="next-settings-grid">',
     '<label class="next-label">Default reasoning<select class="next-field" id="next-runtime-effort"></select></label>',
-    '<label class="next-label">Default service speed<select class="next-field" id="next-runtime-tier">',
+    '<label class="next-label">Preferred service speed<select class="next-field" id="next-runtime-tier">',
     '<option value="default">Standard</option><option value="fast">Fast</option></select></label>',
-    '<label class="next-label">Answer detail<select class="next-field" id="next-runtime-verbosity">',
+    '<label class="next-label">Answer detail guidance<select class="next-field" id="next-runtime-verbosity">',
     '<option value="concise">Concise</option><option value="balanced">Balanced</option><option value="detailed">Detailed</option></select></label>',
     '</div><details class="next-compatibility"><summary>Advanced task settings</summary><div class="next-settings-grid">',
     '<label class="next-label">Stop waiting after no model activity (minutes)<input class="next-field" type="number" id="next-runtime-idle" min="1" max="1440"></label>',
@@ -48,7 +48,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<div class="next-row"><button type="submit" class="next-primary">Save response settings</button>',
     '<span class="next-help" id="next-runtime-feedback" role="status"></span></div>',
     '</form></section>',
-    '<details class="next-card"><summary>Troubleshooting</summary><div id="next-native-recovery"></div>',
+    '</div><div id="next-settings-troubleshooting" role="tabpanel" aria-labelledby="next-settings-section-troubleshooting" hidden><div id="next-native-recovery"></div>',
     '<section class="next-card"><h2>Model connection</h2>',
     '<p class="next-help">Manage saved model connections in the Models section.</p>',
     '<button type="button" id="next-settings-reconnect">Reconnect model connection</button>',
@@ -59,8 +59,8 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<button type="button" id="next-settings-check-restart" hidden>Check restart</button></div>',
     '<p id="next-settings-restart-feedback" class="next-help" role="status" aria-live="polite"></p></section>',
     '<section class="next-card"><h2>Connection status</h2><p class="next-help" id="next-settings-status" role="status">Checking BLACKICE…</p></section>',
-    '</details></div>',
-    '<div id="next-settings-apps" role="tabpanel" aria-labelledby="next-settings-section-apps" hidden><h2>Use BLACKICE from another app</h2><p class="next-help">One BLACKICE MCP server can serve multiple apps at the same time. Each app connects to the same server URL with its own setup and authorization; choosing a tab below does not switch or replace another connection. These are setup guides, not exclusive providers. To add external tools for models running inside BLACKICE, use Tools instead.</p><nav class="next-settings-sections" role="tablist" aria-label="App setup guides">',
+    '</div>',
+    '<div id="next-settings-apps" role="tabpanel" aria-labelledby="next-settings-section-apps" hidden><h2>Use BLACKICE from another app</h2><p class="next-help">Connect an app to use BLACKICE tools. Each app has its own authorization.</p><details class="next-card"><summary>How connections work</summary><ol><li>Prepare the shared HTTPS endpoint in the ChatGPT guide. Keep BLACKICE and its connection online.</li><li>Add the MCP URL in your app’s remote MCP setup.</li><li>Match the request code and callback here before approving access to files, browser, commands and plans.</li><li>Ask the app to call blackice_direct_status with a fresh nonce and check the returned nonce.</li></ol><p class="next-help">Setup support depends on the app and account. Each app has a separate grant. Tools connects external tools inside BLACKICE.</p></details><nav class="next-settings-sections" role="tablist" aria-label="App setup guides">',
     ...[['connector','ChatGPT'],['gemini','Gemini'],['claude','Claude'],['mcpapps','Other MCP apps']].map(([id,label])=>'<button type="button" id="next-settings-section-'+id+'" data-settings-section="'+id+'" role="tab" aria-controls="next-settings-'+id+'" aria-selected="false" tabindex="-1">'+label+'</button>'),
     '</nav></div>',
     ...['identity','models','connections','passwords','storage','recovery','connector','gemini','claude','mcpapps'].map(id=>'<div id="next-settings-'+id+'" role="tabpanel" aria-labelledby="next-settings-section-'+id+'" hidden></div>'),
@@ -111,8 +111,8 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   const loaders={
     mcpapps:()=>import('./settings-mcp-apps.mjs').then(module=>module.createMcpAppsSettings),
     identity:()=>import('./settings-identity.mjs').then(module=>module.createIdentitySettings),
-    models:()=>Promise.all([import('./settings-providers.mjs'),import('./settings-subscriptions.mjs')]).then(([legacy,focus])=>
-      props=>focus.createSubscriptionModelSettings(props,legacy.createProviderSettings)),
+    models:()=>Promise.all([import('./settings-providers.mjs'),import('./settings-subscriptions.mjs')]).then(([providers,focus])=>
+      props=>focus.createSubscriptionModelSettings(props,providers.createProviderSettings)),
     connections:()=>import('./settings-connections.mjs').then(module=>module.createConnectionSettings),
     passwords:()=>import('./settings-passwords.mjs').then(module=>module.createPasswordSettings),
     storage:()=>import('./settings-storage.mjs').then(module=>module.createStorageSettings),
@@ -151,7 +151,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   }
   async function selectSection(name){
     if(name==='apps')name=appSections.includes(section)?section:'connector';
-    if(destroyed||!['general',...Object.keys(loaders)].includes(name))return;
+    if(destroyed||!['general','troubleshooting',...Object.keys(loaders)].includes(name))return;
     if(section!==name)panels.get(section)?.instance?.leave?.();
     if(name!=='general')modelPicker.close({restoreFocus:false});
     section=name;const token=++sectionRevision;
@@ -161,9 +161,9 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
       $('next-settings-'+button.dataset.settingsSection).hidden=!(button.dataset.settingsSection===name||(button.dataset.settingsSection==='apps'&&appSections.includes(name)));
     }
     $('next-settings-recovery').hidden=name!=='recovery';
-    f.refresh.hidden=name!=='general';
+    f.refresh.hidden=!['general','troubleshooting'].includes(name);
     if(!active)return;
-    if(name==='general'){void load();return;}
+    if(name==='general'||name==='troubleshooting'){void load();return;}
     let panel=panels.get(name);
     if(!panel){panel={instance:null,loading:null};panels.set(name,panel);}
     if(!panel.instance){

@@ -1,7 +1,7 @@
 import { createLocalModelSettings } from './settings-local-models.mjs';
 
 /** Native account settings stay separate from optional API connections. */
-export function createSubscriptionModelSettings(props, createLegacy) {
+export function createSubscriptionModelSettings(props, createProvider) {
   const {mount,api}=props,doc=mount.ownerDocument;
   const element=(tag,cls,value='')=>{
     const node=doc.createElement(tag);
@@ -40,21 +40,24 @@ export function createSubscriptionModelSettings(props, createLegacy) {
   native.append(nativeStatus,nativeVersion,nativeActions,nativeError,catalogNotice,catalog,
     element('p','next-help','Sign-in opens in BLACKICE’s browser. After signing in, refresh the connection to load its model catalog, then choose a model in Chat or General settings.'));
 
-  const advanced=element('details','next-card');
-  advanced.id='next-connect-another-endpoint';advanced.open=true;
-  advanced.append(
-    element('summary','','Optional API connections'),
-    element('p','next-help','Use an API provider, a local model server, or a custom compatible endpoint when you choose. API setup is optional. Add credentials only when the provider requires them; your default and existing chats keep their selected models.'),
-    element('p','next-help','Antigravity and Qwen Code native CLI integrations are retired. Their previously saved chats retain their original provider and model identity, but those native CLIs are no longer selectable.')
-  );
-  const legacyMount=element('div');
-  advanced.append(legacyMount);
+  const advanced=element('section','next-card');
+  advanced.id='next-connect-another-endpoint';
+  advanced.setAttribute('aria-label','API connections');
+  const providerMount=element('div');
+  advanced.append(providerMount);
   const localMount=element('div');
-  mount.append(header,native,localMount,advanced);
+  const tabs=element('nav','next-settings-sections');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Model configuration');
+  const modelPanels=new Map(),tabButtons=new Map();let modelSection='accounts';
+  for(const [id,title]of [['accounts','Accounts'],['local','Local models'],['catalog','Catalog'],['api','Add API']]){const tab=button('next-models-tab-'+id,title);tab.setAttribute('role','tab');tab.setAttribute('aria-controls','next-models-panel-'+id);const panel=element('div','');panel.id='next-models-panel-'+id;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',tab.id);modelPanels.set(id,panel);tabButtons.set(id,tab);tabs.append(tab);}
+  modelPanels.get('accounts').append(header,native);modelPanels.get('local').append(localMount);modelPanels.get('api').append(advanced);mount.append(tabs,...modelPanels.values());
   const local=createLocalModelSettings({mount:localMount,api,onChanged:()=>props.onChanged?.()});
-  const legacy=createLegacy({...props,mount:legacyMount});
+  const providers=createProvider({...props,mount:providerMount});
+  const directory=providerMount.querySelector('#next-provider-directory-root');if(directory){modelPanels.get('catalog').append(directory);const disclosure=directory.querySelector('details');if(disclosure)disclosure.open=true;}
+  modelPanels.get('catalog').addEventListener('click',event=>{if(event.target.closest?.('[data-directory-choose]'))selectModelSection('api');});
+  function selectModelSection(id){if(!modelPanels.has(id)||destroyed)return;modelSection=id;for(const [key,panel]of modelPanels){panel.hidden=key!==id;const tab=tabButtons.get(key);tab.setAttribute('aria-selected',String(key===id));tab.tabIndex=key===id?0:-1;}if(!active)return;providers.setCodexActive?.(id==='accounts');if(id==='local')local.enter();else local.leave();if(['catalog','api'].includes(id)){if(!expanded){expanded=true;providers.enter?.();}}else if(expanded){expanded=false;providers.leave?.();}}
+  for(const [id,tab]of tabButtons){tab.addEventListener('click',()=>selectModelSection(id));tab.addEventListener('keydown',event=>{const ids=[...tabButtons.keys()],i=ids.indexOf(id);let next;if(event.key==='ArrowRight')next=(i+1)%ids.length;else if(event.key==='ArrowLeft')next=(i+ids.length-1)%ids.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=ids.length-1;else return;event.preventDefault();selectModelSection(ids[next]);tabButtons.get(ids[next]).focus();});}
   // Keep native Codex controls with its account, not among API connections.
-  const codexControls=legacyMount.querySelector('#next-provider-codex');
+  const codexControls=providerMount.querySelector('#next-provider-codex');
   if(codexControls)header.append(codexControls);
   let active=false,destroyed=false,revision=0,expanded=false,currentStatus=null,busy=null,operationError='';
   const provider=()=>currentStatus?.subscriptionProviders?.find(item=>item?.id==='mistral-vibe'&&item?.type==='subscription-cli');
@@ -123,19 +126,13 @@ export function createSubscriptionModelSettings(props, createLegacy) {
   };
   nativeLogin.addEventListener('click',()=>run('login'));
   nativeRefresh.addEventListener('click',()=>run('refresh'));
-  const toggle=()=>{
-    if(!active||destroyed)return;
-    if(advanced.open&&!expanded){expanded=true;legacy.enter?.();}
-    else if(!advanced.open&&expanded){expanded=false;legacy.leave?.();}
-  };
-  advanced.addEventListener('toggle',toggle);
-  render();
+  render();selectModelSection(modelSection);
   return {
-    enter(){if(destroyed||active)return;active=true;legacy.setCodexActive?.(true);local.enter();render();void load();toggle();},
-    leave(){active=false;legacy.setCodexActive?.(false);revision++;local.leave();render();if(expanded){legacy.leave?.();expanded=false;}},
+    enter(){if(destroyed||active)return;active=true;selectModelSection(modelSection);render();void load();},
+    leave(){active=false;providers.setCodexActive?.(false);revision++;local.leave();render();if(expanded){providers.leave?.();expanded=false;}},
     updateStatus,
-    focusProvider(id){if(id==='mistral-vibe'&&!destroyed&&active){native.open=true;native.focus({preventScroll:false});}},
-    updateRuntimeSettings(value){legacy.updateRuntimeSettings?.(value);},
-    destroy(){if(destroyed)return;this.leave();destroyed=true;local.destroy();legacy.destroy?.();advanced.removeEventListener('toggle',toggle);mount.replaceChildren();}
+    focusProvider(id){if(id==='mistral-vibe'&&!destroyed&&active){selectModelSection('accounts');native.open=true;native.focus({preventScroll:false});}},
+    updateRuntimeSettings(value){providers.updateRuntimeSettings?.(value);},
+    destroy(){if(destroyed)return;this.leave();destroyed=true;local.destroy();providers.destroy?.();mount.replaceChildren();}
   };
 }

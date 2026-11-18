@@ -6,7 +6,8 @@ export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, pick
  const button=text=>{const n=make('button',text);n.setAttribute('type','button');return n;};
  const input=id=>{const n=make('input','','next-field');n.id=id;n.setAttribute('type','text');return n;};
  const quick=make('section','','next-stack next-llama-quick');
- quick.append(make('h3','Run a model on this computer'),make('p','BLACKICE includes the llama.cpp engine on supported installations. You also need a model: a separate download containing what the AI has learned. Models are not included with BLACKICE.','next-help'));
+ quick.append(make('h3','Local model directory'),make('p','Choose a GGUF folder or an individual model file. Existing files stay where they are.','next-help'));
+ const directory=make('section','','next-stack');directory.id='next-local-model-directory';quick.append(directory);
  const guide=make('ol','','next-help');guide.id='next-llama-model-guide';
  for(const text of ['Get a model: download a text-generation model in GGUF format from its publisher. Check its memory requirements and license first.','Choose the downloaded model file below. Keep it in a permanent folder; BLACKICE uses the original file rather than copying it.','Select Save & load model. Once loaded, choose it from the chat model selector.'])guide.append(make('li',text));
  const discovery=make('details','','next-stack');discovery.id='next-llama-discovery-help';
@@ -20,7 +21,7 @@ export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, pick
  const prepare=()=>{prompt.value='Help me choose a local model for BLACKICE. My task/model interest: '+(query.value.trim()||'[describe the task]')+'. My computer: [OS, RAM, GPU and VRAM, or inspect if available]. Search Hugging Face for current model options. Recommend a good-enough choice for my hardware and task, distinguishing throughput from quality. BLACKICE bundles llama.cpp and directly loads GGUF files; confirm the model architecture works with the included engine. Give the publisher model-page link, exact file/quantization, approximate memory needs and download size. If another format is a better choice, explain the compatible external runtime/API needed; do not claim BLACKICE directly loads safetensors or PyTorch checkpoints. Do not download or launch anything yet.';};
  promptButton.addEventListener('click',prepare);prepare();
  discovery.append(label('Search by model or task',query),find,make('p','Search opens Hugging Face with the GGUF filter. Download a compatible model there, then choose its file below. No download or model call is started here.','next-help'),promptButton,label('Copy this prompt into any chat for help choosing',prompt));
- quick.append(guide,discovery,make('p','Why GGUF? This file picker configures the bundled llama.cpp engine, which uses GGUF. BLACKICE is not limited to that engine: select Ollama or LM Studio in Runtime, or a compatible model API for other runtimes. A .safetensors or PyTorch file cannot be loaded by simply renaming it.','next-help'));
+ const help=make('details');help.append(make('summary','Choosing a model'),make('p','Models are not included with BLACKICE. Choose and download a compatible model separately.','next-help'),guide,discovery,make('p','Why GGUF? This file picker configures the bundled llama.cpp engine, which uses GGUF. BLACKICE is not limited to that engine: select Ollama or LM Studio in Runtime, or a compatible model API for other runtimes. A .safetensors or PyTorch file cannot be loaded by simply renaming it.','next-help'));quick.append(help);
  const status=make('p','Checking runtime…','next-help');status.id='next-llama-runtime-status';status.setAttribute('role','status');
  const file=input('next-llama-model-file');file.placeholder='Choose your downloaded model file (.gguf)';
  const name=input('next-llama-model-name');name.placeholder='Name in BLACKICE';
@@ -50,7 +51,7 @@ export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, pick
   const c=make(type==='select'?'select':'input','','next-field');c.id='next-llama-default-'+key;
   if(type==='select')for(const v of ['auto','on','off']){const o=make('option',v);o.setAttribute('value',v);c.append(o);}
   else c.setAttribute('type',type);
-  controls[key]=c;section.append(label(title,c));
+  controls[key]=c;(key==='modelsDirectory'?directory:section).append(label(key==='modelsDirectory'?'Models folder (absolute path)':title,c));
  }
  const paths=make('textarea','','next-field');paths.id='next-llama-paths';paths.rows=4;
  const overrides=make('textarea','','next-field');overrides.id='next-llama-overrides';overrides.rows=4;
@@ -61,10 +62,18 @@ export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, pick
  const commands=make('div','','next-row');commands.append(save,reset);
  const preview=make('pre','','next-help');preview.id='next-llama-default-preview';
  section.append(advanced,commands,preview);
+ const saveDirectory=button('Save models folder');saveDirectory.id='next-local-directory-save';saveDirectory.addEventListener('click',async()=>{
+ if(pending||picking||refreshing||revision===null||!alive||!active)return;
+ const token=generation,draft=Object.fromEntries(definitions.map(([key])=>[key,controls[key].value]));
+ const settings={...structuredClone(baseline),modelsDirectory:controls.modelsDirectory.value.trim()};pending=true;sync();
+ try{const snapshot=await api('/api/local-models/config','POST',{expectedRevision:revision,settings});if(valid(token)){const latest=Object.fromEntries(definitions.map(([key])=>[key,controls[key].value])),latestPaths=paths.value,latestOverrides=overrides.value;draw(snapshot);for(const [key]of definitions)if(key!=='modelsDirectory'||latest[key]!==draft[key])controls[key].value=latest[key];paths.value=latestPaths;overrides.value=latestOverrides;feedback.textContent='Models folder saved. No model was moved or loaded.';}}
+ catch(error){if(valid(token))feedback.textContent=error.message||'Could not save models folder.';}
+ finally{pending=false;if(alive)sync();}
+ });directory.append(saveDirectory,make('p','Sets the llama.cpp discovery folder. Does not move, download or load models. Ollama and LM Studio keep their own storage.','next-help'));
  quick.append(status,label('Model file',file),label('Model name',name),row,feedback,section);mount.append(quick);
  let alive=true,active=false,pending=false,picking=false,refreshing=false,generation=0,revision=null,recommended=null,baseline=null,pendingRestart=false;
  const valid=token=>alive&&active&&token===generation;
- const sync=()=>{start.disabled=pending||picking||refreshing||revision===null||!file.value.trim()||!name.value.trim();browse.disabled=pending||picking||refreshing;reload.disabled=pending||picking||refreshing;save.disabled=pending||picking||refreshing||revision===null;reset.disabled=pending||picking||refreshing;file.disabled=pending;name.disabled=pending;};
+ const sync=()=>{start.disabled=pending||picking||refreshing||revision===null||!file.value.trim()||!name.value.trim();browse.disabled=pending||picking||refreshing;reload.disabled=pending||picking||refreshing;save.disabled=pending||picking||refreshing||revision===null;saveDirectory.disabled=save.disabled;reset.disabled=pending||picking||refreshing;file.disabled=pending;name.disabled=pending;};
  const suggested=filename=>filename.split(/[\\/]/).pop().replace(/\.gguf$/i,'').replace(/[=[\];#:\x00-\x1f\x7f]/g,'-').slice(0,256);
  function fill(value){for(const [key]of definitions)controls[key].value=String(value[key]??'');paths.value=JSON.stringify(value.modelPaths||{},null,2);overrides.value=JSON.stringify(value.modelOverrides||{},null,2);}
  function draw(snapshot){

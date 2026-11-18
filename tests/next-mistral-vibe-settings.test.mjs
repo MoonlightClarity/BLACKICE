@@ -31,13 +31,13 @@ test('native Mistral account settings are separate from optional API keys and op
   assert.equal(card.querySelector('summary').textContent,'Optional Mistral account');assert.equal(card.open,false);
   assert.match(card.textContent,/separate from Mistral API keys/);
   assert.equal(card.querySelector('input'),null);assert.equal(card.querySelector('a'),null);
-  assert.match(apis.querySelector('summary').textContent,/Optional API connections/);
+  assert.equal(apis.getAttribute('aria-label'),'API connections');
   assert.equal(apis.contains(card),false);assert.equal(f.$('#next-mistral-vibe-login').disabled,false);
   assert.match(f.$('#next-mistral-vibe-status').textContent,/Sign in to your Mistral account/);
   assert.equal(f.$('#next-mistral-vibe-catalog').hidden,true);assert.deepEqual(f.writes(),[]);
   f.panel.focusProvider('mistral-vibe');assert.equal(f.document.activeElement,card);assert.equal(card.open,true);
   f.panel.leave();f.panel.enter();await settle();assert.equal(f.$('#fixture-api-draft').value,'Keep my API draft');
-  assert.equal(f.lifecycle.entered,2);assert.equal(f.lifecycle.left,1);assert.deepEqual(f.writes(),[]);
+  assert.equal(f.lifecycle.entered,0,'API panel stays inactive while browsing accounts');await f.click('#next-models-tab-api');assert.equal(f.lifecycle.entered,1);assert.equal(f.$('#next-models-panel-accounts').hidden,true);await f.click('#next-models-tab-local');assert.equal(f.lifecycle.left,1);assert.equal(f.$('#next-models-panel-api').hidden,true);await f.click('#next-models-tab-api');assert.equal(f.$('#fixture-api-draft').value,'Keep my API draft');assert.deepEqual(f.writes(),[]);
 });
 
 test('explicit account login and refresh use native routes and expose only the exact reported catalog',async t=>{
