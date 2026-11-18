@@ -256,7 +256,7 @@ test('a conversation cannot fork another continuation or compaction while its sa
   await engine.executions.get(next.id); assert.equal(engine.getRun(next.id).status, 'completed');
 });
 
-test('multiple admitted chats drain old background work without reading retired learned context', async t => {
+test('multiple admitted chats ignore retired learning hooks without reading learned context', async t => {
   const review = deferred(), releases = [deferred(), deferred()]; let reviewSettled = false, contextReads = 0, cancellations = 0;
   const learning = { cancelBackground() { cancellations++; return review.promise; }, getContext() { assert.equal(reviewSettled, true); contextReads++; return { lessons: [], skills: [], facts: [], truncated: false }; }, async scheduleAfterRun() {} };
   const runtime = new FakeRuntime(() => releases[runtime.calls.length - 1].promise);
@@ -264,8 +264,8 @@ test('multiple admitted chats drain old background work without reading retired 
   try {
     const first = engine.startRun({ workflow: workflow(), input: 'First queued behind review.' }), second = engine.startRun({ workflow: workflow(), input: 'Second queued behind review.' });
     assert.equal(engine.executionStatus().activeCount, 2); assert.equal(engine.executionStatus().availableSlots, 0); await new Promise(resolve => setImmediate(resolve));
-    assert.equal(runtime.calls.length, 0); assert.equal(contextReads, 0); assert.equal(cancellations, 2);
-    reviewSettled = true; review.resolve(); await waitFor(() => runtime.calls.length === 2, 'both chats start after review acknowledgement'); assert.equal(contextReads, 0);
+    assert.equal(contextReads, 0); assert.equal(cancellations, 0);
+    await waitFor(() => runtime.calls.length === 2, 'both chats start without retired learning acknowledgement'); assert.equal(reviewSettled, false); assert.equal(contextReads, 0); assert.equal(cancellations, 0);
     releases.forEach((release, index) => release.resolve({ output: 'Ready.', threadId: `review-thread-${index}` })); await Promise.all([engine.executions.get(first.id), engine.executions.get(second.id)]);
   } finally { reviewSettled = true; review.resolve(); releases.forEach(release => release.resolve({ output: 'Fixture cleanup.' })); }
 });

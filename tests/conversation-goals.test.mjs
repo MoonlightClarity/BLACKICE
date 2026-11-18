@@ -277,17 +277,21 @@ test('dispatch storage errors produce a visible blocked reason instead of an idl
 });
 
 test('editing a goal during delayed automatic admission resumes the new objective in the same conversation', async t => {
-  const admission = deferred(); let backgroundCalls = 0, admissionHeld = false;
+  const admission = deferred(); let admissionHeld = false;
   const {engine,goals,runtime,conversations} = await fixture(t, async(options,n) => {
     await report(options,n === 1 ? 'progress' : 'complete'); return output(n);
-  }, {engine:{learning:{
-    cancelBackground:() => { if (++backgroundCalls === 2) { admissionHeld = true; return admission.promise; } },
-    scheduleAfterRun:async()=>{},getContext:()=>({lessons:[],skills:[],facts:[],truncated:false}),
-  }}});
+  });
+  const admit = goals.admitRun.bind(goals);
+  goals.admitRun = async run => {
+    if (!admissionHeld && run.goalDispatch) {
+      admissionHeld = true; await admission.promise;
+    }
+    return admit(run);
+  };
   const first = engine.startRun({workflow:graph(),input:{task:'Initial objective',goal:{objective:'Initial objective'}}});
   let rejected;
   try {
-    await waitFor(() => admissionHeld,'automatic admission waiting for background work');
+    await waitFor(() => admissionHeld,'automatic admission waiting before Goal admission');
     rejected = [...engine.runs.values()].find(run => run.id !== first.id);
     assert.ok(rejected); assert.equal(runtime.calls.length,1);
     await goals.control(first.id,{action:'update',objective:'Expanded objective',requestId:'update-during-admission'});

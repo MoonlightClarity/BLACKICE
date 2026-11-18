@@ -53,22 +53,21 @@ test('contained browser serial queue reruns deadline check at actual action disp
 });
 test('child provider final admission rejects a deadline that changed during child preparation',async()=>{
  const s=stub();let calls=0;
- const handler=createSubagentToolHandler({cwd:'C:/fixture',model:'fixture',maxParallel:1,
-  allowAutonomousDelegation:true,runtime:{runAgent:async()=>{calls++;return{output:'should not run'};}},
+ const handler=createSubagentToolHandler({cwd:'C:/fixture',model:'fixture',maxParallel:2,
+  runtime:{runAgent:async()=>{calls++;return{output:'should not run'};}},
   beforeModel:({signal})=>{s.clock.now=ms(cutoff);s.goals.assertProviderAdmission(s.run,{signal});}
  });
- const result=JSON.parse((await handler({name:SUBAGENT_TOOL.name,arguments:{tasks:[{id:'a',prompt:'Inspect synthetic data.'}]}})).contentItems[0].text);
+ const result=JSON.parse((await handler({name:SUBAGENT_TOOL.name,arguments:{tasks:[{id:'a',prompt:'Inspect synthetic data.'},{id:'b',prompt:'Inspect independent data.'}]}})).contentItems[0].text);
  assert.equal(result.completed,0);
  assert.equal(calls,0);
- assert.notEqual(result.results[0].status,'completed');
+ assert.deepEqual(result.results.map(value=>value.status),['failed','failed']);
  await s.goals.close();
  assert.deepEqual(s.state.root.goalUnresolvedEffects,pauseEvidence);
 });
-test('final Goal wall-clock admission after awaited Swarm dispatch hook blocks provider without timer delivery',async()=>{
+test('final Goal wall-clock admission after awaited dispatch hook blocks provider without timer delivery',async()=>{
   const s=stub();let calls=0,admissionChecks=0,durableFences=0;
   try {
-    const handler=createSubagentToolHandler({cwd:'C:/fixture',model:'fixture',maxParallel:1,
-      allowAutonomousDelegation:true,
+    const handler=createSubagentToolHandler({cwd:'C:/fixture',model:'fixture',maxParallel:2,
       runtime:{runAgent:async()=>{calls++;return{output:'provider was incorrectly invoked'};}},
       beforeModel:({signal})=>{
         admissionChecks++;s.goals.assertProviderAdmission(s.run,{signal});
@@ -76,16 +75,16 @@ test('final Goal wall-clock admission after awaited Swarm dispatch hook blocks p
       onProviderDispatch:async()=>{
         durableFences++;
         // The first Goal admission has already passed. An asynchronous
-        // durable Swarm dispatch save crosses the wall-clock deadline while
+        // durable dispatch save crosses the wall-clock deadline while
         // cancellation timer delivery is deliberately not invoked.
         await Promise.resolve();s.clock.now=ms(cutoff);
       }
     });
     const response=await handler({name:SUBAGENT_TOOL.name,
-      arguments:{tasks:[{id:'deadline_fenced_worker',prompt:'No provider may start after cutoff.'}]}});
+      arguments:{tasks:[{id:'deadline_fenced_worker',prompt:'No provider may start after cutoff.'},{id:'independent',prompt:'Independently inspect fixture.'}]}});
     const result=JSON.parse(response.contentItems[0].text);
-    assert.equal(admissionChecks,2,'same real host Goal admission must run before and after awaited durable hook');
-    assert.equal(durableFences,1,'the durable attempt hook was invoked once');
+    assert.equal(admissionChecks,4,'both workers rerun real Goal admission after the awaited hook');
+    assert.equal(durableFences,2,'each admitted worker invokes its dispatch fence once');
     assert.equal(calls,0,'runtime.runAgent must not run after the absolute cutoff');
     assert.equal(result.completed,0);
     assert.equal(result.results[0].status,'failed');
@@ -95,21 +94,22 @@ test('final Goal wall-clock admission after awaited Swarm dispatch hook blocks p
     assert.deepEqual(s.state.root.goalUnresolvedEffects,pauseEvidence);
   } finally { await s.goals.close(); }
 });
-test('deadline abort propagates to existing child, leaves a queued sibling unstarted, and preserves unknown effects',async()=>{
+test('deadline abort propagates to existing children, leaves a queued sibling unstarted, and preserves unknown effects',{timeout:5000},async t=>{
  const s=stub();let started=0,entered=deferred();
- const handler=createSubagentToolHandler({cwd:'C:/fixture',model:'fixture',maxParallel:1,allowAutonomousDelegation:true,signal:s.controllers.signal,
-   runtime:{runAgent:async options=>{started++;entered.resolve();await new Promise((resolve,reject)=>{
+ t.after(()=>{s.controllers.abort();return s.goals.close();});
+ const handler=createSubagentToolHandler({cwd:'C:/fixture',model:'fixture',maxParallel:2,signal:s.controllers.signal,
+   runtime:{runAgent:async options=>{started++;if(started===2)entered.resolve();await new Promise((resolve,reject)=>{
      if(options.signal.aborted)return reject(Object.assign(Error('Aborted'),{name:'AbortError'}));
      options.signal.addEventListener('abort',()=>reject(Object.assign(Error('Aborted'),{name:'AbortError'})),{once:true});
    });return{output:'unreachable'};}},
    beforeModel:({signal})=>s.goals.assertProviderAdmission(s.run,{signal})
  });
- const pending=handler({name:SUBAGENT_TOOL.name,arguments:{tasks:[{id:'one',prompt:'Synthetic work one'},{id:'two',prompt:'Synthetic work two'}]}});
+ const pending=handler({name:SUBAGENT_TOOL.name,arguments:{tasks:[{id:'one',prompt:'Synthetic work one'},{id:'two',prompt:'Synthetic work two'},{id:'three',prompt:'Queued synthetic work'}]}});
  await entered.promise;
  s.clock.now=ms(cutoff);await s.goals.expireIfDue('root');
  const result=JSON.parse((await pending).contentItems[0].text);
- assert.equal(started,1);
- assert.deepEqual(result.results.map(v=>v.status),['cancelled','not-started']);
+ assert.equal(started,2);
+ assert.deepEqual(result.results.map(v=>v.status),['cancelled','cancelled','not-started']);
  assert.deepEqual(s.cancelled,['run']);
  assert.deepEqual(s.state.root.goalUnresolvedEffects,pauseEvidence);
  await s.goals.close();

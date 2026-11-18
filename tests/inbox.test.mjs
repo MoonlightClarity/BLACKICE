@@ -123,12 +123,12 @@ test('Stop also cancels a previously admitted explicit start waiting behind anot
   const starting=inbox.runNow(item.id);starting.catch(()=>{});const paused=inbox.pause('Emergency stop after Run now');release.resolve();await editing;await assert.rejects(starting,/stopped before execution/);await paused;assert.equal(engine.calls.length,0);assert.equal(inbox.get(item.id).status,'queued');
 });
 
-test('real engine admission persists inbox metadata before any runtime action and waits for background learning to stop',async t=>{
+test('real engine admission persists inbox metadata before runtime and ignores retired learning hooks',async t=>{
   const directory=await mkdtemp(path.join(tmpdir(),'relay-inbox-engine-')),cwd=path.join(directory,'workspace');await mkdir(cwd);const release=deferred(),entered=deferred();let calls=0,stopping=0;
   const runtime={status:()=>({connected:true,authenticated:true}),runAgent:async options=>{calls++;const runs=JSON.parse(await readFile(path.join(directory,'runs.json'),'utf8')),saved=runs.find(run=>run.metadata?.inboxId);assert.ok(saved,'admission is on disk before runtime execution');const queue=JSON.parse(await readFile(path.join(directory,'inbox.json'),'utf8'));assert.equal(queue.items[0].dispatchId,saved.metadata.inboxDispatchId);entered.resolve();return{output:'Verified real engine fixture.',threadId:'inbox-fixture-thread'};}};
   const learning={cancelBackground:()=>{stopping++;return release.promise;},getContext:()=>({lessons:[],skills:[],facts:[],truncated:false}),scheduleAfterRun:async()=>{}};
   const engine=await new HarnessEngine({runtime,dataDir:directory,defaultCwd:cwd,learning}).init(),inbox=await new TaskInbox({dataDir:directory,engine}).init();t.after(async()=>{release.resolve();await inbox.close();await engine.close();assert.match(path.basename(directory),/^relay-inbox-engine-/);await rm(directory,{recursive:true,force:true});});
-  const item=await inbox.add({input:'Use the persisted admission journal',cwd,workflow:workflowNoPlanning()}),started=await inbox.runNow(item.id);assert.equal(started.run.metadata.inboxId,item.id);assert.equal(stopping,1);await tick();assert.equal(calls,0);release.resolve();await entered.promise;await until(()=>inbox.get(item.id).status==='completed');assert.equal(calls,1);assert.equal(inbox.get(item.id).runId,started.run.id);
+  const item=await inbox.add({input:'Use the persisted admission journal',cwd,workflow:workflowNoPlanning()}),started=await inbox.runNow(item.id);assert.equal(started.run.metadata.inboxId,item.id);assert.equal(stopping,0);await entered.promise;assert.equal(stopping,0);await until(()=>inbox.get(item.id).status==='completed');assert.equal(calls,1);assert.equal(inbox.get(item.id).runId,started.run.id);
 });
 
 test('HTTP inbox capture stays usable while a real task runs, auth applies, and stopping one chat leaves queued work eligible',async t=>{
