@@ -119,17 +119,17 @@ test('find bounds long-path pages and returns every match through output-budget 
   assert.equal(pages.flatMap(x => x.matches).length, 100); assert.equal(pages.at(-1).searchComplete, true);
 });
 
-test('find identifies skipped symlinks instead of claiming exhaustive absence', async t => {
+test('find follows directory symlinks instead of silently excluding their targets', async t => {
   const f = await fixture(t); const link = path.join(f.outside, 'linked');
   try { await symlink(f.cwd, link, process.platform === 'win32' ? 'junction' : 'dir'); }
   catch (e) { if (['EPERM', 'EACCES'].includes(e.code)) { t.skip('Host does not allow creating a synthetic link'); return; } throw e; }
   const result = read(await handler(f)(call({ action: 'find', path: f.outside, query: 'missing' })));
-  assert.equal(result.scanComplete, true); assert.equal(result.searchComplete, false);
-  assert.equal(result.skippedCount, 1); assert.equal(result.errors[0].code, 'SYMLINK_NOT_FOLLOWED');
+  assert.equal(result.scanComplete, true); assert.equal(result.searchComplete, true);
+  assert.equal(result.skippedCount, 0); assert.deepEqual(result.errors, []);
 });
 
 
-test('find normalizes repeated extension filters and removes overlapping roots', async t => {
+test('find normalizes repeated extension filters and deduplicates traversal of overlapping roots', async t => {
   const f = await fixture(t); const nested = path.join(f.outside, 'nested'); await mkdir(nested);
   await files(nested, 12);
   const first = read(await handler(f)(call({ action: 'find', roots: [f.outside, nested], query: 'Item', extensions: ['.TXT'], limit: 2 })));
