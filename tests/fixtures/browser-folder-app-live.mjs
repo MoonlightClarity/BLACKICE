@@ -65,6 +65,15 @@ app.whenReady().then(async()=>{
   await until(()=>driver.status().tabs.find(t=>t.tabId===first.tabId).collectionId===child);
   report.checks.push('Real app dragstart/drop handlers move native tab out of and back into folder');
 
+  await idle();await js("(()=>{const transfer=new DataTransfer();document.querySelector('[data-collection-id="+JSON.stringify(child)+"] > .next-browser-folder-heading').dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));document.querySelector('.next-browser-folder-toolbar').dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:transfer}));})()");
+  await until(()=>driver.status().collections.find(f=>f.id===child).parentId===null);
+  await idle();await js("document.querySelector('[data-collection-id="+JSON.stringify(child)+"] > .next-browser-folder-heading').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,bubbles:true}))");
+  await until(()=>driver.status().collections.find(f=>f.id===child).parentId===parent);
+  await idle();await js("document.querySelector('[data-collection-id="+JSON.stringify(child)+"] > .next-browser-folder-heading').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,shiftKey:true,bubbles:true}))");
+  await until(()=>driver.status().collections.find(f=>f.id===child).parentId===null);
+  await idle();await js("(()=>{const transfer=new DataTransfer();document.querySelector('[data-collection-id="+JSON.stringify(child)+"] > .next-browser-folder-heading').dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));document.querySelector('[data-collection-id="+JSON.stringify(parent)+"] > .next-browser-folder-heading').dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:transfer}));})()");
+  await until(()=>driver.status().collections.find(f=>f.id===child).parentId===parent);
+  report.checks.push('Actual folder subtree drag and Ctrl Enter indent/Ctrl Shift Enter outdent persist via host');
   assert.deepEqual(driver.status().tabs.map(({tabId,owner,folderId})=>({tabId,owner,folderId})),original);
   assert.equal(await js("document.querySelectorAll('[data-tab-id]').length"),2);
   assert.equal(await js("document.querySelectorAll('.next-browser-folders').length"),0);
@@ -72,9 +81,9 @@ app.whenReady().then(async()=>{
   assert.equal(await js("document.querySelector('[data-collection-id="+JSON.stringify(child)+"] .next-browser-folder-children').hidden"),true);
   await idle();await js("window.fixture.refresh()");await until(()=>js("document.querySelector('[data-collection-id="+JSON.stringify(child)+"] .next-browser-folder-children')?.hidden===true"));
   report.checks.push('One intrinsic tabstrip, no duplicate folder panel; local collapse survives host refresh; ownership unchanged');
-  await idle();await js("document.querySelector('[data-collection-id="+JSON.stringify(child)+"] .next-browser-folder-toggle').parentElement.querySelector('.next-browser-folder-menu').click();document.querySelector('[aria-label=\"Folder name\"]').value='Targets';document.querySelector('.next-browser-folder-editor').requestSubmit()");
+  await idle();await js("document.querySelector('[data-collection-id="+JSON.stringify(child)+"] .next-browser-folder-toggle').parentElement.querySelector('.next-browser-folder-menu').click();document.querySelector('.next-browser-folder-rename').value='Targets';document.querySelector('.next-browser-folder-rename').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))");
   await until(()=>driver.status().collections.some(f=>f.id===child&&f.name==='Targets'));
-  await idle();await js("document.querySelector('[data-collection-id="+JSON.stringify(child)+"] .next-browser-folder-toggle').parentElement.querySelector('.next-browser-folder-menu').click();[...document.querySelectorAll('.next-browser-folder-editor button')].find(n=>n.textContent==='Remove folder, keep tabs').click()");
+  await idle();await js("document.querySelector('[data-collection-id="+JSON.stringify(child)+"] .next-browser-folder-toggle').parentElement.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true}));[...document.querySelectorAll('.next-browser-folder-editor button')].find(n=>n.textContent==='Remove folder, keep tabs').click()");
   await until(()=>!driver.status().collections.some(f=>f.id===child));assert.equal(driver.status().tabs.find(t=>t.tabId===first.tabId).collectionId,parent);
   await until(()=>js("!!document.querySelector('[data-tab-id="+JSON.stringify(first.tabId)+"]')"));
   await idle();await js("document.querySelector('[data-tab-id="+JSON.stringify(first.tabId)+"]').click()");

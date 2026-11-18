@@ -20,7 +20,7 @@ test('explicit move uses observed tab and existing host action; busy and destroy
  f.setBusy(false);f.folders.destroy();await f.click('.next-browser-folder-add');assert.equal(f.calls.length,1);
 });
 test('folder edits exclude descendants, preserve tabs, and never transfer ownership',async t=>{
- const f=fixture(t);await f.click('[data-folder-control="edit:p"]');const select=f.$('.next-browser-folder-editor select');assert.equal(select.children.length,1);
+ const f=fixture(t);await f.$('[data-collection-id="p"] .next-browser-folder-heading').dispatch('contextmenu');const select=f.$('.next-browser-folder-editor select');assert.equal(select.children.length,1);
  const remove=[...f.$('.next-browser-folder-editor').querySelectorAll('button')].find(n=>n.textContent==='Remove folder, keep tabs');await remove.dispatch('click');
  assert.deepEqual(f.calls,[{browser:'relay',action:'collection_remove',collectionId:'p'}]);assert.equal(f.data.tabs.length,2);
 });
@@ -64,10 +64,29 @@ test('folder name opens rename while its disclosure alone changes expansion',asy
  const f=fixture(t);const toggle=f.$('[data-folder-control="toggle:p"]');
  assert.equal(toggle.getAttribute('aria-label'),'Collapse Projects');assert.equal(toggle.textContent,'\u25be');
  await f.click('[data-folder-control="edit:p"]');
- assert.equal(f.$('.next-browser-folder-editor input').value,'Projects');
+ assert.equal(f.$('.next-browser-folder-rename').value,'Projects');
  assert.equal(f.$('[data-collection-id="p"] .next-browser-folder-children').hidden,false);
- f.$('.next-browser-folder-editor input').value='Renamed';
- await f.$('.next-browser-folder-editor').dispatch('submit');
- assert.deepEqual(f.calls,[{browser:'relay',action:'collection_rename',collectionId:'p',name:'Renamed',parentCollectionId:null}]);
+ f.$('.next-browser-folder-rename').value='Renamed';
+ await f.key(f.$('.next-browser-folder-rename'),'Enter');
+ assert.deepEqual(f.calls,[{browser:'relay',action:'collection_rename',collectionId:'p',name:'Renamed'}]);
  await f.click('[data-folder-control="toggle:p"]');assert.equal(f.$('[data-collection-id="p"] .next-browser-folder-children').hidden,true);
+});
+
+test('Ctrl Enter indents and Ctrl Shift Enter outdents through persistent folder actions',async t=>{
+ const f=fixture(t);f.data.collections.push({id:'second',name:'Second'});f.render();
+ await f.$('[data-collection-id="second"] .next-browser-folder-heading').dispatch('keydown',{key:'Enter',ctrlKey:true});
+ assert.deepEqual(f.calls.at(-1),{browser:'relay',action:'collection_move',collectionId:'second',parentCollectionId:'p'});
+ f.data.collections.find(x=>x.id==='second').parentId='p';f.render();
+ await f.$('[data-collection-id="second"] .next-browser-folder-heading').dispatch('keydown',{key:'Enter',ctrlKey:true,shiftKey:true});
+ assert.deepEqual(f.calls.at(-1),{browser:'relay',action:'collection_move',collectionId:'second',parentCollectionId:null});
+});
+test('inline rename draft survives refresh, Escape and leave without saving',async t=>{
+ const f=fixture(t);await f.click('[data-folder-control="edit:p"]');const input=f.$('.next-browser-folder-rename');input.value='Unsent rename';f.render();assert.equal(f.$('.next-browser-folder-rename'),input);
+ await f.key(input,'Escape');assert.equal(f.$('.next-browser-folder-rename'),null);await f.click('[data-folder-control="edit:p"]');assert.equal(f.$('.next-browser-folder-rename').value,'Unsent rename');
+ f.folders.leave();assert.equal(f.$('.next-browser-folder-rename'),null);assert.equal(f.calls.length,0);
+});
+test('folder drag rejects cycles and moves observed folders only',async t=>{
+ const f=fixture(t);const dt=id=>({types:['application/x-blackice-folder'],getData:type=>type==='application/x-blackice-folder'?id:'',setData(){}});
+ await f.$('[data-collection-id="c"] .next-browser-folder-heading').dispatch('drop',{dataTransfer:dt('p')});assert.equal(f.calls.length,0);
+ await f.$('.next-browser-folder-toolbar').dispatch('drop',{dataTransfer:dt('c')});assert.deepEqual(f.calls,[{browser:'relay',action:'collection_move',collectionId:'c',parentCollectionId:null}]);
 });
