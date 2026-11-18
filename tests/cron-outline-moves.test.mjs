@@ -65,3 +65,20 @@ test('compact row navigation skips collapsed descendants and leaves inputs alone
  await f.folder('a').dispatch('keydown',{key:'ArrowDown'});assert.equal(document.activeElement,f.job());assert.equal(f.calls.length,0);
  const input=f.folder('a').querySelector('input');input.hidden=false;await input.dispatch('keydown',{key:'ArrowDown'},true);assert.equal(f.calls.length,0);
 });
+
+test('open create draft keeps its displayed target and revision when selection changes',async t=>{
+ const f=await fixture(t,{compact:true});
+ await f.folder('a').querySelector('.next-schedule-folder-name').dispatch('click',{});
+ await f.manager.querySelector('summary').dispatch('click',{});
+ const form=f.manager.querySelector('form'),input=form.querySelector('input');input.value='Frozen target';
+ assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
+ await f.folder('b').querySelector('.next-schedule-folder-name').dispatch('click',{});
+ assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
+ await f.list.querySelector('h3').dispatch('click',{});
+ assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
+ f.advance();assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
+ await form.dispatch('submit',{});await settle();
+ assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.parentId,'a');assert.equal(f.calls[0].body.expectedRevision,1);
+ assert.equal(input.value,'Frozen target','conflict retains draft');
+ assert.equal(f.manager.querySelector('summary').textContent,'New folder in Alpha');
+});

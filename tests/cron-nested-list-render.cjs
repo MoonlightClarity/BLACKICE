@@ -68,6 +68,10 @@ const until=async s=>{for(let i=0;i<100;i++){if(await run(s))return;await sleep(
  await run('document.querySelector("[data-schedule-folder=research] .next-schedule-folder-name").click();document.querySelector(".next-schedule-folder-create>summary").click()');
  await until('document.querySelector(".next-schedule-folder-create").open');
  assert.equal(await run('document.querySelector(".next-schedule-folder-create select")===null'),true);
+ const draftTitle=await run('document.querySelector(".next-schedule-folder-create>summary").textContent');
+ await run('document.querySelector("[data-schedule-folder=work] .next-schedule-folder-name").click();document.querySelector(".next-schedule-unfiled>h3").click()');
+ assert.equal(await run('document.querySelector(".next-schedule-folder-create>summary").textContent'),draftTitle,'changing selection cannot relabel an open draft');
+
  await run('(()=>{const form=document.querySelector(".next-schedule-folder-create form");form.querySelector("input").value="Nested test";form.requestSubmit();})()');
  await until('[...document.querySelectorAll(".next-schedule-folder-name")].some(x=>x.textContent==="Nested test")');
  assert.ok(organization.folders.some(folder=>folder.name==='Nested test'&&folder.parentId==='research'));
