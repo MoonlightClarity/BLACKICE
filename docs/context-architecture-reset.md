@@ -6,7 +6,7 @@ Reduce persistent context poisoning rather than rename it. Remove active plannin
 
 ## First milestone: Directory retirement
 
-Directory does not meet the required cross-conversation isolation guarantee: different conversation IDs may resolve to one explicit root, and saved summary state is merged/reloaded without proving conversation ownership. Folder isolation alone does not establish conversation isolation. Therefore execution is unavailable, rather than advertised as safe. Admission, direct/prepared/class execution, managed context injection and the context HTTP surface reject with DIRECTORY_RETIRED. Existing records are not deleted or transformed. This is retirement, not a repaired isolation claim.
+Directory does not meet the required conversation-folder isolation guarantee: different conversation IDs may resolve to one explicit root, and saved summary state is merged/reloaded without proving organizational conversation-folder ownership. The permitted sharing boundary is the conversation folder, not the filesystem workspace: same-folder sharing is allowed, cross-folder sharing is prohibited, and Directory provenance must be explicit. Therefore execution is unavailable, rather than advertised as safe. Admission, direct/prepared/class execution, managed context injection and the context HTTP surface reject with DIRECTORY_RETIRED. Existing records are not deleted or transformed. This is retirement, not a repaired isolation claim.
 
 ## Remaining dependency map (not implemented)
 

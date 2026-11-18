@@ -37,3 +37,20 @@ test('engine dispatch rejects persisted Directory before execution starts',async
  assert.throws(()=>HarnessEngine.prototype.dispatchRun.call(fake,run),retired);
  assert.equal(executionStarted,false);assert.equal(fake.executions.size,0);
 });
+
+test('retired history cannot enter ordinary continuation through Off, lineage or saved output',async()=>{
+ const {assertNoRetiredDirectoryHistory}=await import('../lib/directory-retirement.mjs');
+ const old={id:'old',taskId:'chat',executionModes:{directoryMode:'on'}};
+ assert.throws(()=>assertNoRetiredDirectoryHistory(old),retired);
+ assert.throws(()=>assertNoRetiredDirectoryHistory({id:'later',taskId:'chat',executionModes:{directoryMode:'off'}},[old]),retired);
+ assert.throws(()=>assertNoRetiredDirectoryHistory({id:'fork',parentRunId:'old'},[old]),retired);
+ assert.throws(()=>assertNoRetiredDirectoryHistory({id:'saved',nodes:{agent:{shadowdancer:{mode:'directory'}}}}),retired);
+ assert.doesNotThrow(()=>assertNoRetiredDirectoryHistory({id:'fresh'},[old]));
+});
+
+test('engine retry and explicit-Off continuation reject old Directory history before handoff',async()=>{
+ const {HarnessEngine}=await import('../lib/engine.mjs');
+ const old={id:'old',input:'task',status:'completed',executionModes:{directoryMode:'on'}},fake={runs:new Map([['old',old]])};
+ assert.throws(()=>HarnessEngine.prototype.retryRun.call(fake,'old'),retired);
+ assert.throws(()=>HarnessEngine.prototype.continueRun.call(fake,'old',{message:'continue',directoryMode:'off'}),retired);
+});
