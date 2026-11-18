@@ -23,7 +23,8 @@
     "docs/visual-reasoning.md",
     "docs/mistral-acp-compatibility.md",
     "docs/user-profile-boundaries.md",
-    "docs/sqlite-receipts.md"
+    "docs/sqlite-receipts.md",
+    "docs/persistence-diagnostics.md"
   ],
   "reference": [
     "docs/local-model-download-design.md",

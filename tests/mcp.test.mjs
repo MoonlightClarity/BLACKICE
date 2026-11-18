@@ -71,13 +71,13 @@ test('real direct stdio handshake pagination ping file write and reconnect',asyn
 test('specialized browser vault credentials survive restart without public disclosure',async t=>{
  const secret='private-browser-vault-secret';const {manager,dataDir,cleanupManagers}=await managerHarness(t,vault);
  await manager.save(neo({headers:{Authorization:'Bearer '+secret}}));assert.equal(manager.list()[0].secretStorage,'encrypted');assert.ok(!JSON.stringify(manager.status()).includes(secret));
- assert.ok(!(await readFile(path.join(dataDir,'browser-connections.json'),'utf8')).includes(secret));manager.configs.get('browseros-neo').name='echoed '+secret;assert.ok(!JSON.stringify(manager.status()).includes(secret));
+ assert.ok(!(await readFile(path.join(dataDir,'browser-connections','settings.json'),'utf8')).includes(secret));manager.configs.get('browseros-neo').name='echoed '+secret;assert.ok(!JSON.stringify(manager.status()).includes(secret));
  const restored=await new ConnectionManager({dataDir,...vault}).init();cleanupManagers.push(restored);assert.equal(restored.secrets.get('browseros-neo').headers.Authorization,'Bearer '+secret);
 });
 
 test('specialized session credentials are not persisted and remove preserves another browser',async t=>{
  const {manager,dataDir}=await managerHarness(t);await manager.save(neo({headers:{Authorization:'Bearer session-only-key-value'}}));await manager.save(chromeAutoConnectConnection());
- assert.equal(manager.list().find(x=>x.id==='browseros-neo').secretStorage,'session');assert.ok(!(await readFile(path.join(dataDir,'browser-connections.json'),'utf8')).includes('session-only-key-value'));
+ assert.equal(manager.list().find(x=>x.id==='browseros-neo').secretStorage,'session');assert.ok(!(await readFile(path.join(dataDir,'browser-connections','settings.json'),'utf8')).includes('session-only-key-value'));
  const restored=new ConnectionManager({dataDir});t.after(()=>restored.close());await restored.remove(chromeAutoConnectConnection().id);assert.equal(restored.list().length,1);assert.equal(restored.list()[0].id,'browseros-neo');assert.equal(restored.secrets.has('browseros-neo'),false);
 });
 
