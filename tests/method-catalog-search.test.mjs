@@ -6,7 +6,7 @@ import path from 'node:path';
 import { BUILTIN_METHODS, BUILTIN_TASK_TYPES, BUILTIN_STEP_TYPES } from '../lib/process-ontology.mjs';
 import { createMethodSearchIndex, normalizeMethodSearch, validateMethodCatalog, METHOD_CATALOG_LIMITS } from '../lib/method-catalog.mjs';
 import { MethodStore } from '../lib/methods.mjs';
-import { createTaskToolHandler, taskInstructionsForVersion, taskToolForVersion } from '../lib/task-state.mjs';
+import { createTaskToolHandler, TASK_TOOL } from '../lib/task-state.mjs';
 
 const index = createMethodSearchIndex(BUILTIN_METHODS);
 const definition = () => ({ name: 'Fixture source assessment', description: 'Compare original observations.', taskType: 'analysis', inputs: [], catalog: { domain: 'research', aliases: ['Fixture source check'], phases: ['evaluate-evidence'], outputs: ['matrix'], prerequisites: ['At least two original observations.'], avoidWhen: ['Only unsupported claims are available.'] }, steps: [{ id: 'assess', title: 'Assess the observations', type: 'analyze', instructions: 'Compare the dated original observations and identify independent support, contradictions and missing information.', inputs: ['Original observations'], result: 'An attributed comparison.', checks: ['Each supported claim identifies its original observation.'] }] });
@@ -57,35 +57,9 @@ test('metadata accepts plain descriptive data and rejects executable or credenti
   assert.deepEqual(validateMethodCatalog({ references: [{ label: '<script>literal text</script>', href: 'https://example.com/source' }] }).references[0].label, '<script>literal text</script>');
 });
 
-test('v5 relay_task describes bounded results and exact definitions without changing task state or running work', async () => {
-  let reads = 0; const store = { get() { reads++; assert.fail('Method discovery must not alter or require a task-state read.'); } };
-  const handler = createTaskToolHandler({ store, taskId: 'search-task', runId: 'search-run', nodeId: 'agent', schemaVersion: 5 }), call = args => handler({ name: 'relay_task', arguments: args });
-  let response = await call({ action: 'describe' }); assert.equal(response.success, true); const page = JSON.parse(response.contentItems[0].text);
-  assert.equal(page.schemaVersion, 5); assert.equal(page.methods.length, 20); assert.equal(page.totalMethods, 589); assert.ok(page.ontology.taskTypes.length >= 7);
-  response = await call({ action: 'describe', methodQuery: 'ACH', methodDomain: 'intelligence', methodOutput: 'matrix' }); const matches = JSON.parse(response.contentItems[0].text); assert.equal(matches.methods[0].id, 'catalyst-ach');
-  response = await call({ action: 'describe', methodId: 'catalyst-ach', methodRevision: 1 }); assert.equal(response.success, true); const complete = JSON.parse(response.contentItems[0].text);
-  assert.deepEqual(complete.method, BUILTIN_METHODS.find(method => method.id === 'catalyst-ach')); assert.equal(complete.pagination.complete, true); assert.equal(complete.method.steps.length, 6); assert.ok(complete.method.catalog.prerequisites.length); assert.ok(complete.method.provenance);
-  response = await call({ action: 'describe', methodId: 'catalyst-ach', methodRevision: 2 }); assert.equal(response.code, 'TASK_METHOD_CONFLICT');
-  response = await call({ action: 'describe', methodId: 'catalyst-ach', methodQuery: 'ACH' }); assert.equal(response.success, false);
-  const instructions = taskInstructionsForVersion(5, { executionGuardrails: true });
-  assert.equal(reads, 0); assert.match(instructions, /Choose and adapt automatically/); assert.match(instructions, /two or three methods/); assert.match(instructions, /supply methodSteps/);
-});
-
-test('saved v4 tools retain their declared compact catalog while rejecting fields introduced only by v5', async () => {
-  const handler = createTaskToolHandler({ store: {}, taskId: 'v4-task', runId: 'v4-run', nodeId: 'agent', schemaVersion: 4 });
-  for (const args of [{ action: 'describe', methodQuery: 'ACH' }, { action: 'describe', methodOffset: 20 }, { action: 'draft_method', methodSteps: definition().steps }, { action: 'draft_method', methodCatalog: definition().catalog }]) {
-    const response = await handler({ name: 'relay_task', arguments: args }); assert.equal(response.code, 'TASK_SCHEMA_UNSUPPORTED');
-  }
-  const response = await handler({ name: 'relay_task', arguments: { action: 'describe' } }); assert.equal(response.success, true); const catalog = JSON.parse(response.contentItems[0].text);
-  assert.equal(catalog.methods.length, 589); assert.ok(catalog.methods.some(method => method.id === 'catalyst-ach')); assert.ok(response.contentItems[0].text.length < 128000);
-  assert.equal(taskToolForVersion(4).inputSchema.properties.methodQuery, undefined); assert.equal(taskToolForVersion(4).inputSchema.properties.methodSteps, undefined);
-  assert.equal(taskToolForVersion(5).inputSchema.properties.methodSteps.maxItems, 200);
-});
-
-test('an unhealthy optional library falls back to the actual bundled methods and says which catalog was loaded', async () => {
-  const methods = { status: () => ({ healthy: false, error: 'Saved custom file cannot be read.' }), ontology() { assert.fail('Unavailable custom vocabulary must not be used.'); }, list() { assert.fail('Unavailable custom definitions must not be used.'); } };
-  const handler = createTaskToolHandler({ store: {}, taskId: 'fallback-task', methods, schemaVersion: 13 });
-  const response = await handler({ name: 'relay_task', arguments: { action: 'describe', methodQuery: 'ACH' } }); assert.equal(response.success, true);
-  const page = JSON.parse(response.contentItems[0].text); assert.equal(page.libraryStatus.source, 'builtin-methods'); assert.equal(page.libraryStatus.healthy, false); assert.equal(page.methods[0].id, 'catalyst-ach');
-  assert.deepEqual(page.ontology.taskTypes.map(item => item.id), BUILTIN_TASK_TYPES.map(item => item.id)); assert.deepEqual(page.ontology.stepTypes.map(item => item.id), BUILTIN_STEP_TYPES.map(item => item.id));
+test('retired method discovery schemas reject before accessing task state or the method library', () => {
+  const inaccessible = new Proxy({}, { get() { assert.fail('No retired handler may access persistence or library'); } });
+  for (const schemaVersion of [4, 5, 13]) assert.throws(() => createTaskToolHandler({ store: inaccessible, methods: inaccessible, schemaVersion }), { code: 'TASK_SCHEMA_UNSUPPORTED' });
+  assert.equal(TASK_TOOL.inputSchema.properties.methodQuery, undefined);
+  assert.ok(!TASK_TOOL.inputSchema.properties.action.enum.includes('draft_method'));
 });

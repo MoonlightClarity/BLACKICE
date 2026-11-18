@@ -6,7 +6,9 @@ import path from 'node:path';
 import { RemoteAgentAPI, validRemoteArguments } from '../lib/remote-agent-api.mjs';
 import { ChatGPTPlanningAPI } from '../lib/chatgpt-planning.mjs';
 import { createChatGPTToolCatalog } from '../lib/chatgpt-tool-catalog.mjs';
-import { TaskStateStore, TASK_TOOL_V13 as TASK_TOOL, taskToolForVersion } from '../lib/task-state.mjs';
+import { TaskStateStore } from '../lib/task-state.mjs';
+
+import { PLAN_EDIT_SCHEMA, PLAN_EDIT_DEFINITIONS } from '../lib/remote-plan-edit-schema.mjs';
 
 const client = { id: 'algorithm-client', kind: 'agent', label: 'Connected planning client', scopes: ['read', 'planning:write'] };
 const literal = value => ({ value });
@@ -53,16 +55,15 @@ async function fixture(t, surface) {
   return { api, call, edit, tasks, initial, run, events };
 }
 
-test('connected planning catalogs publish complete canonical recursive definitions without changing cached schemas', () => {
-  const cached = Array.from({ length: 8 }, (_, index) => JSON.stringify(taskToolForVersion(index + 1)));
+test('connected planning catalogs publish complete canonical recursive definitions independently of native task schemas', () => {
   for (const api of [new RemoteAgentAPI({}), new ChatGPTPlanningAPI({})]) {
     const tool = api.tools(client).find(value => value.name === 'blackice_edit_plan'), input = tool.inputSchema;
-    assert.deepEqual(input.$defs, TASK_TOOL.inputSchema.$defs);
+    assert.deepEqual(input.$defs, PLAN_EDIT_DEFINITIONS);
     const variant = type => input.properties.operations.items.oneOf.find(item => item.properties.type.const === type);
-    assert.deepEqual(variant('add').properties.step.properties.operation, TASK_TOOL.inputSchema.properties.steps.items.properties.operation);
-    assert.deepEqual(variant('update').properties.patch.properties.branch, TASK_TOOL.inputSchema.properties.operations.items.properties.patch.properties.branch);
-    assert.deepEqual(variant('update').properties.patch.properties.reconciliation, TASK_TOOL.inputSchema.properties.operations.items.properties.patch.properties.reconciliation);
-    assert.deepEqual(variant('metadata').properties.patch.properties.facts, TASK_TOOL.inputSchema.properties.plan.properties.facts);
+    assert.deepEqual(variant('add').properties.step.properties.operation, PLAN_EDIT_SCHEMA.items.oneOf.find(item => item.properties.type.const === 'add').properties.step.properties.operation);
+    assert.deepEqual(variant('update').properties.patch.properties.branch, PLAN_EDIT_SCHEMA.items.oneOf.find(item => item.properties.type.const === 'update').properties.patch.properties.branch);
+    assert.deepEqual(variant('update').properties.patch.properties.reconciliation, PLAN_EDIT_SCHEMA.items.oneOf.find(item => item.properties.type.const === 'update').properties.patch.properties.reconciliation);
+    assert.deepEqual(variant('metadata').properties.patch.properties.facts, PLAN_EDIT_SCHEMA.items.oneOf.find(item => item.properties.type.const === 'metadata').properties.patch.properties.facts);
     assert.deepEqual(variant('revisit').required, ['type', 'stepId', 'reason']);
     let references = 0;
     const inspect = node => {
@@ -80,8 +81,6 @@ test('connected planning catalogs publish complete canonical recursive definitio
     variant('add').properties.step.properties.operation.anyOf.length = 0;
     assert.ok(api.tools(client).find(value => value.name === 'blackice_edit_plan').inputSchema.$defs.planExpression.anyOf.length > 0);
   }
-  assert.deepEqual(Array.from({ length: 8 }, (_, index) => JSON.stringify(taskToolForVersion(index + 1))), cached);
-  for (let version = 1; version <= 8; version++) assert.equal(taskToolForVersion(version).inputSchema.$defs, undefined);
 });
 
 for (const surface of ['remote', 'chatgpt']) {
@@ -163,5 +162,5 @@ for (const surface of ['remote', 'chatgpt']) {
 test('local-reference validation rejects missing or remote references and terminates cyclic schemas', () => {
   for (const spec of [{ $ref: '#/$defs/missing', $defs: {} }, { $ref: 'https://example.invalid/schema' }, { $ref: '#/$defs/loop', $defs: { loop: { $ref: '#/$defs/loop' } } }]) assert.equal(validRemoteArguments({}, spec), false);
   const cyclic = {}; cyclic.not = cyclic;
-  assert.equal(validRemoteArguments(cyclic, { $ref: '#/$defs/planExpression', $defs: TASK_TOOL.inputSchema.$defs }), false);
+  assert.equal(validRemoteArguments(cyclic, { $ref: '#/$defs/planExpression', $defs: PLAN_EDIT_DEFINITIONS }), false);
 });

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ChatGPTPlanningAPI } from '../lib/chatgpt-planning.mjs';
 import { RemoteAgentAPI, validRemoteArguments } from '../lib/remote-agent-api.mjs';
-import { TaskStateStore, TASK_TOOL_V13 as TASK_TOOL, TASK_TOOL_V10, TASK_TOOL_V11, TASK_TOOL_V12 } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_TOOL } from '../lib/task-state.mjs';
 import { listPlanningWorkspace } from '../lib/planning-workspace.mjs';
 import { projectNativeTaskResult, TASK_TOOL_VIEW_LIMITS } from '../lib/task-tool-view.mjs';
 
@@ -232,9 +232,10 @@ test('oversized decision input is rejected before any graph edit is committed', 
   assert.equal((await f.tasks.get(state.taskId)).steps.find(step => step.id === 'work').title, 'Inspect the concrete item');
 });
 
-test('only the current native task catalog exposes the new review checkpoint', () => {
-  assert.ok(TASK_TOOL.inputSchema.properties.review.properties.userAgency);
-  assert.equal(TASK_TOOL_V10.inputSchema.properties.review.properties.userAgency, undefined);
-  assert.equal(TASK_TOOL_V11.inputSchema.properties.review.properties.userAgency, undefined);
-  assert.equal(TASK_TOOL_V12.inputSchema.properties.review.properties.userAgency, undefined);
+test('native contract authoring is distinct from external graph editing', () => {
+  assert.ok(TASK_TOOL.inputSchema.properties.contract);
+  assert.equal(TASK_TOOL.inputSchema.properties.review, undefined);
+  assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('review'));
+  assert.ok(TASK_TOOL.inputSchema.properties.userAgency);
+  assert.ok(TASK_TOOL.inputSchema.properties.evidenceIds);
 });

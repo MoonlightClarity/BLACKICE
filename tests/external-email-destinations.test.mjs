@@ -4,52 +4,8 @@ import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskStateStore, createTaskToolHandler, taskToolForVersion, taskWorkerToolForVersion, taskInstructionsForVersion, optionalTaskInstructionsForVersion } from '../lib/task-state.mjs';
+import { TaskStateStore, createTaskToolHandler } from '../lib/task-state.mjs';
 
-const LEGACY_HASHES = {
-  "1": {
-    "tool": "7d35a411c732a452b8906d442e7faa93bbf0885a8e819402af8a55ecf0c86813",
-    "instructions": "a7461d87b42633ca51a8a580fc63da6bc18062f3df90805e08a16b35b37bb396",
-    "workerTool": "7d35a411c732a452b8906d442e7faa93bbf0885a8e819402af8a55ecf0c86813",
-    "optionalInstructions": "08f49d73265d77b2da091de7f9996eae5088996f0183de089ab9577276707dd8"
-  },
-  "2": {
-    "tool": "85ab060ad0ea909aa1515c43c2e1be1de59c6b4c03a2233c8a9e84167b2ae62a",
-    "instructions": "020f26e500ee6f5cbe341f0a3833db2287bc79abb84d92b4830f0134c1ab19b9",
-    "workerTool": "85ab060ad0ea909aa1515c43c2e1be1de59c6b4c03a2233c8a9e84167b2ae62a",
-    "optionalInstructions": "08f49d73265d77b2da091de7f9996eae5088996f0183de089ab9577276707dd8"
-  },
-  "3": {
-    "tool": "01f7df1da9f1ed0785c8009ebda7c39aec1d7d7fc97b6d971512a7e9254e7be6",
-    "instructions": "da77363a37dd7ecff9440e5fdb7bd19666187b24ae59c5a6510941d3adf22b60",
-    "workerTool": "01f7df1da9f1ed0785c8009ebda7c39aec1d7d7fc97b6d971512a7e9254e7be6",
-    "optionalInstructions": "c6a4c32de0f35baaf8e0bb1f5ad1491a25bd4f17e70b8bbe62890e36059d3548"
-  },
-  "4": {
-    "tool": "6fed41dec09160afd7b66a680808aed672c53677c8857a70e7113712d3fc68d0",
-    "instructions": "17676fbf975245ee700e175a6f905b2334b59df03f1618fbd75c39a41feb1bfb",
-    "workerTool": "6fed41dec09160afd7b66a680808aed672c53677c8857a70e7113712d3fc68d0",
-    "optionalInstructions": "c6a4c32de0f35baaf8e0bb1f5ad1491a25bd4f17e70b8bbe62890e36059d3548"
-  },
-  "5": {
-    "tool": "7ef57b1bf5e36f753a400ce262af91a5044af294c6552c9cbba7fb26a78592ee",
-    "instructions": "66de27e4b19f66cbf2ee488a4dcc38b76c02b56d95b13b3897f9434ef86a87b2",
-    "workerTool": "7ef57b1bf5e36f753a400ce262af91a5044af294c6552c9cbba7fb26a78592ee",
-    "optionalInstructions": "c6a4c32de0f35baaf8e0bb1f5ad1491a25bd4f17e70b8bbe62890e36059d3548"
-  },
-  "6": {
-    "tool": "a690b71995ce9e64e720e2b6c476592e75b2f342e62def14e885e6de03ed46d6",
-    "instructions": "6c56b3ff76f9ea9822c66d6a3b1254083ca86c1ef9f944fd256cea8e60e625d6",
-    "workerTool": "e27a50b314a227b671c7a82303054e60ab3a3668cbb96e29d88d561633d4173c",
-    "optionalInstructions": "c6a4c32de0f35baaf8e0bb1f5ad1491a25bd4f17e70b8bbe62890e36059d3548"
-  },
-  "7": {
-    "tool": "17b6624fdb4a30f1ea2c24c2c6be3877b436bc42cd23fefc054b0bfcc1838bfe",
-    "instructions": "6c56b3ff76f9ea9822c66d6a3b1254083ca86c1ef9f944fd256cea8e60e625d6",
-    "workerTool": "a577847515f85eddbc6ea02c09a7de584cea38068d71d5836da6734cb973e70d",
-    "optionalInstructions": "c6a4c32de0f35baaf8e0bb1f5ad1491a25bd4f17e70b8bbe62890e36059d3548"
-  }
-};
 const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 const prepared = { receiptId: 'application-email', operation: 'prepare', destination: 'Hiring+Research@EXAMPLE.invalid', content: 'To: Hiring+Research@example.invalid\nSubject: Synthetic application\n\nExact checked application content.', attachmentSha256: 'a'.repeat(64) };
 async function fixture(t) {
@@ -114,38 +70,14 @@ test('email attempts survive restart and backup recovery without changing identi
   assert.equal(recovered.externalActions[0].status, 'confirmed'); assert.equal(recovered.externalActions[0].fingerprint, fingerprint); assert.equal(recovered.externalActions[0].destination, 'mailto:Hiring%2BResearch@example.invalid');
 });
 
-test('dynamic guarded describe explains accepted destinations without advertising final receipts to a worker', async t => {
-  const f = await fixture(t), describe = async options => {
-    const handler = createTaskToolHandler({ store: f.store, taskId: 'email-task', runId: 'email-run', nodeId: 'agent', executionGuardrails: true, ...options });
-    const result = await handler({ name: 'relay_task', arguments: { action: 'describe' } }); assert.equal(result.success, true); return JSON.parse(result.contentItems[0].text);
-  };
-  const current = await describe({ schemaVersion: 7 }); assert.ok(current.externalDestinations.accepted.includes('mailto:single-recipient')); assert.ok(current.externalDestinations.accepted.includes('single bare email address'));
-  assert.match(current.externalDestinations.note, /subject.*content/i); assert.match(current.externalDestinations.confirmation, /HTTP\(S\)/);
-  const worker = await describe({ schemaVersion: 7, worker: true, scopeStepId: 'assigned' }); assert.equal(worker.externalDestinations, undefined);
-});
-
-test('guarded cached task and worker schemas plus instructions retain their exact legacy hashes', () => {
-  // These fixed historical catalogs predate the separate advisory default.
-  const legacy = { executionGuardrails: true };
-  for (const [version, expected] of Object.entries(LEGACY_HASHES)) {
-    assert.equal(hash(taskToolForVersion(Number(version), legacy)), expected.tool); assert.equal(hash(taskWorkerToolForVersion(Number(version), legacy)), expected.workerTool);
-    assert.equal(hash(taskInstructionsForVersion(Number(version), legacy)), expected.instructions); assert.equal(hash(optionalTaskInstructionsForVersion(Number(version), legacy)), expected.optionalInstructions);
-  }
-});
-
-
-test('legacy worker catalog repair preserves the existing advisory defaults', () => {
-  const expected = {
-    "1": "0d90b698ade04cb72386584686a76f923f16d40ead62a92c3f548983571f7ffd",
-    "2": "93967de4b50bdc837678a95b484a7491cb6daff7fd48aa4df5ff5468f7ed53ec",
-    "3": "788b4ec27ad549ce461771e7034236dda8e32dc3c8f42a5451a253d64e15f8a9",
-    "4": "42510151d491524ca98a80996744f7502ad6856547710cc7f7d77fc48e232730",
-    "5": "e5b2242090996e28114c7c4c6cf5bba86b58893546295938a1f4205cf9932f10"
-  };
-  for (const [savedVersion, sha256] of Object.entries(expected)) {
-    const version = Number(savedVersion);
-    assert.equal(hash(taskWorkerToolForVersion(version)), sha256, `default advisory worker v${version}`);
-    assert.equal(hash(taskWorkerToolForVersion(version, { executionGuardrails: false })), sha256, `explicit advisory worker v${version}`);
-    assert.notEqual(sha256, LEGACY_HASHES[savedVersion].workerTool);
+test('current task descriptions do not expose retired external receipt actions', async t => {
+  const f = await fixture(t);
+  for (const worker of [false, true]) {
+    const handler = createTaskToolHandler({ store: f.store, taskId: 'email-task', runId: 'email-run', nodeId: 'agent', worker });
+    const result = await handler({ name: 'relay_task', arguments: { action: 'describe' } });
+    assert.equal(result.success, true);
+    const described = JSON.parse(result.contentItems[0].text);
+    assert.equal(described.externalDestinations, undefined);
+    assert.ok(!described.schema.properties.action.enum.includes('external'));
   }
 });
