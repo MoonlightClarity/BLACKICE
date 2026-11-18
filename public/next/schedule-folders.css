@@ -66,3 +66,17 @@
 .next-cronjobs-workspace .next-panel-head p{margin:4px 0 0;font-size:12px}
 .next-cronjobs-workspace .next-task-schedules-head{justify-content:flex-end;margin-bottom:6px}
 .next-cronjobs-workspace #next-tasks-info{margin:6px 0;font-size:12px}
+
+/* Folder actions share BLACKICE controls, rather than oversized bare glyphs. */
+.next-cronjobs-workspace .next-schedule-folder-branch>summary :is(.next-schedule-folder-add,.next-schedule-folder-remove){
+  display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;
+  width:28px;min-width:28px;height:28px;min-height:28px;margin:0 0 0 6px;padding:0;
+  font:18px/1 Arial,sans-serif;letter-spacing:0;vertical-align:middle;
+  color:var(--next-button-foreground);background:var(--next-button-background);
+  border:1px solid var(--next-button-border);border-radius:4px;
+  box-shadow:inset 0 1px #edf1f50b;
+}
+.next-cronjobs-workspace .next-schedule-folder-branch>summary :is(.next-schedule-folder-add,.next-schedule-folder-remove):hover:not(:disabled){background:var(--next-button-hover-background);border-color:var(--next-button-hover-border)}
+.next-cronjobs-workspace .next-schedule-folder-branch>summary :is(.next-schedule-folder-add,.next-schedule-folder-remove):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.next-cronjobs-workspace .next-schedule-folder-branch>summary :is(.next-schedule-folder-add,.next-schedule-folder-remove):disabled{opacity:.5;cursor:default}
+.next-cronjobs-workspace .next-schedule-folder-branch>summary .next-status-pill{display:inline-block;min-width:18px;padding:0 3px;vertical-align:middle;text-align:center;font:12px/24px Arial,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:0}
