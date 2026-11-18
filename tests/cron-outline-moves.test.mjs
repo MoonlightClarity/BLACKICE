@@ -45,15 +45,15 @@ test('inline rename preserves edit-start revision across refresh',async t=>{
 });
 
 test('compact outline creates folders directly without editing or filing dropdowns',async t=>{
- const f=await fixture(t,{compact:true});assert.equal(f.manager.querySelector('select'),null);
- await f.folder('a').querySelector('.next-schedule-folder-add').dispatch('click',{});
+ const f=await fixture(t,{compact:true});assert.equal(f.manager.querySelector('select'),null);assert.equal(f.list.querySelector('.next-schedule-folder-add'),null);assert.equal(f.list.querySelector('.next-status-pill'),null);
+ await f.folder('a').querySelector('.next-schedule-folder-name').dispatch('click',{});await f.manager.querySelector('summary').dispatch('click',{});
  const form=f.manager.querySelector('form'),input=form.querySelector('input');input.value='Inside Alpha';await form.dispatch('submit',{});await settle();
  assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.action,'create');assert.equal(f.calls[0].body.parentId,'a');assert.equal(f.calls[0].body.expectedRevision,1);
  assert.ok(f.state().folders.some(folder=>folder.name==='Inside Alpha'&&folder.parentId==='a'));assert.equal(f.state().assignments.job,'a');
- await f.manager.querySelector('summary').dispatch('click',{});input.value='Root';await form.dispatch('submit',{});await settle();assert.equal(f.calls[1].body.parentId,null);
+ await f.list.querySelector('h3').dispatch('click',{});await f.manager.querySelector('summary').dispatch('click',{});input.value='Root';await form.dispatch('submit',{});await settle();assert.equal(f.calls[1].body.parentId,null);
 });
 test('compact create conflict retains draft and does not replay or rebase silently',async t=>{
- const f=await fixture(t,{compact:true});await f.folder('a').querySelector('.next-schedule-folder-add').dispatch('click',{});
+ const f=await fixture(t,{compact:true});await f.folder('a').querySelector('.next-schedule-folder-name').dispatch('click',{});await f.manager.querySelector('summary').dispatch('click',{});
  const form=f.manager.querySelector('form'),input=form.querySelector('input');input.value='Unsent child';f.advance();f.fail();await form.dispatch('submit',{});await settle();
  assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.expectedRevision,1);assert.equal(input.value,'Unsent child');assert.equal(f.calls[0].body.parentId,'a');
 });

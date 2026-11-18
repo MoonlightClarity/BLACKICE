@@ -10,7 +10,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   const add = (parent, tag, value, cls) => text(parent, value, tag, cls);
   const manager = add(mount, 'details', '', 'next-card next-schedule-folder-manager');
   const managerTitle=add(manager, 'summary', compact?'New folder':'Manage folders');
-  let createRevision=null;
+  let createRevision=null, selectedParent=null;
   manager.classList.toggle('next-schedule-folder-create',compact);
   if(!compact)add(manager, 'p', 'Folders organize cronjobs. Moving or removing a folder does not change schedules or run jobs.', 'next-help');
   const form = add(manager, 'form', '', 'next-schedule-folder-form');
@@ -46,7 +46,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   }
   if(!compact)selected.addEventListener('change', editSelection);
   function beginCreate(parentId=null){if(pending)return;parent.value=parentId||'';createRevision=organization.revision;managerTitle.textContent=parentId?'New folder in '+path(parentId):'New folder';manager.open=true;name.focus();}
-  if(compact){managerTitle.addEventListener('click',event=>{if(!manager.open){event.preventDefault();beginCreate();}});const cancel=add(actions,'button','Cancel');cancel.type='button';cancel.addEventListener('click',()=>{if(pending)return;manager.open=false;name.value='';parent.value='';managerTitle.textContent='New folder';});name.addEventListener('keydown',event=>{if(event.key==='Escape'&&!pending){event.preventDefault();manager.open=false;name.value='';parent.value='';}});}
+  if(compact){managerTitle.addEventListener('click',event=>{if(!manager.open){event.preventDefault();beginCreate(selectedParent);}});const cancel=add(actions,'button','Cancel');cancel.type='button';cancel.addEventListener('click',()=>{if(pending)return;manager.open=false;name.value='';parent.value='';managerTitle.textContent=selectedParent?'New folder in '+path(selectedParent):'New folder';});name.addEventListener('keydown',event=>{if(event.key==='Escape'&&!pending){event.preventDefault();manager.open=false;name.value='';parent.value='';}});}
   async function mutate(payload, expectedRevision = organization.revision) {
     if (pending) return false;
     for (const select of [...fileSelects,...folderButtons]) select.disabled = true;
@@ -64,7 +64,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (await mutate({ action: selected.value ? 'update' : 'create', id: selected.value, name: name.value, parentId: parent.value || null },compact?(createRevision??organization.revision):organization.revision)) {
-      selected.value = ''; editSelection();if(compact){manager.open=false;parent.value='';managerTitle.textContent='New folder';} notice.textContent = 'Folder saved.';
+      selected.value = ''; editSelection();if(compact){manager.open=false;parent.value='';managerTitle.textContent=selectedParent?'New folder in '+path(selectedParent):'New folder';} notice.textContent = 'Folder saved.';
     }
   });
   async function removeFolder(id) {
@@ -147,6 +147,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
     group(container, deployments, value) {
       outlineContainer=container;
       organization = value || { revision: 0, folders: [], assignments: {} };
+      if(compact&&!manager.open){if(selectedParent&&!organization.folders.some(folder=>folder.id===selectedParent))selectedParent=null;managerTitle.textContent=selectedParent?'New folder in '+path(selectedParent):'New folder';}
       if (!compact && lastRevision !== organization.revision) {
         const chosen = selected.value, chosenParent = parent.value;
         options(selected, 'New folder', chosen); options(parent, 'Top level', chosenParent);
@@ -165,7 +166,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
           const label = add(summary,'button',folder.name,'next-schedule-folder-name');label.type='button';label.disabled=pending;folderButtons.push(label);label.title='Rename folder';
           const input = add(summary,'input','','next-field next-schedule-folder-name-input');input.maxLength=120;input.setAttribute('aria-label','Rename folder '+folder.name);input.hidden=!renameDrafts.has(folder.id);input.value=renameDrafts.get(folder.id)?.name??folder.name;label.hidden=!input.hidden;
           function cancelRename(){renameDrafts.delete(folder.id);input.hidden=true;label.hidden=false;label.focus();}
-          label.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();if(pending)return;renameDrafts.set(folder.id,{name:folder.name,revision:organization.revision,parentId:folder.parentId||null});input.value=folder.name;label.hidden=true;input.hidden=false;input.focus();input.select?.();});
+          label.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();if(pending)return;if(compact){selectedParent=folder.id;managerTitle.textContent='New folder in '+path(folder.id);}renameDrafts.set(folder.id,{name:folder.name,revision:organization.revision,parentId:folder.parentId||null});input.value=folder.name;label.hidden=true;input.hidden=false;input.focus();input.select?.();});
           input.addEventListener('input',()=>{const draft=renameDrafts.get(folder.id);if(draft)draft.name=input.value;});
           input.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();});
           input.addEventListener('dragstart',event=>{event.preventDefault();event.stopPropagation();});
@@ -187,8 +188,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
           const descendants = new Set([folder.id]);
           for (let changed = true; changed;) { changed = false; for (const item of folders) if (descendants.has(item.parentId) && !descendants.has(item.id)) { descendants.add(item.id); changed = true; } }
           const count = deployments.filter(item => descendants.has(organization.assignments?.[item.id])).length;
-          const badge = add(summary, 'span', String(count), 'next-status-pill'); badge.title = 'Cronjobs in this folder and subfolders';
-          if(compact){const create=add(summary,'button','+','next-schedule-folder-add');create.type='button';create.setAttribute('aria-label','New folder in '+path(folder.id));create.title='New subfolder';create.disabled=pending;folderButtons.push(create);create.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();beginCreate(folder.id);});}
+          if(!compact){const badge = add(summary, 'span', String(count), 'next-status-pill'); badge.title = 'Cronjobs in this folder and subfolders';}
           const deleteButton=add(summary,'button','\u00d7','next-schedule-folder-remove');deleteButton.type='button';deleteButton.disabled=pending;folderButtons.push(deleteButton);deleteButton.title='Remove folder only; keep every cronjob';deleteButton.setAttribute('aria-label','Remove folder '+path(folder.id));deleteButton.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void removeFolder(folder.id);});
           details.addEventListener('toggle', () => details.open ? closed.delete(folder.id) : closed.add(folder.id));
           const children = add(details, 'div', '', 'next-schedule-folder-children');
@@ -198,7 +198,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
         }
       }
       branch(null, container);
-      const unfiled = add(container, 'section', '', 'next-schedule-unfiled'); const unfiledHeading=add(unfiled, 'h3', 'Unfiled');dropTarget(unfiledHeading,null);unfiledHeading.title='Drop here to move to the top level.';
+      const unfiled = add(container, 'section', '', 'next-schedule-unfiled'); const unfiledHeading=add(unfiled, 'h3', 'Unfiled');dropTarget(unfiledHeading,null);unfiledHeading.title='Drop here to move to the top level.';if(compact){unfiledHeading.tabIndex=0;unfiledHeading.setAttribute('role','button');unfiledHeading.setAttribute('aria-label','Select top level for new folders');const root=()=>{selectedParent=null;managerTitle.textContent=selectedParent?'New folder in '+path(selectedParent):'New folder';};unfiledHeading.addEventListener('click',root);unfiledHeading.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();root();}});}
       const cards = add(unfiled, 'div', '', 'next-grid'); targets.set('', cards);
       if (!deployments.some(item => !targets.has(organization.assignments?.[item.id]))) add(cards, 'p', 'No unfiled cronjobs.', 'next-help');
       return {
