@@ -627,3 +627,20 @@ test('direct structured writes cannot bypass managed memory approval or profile 
  }
  const ordinary=await api.call('blackice_workspace_write',{requestId:'ordinary-after-managed-denial',action:'write',path:path.join(cwd,'knowledge.json'),text:'project data'},client);assert.equal((await waitJob(api,ordinary.jobId)).status,'succeeded');
 });
+
+test('filename find pages outside workspace through fresh direct jobs and isolates grant cursors', async t => {
+  const {api,cwd,other}=await harness(t);
+  await Promise.all(Array.from({length:125},(_,i)=>writeFile(path.join(other,`Resume ${i}.txt`),'fixture')));
+  const first=await api.call('blackice_workspace_read',{requestId:'find-page-one',action:'find',path:other,query:'Resume',limit:2},client);
+  const done=await waitJob(api,first.jobId); assert.equal(done.status,'succeeded',JSON.stringify(done));
+  const page=JSON.parse(done.result.text.text); assert.equal(page.matches.length,2); assert.ok(page.cursor); assert.equal(page.searchComplete,false);
+  const stranger={...client,id:'another-grant'};
+  const rejected=await api.call('blackice_workspace_read',{requestId:'find-wrong-owner',action:'find',cursor:page.cursor,limit:2},stranger);
+  const denied=await waitJob(api,rejected.jobId,undefined,stranger);assert.equal(denied.status,'failed');
+  const next=await api.call('blackice_workspace_read',{requestId:'find-page-two',action:'find',cursor:page.cursor,limit:2},client);
+  const nextDone=await waitJob(api,next.jobId); assert.equal(nextDone.status,'succeeded',JSON.stringify(nextDone));
+  const second=JSON.parse(nextDone.result.text.text);assert.equal(second.matches.length,2);
+  assert.equal(new Set([...page.matches,...second.matches].map(x=>x.path)).size,4);
+  assert.ok(second.matches.every(x=>x.path.startsWith(other)));assert.notEqual(cwd,other);
+  await assert.rejects(api.call('blackice_workspace_read',{requestId:'find-invalid-size',action:'find',query:'Resume',limit:101},client),/result|query|100/);
+});

@@ -48,7 +48,7 @@ test('the configured catalog retains 34 tools with reviewed authentication, cano
   ]);
   assert.deepEqual(catalog.status(), {
     // A complete reviewed current contract, not an inferred version or reused old SHA.
-    sha256: '8319ea9cb8f5dc9249936ff562d896ed989e22c5f3a3255d13aab4d0d0db3fc8',
+    sha256: '027a4c2ad0448239f1d6e39062d04f7a588688ea6c49ed6229681562b79350e8',
     toolCount: 34,
     serverVersion: '2.39.100',
   });
@@ -61,10 +61,25 @@ test('the configured catalog retains 34 tools with reviewed authentication, cano
   assert.match(BROWSER_CLEANUP_PROTOCOL,/pending effects/);
 
 
+  // Reconstruct the prior catalog by removing only reviewed native filename-search fields.
+  // Historical hashes remain immutable; a new schema must not rewrite old contracts.
+  const beforeFind=structuredClone(currentTools);
+  const findTool=beforeFind.find(tool=>tool.name==='blackice_workspace_read');
+  assert.deepEqual(findTool.inputSchema.properties.action.enum,['list','read','search','find','patch_history']);
+  assert.deepEqual(findTool.inputSchema.properties.match,{enum:['name','path']});
+  assert.equal(findTool.inputSchema.properties.roots.maxItems,8);
+  assert.equal(findTool.inputSchema.properties.extensions.maxItems,16);
+  assert.equal(findTool.inputSchema.properties.cursor.maxLength,256);
+  assert.deepEqual(findTool.inputSchema.properties.timeoutMs,{type:'integer',minimum:100,maximum:10000});
+  findTool.inputSchema.properties.action.enum=['list','read','search','patch_history'];
+  for(const key of ['roots','match','extensions','cursor','timeoutMs'])delete findTool.inputSchema.properties[key];
+  findTool.description="Inspect local files through BLACKICE's bounded file handler. Relative paths use the configured working directory and explicit absolute paths are supported. Returns a durable job immediately; retrieve its result with blackice_get_job. No model is started.";
+  assert.equal(sha(beforeFind),'8319ea9cb8f5dc9249936ff562d896ed989e22c5f3a3255d13aab4d0d0db3fc8');
+
   // .104 changes exactly the shared task-context description (21 occurrences)
   // and optional authenticate form description. Keep every historical hash.
   // Remove only the reviewed SSO action before checking preserved historical contracts.
-  const reviewed100=structuredClone(currentTools.filter(tool=>tool.name!=='blackice_credentials_associate'));
+  const reviewed100=structuredClone(beforeFind.filter(tool=>tool.name!=='blackice_credentials_associate'));
   const oldContext='Host-issued context for this exact task and authenticated owner. Required to opt this call into protected task execution. Never infer it from the grant or another conversation.';
   const newContext='Host-issued context for this exact task and authenticated owner. Optional metadata for browser calls; never a prerequisite to browser dispatch. Non-browser adapters may use it for explicit task-scoped execution. Never infer it from the grant or another conversation.';
   let contextDescriptions=0;

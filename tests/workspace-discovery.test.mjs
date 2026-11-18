@@ -6,19 +6,17 @@ import path from 'node:path';
 import {createWorkspaceToolHandler,WORKSPACE_INSTRUCTIONS,WORKSPACE_TOOL} from '../lib/workspace-tools.mjs';
 const call=arguments_=>({name:'relay_workspace',arguments:arguments_});
 const parsed=r=>{assert.equal(r.success,true,r.contentItems?.[0]?.text);return JSON.parse(r.contentItems[0].text);};
-const quote=s=>process.platform==='win32'?"'"+s.replaceAll("'","''")+"'":"'"+s.replaceAll("'","'\\''")+"'";
-test('blank profile does not prevent bounded command discovery and reading outside workspace',async t=>{
+test('blank profile does not prevent native filename discovery and reading outside workspace',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'blackice-discovery-')),cwd=path.join(root,'work'),outside=path.join(root,'Synced Career Files');
  t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(cwd);await mkdir(outside);await writeFile(path.join(cwd,'USER.md'),'');await writeFile(path.join(outside,'Synthetic Resume.txt'),'Synthetic resume fixture: systems analysis.');
  const h=createWorkspaceToolHandler({cwd}),first=parsed(await h(call({action:'list'})));
  assert.equal(first.entries.some(x=>x.name.includes('Resume')),false);assert.equal(first.discovery.parentDirectory,root);assert.equal(first.discovery.homeDirectory,homedir());assert.match(first.discovery.scope,/only the selected/);
  const parent=parsed(await h(call({action:'list',path:first.discovery.parentDirectory,depth:0})));
  const candidate=parent.entries.find(x=>x.type==='directory'&&x.name.includes('Career'));assert.ok(candidate);
- const command=process.platform==='win32'?`Get-ChildItem -LiteralPath ${quote(candidate.path)} -File -Filter '*Resume*' | Select-Object -ExpandProperty FullName`:`find ${quote(candidate.path)} -maxdepth 1 -type f -name '*Resume*'`;
- const discovered=parsed(await h(call({action:'run',command})));assert.equal(discovered.exitCode,0);const file=discovered.stdout.trim();assert.equal(file,path.join(outside,'Synthetic Resume.txt'));
+ const discovered=parsed(await h(call({action:'find',path:candidate.path,query:'Resume'})));assert.equal(discovered.searchComplete,true);const file=discovered.matches[0].path;assert.equal(file,path.join(outside,'Synthetic Resume.txt'));
  assert.match(parsed(await h(call({action:'read',path:file}))).content,/systems analysis/);assert.equal(await readFile(path.join(cwd,'USER.md'),'utf8'),'');
 });
-test('large Documents listing switches to narrow filename search and resumes from observed task context',async t=>{
+test('large Documents listing switches to native filename search from observed task context',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'blackice-large-discovery-')),cwd=path.join(root,'work'),documents=path.join(root,'Documents');
  t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(cwd);await mkdir(documents);await writeFile(path.join(cwd,'USER.md'),'');
  await Promise.all(Array.from({length:350},(_,i)=>writeFile(path.join(documents,'A'+String(i).padStart(4,'0')+'.txt'),'Unrelated synthetic document')));
@@ -29,15 +27,14 @@ test('large Documents listing switches to narrow filename search and resumes fro
  const listing=parsed(await first(call({action:'list',path:observed.path,limit:100})));
  assert.equal(listing.truncated,true);assert.equal(listing.entries.length,100);assert.ok(!listing.entries.some(x=>x.name.includes('Resume')));assert.match(listing.nextAction,/narrow filename search/);
  const oversized=parsed(await first(call({action:'list',path:observed.path,limit:300})));assert.equal(oversized.truncated,true);assert.match(oversized.nextAction,/narrow filename search/);assert.equal(oversized.path,observed.path);
- const command=process.platform==='win32'?`Get-ChildItem -LiteralPath ${quote(listing.path)} -File -Filter '*Resume*' | Select-Object -ExpandProperty FullName`:`find ${quote(listing.path)} -maxdepth 1 -type f -iname '*resume*'`;
- const checkpoint=JSON.parse(JSON.stringify({directory:listing.path,pattern:'*Resume*',nextCommand:command}));
- const resumed=createWorkspaceToolHandler({cwd});const found=parsed(await resumed(call({action:'run',command:checkpoint.nextCommand})));
- assert.equal(found.exitCode,0);assert.equal(found.truncated,false);const file=found.stdout.trim();assert.equal(file,path.join(documents,'Z Synthetic Resume.txt'));
+ const checkpoint=JSON.parse(JSON.stringify({directory:listing.path,query:'Resume'}));
+ const resumed=createWorkspaceToolHandler({cwd});const found=parsed(await resumed(call({action:'find',path:checkpoint.directory,query:checkpoint.query})));
+ assert.equal(found.searchComplete,true);const file=found.matches[0].path;assert.equal(file,path.join(documents,'Z Synthetic Resume.txt'));
  assert.match(parsed(await resumed(call({action:'read',path:file}))).content,/verified outside large listing/);assert.equal(await readFile(path.join(cwd,'USER.md'),'utf8'),'');
- assert.match(WORKSPACE_INSTRUCTIONS,/immediately switch to a narrow filename query/);assert.match(WORKSPACE_INSTRUCTIONS,/resume that work on continuation/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/Use find to locate filenames/);assert.match(WORKSPACE_INSTRUCTIONS,/continue with its cursor/);
 });
-test('model guidance describes existing command discovery without requiring profile facts or new permissions',async()=>{
- assert.match(WORKSPACE_INSTRUCTIONS,/not a filesystem sandbox/);assert.match(WORKSPACE_INSTRUCTIONS,/bounded filename discovery with list or run/);assert.match(WORKSPACE_INSTRUCTIONS,/search searches file contents, not filenames/);assert.match(WORKSPACE_INSTRUCTIONS,/rather than assuming a username/);assert.match(WORKSPACE_INSTRUCTIONS,/do not crawl the entire computer/);
- assert.deepEqual(WORKSPACE_TOOL.inputSchema.properties.action.enum,['list','read','write','patch','patch_history','undo_patch','search','run']);
+test('model guidance exposes native filename discovery without profile facts or new permissions',async()=>{
+ assert.match(WORKSPACE_INSTRUCTIONS,/not a filesystem sandbox/);assert.match(WORKSPACE_INSTRUCTIONS,/Use find to locate filenames/);assert.match(WORKSPACE_INSTRUCTIONS,/search to match file contents/);assert.match(WORKSPACE_INSTRUCTIONS,/instead of guessing personal folders/);assert.match(WORKSPACE_INSTRUCTIONS,/searchComplete, skipped locations and errors/);
+ assert.deepEqual(WORKSPACE_TOOL.inputSchema.properties.action.enum,['list','read','write','patch','patch_history','undo_patch','search','find','run']);
  const engine=await readFile(new URL('../lib/engine.mjs',import.meta.url),'utf8');assert.match(engine,/WORKSPACE_INSTRUCTIONS/);
 });

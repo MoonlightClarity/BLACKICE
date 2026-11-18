@@ -116,7 +116,7 @@ test('Directory read-only phases advertise no write or command and active direct
  await begin;const receipt=await engine.steerRun(original.id,{nodeId:'agent',message:'NEW_USER_RESTRICTION: keep all files unchanged.'});assert.equal(receipt.queued,true);
  assert.deepEqual(engine.getRun(original.id).executionModes,{directoryMode:'on',subagentsMode:'default'});unblock();
  const run=await settle(engine,original);assert.ok(runtime.calls.slice(1).every(c=>c.prompt.includes('NEW_USER_RESTRICTION')));
- for(const call of runtime.calls){assert.equal(call.sandbox,'read-only');const workspace=call.dynamicTools?.find(t=>t.name==='relay_workspace');if(workspace)assert.deepEqual(workspace.inputSchema.properties.action.enum,['list','read','patch_history','search']);}
+ for(const call of runtime.calls){assert.equal(call.sandbox,'read-only');const workspace=call.dynamicTools?.find(t=>t.name==='relay_workspace');if(workspace)assert.deepEqual(workspace.inputSchema.properties.action.enum,['list','read','patch_history','search','find']);}
  assert.equal(run.executionModes.directoryMode,'on');
 });
 
