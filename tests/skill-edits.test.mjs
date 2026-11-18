@@ -1,0 +1,33 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm,readFile,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
+import {readReleaseSkill} from '../lib/release-skills.mjs';
+import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
+import {managedContextPaths} from '../lib/managed-context-paths.mjs';
+const value=base=>({expectedRevision:base.revision,title:'Human browser',summary:'custom discoverable wording',appliesWhen:'For browser work',scope:'This installation',content:'# Human-authored method\nDo the useful thing.\n'});
+test('human edits persist, model sees effective content, originals stay immutable, CAS prevents lost edits',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'skill-edits-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const catalog=createSkillsCatalog({dataDir:root}),base=await catalog.detail({id:'builtin-browser'}),edit=value(base);
+ assert.equal(base.userEditable,true);const saved=await catalog.save({id:base.id,value:edit});assert.equal(saved.revision,2);assert.equal(saved.source,'user');
+ assert.equal(readReleaseSkill(base.id).content,base.content);
+ const fresh=createSkillsCatalog({dataDir:root});assert.deepEqual(await fresh.detail({id:base.id}),saved);
+ assert.equal((await fresh.list({query:'custom discoverable'})).entries[0].id,base.id);
+ await assert.rejects(catalog.save({id:base.id,value:edit}),{status:409});
+ const handler=createRetrievalToolHandler({cwd:root,dataDir:root});
+ const result=JSON.parse((await handler({name:'relay_skills',arguments:{action:'read',id:base.id}})).contentItems[0].text);
+ assert.deepEqual(result.entry,saved);assert.equal(result.entry.immutable,true);
+ await assert.rejects(handler({name:'relay_skills',arguments:{action:'save',id:base.id}}));
+ assert.ok(managedContextPaths({dataDir:root}).includes(path.join(root,'skill-edits')));
+ const concurrent=await Promise.allSettled([catalog.save({id:base.id,value:{...edit,expectedRevision:2}}),fresh.save({id:base.id,value:{...edit,expectedRevision:2}})]);
+ assert.equal(concurrent.filter(x=>x.status==='fulfilled').length,1);assert.equal(concurrent.find(x=>x.status==='rejected').reason.status,409);
+ assert.equal((await fresh.detail({id:base.id})).revision,3);
+});
+test('invalid edits and corrupt persistence fail rather than replacing original or discarding saved work',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'skill-invalid-'));t.after(()=>rm(root,{recursive:true,force:true}));const catalog=createSkillsCatalog({dataDir:root}),base=await catalog.detail({id:'builtin-browser'}),edit=value(base);
+ for(const bad of [{...edit,content:''},{...edit,expectedRevision:0},{...edit,extra:true},{...edit,title:44}])await assert.rejects(catalog.save({id:base.id,value:bad}),{status:400});
+ await assert.rejects(catalog.save({id:'../escape',value:edit}),{status:404});await catalog.save({id:base.id,value:edit});
+ const file=path.join(root,'skill-edits','skills.json');await writeFile(file,'{broken');await assert.rejects(catalog.detail({id:base.id}));await assert.rejects(catalog.save({id:base.id,value:{...edit,expectedRevision:2}}));assert.equal(await readFile(file,'utf8'),'{broken');
+});

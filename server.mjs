@@ -131,7 +131,7 @@ export async function createHarnessServer(options = {}) {
   const browser = options.browser || new BrowserWorkspace();
   const mistralVibeHttp = createMistralVibeHttp({ runtime, browser, defaultCwd, readBody: body, sendJSON: json, getStatus: () => status(), onStatus: () => runtimeUpdate() });
   const applicationWorkspace=options.applicationWorkspace||await new ApplicationWorkspace({dataDir,runtime:options.applicationRuntime,catalog:options.applicationCatalog}).init();
-  const skillsCatalog=createSkillsCatalog();
+  const skillsCatalog=createSkillsCatalog({dataDir});
   const skillFolders=new SkillFolderStore({dataDir});
   const planningBrowser = options.planningBrowser || await new PlanningBrowserStore({ dataDir: path.resolve(dataDir) }).init();
   const planningBrowserRuntime = options.planningBrowserRuntime || new PlanningBrowserRuntime({ store: planningBrowser, runtime, getSettings: () => runtimeSettings.get(), defaultCwd, onUpdated: event => sendEvent(event) });
@@ -1310,6 +1310,10 @@ export async function createHarnessServer(options = {}) {
         return json(res,200,await skillsCatalog.list({cwd:query.get('cwd')||undefined,query:query.get('query')||'',source:query.get('source')||'all',refresh:query.get('refresh')==='true'}));
       }
       const skillId=skillIdFromRequestPath(pathname);
+      if(skillId&&req.method==='POST'){
+        if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Edit skills in BLACKICE on this computer.'});
+        const saved=await skillsCatalog.save({id:skillId,value:await body(req)});sendEvent({type:'skills.updated',id:skillId});return json(res,200,saved);
+      }
       if(skillId&&req.method==='GET'){
         const query=new URL(req.url,`http://${host}`).searchParams;
         return json(res,200,await skillsCatalog.detail({id:skillId,cwd:query.get('cwd')||undefined}));
@@ -1529,6 +1533,7 @@ export async function createHarnessServer(options = {}) {
         await cleanup(() => runtimeSettings.close());
         await cleanup(() => prompts.close());
         await cleanup(() => skillFolders.close());
+        await cleanup(() => skillsCatalog.close());
         await cleanup(() => email?.close?.());
         await cleanup(() => emailOAuth?.close?.());
         await cleanup(() => emailClient?.close?.());

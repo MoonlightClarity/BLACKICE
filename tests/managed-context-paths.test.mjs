@@ -11,7 +11,7 @@ test('managed stores include active snapshots, backups and identity history with
  const dataDir=path.join(root,'data'),cwd=path.join(root,'project');await mkdir(dataDir);await mkdir(cwd);
  const protectedPaths=managedContextPaths({dataDir});const patchStore=new FilePatchStore({dataDir:path.join(root,'patches')});t.after(()=>patchStore.close());
  const h=createWorkspaceToolHandler({cwd,patchStore,protectedPaths});let count=0;
- for(const file of ['skills-folders.json','skills-folders.json.lock','identity/USER.md','identity/history/user-1.json']) {
+ for(const file of ['skill-edits/skills.json','skill-edits/skills.json.lock','skill-edits/skills.json.fixture.tmp','skills-folders.json','skills-folders.json.lock','identity/USER.md','identity/history/user-1.json']) {
   const target=path.join(dataDir,file);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,'owner text');
   for(const args of [{action:'write',path:target,text:'changed'},{action:'patch',path:target,oldText:'owner',newText:'model'}]) {
    const result=await h({name:'relay_workspace',arguments:args},{onOperationDispatch:()=>count++});assert.equal(result.success,false);assert.equal(parse(result).code,'WORKSPACE_PROTECTED_PATH');assert.equal(parse(result).actionDispatched,false);
