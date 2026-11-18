@@ -53,9 +53,9 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   let input=renameDrafts.get(folder.id);if(input){input.disabled=blocked();return input;}
   input=el('input',null,'next-browser-folder-rename');input.disabled=blocked();input.value=folder.name;input.maxLength=200;input.setAttribute('aria-label','Rename '+folder.name);
   input.addEventListener('keydown',async e=>{
-   if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(!pending){renaming=null;paint();[...host.querySelectorAll('[data-folder-control]')].find(n=>n.dataset.folderControl==='edit:'+folder.id)?.focus();}}
+   if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(!pending){renameDrafts.delete(folder.id);renaming=null;paint();[...host.querySelectorAll('[data-folder-control]')].find(n=>n.dataset.folderControl==='edit:'+folder.id)?.focus();}}
    if(e.key==='Enter'&&!e.ctrlKey&&!e.metaKey){e.preventDefault();e.stopPropagation();if(!input.value.trim()){notice('Folder name cannot be empty.',true);return;}
-    if(await request('collection_rename',{collectionId:folder.id,name:input.value})){renameDrafts.delete(folder.id);renaming=null;paint();[...host.querySelectorAll('[data-folder-control]')].find(n=>n.dataset.folderControl==='edit:'+folder.id)?.focus();}
+    if(await request('collection_rename',{collectionId:folder.id,name:input.value,expectedName:folder.name})){renameDrafts.delete(folder.id);renaming=null;paint();[...host.querySelectorAll('[data-folder-control]')].find(n=>n.dataset.folderControl==='edit:'+folder.id)?.focus();}
    }
   });renameDrafts.set(folder.id,input);return input;
  }
@@ -73,7 +73,7 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   parent.value=tabId?getTabs().find(t=>t.tabId===tabId)?.collectionId||'':folder?.parentId||'';form.append(parent);
   const save=button(tabId?'Move':'Save',()=>{});save.type='submit';form.append(save,button('Cancel',dismiss));
   if(folder)form.append(button('Remove folder, keep tabs',async()=>{if(await request('collection_remove',{collectionId:folder.id}))dismiss();}));
-  form.addEventListener('submit',async e=>{e.preventDefault();const action=tabId?'tab_collect':folder?'collection_rename':'collection_create';const args=tabId?{tabId,collectionId:parent.value||null}:{...(folder?{collectionId:folder.id}:{}),name:name.value,parentCollectionId:parent.value||null};if(await request(action,args))dismiss();});
+  form.addEventListener('submit',async e=>{e.preventDefault();const action=tabId?'tab_collect':folder?'collection_rename':'collection_create';const args=tabId?{tabId,collectionId:parent.value||null}:{...(folder?{collectionId:folder.id,expectedName:folder.name}:{}),name:name.value,parentCollectionId:parent.value||null};if(await request(action,args))dismiss();});
   form.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(!pending)dismiss();}});
   paint();(name||parent).focus();
  }
@@ -105,7 +105,7 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
    const icon=el('span',null,'next-browser-folder-icon');icon.setAttribute('aria-hidden','true');
    heading.append(toggle,icon,renaming===f.id?renameField(f):label,total);group.append(heading,content);
    heading.addEventListener('contextmenu',e=>{if(f.id){e.preventDefault();edit(f);}});heading.title='Drag to move. Ctrl+Enter: indent. Ctrl+Shift+Enter: outdent.';
-   if(f.id){heading.draggable=!blocked();heading.addEventListener('dragstart',e=>{if(blocked()){e.preventDefault();return;}e.stopPropagation();e.dataTransfer.setData('application/x-blackice-folder',f.id);e.dataTransfer.effectAllowed='move';});heading.addEventListener('keydown',e=>outlineKey(e,f.id,null));}
+   if(f.id){heading.draggable=!blocked();heading.addEventListener('dragstart',e=>{if(e.target.closest('input,select,textarea')){e.preventDefault();e.stopPropagation();return;}if(blocked()){e.preventDefault();return;}e.stopPropagation();e.dataTransfer.setData('application/x-blackice-folder',f.id);e.dataTransfer.effectAllowed='move';});heading.addEventListener('keydown',e=>outlineKey(e,f.id,null));}
    dropTarget(heading,f.id);dropTarget(group,f.id);
    for(const child of f.children)content.append(branch(child));for(const tab of f.tabs){const row=tabRow(tab);if(row)content.append(row);}
    return group;

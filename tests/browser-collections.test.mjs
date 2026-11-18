@@ -8,3 +8,11 @@ test('old profiles and malformed hierarchy remain readable',()=>{
  const tree=browserCollectionTree([...f.values()],[{tabId:'t',collectionId:'b'},{tabId:'u',collectionId:'gone'}]);
  assert.equal(tree.roots[0].children[0].tabs[0].tabId,'t');assert.equal(tree.loose[0].tabId,'u');
 });
+
+test('rename atomically rejects an external change without mutation',async()=>{
+ const {organizeBrowserCollection}=await import('../lib/browser-collections.mjs');
+ const folders=new Map([['a',{id:'a',name:'A',parentId:null}],['p',{id:'p',name:'P',parentId:null}]]),tabs=new Map();
+ organizeBrowserCollection(folders,tabs,{action:'collection_rename',collectionId:'a',name:'B',expectedName:'A'});
+ assert.throws(()=>organizeBrowserCollection(folders,tabs,{action:'collection_rename',collectionId:'a',name:'Stale',expectedName:'A',parentCollectionId:'p'}),e=>e.code==='BROWSER_COLLECTION_CONFLICT');
+ assert.deepEqual(folders.get('a'),{id:'a',name:'B',parentId:null});
+});

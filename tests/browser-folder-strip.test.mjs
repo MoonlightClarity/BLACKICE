@@ -68,7 +68,7 @@ test('folder name opens rename while its disclosure alone changes expansion',asy
  assert.equal(f.$('[data-collection-id="p"] .next-browser-folder-children').hidden,false);
  f.$('.next-browser-folder-rename').value='Renamed';
  await f.key(f.$('.next-browser-folder-rename'),'Enter');
- assert.deepEqual(f.calls,[{browser:'relay',action:'collection_rename',collectionId:'p',name:'Renamed'}]);
+ assert.deepEqual(f.calls,[{browser:'relay',action:'collection_rename',collectionId:'p',name:'Renamed',expectedName:'Projects'}]);
  await f.click('[data-folder-control="toggle:p"]');assert.equal(f.$('[data-collection-id="p"] .next-browser-folder-children').hidden,true);
 });
 
@@ -80,9 +80,9 @@ test('Ctrl Enter indents and Ctrl Shift Enter outdents through persistent folder
  await f.$('[data-collection-id="second"] .next-browser-folder-heading').dispatch('keydown',{key:'Enter',ctrlKey:true,shiftKey:true});
  assert.deepEqual(f.calls.at(-1),{browser:'relay',action:'collection_move',collectionId:'second',parentCollectionId:null});
 });
-test('inline rename draft survives refresh, Escape and leave without saving',async t=>{
+test('inline rename draft survives refresh; Escape discards and leave does not save',async t=>{
  const f=fixture(t);await f.click('[data-folder-control="edit:p"]');const input=f.$('.next-browser-folder-rename');input.value='Unsent rename';f.render();assert.equal(f.$('.next-browser-folder-rename'),input);
- await f.key(input,'Escape');assert.equal(f.$('.next-browser-folder-rename'),null);await f.click('[data-folder-control="edit:p"]');assert.equal(f.$('.next-browser-folder-rename').value,'Unsent rename');
+ await f.key(input,'Escape');assert.equal(f.$('.next-browser-folder-rename'),null);await f.click('[data-folder-control="edit:p"]');assert.equal(f.$('.next-browser-folder-rename').value,'Projects');
  f.folders.leave();assert.equal(f.$('.next-browser-folder-rename'),null);assert.equal(f.calls.length,0);
 });
 test('folder drag rejects cycles and moves observed folders only',async t=>{
