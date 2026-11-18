@@ -5,7 +5,7 @@ import {mkdtemp,mkdir,rm,readFile,writeFile,utimes} from 'node:fs/promises';
 import {promises as io} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {TaskStateStore,createTaskToolHandler,TASK_TOOL,PREVIOUS_TASK_TOOL,LEGACY_TASK_TOOL,TASK_INSTRUCTIONS,PREVIOUS_TASK_INSTRUCTIONS} from './fixture-legacy-task-state.mjs';
+import {TaskStateStore,createTaskToolHandler} from '../lib/task-state.mjs';
 import {capabilityGuidance} from '../lib/tool-routing.mjs';
 import {newerTaskState} from '../public/run-state-model.mjs';
 
@@ -138,12 +138,7 @@ test('short recovery context warns about uncertainty before an obsolete send nex
  for(const maxChars of [512,800,12000]){const context=await f.store.getContext('publication',{maxChars,executionGuardrails:true});assert.ok(context.length<=maxChars);assert.match(context,/Uncertain external attempt: blackice-post/);assert.match(context,/Inspect the destination before any retry/);assert.ok(context.indexOf('Uncertain external attempt')<context.indexOf('Next action:'));assert.doesNotMatch(context,/Next action: Click the final Post/);}
 });
 
-test('actual task tool writes external receipts, emits saved state and reports guarded failures',async t=>{
- const f=await fixture(t),events=[],handler=createTaskToolHandler({store:f.store,taskId:'publication',runId:'initial',nodeId:'agent',onEvent:event=>events.push(event)});
- const call=async external=>handler({name:'relay_task',arguments:{action:'external',expectedRevision:(await f.store.get('publication')).revision,external}});
- let result=await call(prepared);assert.equal(result.success,true);assert.equal(JSON.parse(result.contentItems[0].text).externalActions[0].status,'prepared');
- result=await call({receiptId:prepared.receiptId,operation:'attempt'});assert.equal(result.success,true);result=await call({receiptId:prepared.receiptId,operation:'attempt'});assert.equal(result.success,false);assert.equal(result.code,'EXTERNAL_ACTION_RECONCILE');assert.deepEqual(events.map(event=>event.state.externalActions[0].status),['prepared','uncertain']);
-});
+
 
 test('confirmed effects displace stale send instructions and long receipt IDs cannot bury the retry warning',async t=>{
  const f=await fixture(t);let state=await f.action(prepared);state=await f.store.checkpoint('publication',{nextAction:'Click the final Post button.'},f.options(state.revision));
@@ -153,8 +148,11 @@ test('confirmed effects displace stale send instructions and long receipt IDs ca
  context=await f.store.getContext('publication',{maxChars:512,executionGuardrails:true});assert.ok(context.length<=512);assert.match(context,/Inspect the destination before any retry; it may already be published/);
 });
 
-test('guarded external recovery schema and guidance attach only to new native catalogs',()=>{
- assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('external'));assert.ok(TASK_TOOL.inputSchema.properties.external);assert.equal(PREVIOUS_TASK_TOOL.inputSchema.properties.external,undefined);assert.equal(LEGACY_TASK_TOOL.inputSchema.properties.external,undefined);
- assert.match(TASK_INSTRUCTIONS,/EXTERNAL ACTION RECOVERY/);assert.doesNotMatch(PREVIOUS_TASK_INSTRUCTIONS,/EXTERNAL ACTION RECOVERY/);
- assert.match(capabilityGuidance([TASK_TOOL],{executionGuardrails:true}),/persist attempt immediately before the final send/);assert.doesNotMatch(capabilityGuidance([PREVIOUS_TASK_TOOL],{executionGuardrails:true}),/persist attempt immediately before the final send/);
+
+
+test('retired model external action cannot mutate retained receipts or publish state',async t=>{
+ const f=await fixture(t),events=[],before=await f.store.get('publication');
+ const handler=createTaskToolHandler({store:f.store,taskId:'publication',runId:'initial',nodeId:'agent',onEvent:e=>events.push(e)});
+ const result=await handler({name:'relay_task',arguments:{action:'external',expectedRevision:before.revision,external:prepared}});
+ assert.equal(result.success,false);assert.equal(result.code,'TASK_CONTRACT_INVALID');assert.deepEqual(await f.store.get('publication'),before);assert.deepEqual(events,[]);
 });

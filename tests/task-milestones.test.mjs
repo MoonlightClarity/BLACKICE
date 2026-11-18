@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskStateStore, TASK_LIMITS, TASK_TOOL, TASK_TOOL_V3, TASK_TOOL_V8, TASK_TOOL_V9, TASK_TOOL_V10, TASK_TOOL_V11, TASK_TOOL_V12, TASK_SCHEMA_VERSION, LEGACY_TASK_TOOL, TASK_INSTRUCTIONS, TASK_INSTRUCTIONS_V3, LEGACY_TASK_INSTRUCTIONS, createTaskToolHandler, taskToolForVersion, taskInstructionsForVersion } from './fixture-legacy-task-state.mjs';
+import { TaskStateStore, TASK_LIMITS, createTaskToolHandler } from '../lib/task-state.mjs';
 
 async function harness(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'relay-milestones-test-')), cwd = path.join(directory, 'workspace'); await mkdir(cwd);
@@ -109,18 +109,7 @@ test('legacy records and original step/checkpoint calls retain their optional fi
   state = await other.setStep('milestone-task', 'old-step', { status: 'done' }, actor(state.revision));
   assert.equal(state.steps[0].note, 'Legacy note.'); assert.equal(state.steps[0].doneWhen, undefined); assert.equal(state.progress.done, 1);
   const context = await other.getContext('milestone-task'); assert.match(context, /Next action: Legacy next step\./);
-  assert.equal(TASK_SCHEMA_VERSION, 13); assert.equal(TASK_TOOL.name, LEGACY_TASK_TOOL.name);
-  for (const [version, tool] of [[1, LEGACY_TASK_TOOL], [8, TASK_TOOL_V8], [9, TASK_TOOL_V9], [10, TASK_TOOL_V10], [11, TASK_TOOL_V11], [12, TASK_TOOL_V12], [13, TASK_TOOL]]) assert.equal(taskToolForVersion(version, { executionGuardrails: true }), tool);
-  assert.equal(TASK_TOOL_V8.inputSchema.properties.operation, undefined); assert.ok(TASK_TOOL.inputSchema.properties.operation);
-  assert.ok(!taskToolForVersion(5).inputSchema.properties.action.enum.includes('edit')); assert.ok(TASK_TOOL.inputSchema.properties.action.enum.includes('edit'));
-  assert.deepEqual(TASK_TOOL_V3.inputSchema.properties.action.enum.filter(action => action !== 'external'), LEGACY_TASK_TOOL.inputSchema.properties.action.enum);
-  for (const key of ['doneWhen', 'evidence', 'blockedReason', 'nextAction']) assert.equal(LEGACY_TASK_TOOL.inputSchema.properties[key], undefined);
-  for (const key of ['doneWhen', 'evidence', 'blockedReason']) assert.equal(LEGACY_TASK_TOOL.inputSchema.properties.steps.items.properties[key], undefined);
-  assert.ok(!LEGACY_TASK_TOOL.inputSchema.properties.status.enum.includes('blocked')); assert.ok(TASK_TOOL.inputSchema.properties.status.enum.includes('blocked'));
-  const v5Instructions = taskInstructionsForVersion(5, { executionGuardrails: true });
-  assert.match(TASK_INSTRUCTIONS_V3, /Simple questions and quick edits need no saved plan/); assert.doesNotMatch(TASK_INSTRUCTIONS, /need no saved plan/); assert.match(v5Instructions, /coordinator owns the shared plan/); assert.match(v5Instructions, /revision conflict/); assert.match(v5Instructions, /one concrete nextAction/);
-  assert.match(TASK_INSTRUCTIONS, /LIVE PLANNING WORKSPACE/); assert.match(TASK_INSTRUCTIONS, /A changed revision requires a fresh read/); assert.match(TASK_INSTRUCTIONS, /cannot rewrite another owner’s plan, global goal or checkpoint/);
-  assert.ok(!LEGACY_TASK_INSTRUCTIONS.includes('doneWhen')); assert.ok(!LEGACY_TASK_INSTRUCTIONS.includes('nextAction'));
+
 });
 
 test('milestone bounds reject invalid criteria, evidence, blockers and next actions without changing saved revisions', async t => {
@@ -170,14 +159,12 @@ test('continuity budgets preserve the plan goal, current milestone, reported fin
   assert.equal((await store.get('milestone-task')).revision, state.revision, 'context assembly is read-only');
 });
 
-test('bound milestone tools emit committed truth, retain file-byte limits and expose no claim of automated check verification', async t => {
-  const { store } = await harness(t), events = [], handler = createTaskToolHandler({ store, taskId: 'milestone-task', runId: 'bound-run', nodeId: 'worker', onEvent: event => events.push(event) });
-  let result = await handler({ name: 'relay_task', arguments: { action: 'plan', expectedRevision: 1, steps: milestones() } }); assert.equal(result.success, true);
-  let state = JSON.parse(result.contentItems[0].text);
-  result = await handler({ name: 'relay_task', arguments: { action: 'step', expectedRevision: state.revision, stepId: 'playable', status: 'blocked', blockedReason: 'Build is unavailable.', evidence: 'No check executed.' } }); assert.equal(result.success, true); state = JSON.parse(result.contentItems[0].text);
-  result = await handler({ name: 'relay_task', arguments: { action: 'checkpoint', expectedRevision: state.revision, nextAction: 'Build and run the board test.' } }); assert.equal(result.success, true); state = JSON.parse(result.contentItems[0].text);
-  assert.equal(events.length, 3); assert.deepEqual(events.at(-1).state, await store.get('milestone-task')); assert.equal(state.provenance.runId, 'bound-run'); assert.equal(state.progress.done, 0);
-  assert.equal(state.steps[0].verification, undefined); assert.equal(state.steps[0].verifiedAt, undefined); assert.equal(state.steps[0].evidence, 'No check executed.');
-  assert.match(TASK_TOOL.inputSchema.properties.evidence.description, /not independent runtime verification/);
-  const invalid = await handler({ name: 'relay_task', arguments: { action: 'step', expectedRevision: state.revision, stepId: 'playable', status: 'blocked', blockedReason: '' } }); assert.equal(invalid.success, false); assert.equal(events.length, 3); assert.equal((await store.get('milestone-task')).revision, state.revision);
+test('retained milestone storage preserves provenance and truthful evidence while retired model writes fail closed',async t=>{
+ const {store,actor}=await harness(t);
+ let state=await store.setPlan('milestone-task',{steps:[{id:'playable',title:'Check board',status:'active',doneWhen:'Board passes checks'}]},actor(1));
+ state=await store.setStep('milestone-task','playable',{status:'blocked',blockedReason:'Build unavailable',evidence:'No check executed.'},actor(state.revision));
+ state=await store.checkpoint('milestone-task',{nextAction:'Build and test the board'},actor(state.revision));
+ assert.equal(state.progress.done,0);assert.equal(state.steps[0].verifiedAt,undefined);assert.equal(state.steps[0].verification,undefined);assert.equal(state.steps[0].evidence,'No check executed.');
+ const events=[],handler=createTaskToolHandler({store,taskId:'milestone-task',runId:'bound-run',nodeId:'worker',onEvent:e=>events.push(e)});
+ const denied=await handler({name:'relay_task',arguments:{action:'step',expectedRevision:state.revision,stepId:'playable',status:'done'}});assert.equal(denied.success,false);assert.equal(denied.code,'TASK_CONTRACT_INVALID');assert.deepEqual(events,[]);assert.deepEqual(await store.get('milestone-task'),state);
 });
