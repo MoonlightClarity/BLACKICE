@@ -48,7 +48,7 @@ test('the configured catalog retains 34 tools with reviewed authentication, cano
   ]);
   assert.deepEqual(catalog.status(), {
     // A complete reviewed current contract, not an inferred version or reused old SHA.
-    sha256: 'e71da7e882b95a01424706fe9e7b695987d563296399e09d190333a35212fd56',
+    sha256: 'eb2f9b5653affa2756c6afb350d587f6c6566d1b65c70af59b5ebac9c04bde91',
     toolCount: 34,
     serverVersion: '2.39.100',
   });
@@ -68,7 +68,14 @@ test('the configured catalog retains 34 tools with reviewed authentication, cano
   assert.equal(currentAction.inputSchema.properties.action.enum.filter(action=>action==='tab_mark').length,1);
   assert.deepEqual(currentAction.inputSchema.properties.inUse,{type:'boolean',description:'For tab_mark: protect an owned tab (true), or release your own mark (false). No ownership transfer; human marks remain protected.'});
   assert.deepEqual(catalog.get('blackice_browser_action').requiredScopes,['read','browser:write']);
-  const beforeMark=structuredClone(currentTools),oldAction=beforeMark.find(tool=>tool.name==='blackice_browser_action');
+  const beforeWide=structuredClone(currentTools),wide=beforeWide.find(tool=>tool.name==='blackice_workspace_read');
+  assert.equal(wide.inputSchema.properties.roots.maxItems,64);
+  assert.match(wide.description,/computer-wide filesystem roots/);
+  assert.deepEqual(catalog.get('blackice_workspace_read').requiredScopes,['read','files:read']);
+  wide.inputSchema.properties.roots.maxItems=8;
+  wide.description="Inspect local files through BLACKICE's bounded file handler. find searches literal filenames/paths, not file contents, and returns resumable pages with coverage and errors. Omitted path/roots searches the working folder and OS-resolved Documents/Desktop/Downloads; exact roots are returned. Relative paths use the configured working directory and explicit absolute paths are supported. Returns a durable job immediately; retrieve its result with blackice_get_job. No model is started.";
+  assert.equal(sha(beforeWide),'e71da7e882b95a01424706fe9e7b695987d563296399e09d190333a35212fd56');
+  const beforeMark=structuredClone(beforeWide),oldAction=beforeMark.find(tool=>tool.name==='blackice_browser_action');
   oldAction.inputSchema.properties.action.enum=oldAction.inputSchema.properties.action.enum.filter(action=>action!=='tab_mark');
   delete oldAction.inputSchema.properties.inUse;
   assert.equal(sha(beforeMark),'027a4c2ad0448239f1d6e39062d04f7a588688ea6c49ed6229681562b79350e8');

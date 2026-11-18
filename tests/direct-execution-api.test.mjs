@@ -634,6 +634,8 @@ test('direct structured writes cannot bypass current profile or immutable Skills
 
 test('filename find pages outside workspace through fresh direct jobs and isolates grant cursors', async t => {
   const {api,cwd,other}=await harness(t);
+  const definition=api.tools(client).find(tool=>tool.name==='blackice_workspace_read');
+  assert.equal(definition.inputSchema.properties.roots.maxItems,64); assert.match(definition.description,/computer-wide/);
   await Promise.all(Array.from({length:125},(_,i)=>writeFile(path.join(other,`Resume ${i}.txt`),'fixture')));
   const first=await api.call('blackice_workspace_read',{requestId:'find-page-one',action:'find',path:other,query:'Resume',limit:2},client);
   const done=await waitJob(api,first.jobId); assert.equal(done.status,'succeeded',JSON.stringify(done));

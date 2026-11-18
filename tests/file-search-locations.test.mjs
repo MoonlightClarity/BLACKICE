@@ -37,3 +37,8 @@ test('inaccessible priority folders and cancellation are not silently swallowed'
   const controller = new AbortController(); controller.abort();
   await assert.rejects(fileSearchLocations('C:\\work', controller.signal, dependencies), {name:'AbortError'});
 });
+
+test('Windows priority lookup failure is reported even when drive coverage is available', async () => {
+ const result = await fileSearchLocations('C:\\work', undefined, { platform:'win32',home:'C:\\user',run:async()=>({stdout:JSON.stringify({common:[],drives:['C:\\'],commonError:true})}) });
+ assert.ok(result.roots.includes('C:\\')); assert.equal(result.errors[0].code,'COMMON_FOLDERS_UNAVAILABLE');
+});
