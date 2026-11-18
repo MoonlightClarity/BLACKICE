@@ -271,6 +271,6 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     enqueue(getItems());scheduleAuto();
   });
   function manage(id){if(!folderById(id)||!isWritable())return;selected=id;safeSet('blackice.next.chatFolder',selected);refresh();onChanged();if(view.folderSettings)view.folderSettings.open=true;view.folderRename.focus();}
-  return {manage,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
+  return {rename:(id,name)=>folderById(id)?save([{type:'rename_folder',folderId:id,name}],{success:'Folder renamed.'}):Promise.resolve(false),manage,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
     get selected(){return selected;},get organization(){return organization;}};
 }

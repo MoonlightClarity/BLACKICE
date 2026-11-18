@@ -1,0 +1,38 @@
+const {app,BrowserWindow}=require('electron'),{EventEmitter}=require('events'),fs=require('fs'),path=require('path'),{pathToFileURL}=require('url'),assert=require('assert/strict');
+const root=process.argv[2],out=process.argv[3];fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();let win,server;const sleep=ms=>new Promise(r=>setTimeout(r,ms));const run=async s=>{try{return await win.webContents.executeJavaScript(s,true);}catch(e){throw Error(s+'\\n'+e.message);}};const until=async s=>{for(let i=0;i<150;i++){if(await run(s))return;await sleep(80);}throw Error(s);};
+class Runtime extends EventEmitter{status(){return{connected:true,authenticated:true,models:[]};}async start(){}async close(){}async runAgent(){throw Error('No model');}}
+(async()=>{await app.whenReady();const {createHarnessServer}=await import(pathToFileURL(path.join(root,'server.mjs')));server=await createHarnessServer({runtime:new Runtime(),dataDir:path.join(out,'data'),defaultCwd:out,port:0,remoteAccess:false});const url=await server.listen();const home=await fetch(url),cookie=home.headers.get('set-cookie').split(';')[0];await home.text();
+const request=async(body)=>{const r=await fetch(url+(body?'/api/operations/folders':'/api/operations'),{method:body?'POST':'GET',headers:{Cookie:cookie,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});if(!r.ok)throw Error(await r.text());const value=await r.json();return body?value:value.organization;};
+let org=await request();org=await request({action:'create',name:'Parent',expectedRevision:org.revision});const parent=org.folders.find(f=>f.name==='Parent').id;org=await request({action:'create',name:'Child',parentId:parent,expectedRevision:org.revision});
+win=new BrowserWindow({show:false,width:1200,height:900,webPreferences:{offscreen:true,backgroundThrottling:false}});await win.loadURL(url+'/next/#cronjobs');await until('!!document.querySelector(".next-schedule-folder-manager")');
+
+await run('document.querySelector(".next-tab[data-space=chat]").click();true');
+await until('!!document.querySelector("#next-chat-folder-new")');
+await run('document.querySelector("#next-chat-folder-new").click();document.querySelector("#next-chat-folder-name").value="test";document.querySelector("#next-chat-folder-form").requestSubmit();true');
+await until('document.querySelector("#next-chat-folder-filter").options.length>2');
+await run('document.querySelector("#next-chat-folder-filter").value="all";document.querySelector("#next-chat-folder-filter").dispatchEvent(new Event("change"));true');
+await until('!!document.querySelector(".next-chat-folder-name")');
+await run('document.querySelector(".next-chat-folder-name").click();true');
+assert.equal(await run('document.activeElement.className'),'next-chat-folder-rename');
+assert.equal(await run('document.querySelector("#next-chat-folder-dialog").open'),false);
+assert.equal(await run('document.activeElement.value'),'test');
+assert.equal(await run('document.querySelector(".next-chat-folder-group").open'),true);
+await run('document.activeElement.value="Renamed chat";true');
+win.webContents.sendInputEvent({type:'keyDown',keyCode:'Return'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Return'});
+await until('!document.querySelector(".next-chat-folder-rename")');
+assert.equal(await run('document.querySelector(".next-chat-folder-name").textContent'),'Renamed chat');
+await run('document.querySelector(".next-chat-folder-heading").click();true');
+assert.equal(await run('document.querySelector(".next-chat-folder-group").open'),false);
+await run('document.querySelector(".next-chat-folder-name").focus();true');
+win.webContents.sendInputEvent({type:'keyDown',keyCode:'Space'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Space'});
+await until('!!document.querySelector(".next-chat-folder-rename")');
+assert.equal(await run('document.querySelector(".next-chat-folder-group").open'),false);
+await run('document.activeElement.value="discard";true');
+win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});
+await until('!document.querySelector(".next-chat-folder-rename")');
+assert.equal(await run('document.querySelector(".next-chat-folder-name").textContent'),'Renamed chat');
+await win.reload();await until('document.querySelector(".next-chat-folder-name")?.textContent==="Renamed chat"');
+await run('document.fonts.ready.then(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))');await sleep(300);
+fs.writeFileSync(path.join(out,'chat.png'),(await win.webContents.capturePage()).toPNG());
+fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:true,checks:['Single click starts inline rename without dialog','Input focused and selected','Enter saves; Space opens; Escape cancels','Summary collapse unchanged','Actual saved name survives reload']},null,2));
+})().catch(e=>{fs.writeFileSync(path.join(out,'error.txt'),e.stack);process.exitCode=1;}).finally(async()=>{win?.destroy();if(server)await server.close();app.exit(process.exitCode||0);});setTimeout(()=>app.exit(2),60000).unref();

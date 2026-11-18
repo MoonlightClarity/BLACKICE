@@ -196,3 +196,7 @@
 .next-message-body .chat-svg-source > summary:focus-visible { outline: 2px solid #c1e7f3; outline-offset: 2px; }
 .next-message-body .chat-svg-source > button { margin: 4px 8px 4px 0; }
 .next-message-body .chat-svg-copy-status { font-size: 11px; }
+
+.next-chat-folder-name{font:inherit;color:inherit;background:transparent;border:0;padding:0;text-align:left;cursor:text}.next-chat-folder-name:focus-visible{outline:2px solid var(--next-accent);outline-offset:3px}
+
+.next-chat-folder-rename{min-width:0;width:100%;font:inherit;color:inherit;background:var(--next-panel);border:1px solid var(--next-accent);border-radius:4px;padding:2px 4px}
