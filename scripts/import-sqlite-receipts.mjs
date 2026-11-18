@@ -1,8 +1,25 @@
 import {promises as fs, constants} from 'node:fs';
 import {randomUUID} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {DirectExecutionJobs} from '../lib/direct-execution-jobs.mjs';
+/** Publish an independent, checked copy; never overwrite an existing destination. */
+export async function publishIndependentDatabase({sourceFile,destinationFile,assertLease,expectedRecords,io=fs}){
+ const temporary=destinationFile+'.import-'+randomUUID()+'.tmp';
+ try{
+  await io.copyFile(sourceFile,temporary,constants.COPYFILE_EXCL);
+  const [before,copied]=await Promise.all([io.lstat(sourceFile),io.lstat(temporary)]);
+  if(!before.isFile()||before.isSymbolicLink()||!copied.isFile()||copied.isSymbolicLink()||before.size!==copied.size)throw Error('Imported database copy could not be verified.');
+  const checked=new DatabaseSync(temporary,{readOnly:true});
+  try{if(Object.values(checked.prepare('PRAGMA integrity_check').get())[0]!=='ok'||checked.prepare('SELECT count(*) AS n FROM jobs').get().n!==expectedRecords)throw Error('Imported database copy failed integrity or count verification.');}finally{checked.close();}
+  const handle=await io.open(temporary,'r+');try{await handle.sync();}finally{await handle.close();}
+  await assertLease();
+  // This atomic operation refuses EEXIST even if another destination appears
+  // after the check. Only the unadvertised private temp briefly shares an inode.
+  await io.link(temporary,destinationFile);
+ }finally{for(const file of [temporary,temporary+'-wal',temporary+'-shm'])await io.unlink(file).catch(error=>{if(error.code!=='ENOENT')throw error;});}
+}
 /** Explicit offline import, not a second runtime storage backend. Originals stay untouched. */
 export async function importReceipts({dataDir,stagingDir,publish=false}){
  dataDir=path.resolve(dataDir);stagingDir=path.resolve(stagingDir);
@@ -33,18 +50,7 @@ export async function importReceipts({dataDir,stagingDir,publish=false}){
   const integrity=target.db.prepare('PRAGMA integrity_check').get();if(Object.values(integrity)[0]!=='ok')throw Error('Imported database integrity check failed.');
   target.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');await target.close();
   let published=false;
-  if(publish){
-    // A retained hard link is unsafe for SQLite: the two names would share a
-    // main file but use distinct WAL files. Publish an independent copy instead.
-    const temporary=source.databaseFile+'.import-'+randomUUID()+'.tmp';
-    await fs.copyFile(target.databaseFile,temporary,constants.COPYFILE_EXCL);
-    const handle=await fs.open(temporary,'r+');try{await handle.sync();}finally{await handle.close();}
-    await source.assertLease();
-    // All supported app/import writers honor this executor lease. Do not replace
-    // an existing database, including one left by a previous import attempt.
-    try{await fs.lstat(source.databaseFile);throw Error('Receipt database appeared before publication; refusing replacement.');}catch(e){if(e.code!=='ENOENT')throw e;}
-    await fs.rename(temporary,source.databaseFile);published=true;
-  }
+  if(publish){await publishIndependentDatabase({sourceFile:target.databaseFile,destinationFile:source.databaseFile,assertLease:()=>source.assertLease(),expectedRecords:count});published=true;}
   const report={version:1,count,retiredApprovals,published,sourceDataPreserved:true,database:published?source.databaseFile:target.databaseFile};
   await fs.writeFile(path.join(stagingDir,'import-result.json'),JSON.stringify(report,null,2));return report;
  }finally{await target.close();await source.releaseLease();}

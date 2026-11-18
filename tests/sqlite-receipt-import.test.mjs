@@ -18,3 +18,12 @@ test('offline import preserves source bytes, publishes dedup state, and refuses 
  await staged.close();await live.close();
  await assert.rejects(importReceipts({dataDir:source,stagingDir:path.join(root,'again')}),/already exists/);
 });
+
+test('publication refuses a destination appearing during publish and preserves its bytes',async t=>{
+ const {publishIndependentDatabase}=await import('../scripts/import-sqlite-receipts.mjs');
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'blackice-publish-race-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const source=path.join(root,'stage');await fs.mkdir(source);const store=new DirectExecutionJobs({dataDir:source});await store.init();await store.close();
+ const destinationFile=path.join(root,'destination.sqlite');
+ await assert.rejects(publishIndependentDatabase({sourceFile:path.join(source,'direct-execution.sqlite'),destinationFile,expectedRecords:0,assertLease:async()=>{},io:{...fs,link:async(from,to)=>{await fs.writeFile(to,'existing database sentinel',{flag:'wx'});return fs.link(from,to);}}}),{code:'EEXIST'});
+ assert.equal(await fs.readFile(destinationFile,'utf8'),'existing database sentinel');assert.equal((await fs.readdir(root)).some(name=>name.includes('.import-')),false);
+});

@@ -34,3 +34,19 @@ test('legacy receipts cannot be silently ignored; approval kind is not accepted'
  await s.close();await fs.unlink(path.join(f.dir,'direct-execution.sqlite'));await fs.writeFile(path.join(f.dir,'direct-execution-jobs','direct_'+'a'.repeat(64)+'.json'),'{}');
  const newer=new DirectExecutionJobs({dataDir:f.dir});await assert.rejects(newer.init(),{code:'DIRECT_JOB_IMPORT_REQUIRED'});
 });
+
+test('explicit receipt hydration rejects altered arguments, and aliased SQLite files cannot open',async t=>{
+ const f=await fixture(t);const s=await f.open(),job=(await s.admit(input('unchanged'))).job;
+ const altered={...job,arguments:{value:'changed'}};s.db.prepare('UPDATE payloads SET body=? WHERE id=?').run(JSON.stringify(altered),job.id);
+ await assert.rejects(s.get(job.id),{code:'DIRECT_JOB_STORAGE'});await s.close();
+ const alias=path.join(f.dir,'alias.sqlite');await fs.link(path.join(f.dir,'direct-execution.sqlite'),alias);
+ const next=new DirectExecutionJobs({dataDir:f.dir});await assert.rejects(next.init(),{code:'DIRECT_JOB_STORAGE'});
+ assert.equal(await fs.readFile(alias,'utf8'),await fs.readFile(path.join(f.dir,'direct-execution.sqlite'),'utf8'));
+});
+
+test('lazy hydration rejects internally rehashed request that disagrees with durable dedup index',async t=>{
+ const f=await fixture(t),s=await f.open(),job=(await s.admit(input('indexed-request'))).job;
+ const changed={...job,arguments:{value:'different'}};changed.requestDigest=changed.storedRequestDigest=directRequestDigest({tool:changed.tool,arguments:changed.arguments});
+ s.db.prepare('UPDATE payloads SET body=? WHERE id=?').run(JSON.stringify(changed),job.id);
+ await assert.rejects(s.get(job.id),{code:'DIRECT_JOB_STORAGE'});assert.ok(s.storageError);
+});
