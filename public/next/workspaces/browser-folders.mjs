@@ -50,7 +50,7 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   const transientRows=rows.filter(row=>!visible.has(row.querySelector('[data-tab-id]')?.dataset.tabId));
   const tree=browserCollectionTree(collections,getTabs());
   host.replaceChildren();host.classList.add('next-browser-folder-tree');host.setAttribute('role','region');host.setAttribute('aria-label','Browser folders and tabs');host.dataset.folderBusy=String(blocked());
-  const toolbar=el('div',null,'next-browser-folder-toolbar');toolbar.append(el('strong','Tabs'),button('+ Folder',()=>edit(), 'next-browser-folder-add'));host.append(toolbar);
+  const toolbar=el('div',null,'next-browser-folder-toolbar');toolbar.append(el('strong','Tabs'),button('+ Folder',()=>edit(), 'next-browser-folder-add'));if(editor?.hidden)toolbar.append(button('Resume folder edit',()=>{editor.hidden=false;paint();editor.querySelector('input,select')?.focus();},'next-browser-folder-resume'));host.append(toolbar);
   const tabRow=tab=>{const row=byId.get(tab.tabId);if(!row)return null;
    row.draggable=!blocked();row.ondragstart=e=>{if(blocked()){e.preventDefault();return;}e.dataTransfer.setData('application/x-blackice-tab',tab.tabId);e.dataTransfer.effectAllowed='move';};
    row.oncontextmenu=e=>{e.preventDefault();edit(null,tab.tabId);};
@@ -70,13 +70,14 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   host.append(branch({id:'',name:'Unfiled',tabs:tree.loose,children:[]}));
   host.append(...transientRows,...extras);
   if(editor){host.append(editor);for(const n of editor.querySelectorAll('button,input,select'))n.disabled=blocked();}
-  if(editor?.contains(focus))focus.focus({preventScroll:true});
+  if(editor&&!editor.hidden&&editor.contains(focus))focus.focus({preventScroll:true});
   else if(focusKey)[...host.querySelectorAll('[data-folder-control]')].find(n=>n.dataset.folderControl===focusKey)?.focus({preventScroll:true});
   else if(focusTab)[...host.querySelectorAll('[data-tab-id]')].find(n=>n.dataset.tabId===focusTab)?.focus({preventScroll:true});
  }
  return {
   captureFocus(strip){const id=strip.ownerDocument?.activeElement?.dataset?.tabId;return()=>{if(id)[...strip.querySelectorAll('[data-tab-id]')].find(n=>n.dataset.tabId===id)?.focus?.({preventScroll:true});};},
   groupTabs(strip){host=strip;rows=[...strip.querySelectorAll('.next-browser-tab-group')];extras=[...strip.children].filter(n=>n.classList.contains('next-native-more-tabs')||n.classList.contains('next-browser-tabs-empty'));paint();},
+  leave(){if(editor){editor.hidden=true;paint();}},
   update(data){collections=Array.isArray(data.collections)?data.collections:[];},render:paint,
   destroy(){destroyed=true;editor?.remove();editor=null;rows=[];host=null;}
  };

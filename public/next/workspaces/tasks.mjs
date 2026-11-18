@@ -906,7 +906,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   function onEvent(event){if(!active||!operationsSection()||event.type!=='operations.updated')return;clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>void refresh(),700);}
   return{
     enter(){if(active)return;active=true;subscriptions=events.subscribe(onEvent);activateSection(section);},
-    leave(){active=false;revision++;workflowEpoch++;workflowLoaded=false;workflowLoading=false;history.leave();timeline?.leave();workflows?.leave();subscriptions?.();subscriptions=null;clearTimeout(refreshTimer);clearTimeout(workflowTimer);workflowTimer=null;},
+    leave(){active=false;scheduleFolders.leave();revision++;workflowEpoch++;workflowLoaded=false;workflowLoading=false;history.leave();timeline?.leave();workflows?.leave();subscriptions?.();subscriptions=null;clearTimeout(refreshTimer);clearTimeout(workflowTimer);workflowTimer=null;},
     updateStatus(info){if(!view.form.elements.cwd.value)view.form.elements.cwd.value=info?.cwd||'';createChatProfile.refresh();workflows?.updateStatus?.(info);},
     destroy(){this.leave();history.destroy();timeline?.destroy();workflows?.destroy();createAttachmentsUI?.destroy();editAttachmentsUI?.destroy();mount.innerHTML='';},
   };

@@ -4,7 +4,7 @@ import { text } from '../core/dom.mjs';
 export function createScheduleFolders({ mount, api, notify, refresh }) {
   let organization = { revision: 0, folders: [], assignments: {} }, pending = false, lastRevision = -1;
   const closed = new Set();
-  let fileSelects = [];
+  let fileSelects = [], folderButtons = [];
   const add = (parent, tag, value, cls) => text(parent, value, tag, cls);
   const manager = add(mount, 'details', '', 'next-card next-schedule-folder-manager');
   add(manager, 'summary', 'Manage folders');
@@ -19,7 +19,7 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
   const parent = field('Create inside', 'select', 'parent');
   const actions = add(form, 'div', '', 'next-row');
   const save = add(actions, 'button', 'Create folder'); save.type = 'submit';
-  const remove = add(actions, 'button', 'Remove folder'); remove.type = 'button'; remove.hidden = true;
+  const remove = add(actions, 'button', '\u00d7', 'next-schedule-folder-remove'); remove.type = 'button'; remove.hidden = true; remove.title = 'Remove selected folder only; keep every cronjob'; remove.setAttribute('aria-label','Remove selected folder only');
   const notice = add(manager, 'p', '', 'next-help'); notice.setAttribute('role', 'status');
   function path(id, seen = new Set()) {
     const folder = organization.folders.find(item => item.id === id);
@@ -43,7 +43,7 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
   selected.addEventListener('change', editSelection);
   async function mutate(payload) {
     if (pending) return false;
-    for (const select of fileSelects) select.disabled = true;
+    for (const select of [...fileSelects,...folderButtons]) select.disabled = true;
     pending = true; save.disabled = remove.disabled = selected.disabled = name.disabled = parent.disabled = true; notice.textContent = '';
     try {
       organization = await api('/api/operations/folders', 'POST', { ...payload, expectedRevision: organization.revision });
@@ -53,7 +53,7 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
       // A conflict needs a new snapshot, not an automatic replay of the edit.
       if (error.status === 409) await refresh();
       return false;
-    } finally { for (const select of fileSelects) select.disabled = false; pending = false; save.disabled = remove.disabled = selected.disabled = name.disabled = parent.disabled = false; }
+    } finally { for (const select of [...fileSelects,...folderButtons]) select.disabled = false; pending = false; save.disabled = remove.disabled = selected.disabled = name.disabled = parent.disabled = false; }
   }
   form.addEventListener('submit', async event => {
     event.preventDefault();
@@ -61,13 +61,16 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
       selected.value = ''; editSelection(); notice.textContent = 'Folder saved.';
     }
   });
-  remove.addEventListener('click', async () => {
-    if (await mutate({ action: 'remove', id: selected.value })) {
+  async function removeFolder(id) {
+    if (!id || pending) return;
+    if (await mutate({ action: 'remove', id })) {
       selected.value = ''; editSelection(); notice.textContent = 'Folder removed. Its cronjobs are Unfiled; child folders moved up one level.';
     }
-  });
+  }
+  remove.addEventListener('click',()=>void removeFolder(selected.value));
   add(manager, 'p', 'Remove folder keeps every cronjob and moves child folders up one level.', 'next-help');
   return {
+    leave(){manager.open=false;},
     group(container, deployments, value) {
       organization = value || { revision: 0, folders: [], assignments: {} };
       if (lastRevision !== organization.revision) {
@@ -75,7 +78,7 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
         options(selected, 'New folder', chosen); options(parent, 'Top level', chosenParent);
         lastRevision = organization.revision;
       }
-      fileSelects = [];
+      fileSelects = []; folderButtons = [];
       const targets = new Map(), folders = organization.folders || [];
       function branch(parentId, host, ancestors = new Set()) {
         for (const folder of folders.filter(item => (item.parentId || null) === parentId).sort((a,b) => a.name.localeCompare(b.name))) {
@@ -90,6 +93,7 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
           for (let changed = true; changed;) { changed = false; for (const item of folders) if (descendants.has(item.parentId) && !descendants.has(item.id)) { descendants.add(item.id); changed = true; } }
           const count = deployments.filter(item => descendants.has(organization.assignments?.[item.id])).length;
           const badge = add(summary, 'span', String(count), 'next-status-pill'); badge.title = 'Cronjobs in this folder and subfolders';
+          const deleteButton=add(summary,'button','\u00d7','next-schedule-folder-remove');deleteButton.type='button';deleteButton.disabled=pending;folderButtons.push(deleteButton);deleteButton.title='Remove folder only; keep every cronjob';deleteButton.setAttribute('aria-label','Remove folder '+path(folder.id));deleteButton.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void removeFolder(folder.id);});
           details.addEventListener('toggle', () => details.open ? closed.delete(folder.id) : closed.add(folder.id));
           const children = add(details, 'div', '', 'next-schedule-folder-children');
           const cards = add(children, 'div', '', 'next-grid'); targets.set(folder.id, cards);

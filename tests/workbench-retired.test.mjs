@@ -76,7 +76,7 @@ test('retained Cronjobs routes preserve the workflow manager and legacy Tasks an
   assert.match(manager,/manager\.addEventListener\('click',\(\)=>onNavigate\?\.\('workflows'\)\)/);
 
   const opened=[],hashes=[];
-  const element=()=>({children:[],dataset:{},hidden:false,setAttribute(name,value){this[name]=value;},append(...items){this.children.push(...items);},querySelector(){return null;}});
+  const element=()=>({children:[],dataset:{},hidden:false,setAttribute(name,value){this[name]=value;},append(...items){this.children.push(...items);},querySelector(){return null;},querySelectorAll(){return [];}});
   const tabs=['chat','cronjobs','browser','skills','settings'].map(name=>Object.assign(element(),{dataset:{space:name}}));
   const modules=Object.fromEntries(['cronjobs','workflows'].map(name=>[name,async()=>()=>({enter(){opened.push(name);},leave(){},updateStatus(){}})]));
   const app=new Function('modules','document','stage','tabs','history','updateWorkspaceTabs',

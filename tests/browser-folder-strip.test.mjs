@@ -51,3 +51,11 @@ test('moving selected tab between identically named paths expands new folder IDs
  await f.click('[data-folder-control="toggle:p2"]');f.render();
  assert.equal(f.$('[data-collection-id="p2"] .next-browser-folder-children').hidden,true);
 });
+
+test('leaving hides the folder editor and explicit resume preserves its unsaved inputs',async t=>{
+ const f=fixture(t);await f.click('.next-browser-folder-add');
+ const form=f.$('.next-browser-folder-editor'),name=form.querySelector('input');name.value='Unsent folder';
+ f.folders.leave();assert.equal(form.hidden,true);f.render();assert.equal(form.hidden,true);
+ assert.equal(f.calls.length,0);assert.ok(f.$('.next-browser-folder-resume'));
+ await f.click('.next-browser-folder-resume');assert.equal(form.hidden,false);assert.equal(name.value,'Unsent folder');assert.equal(f.calls.length,0);
+});

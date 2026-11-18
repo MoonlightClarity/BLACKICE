@@ -406,7 +406,7 @@ export function createBrowserWorkspace(options) {
     enter(){if(active||destroyed)return;active=true;lifecycle++;ownership.enter();preferBackend=true;unsubscribe=events.subscribe(onEvent);void refresh({capture:true});
       if(watch&&!pollTimer)pollTimer=setInterval(()=>{if(active&&!busy&&selected)void screenshot({preview:true});},1800);},
     openConversationId(id){ownership.openConversation(id);if(active)void refresh({capture:true});},
-    leave(){active=false;lifecycle++;sequence++;needCapture=false;unsubscribe?.();unsubscribe=null;
+    leave(){active=false;folders.leave();lifecycle++;sequence++;needCapture=false;unsubscribe?.();unsubscribe=null;
       clearInterval(pollTimer);pollTimer=null;clearTimeout(refreshTimer);refreshTimer=null;
       clearTimeout(wheelTimer);wheelTimer=null;wheelQueue=null;frame=null;pending=null;
       ui.preview.replaceChildren();},

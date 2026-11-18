@@ -57,6 +57,7 @@ async function show(name,{conversationId,requestId,nodeId,modelProviderId,knowle
   if(previous===name){const space=spaces.get(name);if(space){space.navigation=navigation;openWorkspaceTarget(space);}return;}
   if(previous && spaces.has(previous)){
     const item=spaces.get(previous);
+    for(const dialog of item.mount.querySelectorAll('dialog[open]'))dialog.close();
     item.instance?.leave?.();item.mount.hidden=true;
   }
   current=name;
