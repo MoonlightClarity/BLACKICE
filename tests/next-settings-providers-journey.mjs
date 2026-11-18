@@ -39,7 +39,7 @@ export async function exerciseProviderSettings({evaluate,send,until,fixture,coun
   fixture.send({type:'runtime.status',data:fixture.state.status});
   await click('#next-settings-section-models');
   await until(()=>value('#next-provider-name').then(name=>name==='Fixture provider draft'),'Provider draft after subsection navigation');
-  await click('.next-tab[data-space="planning"]');
+  await click('.next-tab[data-space="chat"]');
   fixture.send({type:'runtime.status',data:fixture.state.status});
   await click('.next-tab[data-space="settings"]');
   await until(()=>evaluate('document.querySelector("#next-settings-section-models").getAttribute("aria-selected")==="true" && !document.querySelector("#next-provider-refresh").disabled'),'Provider draft after workspace navigation');

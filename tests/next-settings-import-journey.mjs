@@ -37,7 +37,7 @@ export async function exerciseConnectionImportSettings({evaluate,send,until,fixt
 
   await click('#next-settings-section-general');await click('#next-settings-section-connections');
   await until(()=>evaluate('!document.querySelector("#next-settings-connections").hidden'),'Import draft after Settings subsection navigation');
-  await click('.next-tab[data-space=planning]');fixture.send({type:'connections.updated',data:connections.status()});
+  await click('.next-tab[data-space=chat]');fixture.send({type:'connections.updated',data:connections.status()});
   await click('.next-tab[data-space=settings]');await until(()=>evaluate('!document.querySelector("#next-settings-connections").hidden'),'Import draft after workspace navigation');
   assert.equal(await field(),source);assert.equal(applies().length,applyStart);assert.equal(fixture.state.settingsProtocolCalls.length,protocolStart);
   assert.equal(await evaluate(`Object.values(localStorage).concat(Object.values(sessionStorage)).some(value=>String(value).includes(${JSON.stringify(secret)})||String(value).includes(${JSON.stringify(header)}))`),false);
@@ -47,7 +47,7 @@ export async function exerciseConnectionImportSettings({evaluate,send,until,fixt
   try{
     await click('#next-settings-import-apply');await click('#next-settings-import-apply');await until(()=>held,'Hold actual configuration import receipt');
     assert.equal(await evaluate('document.querySelector("#next-connections-save").disabled'),true,'Import and individual connection writes share a lock.');
-    await click('.next-tab[data-space=planning]');const hiddenRequests=fixture.state.settingsPanelRequests.length;release();
+    await click('.next-tab[data-space=chat]');const hiddenRequests=fixture.state.settingsPanelRequests.length;release();
     await until(()=>field().then(value=>value===''),'Successful explicit import clears the hidden sensitive draft');
     assert.equal(fixture.state.settingsPanelRequests.length,hiddenRequests,'A hidden import completion must not fetch or connect.');
   }finally{release();fixture.state.settingsImportGate=null;}
