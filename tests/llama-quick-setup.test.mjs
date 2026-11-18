@@ -165,3 +165,21 @@ test('model discovery encodes search and prepares an editable-context prompt wit
 test('dedicated local directory saves only location with CAS, preserves advanced drafts and never loads',async t=>{const f=fixture(t);await f.enter();await f.input('#next-llama-default-modelsDirectory','C:\\Models\\chosen');await f.input('#next-llama-default-modelsMax','7');await f.click('#next-local-directory-save');assert.equal(f.writes().length,1);assert.equal(f.writes()[0].route,'/api/local-models/config');assert.equal(f.writes()[0].body.expectedRevision,2);assert.equal(f.writes()[0].body.settings.modelsDirectory,'C:\\Models\\chosen');assert.equal(f.writes()[0].body.settings.modelsMax,DEFAULT_LLAMA_CPP_SETTINGS.modelsMax);assert.equal(f.$('#next-llama-default-modelsMax').value,'7');assert.match(f.$('#next-llama-default-modelsDirectory').closest('#next-local-model-directory').textContent,/Does not move/);});
 
 test('models-directory save preserves newer typing and never retries an uncertain write',async t=>{const g=gate();const f=fixture(t,{hook:c=>c.method==='POST'?g.promise:undefined});await f.enter();await f.input('#next-llama-default-modelsDirectory','C:\\Models\\first');const pending=f.click('#next-local-directory-save');await tick();await f.input('#next-llama-default-modelsDirectory','C:\\Models\\newer');await f.click('#next-local-directory-save');assert.equal(f.writes().length,1);g.resolve({revision:3,settings:{...DEFAULT_LLAMA_CPP_SETTINGS,modelsDirectory:'C:\\Models\\first'}});await pending;assert.equal(f.$('#next-llama-default-modelsDirectory').value,'C:\\Models\\newer');assert.equal(f.writes().length,1);});
+
+test('local navigation preserves directory and advanced drafts without writes',async t=>{
+ const f=fixture(t);await f.enter();
+ await f.input('#next-llama-default-modelsDirectory','C:\\Models\\unsaved');await f.input('#next-llama-default-ctxSize','16384');
+ await f.input('#next-llama-paths','{"draft":"C:/Models/draft.gguf"}');await f.input('#next-llama-overrides','{ unfinished draft');
+ f.panel.leave();await f.enter();
+ assert.equal(f.$('#next-llama-default-modelsDirectory').value,'C:\\Models\\unsaved');assert.equal(f.$('#next-llama-default-ctxSize').value,'16384');
+ assert.equal(JSON.parse(f.$('#next-llama-paths').value).draft,'C:/Models/draft.gguf');assert.equal(f.$('#next-llama-overrides').value,'{ unfinished draft');assert.equal(f.writes().length,0);
+});
+test('late directory save after leaving cannot erase drafts or replay on return',async t=>{
+ const g=gate();let revision=2,settings=structuredClone(DEFAULT_LLAMA_CPP_SETTINGS);
+ const f=fixture(t,{hook:c=>{if(c.method==='POST')return g.promise;if(c.route.endsWith('/config'))return {revision,settings,recommended:DEFAULT_LLAMA_CPP_SETTINGS};}});
+ await f.enter();await f.input('#next-llama-default-modelsDirectory','C:/Models/saved');const pending=f.click('#next-local-directory-save');await tick();
+ await f.input('#next-llama-default-modelsDirectory','C:/Models/later');await f.input('#next-llama-default-ctxSize','8192');f.panel.leave();
+ settings={...settings,modelsDirectory:'C:/Models/saved'};revision=3;g.resolve({revision,settings});await pending;await f.enter();
+ assert.equal(f.$('#next-llama-default-modelsDirectory').value,'C:/Models/later');assert.equal(f.$('#next-llama-default-ctxSize').value,'8192');assert.equal(f.writes().length,1);
+ await f.click('#next-local-directory-save');assert.equal(f.writes()[1].body.expectedRevision,3);
+});

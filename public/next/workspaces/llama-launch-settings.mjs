@@ -167,5 +167,5 @@ export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, pick
   }catch(e){feedback.textContent=e.message;}
  });
  sync();
- return {refresh:()=>refresh({preserveDraft:true}),enter(){if(active||!alive)return;active=true;void refresh();},leave(){active=false;generation++;refreshing=false;},destroy(){this.leave();alive=false;mount.replaceChildren();}};
+ return {refresh:()=>refresh({preserveDraft:true}),enter(){if(active||!alive)return;active=true;void refresh({preserveDraft:baseline!==null});},leave(){active=false;generation++;refreshing=false;},destroy(){this.leave();alive=false;mount.replaceChildren();}};
 }
