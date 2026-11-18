@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {activeTaskPolicy} from '../lib/active-task-policy.mjs';
-import {normalizePlanningOntology,planningOntologyInstructions,PLANNING_ONTOLOGY_MODULES} from '../public/planning-module-policy.mjs';
+import {normalizePlanningOntology,PLANNING_ONTOLOGY_MODULES} from '../public/planning-module-policy.mjs';
 import {fixtureOutcomeReview,finishFixtureCandidate} from './fixture-modular-provider.mjs';
 const policy=decomposition=>normalizePlanningOntology({version:2,modules:Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id})=>[id,['time_management','anti_overalignment'].includes(id)||id==='decomposition'&&decomposition]))});
 const graph={id:'policy-fixture',name:'Policy fixture',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Agent',prompt:'Inspect the admitted policy.',model:'fixture-model'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}};
@@ -26,26 +26,23 @@ async function fixture(t,execute){
  t.after(async()=>{await engine.close();await rm(directory,{recursive:true,force:true});});
  return {engine,runtime,settings,directory};
 }
-for(const mode of ['ontology','off'])for(const decomposition of [true,false])test(mode+' policy reaches actual read calls with decomposition='+decomposition,async t=>{
- const expected=mode==='off'?null:policy(decomposition);let reads=0;
+for(const mode of ['ontology','off'])for(const decomposition of [true,false])test(mode+' omits retired policy on actual tool reads with decomposition='+decomposition,async t=>{
+ let reads=0;
  const f=await fixture(t,async options=>{
   assert.doesNotMatch(options.developerInstructions+options.prompt,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
-  if(!decomposition&&mode!=='off')assert.ok(!options.dynamicTools.some(x=>['relay_task','relay_planning_read','relay_planning_write','relay_planning_module'].includes(x.name)));
+  assert.ok(!options.dynamicTools.some(x=>['relay_task','relay_planning_read','relay_planning_write','relay_planning_module'].includes(x.name)));
   for(const [name,args]of [['relay_control',{action:'catalog'}],['relay_control',{action:'describe'}],['relay_workspace',{action:'list'}]]){
-   const result=decode(await invoke(options,name,args)).activeTaskPolicy;reads++;
-   assert.equal(result.source,'admitted-run');assert.ok(result.runId);assert.deepEqual(result.planningOntology,expected);
-   if(expected){assert.equal(result.instructions,planningOntologyInstructions(expected));assert.ok(result.enabledModules.includes('time_management'));assert.ok(result.enabledModules.includes('anti_overalignment'));}
-   else{assert.deepEqual(result.enabledModules,[]);assert.equal(result.disabledModules.length,PLANNING_ONTOLOGY_MODULES.length-1);assert.match(result.instructions,/All Planning method modules are Off/);assert.doesNotMatch(result.instructions,/IMMEDIATE EFFORT CALIBRATION/);}
+   const result=decode(await invoke(options,name,args));reads++;
+   assert.equal(Object.hasOwn(result,'activeTaskPolicy'),false);
   }
-  const compact=decode(await invoke(options,'relay_workspace',{action:'list',path:'.'})).activeTaskPolicy;
-  assert.equal(compact.instructions,undefined);assert.deepEqual(compact.instructionsAvailableVia,{tool:'relay_workspace',arguments:{action:'list'}});
-  const reread=decode(await invoke(options,'relay_workspace',{action:'list'})).activeTaskPolicy;assert.ok(reread.instructions);
+  const compact=decode(await invoke(options,'relay_workspace',{action:'list',path:'.'}));
+  assert.equal(Object.hasOwn(compact,'activeTaskPolicy'),false);
   return {output:'Read the admitted policy.',threadId:'policy-native-thread'};
  });
  const run=f.engine.startRun({workflow:graph,input:'Read current task policy.',planningMode:mode,planningOntology:policy(decomposition)});
  await settled(f.engine,run.id);assert.equal(reads,3);
 });
-test('delegated worker reads same admitted policy without coordinator control or decomposition tools',async t=>{
+test('delegated worker tools omit retired policy without losing workspace capability',async t=>{
  let parentPolicy;const childPolicies=[];
  const f=await fixture(t,async(options,n)=>{
   if(n===1){
@@ -58,9 +55,9 @@ test('delegated worker reads same admitted policy without coordinator control or
   return {output:'Read inherited admitted policy.',threadId:'policy-worker-thread'};
  });
  const run=f.engine.startRun({workflow:graph,input:'Delegate one bounded policy read.',planningMode:'ontology',planningOntology:policy(false)});
- await settled(f.engine,run.id);assert.equal(childPolicies.length,2);for(const childPolicy of childPolicies)assert.deepEqual(childPolicy,parentPolicy);
+ await settled(f.engine,run.id);assert.equal(childPolicies.length,2);assert.equal(parentPolicy,undefined);for(const childPolicy of childPolicies)assert.equal(childPolicy,undefined);
 });
-test('native continuation keeps catalog fixed and admitted policy separate from changed runtime defaults',async t=>{
+test('native continuation keeps catalog fixed without injecting changed module defaults',async t=>{
  const catalogs=[],policies=[];
  const f=await fixture(t,async options=>{
   catalogs.push(structuredClone(options.dynamicTools));
@@ -74,8 +71,7 @@ test('native continuation keeps catalog fixed and admitted policy separate from 
  const next=f.engine.continueRun(first.id,{nodeId:'agent',message:'Inspect the same admitted policy.'});
  await settled(f.engine,next.id);
  assert.deepEqual(catalogs[1],catalogs[0]);
- assert.deepEqual(policies[1].planningOntology,policies[0].planningOntology);assert.notEqual(policies[1].runId,policies[0].runId);
- assert.deepEqual(policies[0].planningOntology,policy(false));
+ assert.deepEqual(policies,[undefined,undefined]);
 });
 test('absent admitted policy never enables mutable defaults and returned objects cannot mutate run',()=>{
  const run={id:'saved',planningMode:'off'};assert.deepEqual(activeTaskPolicy(run).enabledModules,[]);

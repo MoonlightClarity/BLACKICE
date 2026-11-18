@@ -71,19 +71,19 @@ test('native BLACKICE agent tool advertises shared execution controls',() => {
   assert.deepEqual(NATIVE_AGENT_TOOL.inputSchema.properties.action.enum,['list','get','start','steer','stop','goal']);
 });
 
-test('internal autonomous start inherits pinned model, uses existing engine, and keeps external runs',async() => {
+test('internal manual start inherits pinned model, uses existing engine, and keeps external runs',async() => {
   const h=harness();
-  const started=await tool(h.handler,{action:'start',requestId:'mission-1',task:'Audit a workspace',autonomous:true});
+  const started=await tool(h.handler,{action:'start',requestId:'mission-1',task:'Audit a workspace',autonomous:false});
   assert.equal(started.accepted,true);
   assert.equal(started.completed,false);
-  assert.equal(started.autonomous,true);
+  assert.equal(started.autonomous,false);
   assert.equal(h.starts[0].workflow.nodes.find(node=>node.type==='agent').model,'codex-model');
   assert.equal(h.starts[0].input.goal,undefined);
-  assert.deepEqual(h.engine.runs.get(started.run.runId).autonomyRequest.modelAllowlist,['codex-model']);
+  assert.equal(h.engine.runs.get(started.run.runId).goalPauseAfterInitial,false);
   assert.equal(h.engine.runs.get('external'),h.external);
   assert.deepEqual(h.engine.runs.get(started.run.runId).nativeController,
     {type:'native-agent',runId:'parent',nodeId:'agent',requestId:'mission-1'});
-  const again=await tool(h.handler,{action:'start',requestId:'mission-1',task:'Audit a workspace',autonomous:true});
+  const again=await tool(h.handler,{action:'start',requestId:'mission-1',task:'Audit a workspace',autonomous:false});
   assert.equal(again.run.runId,started.run.runId);
   assert.deepEqual(h.parent.nativeChildRunIds,[started.run.runId]);
   const mine=await tool(h.handler,{action:'list',scope:'mine'});
@@ -93,7 +93,7 @@ test('internal autonomous start inherits pinned model, uses existing engine, and
   assert.equal(h.engine.writes,1);
 });
 
-test('a new internal agent starts in manual mode unless autonomy is explicitly enabled',async() => {
+test('a new internal agent starts in manual mode',async() => {
   const h=harness();
   const child=await tool(h.handler,{action:'start',requestId:'manual-one',task:'Discuss the next experiment'});
   assert.equal(child.autonomous,false);
@@ -192,14 +192,14 @@ test('native request identity binds autonomous flag independently from goal obje
   assert.equal(h.starts.at(-1).input.goal.objective,'Outcome');
 });
 
-test('v1 native schema keeps legacy goal semantics for a pinned session',async()=>{
-  const h=harness();
-  const handler=createNativeAgentToolHandler({engine:h.engine,run:h.parent,nodeId:'agent',schemaVersion:1});
-  const result=await tool(handler,{action:'start',requestId:'legacy-auto',task:'Legacy objective',autonomous:true,maxTurns:2});
-  assert.equal(result.autonomous,true);
-  assert.deepEqual(h.starts[0].input.goal,{objective:'Legacy objective',maxTurns:2});
-  assert.equal(NATIVE_AGENT_V1_TOOL.inputSchema.properties.goalObjective,undefined);
-  assert.match(NATIVE_AGENT_V1_TOOL.inputSchema.properties.autonomous.description,/persistent Goal/);
+test('current and pinned native schemas cannot restore retired automatic Autonomy',async()=>{
+  for(const schemaVersion of [1,2]){
+   const h=harness(),handler=createNativeAgentToolHandler({engine:h.engine,run:h.parent,nodeId:'agent',schemaVersion});
+   await assert.rejects(()=>tool(handler,{action:'start',requestId:'retired-auto',task:'Old request',autonomous:true,maxTurns:2}),e=>e.code==='AUTONOMY_RETIRED');
+   assert.equal(h.starts.length,0);
+  }
+  assert.deepEqual(NATIVE_AGENT_TOOL.inputSchema.properties.autonomous.enum,[false]);
+  assert.doesNotMatch(NATIVE_AGENT_TOOL.description,/explicitly autonomous conversation/);
 });
 test('native stop disables autonomy between settled turns',async()=>{
   const h=harness();h.external.status='completed';h.external.settled=true;
