@@ -198,3 +198,15 @@
 .next-chat-folder-name{font:inherit;color:inherit;background:transparent;border:0;padding:0;text-align:left;cursor:text}.next-chat-folder-name:focus-visible{outline:2px solid var(--next-accent);outline-offset:3px}
 
 .next-chat-folder-rename{min-width:0;width:100%;font:inherit;color:inherit;background:var(--next-panel);border:1px solid var(--next-accent);border-radius:4px;padding:2px 4px}
+
+/* One explicit folder tree: root creation and row-scoped creation, no parent picker. */
+.next-chat-folder-picker{display:flex;justify-content:flex-end}
+.next-chat-folder-picker button,.next-chat-folder-heading .next-chat-folder-create,.next-chat-folder-heading .next-chat-folder-new-chat,.next-chat-folder-heading .next-chat-folder-remove{width:28px;min-width:28px;height:28px;padding:5px;display:inline-flex;align-items:center;justify-content:center}
+.next-chat-tree-folder-icon{color:#c5ae65;display:inline-flex;background:none!important;border:0!important}
+.next-chat-tree-folder-icon::before,.next-chat-tree-folder-icon::after{display:none!important}
+.next-chat-folder-draft{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:4px 0;padding:4px;min-width:0}
+.next-chat-folder-draft[hidden]{display:none}
+.next-chat-folder-draft>span{color:#c5ae65;display:flex}
+.next-chat-folder-draft input{min-width:40px;width:0;flex:1}
+.next-chat-folder-draft button{padding:4px;width:28px;height:28px}
+.next-chat-folder-draft p{flex-basis:100%;color:#efb5b0;margin:0;font-size:11px}

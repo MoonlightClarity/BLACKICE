@@ -1,8 +1,6 @@
-import {folderRows,descendants} from '../core/folder-tree.mjs';
+import {folderRows} from '../core/folder-tree.mjs';
 import {rootId} from './model.mjs';
 
-const safeGet = key => { try {return localStorage.getItem(key);} catch {return null;} };
-const safeSet = (key,value) => {try {localStorage.setItem(key,value);} catch {}};
 const choice = (doc,value,label) => {
   const option=doc.createElement('option');option.value=value;option.textContent=label;return option;
 };
@@ -13,12 +11,11 @@ const short = error => String(error?.message||error||'Folder change failed.').sl
 export function createConversationFolderUI({view,api,notify=()=>{},getItems,getBucket,getSelectedRoot,
   isBusy=()=>false,isActive=()=>true,onChanged=()=>{},onRefresh=()=>{},onError=()=>{}}) {
   let organization={revision:0,healthy:true,folders:[],counts:{byId:{},ungrouped:0,total:0}};
-  let selected=safeGet('blackice.next.chatFolder')||'all';
+  let draft=null;
   let localBusy=false, destroyed=false, formRevision=0, movingRoot=null, deletingId=null, lastUndo=null;
   const isWritable=()=>!destroyed&&!localBusy&&!isBusy()&&organization.healthy!==false;
   const folderById=id=>organization.folders.find(folder=>folder.id===id)||null;
   const nameOf=id=>folderById(id)?.name||'Unfiled';
-  const selectedFolder=()=>selected==='all'||selected==='ungrouped'?null:folderById(selected);
   const getItem=id=>getItems().find(item=>rootId(item)===id);
   function notice(message='',bad=false) {
     view.folderStatus.hidden=!message;
@@ -28,24 +25,10 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
   }
   function refresh() {
     if(destroyed)return;
-    const items=getItems(),counts={byId:{},ungrouped:0,total:items.length};
-    for(const item of items) {
-      if(item.folderId)counts.byId[item.folderId]=(counts.byId[item.folderId]||0)+1;
-      else counts.ungrouped++;
-    }
-    const doc=view.folderFilter.ownerDocument,oldSelected=selected;
-    view.folderFilter.replaceChildren(
-      choice(doc,'all','All chats ('+counts.total+')'),
-      choice(doc,'ungrouped','Unfiled ('+counts.ungrouped+')'),
-      ...folderRows(organization.folders).map(folder=>choice(doc,folder.id,folder.path+' ('+(counts.byId[folder.id]||0)+')'))
-    );
-    if(oldSelected!=='all'&&oldSelected!=='ungrouped'&&!folderById(oldSelected)){
-      selected='all';safeSet('blackice.next.chatFolder',selected);
-    }
-    view.folderFilter.value=selected;view.folderNew.title=selectedFolder()?'New subfolder in '+nameOf(selected):'New top-level folder';
     const disabled=localBusy||isBusy()||organization.healthy===false;
 
-    for(const element of [view.folderNew])element.disabled=disabled;
+    for(const element of [view.folderNew])element.disabled=disabled||Boolean(draft);
+    view.folderSave.disabled=disabled;view.folderCancel.disabled=disabled;
     view.folderUndo.hidden=!lastUndo;
     view.folderUndo.disabled=disabled;
     if(organization.healthy===false)notice(organization.error||'Folder metadata cannot be read. Existing chats are safe.',true);
@@ -55,11 +38,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     organization=snapshot;
     refresh();
   }
-  function filtered(items) {
-    if(selected==='all')return items;
-    const ids=descendants(organization.folders,selected);
-    return items.filter(item=>selected==='ungrouped'?!item.folderId:ids.has(item.folderId));
-  }
+  const filtered=items=>items;
   const folderNames=()=>new Map(organization.folders.map(folder=>[folder.id,folder.name]));
   async function save(operations,{success,after,expectedRevision=organization.revision,retryConflict=true}={}) {
     if(!isWritable())return false;
@@ -91,16 +70,14 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
       return false;
     } finally {localBusy=false;refresh();}
   }
+  function closeDraft(){if(localBusy)return;draft=null;view.folderForm.hidden=true;onChanged();}
   function formOpen(parentId=null) {
-    if(!isWritable())return;
+    if(!isWritable()||draft)return;
+    if(parentId&&!folderById(parentId))return;
     formRevision=organization.revision;
-    view.folderDialogTitle.textContent='Create folder';
-    view.folderSave.textContent='Create folder';
-    view.folderParent.replaceChildren(choice(view.folderParent.ownerDocument,'','Top level'),...folderRows(organization.folders).map(f=>choice(view.folderParent.ownerDocument,f.id,f.path)));
-    view.folderParent.value=parentId||'';
-    view.folderName.value='';
-    view.folderDialogError.hidden=true;
-    view.folderDialog.showModal();view.folderName.focus();
+    draft={parentId,node:view.folderForm};
+    view.folderName.value='';view.folderName.setAttribute('aria-label',parentId?'New subfolder in '+nameOf(parentId):'New top-level folder');
+    view.folderDialogError.hidden=true;view.folderForm.hidden=false;onChanged();view.folderName.focus();
   }
   function moveOpen(item) {
     if(!item||!isWritable())return;
@@ -130,30 +107,25 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     refresh();
   }
   function stop() {
-    for(const dialog of [view.folderDialog,view.folderMoveDialog,view.folderDeleteDialog])if(dialog.open)dialog.close();
-    movingRoot=null;deletingId=null;
+    for(const dialog of [view.folderMoveDialog,view.folderDeleteDialog])if(dialog.open)dialog.close();
+    draft=null;view.folderForm.hidden=true;movingRoot=null;deletingId=null;
   }
   function destroy() {destroyed=true;stop();}
-  view.folderFilter.addEventListener('change',()=>{
-    selected=view.folderFilter.value;safeSet('blackice.next.chatFolder',selected);
-    refresh();onChanged();
-  });
-  view.folderNew.addEventListener('click',()=>formOpen(selectedFolder()?.id||null));
-  view.folderCancel.addEventListener('click',()=>view.folderDialog.close());
+  view.folderNew.addEventListener('click',()=>formOpen(null));
+  view.folderCancel.addEventListener('click',closeDraft);
+  view.folderForm.addEventListener('keydown',event=>{event.stopPropagation();if(event.key==='Escape'){event.preventDefault();closeDraft();}});
+  view.folderForm.addEventListener('dragstart',event=>{event.preventDefault();event.stopPropagation();});
   view.folderForm.addEventListener('submit',async event=>{
     event.preventDefault();
     const name=view.folderName.value.trim();
     if(!name)return;
-    const beforeIds=new Set(organization.folders.map(folder=>folder.id));
-    const parentId=view.folderParent.value||null;
+    if(!draft)return;
+    const parentId=draft.parentId;
     const ok=await save([{type:'create_folder',name,parentId}],{expectedRevision:formRevision,retryConflict:false,
       success:'Folder created.',
-      after:()=>{
-        const added=organization.folders.find(folder=>!beforeIds.has(folder.id));
-        if(added){selected=added.id;safeSet('blackice.next.chatFolder',selected);}
-      }
+      after:()=>{draft=null;view.folderForm.hidden=true;}
     });
-    if(ok)view.folderDialog.close();else{view.folderDialogError.hidden=false;view.folderDialogError.textContent=view.folderStatus.textContent;}
+    if(!ok){view.folderDialogError.hidden=false;view.folderDialogError.textContent=view.folderStatus.textContent;}
   });
   view.folderDeleteCancel.addEventListener('click',()=>{deletingId=null;view.folderDeleteDialog.close();});
   view.folderDeleteConfirm.addEventListener('click',()=>{
@@ -161,7 +133,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     if(!id)return;
     void save([{type:'delete_folder',folderId:id}],{
       success:'Folder deleted; all chats and their Archive/Trash states were preserved.',
-      after:()=>{selected='all';lastUndo=null;safeSet('blackice.next.chatFolder',selected);}
+      after:()=>{lastUndo=null;}
     });
   });
   view.folderMoveCancel.addEventListener('click',()=>{movingRoot=null;view.folderMoveDialog.close();});
@@ -182,7 +154,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
 
   function beginRename(id){
     if(!folderById(id)||!isWritable())return null;
-    selected=id;safeSet('blackice.next.chatFolder',selected);refresh();
+    refresh();
     const revision=organization.revision,before=folderById(id).name;
     return async name=>{
       if(organization.revision!==revision||folderById(id)?.name!==before){notice('Folder changed while editing. Your draft was kept. Press Escape and reopen to edit the current name.',true);return false;}
@@ -194,8 +166,8 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     return parentId=>save([kind==='folder'?{type:'move_folder',folderId:id,parentId}:{type:'assign',rootId:id,folderId:parentId}],{expectedRevision:revision,retryConflict:false,success:'Moved.'});
   }
   function removeFolder(id){if(!isWritable())return;deletingId=id;view.folderDeleteLabel.textContent='Delete "'+nameOf(id)+'"?';view.folderDeleteDialog.showModal();}
-  return {beginMove,removeFolder,beginRename,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
-    get selected(){return selected;},get organization(){return organization;}};
+  return {createFolder:formOpen,get draft(){return draft;},beginMove,removeFolder,beginRename,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
+    get selected(){return 'all';},get organization(){return organization;}};
 }
 
 /** Assign only after a real accepted run exists. Never replay a send to fix placement. */
