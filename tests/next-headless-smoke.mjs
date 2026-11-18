@@ -459,8 +459,9 @@ try {
   await evaluate('(()=>{document.querySelector("#next-workflow-edit-details").open=true;const n=document.querySelector("#next-workflow-edit-name");n.value="Revised workflow";n.dispatchEvent(new Event("input",{bubbles:true}));const s=document.querySelector("#next-workflow-edit-node-name");s.value="Lead agent";s.dispatchEvent(new Event("input",{bubbles:true}));const p=document.querySelector("#next-workflow-edit-prompt");p.value="Analyze the case and report sources.";p.dispatchEvent(new Event("input",{bubbles:true}));return true})()');
   // The advanced editor changes provider/model options and workflow-level
   // settings without changing identities, connectivity or unknown fields.
-  await evaluate('(()=>{document.querySelector("#next-workflow-edit-advanced").open=true;const edit=(id,value,event)=>{const field=document.querySelector(id);field.value=value;field.dispatchEvent(new Event(event||"change",{bubbles:true}));};edit("#next-workflow-edit-model","codex-test","input");edit("#next-workflow-edit-effort","high");edit("#next-workflow-edit-tier","default");edit("#next-workflow-edit-context","custom");edit("#next-workflow-edit-context-tokens","120000","input");const compact=document.querySelector("#next-workflow-edit-compact");compact.checked=false;compact.dispatchEvent(new Event("change",{bubbles:true}));edit("#next-workflow-edit-parallel","3","input");edit("#next-workflow-edit-planning","advisory");edit("#next-workflow-edit-detail","detailed");return true})()');
+  await evaluate('(()=>{document.querySelector("#next-workflow-edit-advanced").open=true;const edit=(id,value,event)=>{const field=document.querySelector(id);field.value=value;field.dispatchEvent(new Event(event||"change",{bubbles:true}));};edit("#next-workflow-edit-model","codex-test","input");edit("#next-workflow-edit-effort","high");edit("#next-workflow-edit-tier","default");edit("#next-workflow-edit-context","custom");edit("#next-workflow-edit-context-tokens","120000","input");const compact=document.querySelector("#next-workflow-edit-compact");compact.checked=false;compact.dispatchEvent(new Event("change",{bubbles:true}));edit("#next-workflow-edit-parallel","3","input");return true})()');
   assert.equal(await evaluate('document.querySelector("#next-workflow-edit-context-tokens").disabled'),false,'Custom context token input must enable only for custom preset.');
+  assert.equal(await evaluate('document.querySelector("#next-workflow-edit-planning, #next-workflow-edit-detail")'),null,'Retired automatic planning controls must stay absent.');
   const expectedAssignment={scope:'Investigate the supplied case and reconcile the primary sources.',
     inputs:['Original request','Saved fixture evidence'],result:'A checked assessment with source references.',
     doneWhen:'Material claims are supported and remaining uncertainties are identified.'};
@@ -498,7 +499,7 @@ try {
   await evaluate('document.querySelector(".next-tab[data-space=cronjobs]").click();document.querySelector("#next-cronjobs-manage-workflows").click();true');
   await until(()=>evaluate('document.querySelector("#next-workflow-edit-name")?.value==="Revised workflow" && document.querySelector("#next-workflow-edit-prompt")?.value==="Analyze the case and report sources."'),'Unsaved workflow changes preserved across navigation');
   await until(()=>evaluate('document.querySelector("#next-workflow-choice")?.value==="sample-workflow" && document.querySelector("#next-workflow-edit-node option[value=agent]") && document.querySelector("#next-workflow-edit-save")?.disabled===false'),'Selected workflow details fully hydrated before Save');
-  await until(()=>evaluate('document.querySelector("#next-workflow-edit-model")?.value==="codex-test" && document.querySelector("#next-workflow-edit-effort")?.value==="high" && document.querySelector("#next-workflow-edit-context-tokens")?.value==="120000" && document.querySelector("#next-workflow-edit-planning")?.value==="advisory"'),'Advanced settings draft retained across navigation');
+  await until(()=>evaluate('document.querySelector("#next-workflow-edit-model")?.value==="codex-test" && document.querySelector("#next-workflow-edit-effort")?.value==="high" && document.querySelector("#next-workflow-edit-context-tokens")?.value==="120000"'),'Advanced settings draft retained across navigation');
   const assignmentValues=()=>evaluate('(()=>{const value=name=>document.querySelector("#next-workflow-edit-assignment-"+name).value;return {scope:value("scope"),inputs:value("inputs").split("\\n"),result:value("result"),doneWhen:value("done")}})()');
   assert.deepEqual(await assignmentValues(),expectedAssignment,'Every assignment field must survive the Settings roundtrip.');
   await evaluate('(()=>{const stage=document.querySelector("#next-workflow-edit-node");stage.value="input";stage.dispatchEvent(new Event("change",{bubbles:true}));return true})()');
@@ -532,7 +533,7 @@ try {
   assert.equal(saved.nodes.find(item=>item.id==='agent').prompt,'Analyze the case and report sources.');
   assert.deepEqual(saved.edges,beforeWorkflow.edges,'Workflow connection graph must be preserved');
   assert.deepEqual(saved.settings,{...beforeWorkflow.settings,
-    maxParallel:3,planningMode:'on',planningEnforcement:'advisory',planDetail:'detailed'},'Explicit workflow settings must persist without losing prior fields.');
+    maxParallel:3},'Explicit workflow settings must persist without losing prior fields.');
   assert.equal(saved.nodes.find(item=>item.id==='agent').model,'codex-test');
   assert.equal(saved.nodes.find(item=>item.id==='agent').effort,'high');
   assert.equal(saved.nodes.find(item=>item.id==='agent').serviceTier,'default');
