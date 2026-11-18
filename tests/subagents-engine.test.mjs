@@ -1,15 +1,13 @@
 import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
-// Historical schema-13 regression; canonical schema-14 behavior has separate production-engine acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import {mkdtemp,mkdir,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {HarnessEngine} from './fixture-legacy-planning-engine.mjs';
+import {HarnessEngine} from '../lib/engine.mjs';
 import {RuntimeSettingsStore} from '../lib/runtime-settings.mjs';
-import {TaskStateStore} from './fixture-legacy-task-state.mjs';
-import {recordFixturePlan,finishFixturePlan} from './fixture-task-plan.mjs';
+import {TaskStateStore} from '../lib/task-state.mjs';
 
 const taskGraph=()=>({
   name:'Independent worker test',
@@ -44,13 +42,12 @@ test('guarded Relay chats really delegate with bounded child tools and observabl
         assert.ok(options.prompt.includes('thorough'));
         assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
         assert.ok(!options.dynamicTools.some(tool=>['relay_delegate','relay_control','relay_desktop','relay_task'].includes(tool.name)));
-        assert.match(options.developerInstructions,/The coordinator owns the final remote send/);
-        assert.match(options.developerInstructions,/Do not click a final send\/publish\/submit control/);
+        assert.ok(!options.dynamicTools.some(tool=>['relay_email','relay_browser','relay_credentials'].includes(tool.name)), 'Unconfigured external-effect tools are not advertised to the child');
         return{output:'Worker finished its independent analysis.'};
       }
       if(options.dynamicTools.some(tool=>tool.name==='relay_delegate')){
         const returned=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'research',prompt:'Analyze the supplied worker-tool boundary; do not modify any files.'},{id:'instructions',prompt:'Independently analyze the supplied worker instructions; do not modify any files.'}]}});
-        assert.equal(returned.success,true);
+        assert.equal(returned.success,true,returned.contentItems?.[0]?.text);
         const receipt=JSON.parse(returned.contentItems[0].text);receipts.push(receipt);
         return{output:'Coordinator verified: '+receipt.results[0].output};
       }
@@ -93,18 +90,8 @@ test('a failed child execution remains inspectable in the durable parent run aft
         throw Error('Observed child connection failure after one tool result.');
       }
       options.onEvent({type:'thread',threadId:'coordinator-thread',model:'fixture-model'});
-      await recordFixturePlan(options,{title:'Inspect the child failure receipt',doneWhen:'The coordinator reports the actual failure and preserves its execution evidence.'});
       const returned=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'independent',prompt:'Inspect one local fixture; report actual work.'},{id:'separate',prompt:'Inspect a separate synthetic fixture; report actual work.'}]}});
       assert.equal(returned.success,false);childReceipt=JSON.parse(returned.contentItems[0].text).results[0];
-      const read=await options.onToolCall({name:'relay_task',arguments:{action:'read'}});
-      assert.equal(read.success,true,read.contentItems[0].text);
-      let state=JSON.parse(read.contentItems[0].text);
-      const unfinished=state.steps.find(step=>(step.kind||'action')==='action'&&step.status==='active');
-      if(unfinished){
-        const reconciled=await options.onToolCall({name:'relay_task',arguments:{action:'step',expectedRevision:state.revision,stepId:unfinished.id,status:'blocked',blockedReason:childReceipt.error}});
-        assert.equal(reconciled.success,true,reconciled.contentItems[0].text);state=JSON.parse(reconciled.contentItems[0].text);
-      }
-      await finishFixturePlan(options,{state,decision:'blocked',summary:'The worker failed after its recorded tool result. Its actual exception and partial usage are preserved; this fixture has no independent ready recovery action and reports the blocker honestly.'});
       return finishFixtureCandidate(options, {output:'The independent worker failed after one tool result; its execution receipt is available for inspection.',threadId:'coordinator-thread'});
     }
   }

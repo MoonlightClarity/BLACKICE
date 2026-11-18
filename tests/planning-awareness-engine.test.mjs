@@ -1,15 +1,13 @@
 import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-provider.mjs';
-// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { HarnessEngine } from './fixture-legacy-planning-engine.mjs';
-import { TaskStateStore } from './fixture-legacy-task-state.mjs';
+import { HarnessEngine } from '../lib/engine.mjs';
+import { TaskStateStore } from '../lib/task-state.mjs';
 import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
-import { finishFixturePlan } from './fixture-task-plan.mjs';
 
 const payload = receipt => JSON.parse(receipt.contentItems[0].text);
 const call = (options, name, args) => options.onToolCall({ name, arguments: args });
@@ -45,22 +43,22 @@ test('manual saved corrections and presence remain visible without installing an
   let correctedRevision;
   const f = await fixture(t, async (options, context) => {
     const initial = await task(options, { action: 'read' });
-    let plan = await task(options, { action: 'plan', expectedRevision: initial.revision, plan: { layout: 'sequence' }, steps: [writeAction('presence', 'presence.txt'), writeAction('build', 'actual.txt', 'pending')] });
+    let plan = await context.tasks.setPlan(initial.taskId, { plan: { layout: 'sequence' }, steps: [writeAction('presence', 'presence.txt'), writeAction('build', 'actual.txt', 'pending')] }, { expectedRevision: initial.revision, source: 'human' });
     context.tasks.awareness.setPresence(plan, { editorId: 'human-editor', stepId: 'build' }, { type: 'local-human', id: 'local-user' });
     assert.equal(context.tasks.awareness.snapshot(plan).presence[0].stepId, 'build');
     const advisory = await call(options, 'relay_workspace', { action: 'write', path: 'presence.txt', text: 'Presence is advisory.' });
     assert.equal(advisory.success, true); assert.equal(payload(advisory).path, path.join(context.cwd, 'presence.txt'));
-    plan = await task(options, { action: 'step', expectedRevision: plan.revision, stepId: 'presence', status: 'done', evidence: 'The actual write receipt identifies presence.txt and its saved bytes.' });
+    plan = await context.tasks.setStep(initial.taskId, 'presence', { status: 'done', evidence: 'The actual write receipt identifies presence.txt and its saved bytes.' }, { expectedRevision: plan.revision, source: 'human' });
     const corrected = await context.tasks.editPlan(initial.taskId, { operations: [{ type: 'update', stepId: 'build', patch: { note: 'Write the revised text.' } }] }, { expectedRevision: plan.revision, source: 'human' });
     correctedRevision = corrected.revision;
     await assert.rejects(context.tasks.editPlan(initial.taskId, { operations: [{ type: 'update', stepId: 'build', patch: { note: 'Stale overwrite' } }] }, { expectedRevision: plan.revision, source: 'human' }), { code: 'TASK_STATE_CONFLICT' });
     const actual = await call(options, 'relay_workspace', { action: 'write', path: 'actual.txt', text: 'Revised fixture result.' });
     assert.equal(actual.success, true, actual.contentItems[0].text);
-    const reviewed = await task(options, { action: 'read' });
+    const reviewed = await context.tasks.get(initial.taskId);
     assert.equal(reviewed.revision, correctedRevision); assert.equal(reviewed.steps.find(step => step.id === 'build').note, 'Write the revised text.');
     assert.equal(reviewed.steps.find(step => step.id === 'build').status, 'pending', 'A tool result cannot fabricate explicit task completion.');
-    const completed = await task(options, { action: 'step', expectedRevision: reviewed.revision, stepId: 'build', status: 'done', evidence: 'The actual written file contains the revised fixture result.' });
-    await finishFixturePlan(options, { state: completed, summary: 'The human correction and written result agree; no requested action remains.' });
+    const completed = await context.tasks.setStep(initial.taskId, 'build', { status: 'done', evidence: 'The actual written file contains the revised fixture result.' }, { expectedRevision: reviewed.revision, source: 'human' });
+    assert.equal(completed.steps.find(step=>step.id==='build').status,'done');
     return { output: 'Written and checked the revised fixture result.' };
   });
   const result = await f.run(); assert.equal(result.status, 'completed', result.error);
