@@ -26,7 +26,9 @@ export async function exerciseVisualPlanning({evaluate,send,until,fixture,counts
   assert.equal(writes(),0,'Inspecting outline and graph must be read-only.');
   await evaluate('(()=>{document.querySelector("[data-disclosure-key=definition-editor]").open=true;const f=document.querySelector(\'[data-field-key="child:prompt"]\');f.value="Visual inspector prompt";f.dispatchEvent(new Event("input",{bubbles:true}));return true})()');
   await click('.next-tab[data-space=chat]');
-  await click('.next-tab[data-space=planning]');
+  await evaluate('location.hash="planning";true');
+  await until(()=>evaluate('document.querySelector("[data-workspace=planning]")?.hidden===false && Boolean(document.querySelector(".pb-conversation"))'),'Return to saved graph workspace');
+  await click('.pb-conversation');
   await until(()=>field().then(value=>value==='Visual inspector prompt'),'Unsaved Planning draft survives workspace navigation');
   assert.equal(writes(),0,'Draft navigation must not save.');
   await evaluate('document.querySelector("[data-disclosure-key=definition-editor] form").requestSubmit();true');

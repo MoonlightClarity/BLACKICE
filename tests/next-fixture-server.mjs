@@ -156,6 +156,7 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
       return json(res,{query:q,state:bucket,total:matches.length,offset,limit,hasMore:offset+limit<matches.length,
         conversations:matches.slice(offset,offset+limit).map(item=>({...item,match:{kind:'title',runId:item.runId||item.id,text:item.title||''}}))});
     }
+    if(/^\/api\/conversations\/[^/]+\/goal$/.test(pathname)&&req.method==='GET')return json(res,{goal:null});
     if(pathname==='/api/conversations'){
       const bucket=url.searchParams.get('state')||'active';
       const conversations=state.conversations.map(item=>({...item,state:state.taskHistoryStates[item.taskId||item.rootId||item.id]||item.state||'active'}))
