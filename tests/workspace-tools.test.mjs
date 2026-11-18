@@ -241,33 +241,35 @@ test('the one MiB preview excludes its unfinished line and never promises an unr
 });
 
 
-for (const allEnabled of [false, true]) test(`oversized context listings preserve ${allEnabled ? 'all-enabled' : 'selected'} admitted policy within serialized output bound`, async t => {
-  const { activeTaskPolicy } = await import('../lib/active-task-policy.mjs');
-  const { normalizePlanningOntology, PLANNING_ONTOLOGY_MODULES } = await import('../public/planning-module-policy.mjs');
-  const planningOntology = normalizePlanningOntology({ version: 2, modules: Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({ id }) => [id, allEnabled || ['time_management', 'anti_overalignment'].includes(id)])) });
-  const policy = activeTaskPolicy({ id: 'oversized-policy', planningMode: 'off', planningOntology });
-  const { handler, cwd } = await harness(t, { getTaskPolicy: () => policy });
+for (const explicitPath of [false, true]) test(`oversized ${explicitPath ? 'explicit-path' : 'default'} listings stay bounded without retired policy and support filename continuation`, async t => {
+  let policyCalls = 0;
+  const { handler, cwd } = await harness(t, { getTaskPolicy: () => { policyCalls++; throw Error('Retired policy callback must not run'); } });
   await Promise.all(Array.from({ length: 150 }, (_, i) => writeFile(path.join(cwd, String(i).padStart(3, '0') + '-'.repeat(180) + '.txt'), '')));
-  const raw = createWorkspaceToolHandler({ cwd });
-  const unbound = parsed(await raw(call({ action: 'list' })));
-  assert.ok(unbound.preview, 'fixture must exceed the generic output bound');
   for (let repeat = 0; repeat < 2; repeat++) {
-    const response = await handler(call({ action: 'list' }));
+    const response = await handler(call({ action: 'list', ...(explicitPath ? { path: '.' } : {}) }));
     assert.equal(response.success, true);
     assert.ok(response.contentItems[0].text.length <= 40000);
     const value = parsed(response);
-    assert.deepEqual(value.activeTaskPolicy, policy);
-    assert.match(value.activeTaskPolicy.instructions, /IMMEDIATE EFFORT CALIBRATION/);
-    assert.match(value.activeTaskPolicy.instructions, /MINIMUM-SCOPE BLOCKING/);
+    assert.equal(value.activeTaskPolicy, undefined);
     assert.equal(value.truncated, true);
-    assert.match(value.nextAction, /narrow filename search/);
-    assert.ok(value.entries.length > 0 && value.entries.length < 150);
-    assert.equal(value.preview, undefined);
+    assert.ok(value.preview, 'oversized listing must disclose truncation rather than claim complete enumeration');
+    assert.match(value.message, /output limit.*Narrow/i);
   }
-  const explicit = await handler(call({ action: 'list', path: '.' }));
-  assert.ok(explicit.contentItems[0].text.length <= 40000);
-  const compact = parsed(explicit).activeTaskPolicy;
-  assert.equal(compact.instructions, undefined);
-  assert.deepEqual(compact.enabledModules, policy.enabledModules);
-  assert.deepEqual(compact.instructionsAvailableVia, { tool: 'relay_workspace', arguments: { action: 'list' } });
+  const matches = [];
+  let args = { action: 'find', path: '.', query: '.txt', limit: 17, timeoutMs: 10000 }, pages = 0;
+  for (;;) {
+    const response = await handler(call(args));
+    assert.equal(response.success, true);
+    assert.ok(response.contentItems[0].text.length <= 40000);
+    const value = parsed(response);
+    assert.equal(value.activeTaskPolicy, undefined);
+    matches.push(...value.matches.map(item => item.path));
+    assert.ok(++pages <= 20, 'bounded continuation must make progress');
+    if (!value.cursor) { assert.equal(value.searchComplete, true); break; }
+    assert.equal(value.searchComplete, false);
+    args = { action: 'find', cursor: value.cursor, limit: 17, timeoutMs: 10000 };
+  }
+  assert.equal(matches.length, 150);
+  assert.equal(new Set(matches).size, 150);
+  assert.equal(policyCalls, 0);
 });
