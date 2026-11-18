@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdtemp,mkdir,readFile,writeFile,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -13,6 +14,7 @@ import { HarnessEngine as CurrentHarnessEngine } from '../lib/engine.mjs';
 import { KnowledgeStore } from '../lib/knowledge.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { WORKSPACE_TOOL } from '../lib/workspace-tools.mjs';
+import { LEGACY_FIND_WORKSPACE_TOOL, LEGACY_FIND_WORKSPACE_INSTRUCTIONS } from '../lib/workspace-find-legacy.mjs';
 import { capabilityGuidance } from '../lib/tool-routing.mjs';
 import { estimateContextTokens } from '../lib/context.mjs';
 
@@ -57,9 +59,17 @@ if(method==='model/list')return reply(id,{data:[{id:'routing-native-model',model
 if(method==='fixture/config'){skillConfig=params.config;configUnavailable=params.unavailable===true;return reply(id,{});}
 if(method==='config/read'){if(configUnavailable)return send({id,error:{code:-32601,message:'config/read unavailable'}});return reply(id,{config:skillConfig});}
 if(method==='skills/list')return reply(id,{data:params.cwds.map(cwd=>({cwd,skills:[{path:process.platform==='win32'?'C:/fixture/browseros-neo/SKILL.md':'/fixture/browseros-neo/SKILL.md'}],errors:[]}))});
-if(method==='thread/start'){const threadId='routing-native-'+(++counter);threads.set(threadId,{instructions:params.developerInstructions||'',tools:params.dynamicTools||[],turns:0});return reply(id,{thread:{id:threadId,...(params.ephemeral===true?{ephemeral:true}:{})},model:'routing-native-model'});}
-if(method==='fixture/restoreLegacyCatalog'){const state=threads.get(params.threadId);state.tools=state.tools.filter(tool=>params.names.includes(tool.name));return reply(id,{names:state.tools.map(tool=>tool.name)});}
+if(method==='thread/start'){const threadId='routing-native-'+(++counter);threads.set(threadId,{instructions:params.developerInstructions||'',tools:params.dynamicTools||[],cwd:params.cwd,turns:0});return reply(id,{thread:{id:threadId,...(params.ephemeral===true?{ephemeral:true}:{})},model:'routing-native-model'});}
+if(method==='fixture/restoreLegacyCatalog'){const state=threads.get(params.threadId);state.tools=params.tools||state.tools.filter(tool=>params.names.includes(tool.name));return reply(id,{names:state.tools.map(tool=>tool.name)});}
 if(method==='thread/resume'){const state=threads.get(params.threadId);if(params.developerInstructions!==undefined)state.instructions=params.developerInstructions;return reply(id,{thread:{id:params.threadId},model:'routing-native-model'});}
+if(method==='turn/start'&&JSON.stringify(params.input).includes('CALL_LEGACY_FILENAME')){
+ const state=threads.get(params.threadId),turnId='legacy-find-turn-'+(++counter),results=[];
+ reply(id,{turn:{id:turnId}});notice('turn/started',{threadId:params.threadId,turn:{id:turnId,status:'inProgress'}});
+ const steps=[{action:'list',depth:99},{action:'find',query:'resume',path:state.cwd},{action:'read',path:state.cwd+'/Synthetic Resume.txt'},{action:'list',path:state.cwd,limit:1}];
+ const next=()=>{if(!steps.length){const item={type:'agentMessage',id:'legacy-find-result',text:JSON.stringify({tools:state.tools,instructions:state.instructions,results})};notice('item/completed',{threadId:params.threadId,turnId,item});notice('turn/completed',{threadId:params.threadId,turn:{id:turnId,status:'completed',items:[item]}});return;}
+ const callId='legacy-find-call-'+(++counter);pendingTools.set(callId,result=>{results.push(result);next();});send({id:callId,method:'item/tool/call',params:{threadId:params.threadId,turnId,callId,tool:'relay_workspace',arguments:steps.shift()}});
+ };setImmediate(next);return;
+}
 if(method==='turn/start'&&JSON.stringify(params.input).includes('CALL_SHARED_CATALOG')){
  const state=threads.get(params.threadId),turnId='shared-turn-'+(++counter),results=[];
  reply(id,{turn:{id:turnId}});notice('turn/started',{threadId:params.threadId,turn:{id:turnId,status:'inProgress'}});
@@ -251,4 +261,33 @@ for(const Engine of [HarnessEngine,CurrentHarnessEngine])test('missing shared MC
  const third=engine.continueRun(next.id,{nodeId:'agent',message:'Just report status'}),three=await settled(third.id);
  assert.equal(three.status,'completed',three.error);assert.equal(three.nodes.agent.threadId,two.nodes.agent.threadId);assert.equal(three.modelHandoff,undefined);
  assert.equal(calls.length,1);assert.deepEqual((await wire()).filter(x=>['thread/start','thread/resume'].includes(x.method)).map(x=>x.method),['thread/start','thread/start','thread/resume']);
+});
+
+for(const Engine of [HarnessEngine,CurrentHarnessEngine])test('persisted 2.40.4 native filename catalog resumes with matching guidance, errors and history schema ('+(Engine===HarnessEngine?'legacy':'current')+')',async t=>{
+ assert.equal(createHash('sha256').update(JSON.stringify(LEGACY_FIND_WORKSPACE_TOOL)).digest('hex'),'b8305eb3ced6ace8a02a47284504c7d2f06b04ac1b2ee368a6f9069050452eeb');
+ assert.equal(createHash('sha256').update(LEGACY_FIND_WORKSPACE_INSTRUCTIONS).digest('hex'),'68f6b13326ef8f40a5baf8e048c0821137715572459cd8a982745e6ceeb8564b');
+ const {runtime,directory,cwd,wire,cleanup}=await nativeHarness(t);await runtime.start();
+ const engine=await new Engine({runtime,dataDir:directory,defaultCwd:cwd}).init();cleanup.push(()=>engine.close());
+ const settled=id=>until(()=>{const run=engine.getRun(id);return run.settled&&run;},'legacy filename continuation');
+ await writeFile(path.join(cwd,'Synthetic Resume.txt'),'synthetic fixture');await writeFile(path.join(cwd,'Other.txt'),'unrelated fixture');
+ const first=engine.startRun({workflow:graph('routing-native-model'),input:'Establish persisted native fixture.'}),one=await settled(first.id);
+ assert.equal(one.status,'completed',one.error);
+ // Persist the exact published 2.40.4 definition, not a modern tool filtered by name.
+ await runtime._request('fixture/restoreLegacyCatalog',{threadId:one.nodes.agent.threadId,tools:[LEGACY_FIND_WORKSPACE_TOOL]});
+ engine.runs.get(first.id).nodes.agent.toolNames=['relay_workspace'];
+ const next=engine.continueRun(first.id,{nodeId:'agent',message:'CALL_LEGACY_FILENAME'}),two=await settled(next.id);
+ assert.equal(two.status,'completed',two.error);assert.equal(two.nodes.agent.threadId,one.nodes.agent.threadId);assert.equal(two.modelHandoff,undefined);
+ const receipt=JSON.parse(two.nodes.agent.output);
+ assert.deepEqual(receipt.tools,[LEGACY_FIND_WORKSPACE_TOOL]);
+ assert.doesNotMatch(receipt.instructions,/relay_find_files/);assert.match(receipt.instructions,/find/);
+ assert.equal(receipt.results[0].success,false);assert.doesNotMatch(JSON.stringify(receipt.results[0]),/relay_find_files/);
+ assert.equal(receipt.results[1].success,true,JSON.stringify(receipt.results[1]));
+ const found=JSON.parse(receipt.results[1].contentItems.find(x=>x.type==='inputText').text);assert.equal(found.matches[0].path,path.join(cwd,'Synthetic Resume.txt'));
+ assert.equal(receipt.results[3].success,true);const listing=JSON.parse(receipt.results[3].contentItems.find(x=>x.type==='inputText').text);assert.equal(listing.truncated,true);assert.match(listing.nextAction,/relay_workspace action find/);assert.doesNotMatch(listing.nextAction,/relay_find_files/);
+ assert.equal(receipt.results[2].success,true);assert.match(JSON.stringify(receipt.results[2]),/synthetic fixture/);
+ const description=engine.nativeHistoryDescription(two,two.workflow.nodes.find(n=>n.id==='agent'),two.nodes.agent,'fixture native history');
+ assert.deepEqual(description.dynamicTools,[LEGACY_FIND_WORKSPACE_TOOL]);assert.deepEqual(description.schema.toolNames,['relay_workspace']);
+ const modern=engine.nativeHistoryDescription(two,two.workflow.nodes.find(n=>n.id==='agent'),{...two.nodes.agent,toolNames:['relay_workspace','relay_find_files']},'fixture current history');
+ assert.deepEqual(modern.dynamicTools.find(tool=>tool.name==='relay_workspace'),WORKSPACE_TOOL);assert.ok(modern.dynamicTools.some(tool=>tool.name==='relay_find_files'));
+ const resumes=(await wire()).filter(x=>x.method==='thread/resume');assert.ok(resumes.length);assert.ok(resumes.every(x=>x.params.dynamicTools===undefined));
 });
