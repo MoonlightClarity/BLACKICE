@@ -1,3 +1,4 @@
+import {tabMarkChange,restoredTabMark,assertTabNotInUse} from '../lib/browser-in-use.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -65,7 +66,7 @@ function fixture({ writeFile = async () => {}, loadURL = async () => {} } = {}) 
   const protection = new EventEmitter();
   protection.status = protection.tabStatus = () => ({});
   protection.forgetTab = () => {};
-  const context = vm.createContext({ BrowserWindow: Window, session: { fromPartition: () => session }, EventEmitter,
+  const context = vm.createContext({ tabMarkChange,restoredTabMark,assertTabNotInUse, BrowserWindow: Window, session: { fromPartition: () => session }, EventEmitter,
     NativePasswordManager, passwordManagerURL, passwordManagerPreload, decorateStoppedTabAdoption, returnTerminalBrowserTab, createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserFillRequest, BrowserDiagnostics, BrowserTabDiagnostics, diagnosticText, ownershipAction, ownershipChange, sameBrowserOwner, conversationBrowserNode, prepareBrowserCompatibility,
     fs: { writeFile: async (file, value) => { writes.push(JSON.parse(value)); await writeFile(file, value); }, rename: async (...args) => { renames.push(args); } },
     setTimeout, clearTimeout, AbortSignal, structuredClone, URL,

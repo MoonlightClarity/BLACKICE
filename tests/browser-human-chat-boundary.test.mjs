@@ -47,6 +47,7 @@ function fixture(t) {
 
 function request(action, tabId = 'chat') {
   return { action, browser: 'relay', tabId,
+    ...(action === 'tab_mark' ? {inUse:true} : {}),
     ...(['open', 'navigate'].includes(action) ? { url: 'https://example.test/' } : {}),
     ...(['fill', 'select', 'click', 'hover', 'upload'].includes(action) ? { ref: 'observed-ref' } : {}),
     ...(['fill', 'type', 'wait'].includes(action) ? { text: 'Owned test input' } : {}),

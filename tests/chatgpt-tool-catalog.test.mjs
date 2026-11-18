@@ -48,7 +48,7 @@ test('the configured catalog retains 34 tools with reviewed authentication, cano
   ]);
   assert.deepEqual(catalog.status(), {
     // A complete reviewed current contract, not an inferred version or reused old SHA.
-    sha256: '027a4c2ad0448239f1d6e39062d04f7a588688ea6c49ed6229681562b79350e8',
+    sha256: 'e71da7e882b95a01424706fe9e7b695987d563296399e09d190333a35212fd56',
     toolCount: 34,
     serverVersion: '2.39.100',
   });
@@ -63,7 +63,16 @@ test('the configured catalog retains 34 tools with reviewed authentication, cano
 
   // Reconstruct the prior catalog by removing only reviewed native filename-search fields.
   // Historical hashes remain immutable; a new schema must not rewrite old contracts.
-  const beforeFind=structuredClone(currentTools);
+  // The in-use release changes exactly one action and its explicit boolean field.
+  // Removing those reviewed additions must recover the complete prior catalog.
+  assert.equal(currentAction.inputSchema.properties.action.enum.filter(action=>action==='tab_mark').length,1);
+  assert.deepEqual(currentAction.inputSchema.properties.inUse,{type:'boolean',description:'For tab_mark: protect an owned tab (true), or release your own mark (false). No ownership transfer; human marks remain protected.'});
+  assert.deepEqual(catalog.get('blackice_browser_action').requiredScopes,['read','browser:write']);
+  const beforeMark=structuredClone(currentTools),oldAction=beforeMark.find(tool=>tool.name==='blackice_browser_action');
+  oldAction.inputSchema.properties.action.enum=oldAction.inputSchema.properties.action.enum.filter(action=>action!=='tab_mark');
+  delete oldAction.inputSchema.properties.inUse;
+  assert.equal(sha(beforeMark),'027a4c2ad0448239f1d6e39062d04f7a588688ea6c49ed6229681562b79350e8');
+  const beforeFind=structuredClone(beforeMark);
   const findTool=beforeFind.find(tool=>tool.name==='blackice_workspace_read');
   assert.deepEqual(findTool.inputSchema.properties.action.enum,['list','read','search','find','patch_history']);
   assert.deepEqual(findTool.inputSchema.properties.match,{enum:['name','path']});
