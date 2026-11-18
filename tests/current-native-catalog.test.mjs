@@ -32,3 +32,16 @@ test('new native run uses current controls and file discovery and can continue n
  assert.doesNotThrow(()=>assertCurrentNativeCatalog(first));
  const next=engine.continueRun(run.id,{nodeId:'a',message:'Continue current task'});await engine.executions.get(next.id);assert.equal(engine.getRun(next.id).status,'completed',engine.getRun(next.id).error);assert.equal(runtime.calls.length,2);
 });
+
+test('current native session without tool support continues without catalog rejection',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'blackice-current-no-tools-'));const runtime=new Runtime();runtime.status=()=>({connected:true,authenticated:true,defaultModel:'fixture-model',models:[{id:'fixture-model',supportsTools:false}]});const engine=await new HarnessEngine({runtime,dataDir:root,defaultCwd:root}).init();
+ t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});
+ const run=engine.startRun({workflow:graph,input:'Answer in text'});await engine.executions.get(run.id);const first=engine.getRun(run.id);assert.equal(first.status,'completed',first.error);assert.equal((runtime.calls[0].dynamicTools||[]).length,0);
+ const next=engine.continueRun(run.id,{nodeId:'a',message:'Continue in text'});await engine.executions.get(next.id);assert.equal(engine.getRun(next.id).status,'completed',engine.getRun(next.id).error);assert.equal(runtime.calls.length,2);
+});
+test('current failed native turn retries with its current schema and original task',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'blackice-current-retry-'));const runtime=new Runtime();runtime.runAgent=async function(options){this.calls.push(options);options.onEvent?.({type:'thread',threadId:'retry-thread'});if(this.calls.length===1)throw Error('Fixture provider interruption');return {output:'Recovered',threadId:'retry-thread'};};const engine=await new HarnessEngine({runtime,dataDir:root,defaultCwd:root}).init();
+ t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});
+ const run=engine.startRun({workflow:graph,input:'Current retry task'});await engine.executions.get(run.id);assert.equal(engine.getRun(run.id).status,'failed');
+ const next=engine.retryRun(run.id);await engine.executions.get(next.id);assert.equal(engine.getRun(next.id).status,'completed',engine.getRun(next.id).error);assert.equal(runtime.calls.length,2);assert.deepEqual(runtime.calls[1].dynamicTools.find(t=>t.name==='relay_control'),control.CONTROL_TOOL);
+});

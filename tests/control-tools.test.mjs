@@ -238,9 +238,3 @@ test('agents can configure and inspect optional delegation and verbosity without
  const settings=context.app.runtimeSettings.get();
  assert.equal(settings.subagentsEnabled,true);assert.equal(settings.maxSubagents,4);assert.equal(settings.verbosity,'detailed');
 });
-
-
-
-
-
-
