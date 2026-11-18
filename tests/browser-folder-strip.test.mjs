@@ -38,3 +38,16 @@ test('moving selected tab into collapsed folder reveals its new ancestors withou
  f.data.tabs[0].collectionId=null;f.render();f.data.tabs[0].collectionId='c';f.render();assert.equal(f.$('[data-collection-id="p"] .next-browser-folder-children').hidden,false);
  await f.click('[data-folder-control="toggle:p"]');f.render();assert.equal(f.$('[data-collection-id="p"] .next-browser-folder-children').hidden,true);
 });
+
+test('moving selected tab between identically named paths expands new folder IDs only',async t=>{
+ const f=fixture(t);
+ f.data.collections.push({id:'p2',name:'Projects',parentId:null},{id:'c2',name:'Research',parentId:'p2'});f.render();
+ await f.click('[data-folder-control="toggle:c2"]');await f.click('[data-folder-control="toggle:p2"]');
+ assert.equal(f.$('[data-collection-id="p2"] .next-browser-folder-children').hidden,true);
+ f.data.tabs[0].collectionId='c2';f.render();
+ assert.equal(f.$('[data-collection-id="p2"] .next-browser-folder-children').hidden,false);
+ assert.equal(f.$('[data-collection-id="c2"] .next-browser-folder-children').hidden,false);
+ assert.equal(f.$('[data-tab-id="a"]').closest('[data-collection-id]').dataset.collectionId,'c2');
+ await f.click('[data-folder-control="toggle:p2"]');f.render();
+ assert.equal(f.$('[data-collection-id="p2"] .next-browser-folder-children').hidden,true);
+});
