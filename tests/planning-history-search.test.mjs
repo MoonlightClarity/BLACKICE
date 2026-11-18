@@ -50,16 +50,11 @@ test('full history matches take precedence while partial alternatives stay expli
   assert.deepEqual(result.results[1].missingTerms,['project']);
 });
 
-test('memory and skill searches retain their strict all-term behavior',async t=>{
-  const dataDir=await mkdtemp(path.join(tmpdir(),'blackice-strict-knowledge-'));
-  t.after(()=>rm(dataDir,{recursive:true,force:true}));
-  const store=await new KnowledgeStore({dataDir}).init();
-  for(const kind of ['memory','skill'])await store.upsert({kind,cwd,title:"Morgan O'Neill project",content:'The recorded project brief.'});
-  const handler=handlerFor([],store);
-  for(const name of ['relay_memory','relay_skills']){
-    assert.equal((await invoke(handler,{action:'search',query:"Morgan O'Neill"},name)).result.entries.length,1);
-    assert.equal((await invoke(handler,{action:'search',query:"Morgan O'Neill missing timeline"},name)).result.entries.length,0);
-  }
+test('release skill metadata requires all query terms and legacy memory is not a tool',async()=>{
+  const handler=handlerFor([]);
+  assert.equal((await invoke(handler,{action:'search',query:'job search'},'relay_skills')).result.entries.length,1);
+  assert.equal((await invoke(handler,{action:'search',query:'job search missing timeline'},'relay_skills')).result.entries.length,0);
+  await assert.rejects(invoke(handler,{action:'search'},'relay_memory'),/Unknown knowledge tool/);
 });
 
 test('a natural query can discover and focus receipt-only evidence with explicit partial-match terms',async()=>{
