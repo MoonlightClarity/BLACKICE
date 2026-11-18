@@ -51,7 +51,7 @@ async function fixture(t,{providers=[provider(),provider('second',{name:'Second 
   };
   const makePanel=wrapped?props=>createSubscriptionModelSettings(props,createProviderSettings):createProviderSettings;
   const panel=makePanel({mount:dom.mount,api,events:{subscribe(handler){subscribers.add(handler);return()=>subscribers.delete(handler);}},notify:value=>notices.push(value),onChanged:()=>{changed++;},getRuntimeSettings:()=>state.runtimeSettings,onRuntimeSettings:value=>{state.runtimeSettings=structuredClone(value);}});
-  t.after(()=>panel.destroy());panel.enter();await until(()=>dom.$('[data-provider-id]')||state.providers.length===0&&!dom.$('#next-provider-refresh').disabled);
+  t.after(()=>panel.destroy());panel.enter();if(wrapped)await dom.click('#next-models-tab-api');await until(()=>dom.$('[data-provider-id]')||state.providers.length===0&&!dom.$('#next-provider-refresh').disabled);
   return {...dom,panel,calls,state,notices,subscribers,get changed(){return changed;},writes:()=>calls.filter(call=>call.method!=='GET'&&call.route!=='/api/providers/preview'&&!/^\/api\/providers\/[^/]+\/models$/.test(call.route)),
     async open(id='gateway'){await dom.click(`[data-provider-id="${id}"]`);await settle();},
     async idle(){await until(()=>!dom.$('#next-provider-new').disabled);},
@@ -632,12 +632,12 @@ test('a missing-key API connection offers setup without being enabled or duplica
   assert.equal(f.state.providers.length,1);assert.equal(f.state.providers[0].enabled,false);assert.equal(f.writes().length,0);
 });
 
-test('optional API settings are visible and entered when Models settings opens',async t=>{
+test('Models opens Accounts and enters API settings only when selected',async t=>{
   const f=planningDOM(t);let entered=0,left=0;
   const panel=createSubscriptionModelSettings({mount:f.mount,api:async()=>({codex:{connected:false,authenticated:false}})},()=>({enter(){entered++;},leave(){left++;},destroy(){}}));
   t.after(()=>panel.destroy());panel.enter();await settle();
-  const section=f.$('#next-connect-another-endpoint');assert.equal(section.open,true);
-  assert.match(section.querySelector('summary').textContent,/Optional API connections/);assert.equal(entered,1);
+  const section=f.$('#next-connect-another-endpoint');assert.equal(section.getAttribute('aria-label'),'API connections');assert.equal(entered,0);
+  assert.equal(f.$('#next-models-tab-accounts').getAttribute('aria-selected'),'true');await f.click('#next-models-tab-api');assert.equal(entered,1);
   panel.leave();assert.equal(left,1);
 });
 
@@ -759,19 +759,18 @@ test('legacy service URLs on custom saved connections show migration guidance wi
   assert.deepEqual(f.state.providers,[original]);assert.equal(f.writes().length,0,'Explicit migration fills a reviewable draft; it does not save or duplicate the connection.');
 });
 
-test('real Codex controls remain active independently of optional API expansion',async t=>{
+test('real Codex controls run in Accounts independently of inactive API settings',async t=>{
   const f=await fixture(t,{wrapped:true});
-  const details=f.$('#next-connect-another-endpoint');
   await f.open();await f.input('#next-provider-name','Keep API draft');
-  details.open=false;await details.dispatch('toggle');await settle();
-  assert.equal(f.subscribers.size,0,'collapsed API panel unsubscribes as before');
+  await f.click('#next-models-tab-accounts');await settle();
+  assert.equal(f.subscribers.size,0,'inactive API panel unsubscribes');
   const providerReads=()=>f.calls.filter(c=>c.route==='/api/providers').length;
   const before=providerReads();
   await f.click('#next-provider-codex-read');await settle();
   assert.match(f.$('#next-provider-codex-list').textContent,/Native model/);
-  await f.input('#next-provider-codex-id','custom-after-collapse');
+  await f.input('#next-provider-codex-id','custom-after-api');
   await f.click('#next-provider-codex-add');await settle();
-  assert.deepEqual(f.state.customModels,['custom-after-collapse']);
+  assert.deepEqual(f.state.customModels,['custom-after-api']);
   await f.input('#next-provider-codex-id','native-model');
   await f.click('#next-provider-codex-check');await settle();
   assert.equal(f.state.codex.modelCheck.model,'native-model');
@@ -786,26 +785,29 @@ test('real Codex controls remain active independently of optional API expansion'
   f.panel.enter();await settle();
   await f.click('#next-provider-codex-read');await settle();
   assert.equal(f.calls.filter(c=>c.route==='/api/codex/models?refresh=true').length,2);
-  assert.equal(f.subscribers.size,0,'reenter with API collapsed keeps it paused');
-  details.open=true;await details.dispatch('toggle');await settle();
+  assert.equal(f.subscribers.size,0,'reenter Accounts keeps APIs paused');
+  await f.click('#next-models-tab-api');await settle();
   assert.equal(f.subscribers.size,1);
   assert.equal(f.$('#next-provider-name').value,'Keep API draft');
   assert.equal(f.mount.querySelectorAll('#next-provider-codex').length,1);
 });
 
-test('collapsing optional APIs preserves an in-flight native read but leaving Models cancels it',async t=>{
+test('remaining on Accounts preserves native reads; changing tabs and leaving Models cancel them',async t=>{
   let gate,signal;
   const f=await fixture(t,{wrapped:true,hook:call=>{
     if(gate&&call.route==='/api/codex/models?refresh=true'){signal=call.options.signal;return gate.promise;}
   }});
+  await f.click('#next-models-tab-accounts');await settle();
   gate=deferred();
   await f.click('#next-provider-codex-read');await settle();
-  const details=f.$('#next-connect-another-endpoint');
-  details.open=false;await details.dispatch('toggle');
+  await f.click('#next-models-tab-accounts');
   assert.equal(signal.aborted,false);
   gate.resolve({...f.state.codex,models:[{id:'late-native',model:'late-native'}]});await settle();
   assert.match(f.$('#next-provider-codex-list').textContent,/late-native/);
   gate=deferred();await f.click('#next-provider-codex-read');await settle();
+  await f.click('#next-models-tab-api');assert.equal(signal.aborted,true);
+  gate.resolve({...f.state.codex,models:[{id:'hidden-native',model:'hidden-native'}]});await settle();assert.doesNotMatch(f.$('#next-provider-codex-list').textContent,/hidden-native/);
+  await f.click('#next-models-tab-accounts');await settle();gate=deferred();await f.click('#next-provider-codex-read');await settle();
   f.panel.leave();assert.equal(signal.aborted,true);
   gate.resolve({...f.state.codex,models:[{id:'ignored-native',model:'ignored-native'}]});await settle();
   assert.doesNotMatch(f.$('#next-provider-codex-list').textContent,/ignored-native/);
