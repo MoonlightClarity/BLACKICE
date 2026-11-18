@@ -1,7 +1,7 @@
 import { text } from '../core/dom.mjs';
 
 // Folder edits affect organization only. Schedule controls remain owned by tasks.mjs.
-export function createScheduleFolders({ mount, api, notify, refresh }) {
+export function createScheduleFolders({ mount, api, notify, refresh, compact = false }) {
   let organization = { revision: 0, folders: [], assignments: {} }, pending = false, lastRevision = -1;
   const closed = new Set();
   const renameDrafts = new Map();
@@ -9,16 +9,18 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
   let knownDeployments = new Set(), outlineContainer = null;
   const add = (parent, tag, value, cls) => text(parent, value, tag, cls);
   const manager = add(mount, 'details', '', 'next-card next-schedule-folder-manager');
-  add(manager, 'summary', 'Manage folders');
-  add(manager, 'p', 'Folders organize cronjobs. Moving or removing a folder does not change schedules or run jobs.', 'next-help');
+  const managerTitle=add(manager, 'summary', compact?'New folder':'Manage folders');
+  let createRevision=null;
+  manager.classList.toggle('next-schedule-folder-create',compact);
+  if(!compact)add(manager, 'p', 'Folders organize cronjobs. Moving or removing a folder does not change schedules or run jobs.', 'next-help');
   const form = add(manager, 'form', '', 'next-schedule-folder-form');
   function field(label, tag, name) {
     const wrapper = add(form, 'label', label, 'next-label');
     const el = add(wrapper, tag, '', 'next-field'); el.name = name; return el;
   }
-  const selected = field('Folder to edit', 'select', 'folder');
+  const selected = compact?{value:'',disabled:false}:field('Folder to edit', 'select', 'folder');
   const name = field('Folder name', 'input', 'name'); name.required = true; name.maxLength = 120;
-  const parent = field('Create inside', 'select', 'parent');
+  const parent = compact?{value:'',disabled:false}:field('Create inside', 'select', 'parent');
   const actions = add(form, 'div', '', 'next-row');
   const save = add(actions, 'button', 'Create folder'); save.type = 'submit';
   const remove = add(actions, 'button', '\u00d7', 'next-schedule-folder-remove'); remove.type = 'button'; remove.hidden = true; remove.title = 'Remove selected folder only; keep every cronjob'; remove.setAttribute('aria-label','Remove selected folder only');
@@ -40,9 +42,11 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
     const folder = organization.folders.find(item => item.id === selected.value);
     name.value = folder?.name || ''; parent.value = folder?.parentId || '';
     save.textContent = folder ? 'Save folder' : 'Create folder'; remove.hidden = !folder;
-    parent.parentElement.firstChild.textContent = folder ? 'Move inside' : 'Create inside';
+    if(!compact)parent.parentElement.firstChild.textContent = folder ? 'Move inside' : 'Create inside';
   }
-  selected.addEventListener('change', editSelection);
+  if(!compact)selected.addEventListener('change', editSelection);
+  function beginCreate(parentId=null){if(pending)return;parent.value=parentId||'';createRevision=organization.revision;managerTitle.textContent=parentId?'New folder in '+path(parentId):'New folder';manager.open=true;name.focus();}
+  if(compact){managerTitle.addEventListener('click',event=>{if(!manager.open){event.preventDefault();beginCreate();}});const cancel=add(actions,'button','Cancel');cancel.type='button';cancel.addEventListener('click',()=>{if(pending)return;manager.open=false;name.value='';parent.value='';managerTitle.textContent='New folder';});name.addEventListener('keydown',event=>{if(event.key==='Escape'&&!pending){event.preventDefault();manager.open=false;name.value='';parent.value='';}});}
   async function mutate(payload, expectedRevision = organization.revision) {
     if (pending) return false;
     for (const select of [...fileSelects,...folderButtons]) select.disabled = true;
@@ -59,8 +63,8 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
   }
   form.addEventListener('submit', async event => {
     event.preventDefault();
-    if (await mutate({ action: selected.value ? 'update' : 'create', id: selected.value, name: name.value, parentId: parent.value || null })) {
-      selected.value = ''; editSelection(); notice.textContent = 'Folder saved.';
+    if (await mutate({ action: selected.value ? 'update' : 'create', id: selected.value, name: name.value, parentId: parent.value || null },compact?(createRevision??organization.revision):organization.revision)) {
+      selected.value = ''; editSelection();if(compact){manager.open=false;parent.value='';managerTitle.textContent='New folder';} notice.textContent = 'Folder saved.';
     }
   });
   async function removeFolder(id) {
@@ -70,7 +74,7 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
     }
   }
   remove.addEventListener('click',()=>void removeFolder(selected.value));
-  add(manager, 'p', 'Drag folders and cronjobs to organize them. Ctrl+Enter indents into the preceding folder; Ctrl+Shift+Enter moves out one level. Remove folder keeps every cronjob.', 'next-help');
+  if(!compact)add(manager, 'p', 'Drag folders and cronjobs to organize them. Ctrl+Enter indents into the preceding folder; Ctrl+Shift+Enter moves out one level. Remove folder keeps every cronjob.', 'next-help');
   function currentParent(item){
     return item.kind==='folder'?organization.folders.find(folder=>folder.id===item.id)?.parentId||null:organization.assignments?.[item.id]||null;
   }
@@ -105,6 +109,16 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
     });
     element.addEventListener('dragend',()=>{activeDrag=null;});
     element.addEventListener('keydown',event=>{
+      if(event.target!==element)return;
+      if(compact&&!event.ctrlKey&&!event.metaKey&&!event.altKey){
+        const row=element.parentElement;let next=null;
+        const visible=[...(outlineContainer?.querySelectorAll('summary')||[])].filter(value=>{if(!value.parentElement?.dataset.scheduleFolder&&!value.parentElement?.dataset.scheduleId)return false;for(let ancestor=value.parentElement?.parentElement;ancestor&&ancestor!==outlineContainer;ancestor=ancestor.parentElement)if(ancestor.tagName==='DETAILS'&&!ancestor.open)return false;return true;});const index=visible.indexOf(element);
+        if(event.key==='ArrowDown')next=visible[index+1];else if(event.key==='ArrowUp')next=visible[index-1];else if(event.key==='Home')next=visible[0];else if(event.key==='End')next=visible.at(-1);
+        else if(event.key==='ArrowLeft'){if(row.open)row.open=false;else next=row.parentElement?.closest?.('[data-schedule-folder]')?.querySelector('summary');}
+        else if(event.key==='ArrowRight'){if(!row.open)row.open=true;else next=visible[index+1];}
+        else if(event.key==='F2'&&item.kind==='folder'){event.preventDefault();element.querySelector('.next-schedule-folder-name')?.click();return;}else return;
+        event.preventDefault();event.stopPropagation();next?.focus();return;
+      }
       if(event.target?.tagName==='INPUT'||!(event.ctrlKey||event.metaKey)||event.key!=='Enter')return;
       event.preventDefault();event.stopPropagation();
       const parentId=currentParent(item);
@@ -133,7 +147,7 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
     group(container, deployments, value) {
       outlineContainer=container;
       organization = value || { revision: 0, folders: [], assignments: {} };
-      if (lastRevision !== organization.revision) {
+      if (!compact && lastRevision !== organization.revision) {
         const chosen = selected.value, chosenParent = parent.value;
         options(selected, 'New folder', chosen); options(parent, 'Top level', chosenParent);
         lastRevision = organization.revision;
@@ -174,6 +188,7 @@ export function createScheduleFolders({ mount, api, notify, refresh }) {
           for (let changed = true; changed;) { changed = false; for (const item of folders) if (descendants.has(item.parentId) && !descendants.has(item.id)) { descendants.add(item.id); changed = true; } }
           const count = deployments.filter(item => descendants.has(organization.assignments?.[item.id])).length;
           const badge = add(summary, 'span', String(count), 'next-status-pill'); badge.title = 'Cronjobs in this folder and subfolders';
+          if(compact){const create=add(summary,'button','+','next-schedule-folder-add');create.type='button';create.setAttribute('aria-label','New folder in '+path(folder.id));create.title='New subfolder';create.disabled=pending;folderButtons.push(create);create.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();beginCreate(folder.id);});}
           const deleteButton=add(summary,'button','\u00d7','next-schedule-folder-remove');deleteButton.type='button';deleteButton.disabled=pending;folderButtons.push(deleteButton);deleteButton.title='Remove folder only; keep every cronjob';deleteButton.setAttribute('aria-label','Remove folder '+path(folder.id));deleteButton.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void removeFolder(folder.id);});
           details.addEventListener('toggle', () => details.open ? closed.delete(folder.id) : closed.add(folder.id));
           const children = add(details, 'div', '', 'next-schedule-folder-children');

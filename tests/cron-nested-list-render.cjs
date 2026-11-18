@@ -11,7 +11,7 @@ const until=async s=>{for(let i=0;i<100;i++){if(await run(s))return;await sleep(
  const {changeScheduleOrganization}=await import(pathToFileURL(path.join(root,'lib/schedule-organization.mjs')));
  const handler=fixture.server.listeners('request')[0];fixture.server.removeAllListeners('request');fixture.server.on('request',async(req,res)=>{if(req.url==='/api/operations/folders'&&req.method==='POST'){
  let body='';for await(const chunk of req)body+=chunk;
- try{organization=changeScheduleOrganization(organization,JSON.parse(body),{deploymentIds:fixture.state.deployments.map(job=>job.id)});res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(organization));}catch(error){res.writeHead(error.status||400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:error.message}));}return;
+ try{organization=changeScheduleOrganization(organization,JSON.parse(body),{id:'test-folder-'+organization.revision,deploymentIds:fixture.state.deployments.map(job=>job.id)});res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(organization));}catch(error){res.writeHead(error.status||400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:error.message}));}return;
  }const end=res.end.bind(res);res.end=(body,...args)=>{if(req.url.startsWith('/api/operations')&&req.method==='GET'){try{const data=JSON.parse(body);if(data.deployments)body=JSON.stringify({...data,organization});}catch{}}return end(body,...args)};return handler(req,res)});
  await new Promise(r=>fixture.server.listen(0,'127.0.0.1',r));win=new BrowserWindow({show:false,width:1200,height:900,webPreferences:{backgroundThrottling:false}});
  await win.loadURL('http://127.0.0.1:'+fixture.server.address().port+'/next/#cronjobs');
@@ -19,7 +19,7 @@ const until=async s=>{for(let i=0;i<100;i++){if(await run(s))return;await sleep(
  assert.deepEqual(await run('[...document.querySelector("[data-schedule-folder=work]>.next-schedule-folder-children>.next-grid").children].map(e=>e.dataset.scheduleId)'),['earlier','later']);
  assert.equal(await run('document.querySelector("[data-schedule-folder=research]").closest("[data-schedule-folder=work]")!==null'),true);
  assert.equal(await run('[...document.querySelectorAll(".next-cronjob-row")].every(e=>!e.open)'),true);
- for(const width of [1200,640]){win.setSize(width,900);await sleep(200);assert.equal(await run('document.documentElement.scrollWidth<=innerWidth'),true);fs.writeFileSync(path.join(out,'cron-list-'+width+'.png'),(await win.webContents.capturePage()).toPNG());}
+ for(const width of [1200,640,390]){win.setSize(width,900);await sleep(200);assert.equal(await run('document.documentElement.scrollWidth<=innerWidth'),true);fs.writeFileSync(path.join(out,'cron-list-'+width+'.png'),(await win.webContents.capturePage()).toPNG());}
  await run('document.querySelector("[data-schedule-id=earlier]>summary").click()');
  await until('document.querySelector("[data-schedule-id=earlier]").open');
  await until('document.querySelector("[data-schedule-result-run=sample-run-0]")!==null');
@@ -61,10 +61,18 @@ const until=async s=>{for(let i=0;i<100;i++){if(await run(s))return;await sleep(
   await run('document.querySelector("[data-schedule-folder=research] input").dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true}))');
   assert.equal(await run('document.querySelector("[data-schedule-folder=research] input").hidden'),true);
 
+ await run('document.querySelector("[data-schedule-folder=research] .next-schedule-folder-add").click()');
+ await until('document.querySelector(".next-schedule-folder-create").open');
+ assert.equal(await run('document.querySelector(".next-schedule-folder-create select")===null'),true);
+ await run('(()=>{const form=document.querySelector(".next-schedule-folder-create form");form.querySelector("input").value="Nested test";form.requestSubmit();})()');
+ await until('[...document.querySelectorAll(".next-schedule-folder-name")].some(x=>x.textContent==="Nested test")');
+ assert.ok(organization.folders.some(folder=>folder.name==='Nested test'&&folder.parentId==='research'));
+ await run('document.querySelector("[data-schedule-folder=work]>summary").focus();document.activeElement.dispatchEvent(new KeyboardEvent("keydown",{key:"End",bubbles:true,cancelable:true}))');
+ assert.equal(await run('document.activeElement===document.querySelector("[data-schedule-id=loose]>summary")'),true,await run('JSON.stringify({active:document.activeElement.outerHTML,rows:[...document.querySelectorAll("#next-tasks-deployments summary")].map(x=>({name:x.textContent,kind:x.parentElement.dataset}))})'));
  assert.equal(fixture.state.deployments.length,4);
  assert.equal(fixture.state.scheduledWrites.length,0);
  await run('document.querySelector("[data-schedule-result-run=sample-run-0]").click()');
  await until('location.hash==="#chat"');
  await until('localStorage.getItem("blackice.next.selected")==="sample-run-0"');
- fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:true,checks:['Nested folders retained','Chronological jobs within folder','Collapsed compact rows','Expansion retained after refresh','Existing enable/disable action','Only selected schedule conversation links','Exact saved conversation navigation','No global results/history or preview viewer','No schedule created','Persisted schedule and folder drag moves','Persisted CtrlEnter indent and CtrlShiftEnter outdent','No filing dropdown','1200 and640 no horizontal overflow']},null,2));
+ fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:true,checks:['Nested folders retained','Chronological jobs within folder','Collapsed compact rows','Expansion retained after refresh','Existing enable/disable action','Only selected schedule conversation links','Exact saved conversation navigation','No global results/history or preview viewer','No schedule created','Persisted schedule and folder drag moves','Persisted CtrlEnter indent and CtrlShiftEnter outdent','No filing dropdown','1200, 640 and390 no horizontal overflow','Direct subfolder creation persisted without dropdown','Keyboard End reaches last visible row']},null,2));
 })().catch(e=>{fs.writeFileSync(path.join(out,'error.txt'),e.stack);process.exitCode=1}).finally(async()=>{win?.destroy();if(fixture){fixture.server.closeAllConnections();await new Promise(r=>fixture.server.close(r));await fixture.close();}app.exit(process.exitCode||0)});setTimeout(()=>app.exit(2),40000).unref();

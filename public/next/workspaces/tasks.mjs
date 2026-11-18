@@ -74,7 +74,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     '<div class="next-row"><button type="submit" class="next-primary">Save schedule</button><button type="button" id="next-tasks-preview">Preview next runs</button></div>',
     '<p class="next-help" role="status" id="next-tasks-preview-output"></p>',
     '</form></section>',
-    '<h2>Scheduled work</h2><div id="next-tasks-folders"></div><div id="next-tasks-deployments" class="next-schedule-folder-list"></div>',
+    '<h2 id="next-tasks-scheduled-heading">Scheduled work</h2><div id="next-tasks-folders"></div><div id="next-tasks-deployments" class="next-schedule-folder-list"></div>',
     '<section id="next-tasks-schedule-detail" class="next-card next-schedule-inspector" aria-label="Schedule inspection and editing" hidden></section>',
     '<details class="next-card next-schedule-removed" id="next-tasks-removed" hidden><summary>Removed schedules (audit history)</summary><div id="next-tasks-removed-list"></div></details>',
     '</section>',
@@ -94,7 +94,9 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       mount.querySelector('#next-tasks-panel-'+name)?.remove();
     }
     mount.querySelector('h1').textContent='Cronjobs';
-    mount.querySelector('.next-panel-head p').textContent='Create and monitor recurring and event-driven agents.';
+    mount.querySelector('.next-panel-head p').textContent='Schedules and their conversations.';
+    mount.querySelector('.next-task-schedules-head h2')?.remove();
+    mount.querySelector('#next-tasks-scheduled-heading')?.remove();
     mount.querySelector('nav[role="tablist"]').hidden=true;
     const schedulesTab=mount.querySelector('#next-tasks-tab-schedules');
     schedulesTab.setAttribute('aria-selected','true');
@@ -121,7 +123,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
   let active=false,busy=false,revision=0,subscriptions=null,refreshTimer=null,snapshot=null,mutationError='',scheduleProgress='';
   let workflowList=[],workflowLimit=80,workflowQuery='',workflowEpoch=0,workflowTimer=null,workflowLoaded=false,workflowLoading=false;
   let section=cronjobsOnly?'schedules':'board',jobsLimit=35,resultsLimit=100,selectedScheduleId=null,scheduleMode='inspect',editSource=null,editForm=null,editNotice=null;
-  const scheduleFolders=createScheduleFolders({mount:$('next-tasks-folders'),api,notify,refresh:()=>refresh()});
+  const scheduleFolders=createScheduleFolders({mount:$('next-tasks-folders'),api,notify,refresh:()=>refresh(),compact:cronjobsOnly});
   const readinessBySchedule=new Map();
   const expandedSchedules=new Set();
   const createChatProfile=initScheduleChatOptions(view.chatFields,{getStatus});
@@ -641,9 +643,9 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
           else expandedSchedules.delete(task.id);
         });
         const summary=add(row,'summary','','next-cronjob-summary');
-        add(summary,'span',task.name||'Scheduled task','next-cronjob-name');
+        const title=add(summary,'span',task.name||'Scheduled task','next-cronjob-name');title.title=title.textContent;
         add(summary,'span',task.enabled?'Enabled':'Disabled','next-cronjob-state');
-        add(summary,'span',task.overdue?'Overdue: '+humanTime(task.overdueSince):'Next: '+humanTime(task.nextAt),'next-cronjob-next');
+        const due=add(summary,'span',task.overdue?'Overdue: '+humanTime(task.overdueSince):'Next: '+humanTime(task.nextAt),'next-cronjob-next');due.title=due.textContent;
         card=add(row,'div','','next-cronjob-body');
         const resultsHost=add(card,'section','','next-cronjob-results');
         if(row.open)paintScheduleResults(resultsHost,task.id);
