@@ -38,7 +38,7 @@ test('standalone workflows have a scroll panel, return navigation and the same r
 test('legacy Tasks and Activity routes share Cronjobs and repeated navigation never remounts it',async()=>{
   const source=readFileSync(new URL('../public/next/app.mjs',import.meta.url),'utf8');
   const actual=source.slice(source.indexOf('function openWorkspaceTarget('),source.indexOf('for(const tab of tabs){\n  tab.addEventListener'));
-  const element=()=>({children:[],dataset:{},hidden:false,setAttribute(){},append(...items){this.children.push(...items);},querySelector(){return null;}});
+  const element=()=>({children:[],dialogs:[],querySelectorAll(selector){return selector==='dialog[open]'?this.dialogs.filter(d=>d.open):[];},dataset:{},hidden:false,setAttribute(){},append(...items){this.children.push(...items);},querySelector(){return null;}});
   const lifecycle=[],routes=[],selected=[],instance=name=>({enter(){lifecycle.push(name+':enter');},leave(){lifecycle.push(name+':leave');}});
   const modules={cronjobs:async()=>()=>instance('cronjobs'),workflows:async()=>()=>instance('workflows')};
   const app=new Function('modules','document','stage','routes','selected',
@@ -48,7 +48,8 @@ test('legacy Tasks and Activity routes share Cronjobs and repeated navigation ne
   await app.show('activity');
   assert.equal(app.spaces.size,1);
   assert.deepEqual(lifecycle,['cronjobs:enter']);
-  await app.show('workflows');await app.spaces.get('workflows').loading;
+  const dialog={open:true,close(){this.open=false;}};app.spaces.get('cronjobs').mount.dialogs.push(dialog);
+  await app.show('workflows');await app.spaces.get('workflows').loading;assert.equal(dialog.open,false);
   assert.equal(app.spaces.get('cronjobs').mount.hidden,true);
   await app.show('cronjobs');
   assert.equal(app.spaces.get('workflows').mount.hidden,true);
