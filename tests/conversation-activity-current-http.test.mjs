@@ -5,6 +5,8 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {EventEmitter} from 'node:events';
 import {createHarnessServer} from '../server.mjs';
+import {planningDOM} from './fixture-planning-dom.mjs';
+import {createActivityInspector} from '../public/next/chat/activity-inspector.mjs';
 test('authenticated conversation activity reads retained events without Directory data',async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'conversation-activity-'));
  class Runtime extends EventEmitter{status(){return {connected:true,authenticated:true};}async start(){}async close(){}async runAgent(){throw Error("No provider should run");}}
@@ -21,6 +23,8 @@ test('authenticated conversation activity reads retained events without Director
  const duplicate=await get('/api/conversations/selected/activity?q=a&q=b');assert.equal(duplicate.status,400);
  assert.equal((await get('/api/conversations/missing/activity')).status,404);
  assert.equal((await get('/api/shadowdancer/context?runId=selected')).status,404);
+ const dom=planningDOM(t),requests=[];const inspector=createActivityInspector({frame:dom.mount,getRunId:()=>'selected',api:async route=>{requests.push(route);const r=await get(route),body=await r.json();if(!r.ok)throw Error(body.error);return body;}});t.after(()=>inspector.destroy());
+ await inspector.open();assert.match(dom.mount.textContent,/Selected update/);assert.ok(requests[0].startsWith('/api/conversations/selected/activity?'));assert.doesNotMatch(requests[0],/runId=/);assert.doesNotMatch(dom.mount.textContent,/PRIVATE|Directory Context/);
  assert.equal(await readFile(file,'utf8'),'unreadable preserved evidence');
 });
 

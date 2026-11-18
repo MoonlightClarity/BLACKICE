@@ -7,7 +7,7 @@ const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {
 function fixture(t){
  const dom=planningDOM(t),actions=dom.element('div');actions.className='next-chat-head-actions';dom.mount.append(actions);let run='a',hook,listener;const calls=[];
  const reply=(view,title=view)=>({revision:'one',view,items:[{id:view,title,text:view==='internal'?'STRUCTURED ONLY':'visible '+view,source:'saved fixture'}],nextOffset:null,coverage:{scope:'Retained events in this run',retainedEvents:4,omittedEvents:2}});
- const api=async route=>{const params=new URL(route,'http://fixture').searchParams;calls.push(Object.fromEntries(params));return hook?.(params)||reply(params.get('view'));};
+ const api=async route=>{const url=new URL(route,'http://fixture');assert.match(url.pathname,/^\/api\/conversations\/[^/]+\/activity$/);const params=url.searchParams;assert.equal(params.has('runId'),false);calls.push(Object.fromEntries(params));return hook?.(params)||reply(params.get('view'));};
  const inspector=createActivityInspector({frame:dom.mount,getRunId:()=>run,api,events:{subscribe(fn){listener=fn;return ()=>{};}}});t.after(()=>inspector.destroy());
  return {dom,inspector,calls,reply,emit:()=>listener({runId:run,data:{type:"message"}}),setRun:id=>{run=id;inspector.refresh(id);},hook:fn=>hook=fn,category:async value=>{dom.$('.next-activity-view').value=value;await dom.$('.next-activity-view').dispatch('change');await tick();}};
 }
