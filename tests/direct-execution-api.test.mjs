@@ -1,3 +1,4 @@
+import {DatabaseSync} from 'node:sqlite';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rename, symlink, readdir, rm } from 'node:fs/promises';
@@ -9,6 +10,8 @@ import { FilePatchStore } from '../lib/file-patches.mjs';
 import { BrowserWorkspace } from '../lib/browser.mjs';
 import { chatGPTFileImportTool } from '../lib/chatgpt-file-import.mjs';
 
+function stored(dataDir,id){const db=new DatabaseSync(path.join(dataDir,'direct-execution.sqlite'),{readOnly:true});try{return db.prepare('SELECT body FROM payloads WHERE id=?').get(id).body;}finally{db.close();}}
+function corrupt(dataDir,id,body){const db=new DatabaseSync(path.join(dataDir,'direct-execution.sqlite'));try{db.prepare('UPDATE payloads SET body=? WHERE id=?').run(String(body),id);}finally{db.close();}}
 const client = { id: 'grant-one', label: 'Authorized ChatGPT', kind: 'chatgpt', scopes: [...DIRECT_EXECUTION_SCOPES] };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const held = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
@@ -26,9 +29,9 @@ async function waitJob(api, id, predicate = job => job.settled, who = client) {
   while (Date.now() < deadline) { const value = await api.getJob(id, who); if (predicate(value)) return value; await sleep(5); }
   throw new Error(`Direct job did not reach the expected state: ${JSON.stringify(await api.getJob(id, who))}`);
 }
-async function legacyApproval(api, requestId, selectedPath = 'legacy.txt') {
+async function pendingBrowser(api, requestId, selectedPath = 'legacy.txt') {
   const { job } = await api.jobs.admit({ ownerId: client.id, requestId, tool: 'blackice_workspace_write', arguments: { action: 'write', path: selectedPath, text: 'Legacy action must not run.' }, requiredScopes: ['files:write'], client, mutating: true,
-    interaction: { id: `legacy-${requestId}`, kind: 'approval', message: 'Old local approval.', createdAt: new Date().toISOString() } });
+    interaction: { id: `legacy-${requestId}`, kind: 'browser', message: 'Observed browser interaction.', createdAt: new Date().toISOString() } });
   return api.getJob(job.id, client);
 }
 
@@ -96,17 +99,14 @@ test('new authorized work needs no local setting and the choice persists natural
   await reopened.close();
 });
 
-test('legacy pending and cancelled approval requests stay preserved and never replay on upgrade or retry', async t => {
-  const { api, dataDir, cwd } = await harness(t), pending = await legacyApproval(api, 'old-pending'), cancelled = await legacyApproval(api, 'old-cancelled', 'cancelled.txt');
-  await api.cancel(cancelled.jobId); await api.close();
-  const reopened = new DirectExecutionAPI({ dataDir, allowedRoot: cwd }); t.after(() => reopened.close()); await reopened.init();
-  const kept = await reopened.getJob(pending.jobId, client); assert.equal(kept.status, 'awaiting_input'); assert.match(kept.nextAction, /legacy approval request will not run/);
-  const oldArgs = { requestId: 'old-pending', action: 'write', path: 'legacy.txt', text: 'Legacy action must not run.' };
-  const repeated = await reopened.call('blackice_workspace_write', oldArgs, client); assert.equal(repeated.existing, true); assert.equal(repeated.status, 'awaiting_input');
-  const cancelledRetry = await reopened.call('blackice_workspace_write', { ...oldArgs, requestId: 'old-cancelled', path: 'cancelled.txt' }, client); assert.equal(cancelledRetry.status, 'cancelled');
-  assert.equal(typeof reopened.approve, 'undefined'); await reopened.reject(pending.jobId, pending.interaction.id);
-  assert.equal((await reopened.getJob(pending.jobId, client)).status, 'cancelled'); assert.deepEqual(await readdir(cwd), []);
-  await reopened.close();
+test('restarted pending interactions are interrupted rather than advertised as live or replayed', async t => {
+ const {api,dataDir,cwd}=await harness(t),pending=await pendingBrowser(api,'old-pending'),cancelled=await pendingBrowser(api,'old-cancelled','cancelled.txt');await api.cancel(cancelled.jobId);await api.close();
+ const reopened=new DirectExecutionAPI({dataDir,allowedRoot:cwd});t.after(()=>reopened.close());await reopened.init();
+ assert.equal((await reopened.getJob(pending.jobId,client)).status,'interrupted');assert.equal((await reopened.getJob(pending.jobId,client)).interaction,null);
+ const oldArgs={requestId:'old-pending',action:'write',path:'legacy.txt',text:'Legacy action must not run.'};
+ assert.equal((await reopened.call('blackice_workspace_write',oldArgs,client)).existing,true);
+ assert.equal((await reopened.call('blackice_workspace_write',{...oldArgs,requestId:'old-cancelled',path:'cancelled.txt'},client)).status,'cancelled');
+ assert.equal(typeof reopened.approve,'undefined');assert.deepEqual(await readdir(cwd),[]);await reopened.close();
 });
 
 test('explicit absolute paths, parent paths and ordinary symlinks work under the account permissions', async t => {
@@ -184,7 +184,7 @@ test('signed import arguments are hashed for replay but never persisted or echoe
   let received;
   const { api, dataDir } = await harness(t, { additionalTools: [customTool(async args => { received = args.text; return toolReceipt({ imported: true }); }, { durableArguments: args => ({ text: 'file-one metadata only' }) })] });
   const secret = 'https://files.example.test/object?private=signed-token', pending = await api.call('blackice_test_action', { requestId: 'import-one', text: secret }, client);
-  const raw = await readFile(path.join(dataDir, 'direct-execution-jobs', `${pending.jobId}.json`), 'utf8'); assert.doesNotMatch(raw, /signed-token|files\.example/);
+  const raw = stored(dataDir,pending.jobId); assert.doesNotMatch(raw, /signed-token|files\.example/);
   assert.doesNotMatch(JSON.stringify(await api.pendingInteractions()), /signed-token/); assert.equal((await waitJob(api, pending.jobId)).status, 'succeeded'); assert.equal(received, secret);
   await assert.rejects(api.call('blackice_test_action', { requestId: 'import-one', text: `${secret}-changed` }, client), { code: 'DIRECT_REQUEST_CONFLICT' });
 });
@@ -198,7 +198,7 @@ test('the concrete ChatGPT file-import tool executes under scopes and saves its 
   await importer.init(); t.after(() => importer.close().catch(() => {}));
   const args = { requestId: 'attached_fixture', file: { download_url: 'https://files.example.test/attached?sig=secret-temporary', file_id: 'file_fixture', file_name: 'report.txt', mime_type: 'text/plain' } };
   const pending = await importer.call('blackice_import_file', args, client); assert.equal(pending.status, 'queued'); assert.equal(pending.interaction, null);
-  assert.doesNotMatch(await readFile(path.join(dataDir, 'direct-execution-jobs', `${pending.jobId}.json`), 'utf8'), /secret-temporary|download_url/);
+  assert.doesNotMatch(stored(dataDir,pending.jobId), /secret-temporary|download_url/);
   const done = await waitJob(importer, pending.jobId), receipt = JSON.parse(done.result.text.text);
   assert.equal(done.status, 'succeeded'); assert.equal(receipt.bytes, importedBytes.length); assert.deepEqual(await readFile(receipt.path), importedBytes);
   assert.equal((await importer.call('blackice_import_file', args, client)).existing, true); assert.equal(downloads, 1);
@@ -259,7 +259,7 @@ test('contained page text is kept only in memory and public job metadata never e
   const browser = new BrowserWorkspace({ driver: { status: () => ({ contained: true, available: true, tabs: [{ tabId: 'one' }], activeTab: 'one' }), perform: async args => { supplied = args.text; return { tabId: args.tabId, receipt: { typed: true, characters: args.text.length } }; }, close: async () => {} } }); t.after(() => browser.close());
   const { api, dataDir } = await harness(t, { browser }), text = 'sensitive-field-text-fixture';
   const pending = await api.call('blackice_browser_action', { requestId: 'type-memory-only', action: 'type', tabId: 'one', expectedUrl: 'https://example.test/', expectedDocumentId: 'document-one', text }, client);
-  assert.doesNotMatch(await readFile(path.join(dataDir, 'direct-execution-jobs', `${pending.jobId}.json`), 'utf8'), new RegExp(text));
+  assert.doesNotMatch(stored(dataDir,pending.jobId), new RegExp(text));
   assert.doesNotMatch(JSON.stringify(await api.pendingInteractions()), new RegExp(text));
   const done = await waitJob(api, pending.jobId); assert.equal(supplied, text); assert.equal(done.status, 'succeeded'); assert.doesNotMatch(JSON.stringify(done), new RegExp(text));
 });
@@ -277,7 +277,7 @@ test('fill and select receipts omit echoed page values, URLs, images and dialog 
   for (const action of ['fill', 'select', 'type']) {
     const args = { requestId: `private-${action}`, action, tabId: 'one', ...(action === 'type' ? { expectedUrl: `https://example.test/?private=${secret}`, expectedDocumentId: 'one:1', text: secret } : { ref: 'observed-control', [action === 'select' ? 'value' : 'text']: secret }) };
     const job = await api.call('blackice_browser_action', args, client), done = await waitJob(api, job.jobId, value => value.settled || value.status === 'awaiting_input');
-    const raw = await readFile(path.join(dataDir, 'direct-execution-jobs', `${job.jobId}.json`), 'utf8');
+    const raw = stored(dataDir,job.jobId);
     assert.doesNotMatch(raw, new RegExp(secret)); assert.doesNotMatch(raw, new RegExp(Buffer.from(secret).toString('base64')));
     assert.doesNotMatch(JSON.stringify(done), new RegExp(secret)); assert.equal(done.result.imageCount, 0);
     assert.equal(JSON.parse(done.result.text.text).pageContentOmitted, true);
@@ -309,11 +309,11 @@ test('commands require their separate scope and do not borrow files write author
 
 test('a corrupt optional job ledger preserves all receipts and exposes unavailable status without blocking app initialization', async t => {
   const { api, cwd, dataDir } = await harness(t);
-  const kept = await legacyApproval(api, 'keep-pending', 'keep.txt');
-  const damaged = await legacyApproval(api, 'damage-pending', 'damage.txt');
+  const kept = await pendingBrowser(api, 'keep-pending', 'keep.txt');
+  const damaged = await pendingBrowser(api, 'damage-pending', 'damage.txt');
   await api.close();
-  const keptPath = path.join(dataDir, 'direct-execution-jobs', `${kept.jobId}.json`), damagedPath = path.join(dataDir, 'direct-execution-jobs', `${damaged.jobId}.json`);
-  const keptBytes = await readFile(keptPath), corruptBytes = Buffer.from('{"broken":'); await writeFile(damagedPath, corruptBytes);
+  const keptPath=kept.jobId,damagedPath=damaged.jobId;
+  const keptBytes=stored(dataDir,keptPath),corruptBytes='{"broken":';corrupt(dataDir,damagedPath,corruptBytes);
   const reopened = new DirectExecutionAPI({ dataDir, allowedRoot: cwd }); t.after(() => reopened.close());
   assert.equal(await reopened.init(), reopened);
   const status = await reopened.call('blackice_direct_status', { nonce: 'health-only' }, client);
@@ -325,7 +325,7 @@ test('a corrupt optional job ledger preserves all receipts and exposes unavailab
   ]) await assert.rejects(reopened.call(tool, args, client), { code: 'DIRECT_JOB_STORAGE' });
   await assert.rejects(reopened.reject(kept.jobId, kept.interaction.id), { code: 'DIRECT_JOB_STORAGE' });
   await reopened.revokeClient(client.id); await reopened.close();
-  assert.deepEqual(await readFile(keptPath), keptBytes); assert.deepEqual(await readFile(damagedPath), corruptBytes); assert.deepEqual(await readdir(cwd), []);
+  assert.deepEqual(stored(dataDir,keptPath), keptBytes); assert.deepEqual(stored(dataDir,damagedPath), corruptBytes); assert.deepEqual(await readdir(cwd), []);
 });
 
 test('fresh attenuated grants cannot retrieve or enumerate saved results and errors outside their current scopes', async t => {
@@ -433,7 +433,7 @@ test('real browser handoff receipts retain dialog kinds and never claim an undis
   }
   await api.close(); const reopened = new DirectExecutionAPI({ dataDir, allowedRoot: cwd }); t.after(() => reopened.close()); await reopened.init();
   assert.equal((await reopened.status()).available, true);
-  for (const [index, id] of ids.entries()) assert.equal((await reopened.getJob(id, client)).interaction.kind, kinds[index]);
+  for (const id of ids) { const recovered=await reopened.getJob(id,client);assert.equal(recovered.status,'interrupted');assert.equal(recovered.interaction,null);assert.equal(recovered.effects.possible,false); }
   assert.equal(calls, kinds.length); await reopened.close();
 });
 
@@ -462,8 +462,8 @@ test('status, public history, and revocation do not hydrate completed result pay
   const history = (await api.jobs.admit(admission('metadata-history'))).job;
   await api.jobs.update(history.id, () => ({ status: 'succeeded', finishedAt: new Date().toISOString(), result: { success: true, contentItems: [{ type: 'inputText', text: 'large-result-marker-' + 'x'.repeat(256000) }] } }));
   const pending = (await api.jobs.admit(admission('metadata-pending'))).job, otherClient = { ...client, id: 'unrelated-owner' }, other = (await api.jobs.admit(admission('other-pending', otherClient))).job;
-  const hydrate = api.jobs.fullRecord.bind(api.jobs); let terminalReads = 0;
-  api.jobs.fullRecord = value => { if (['succeeded', 'failed', 'cancelled', 'interrupted'].includes(value.status)) terminalReads++; return hydrate(value); };
+  const hydrate = api.jobs.read.bind(api.jobs); let terminalReads = 0;
+  api.jobs.read = (id,...args) => { if(id===history.id)terminalReads++;return hydrate(id,...args); };
   api.jobs.list = () => { throw new Error('Metadata-only API paths must not request full record pages.'); };
   const status = await api.status(client), listed = await api.listJobs(client, { limit: 100 });
   assert.equal(status.jobs.total, 2); assert.equal(listed.total, 2); assert.equal(listed.jobs.find(value => value.jobId === history.id).resultAvailable, true); assert.equal(listed.jobs.find(value => value.jobId === pending.id).resultAvailable, false);
@@ -492,18 +492,18 @@ test('terminal hydration corruption makes direct execution unavailable and never
   let executions = 0;
   const { api, dataDir } = await harness(t, { additionalTools: [customTool(async () => { executions++; return toolReceipt({ kept: true }); })] });
   const args = { requestId: 'hydrate-original', text: 'Original input' }, job = await api.call('blackice_test_action', args, client); await waitJob(api, job.jobId);
-  const file = path.join(dataDir, 'direct-execution-jobs', `${job.jobId}.json`), damaged = '{broken-terminal-receipt'; await writeFile(file, damaged);
+  const file = job.jobId, damaged = '{broken-terminal-receipt'; corrupt(dataDir,file,damaged);
   await assert.rejects(api.getJob(job.jobId, client), { code: 'DIRECT_JOB_STORAGE' });
   const status = await api.status(client); assert.equal(status.available, false); assert.equal(status.jobs.available, false); assert.equal(status.jobs.total, null);
   await assert.rejects(api.call('blackice_test_action', args, client), { code: 'DIRECT_JOB_STORAGE' });
   await assert.rejects(api.call('blackice_test_action', { requestId: 'hydrate-no-bypass', text: 'New input' }, client), { code: 'DIRECT_JOB_STORAGE' });
-  assert.equal(executions, 1); assert.equal(await readFile(file, 'utf8'), damaged);
+  assert.equal(executions, 1); assert.equal(stored(dataDir,file), damaged);
 });
 
 async function damagedHistory(api, dataDir) {
   const job = (await api.jobs.admit({ ownerId: client.id, requestId: 'damaged-history-for-cancellation', tool: 'blackice_workspace_read', arguments: { action: 'read', path: 'private-history.txt' }, requiredScopes: ['files:read'], client, mutating: false })).job;
   await api.jobs.update(job.id, () => ({ status: 'succeeded', finishedAt: new Date().toISOString(), result: toolReceipt({ private: 'historic detail' }) }));
-  const file = path.join(dataDir, 'direct-execution-jobs', `${job.id}.json`), bytes = '{damaged-history'; await writeFile(file, bytes);
+  const file = job.id, bytes = '{damaged-history'; corrupt(dataDir,file,bytes);
   await assert.rejects(api.jobs.get(job.id), { code: 'DIRECT_JOB_STORAGE' });
   return { file, bytes };
 }
@@ -516,7 +516,7 @@ test('authenticated owners can signal active cancellation after storage failure 
     additionalTools: [customTool(async (_args, context) => { signal = context.signal; started.resolve(); await release.promise; return toolReceipt({ private: 'active result' }); })],
   });
   const admitted = await api.call('blackice_test_action', { requestId: 'private-active-request', text: 'private input' }, client); await started.promise;
-  const execution = api.active.get(admitted.jobId).settled, file = path.join(dataDir, 'direct-execution-jobs', `${admitted.jobId}.json`), before = await readFile(file);
+  const execution = api.active.get(admitted.jobId).settled, file = admitted.jobId, before = stored(dataDir,file);
   const damaged = await damagedHistory(api, dataDir), read = { ...client, scopes: ['read'] };
   await assert.rejects(api.call('blackice_cancel_job', { jobId: admitted.jobId }, undefined), { code: 'DIRECT_AUTH_REQUIRED' });
   await assert.rejects(api.call('blackice_cancel_job', { jobId: admitted.jobId }, { ...read, id: 'unrelated-owner' }), { code: 'DIRECT_JOB_STORAGE' });
@@ -528,33 +528,33 @@ test('authenticated owners can signal active cancellation after storage failure 
   denyFallbackRead = false;
   const acknowledgement = await api.call('blackice_cancel_job', { jobId: admitted.jobId }, read);
   assert.deepEqual(acknowledgement, { jobId: admitted.jobId, cancellationRequested: true, settled: false, durable: false, detailsRestricted: true, storageUnavailable: true });
-  assert.equal(signal.aborted, true); assert.deepEqual(await readFile(file), before);
+  assert.equal(signal.aborted, true); assert.deepEqual(stored(dataDir,file), before);
   await assert.rejects(api.call('blackice_test_action', { requestId: 'no-storage-bypass' }, client), { code: 'DIRECT_JOB_STORAGE' });
   assert.equal((await api.revokeClient(client.id)).available, false);
   release.resolve(); await execution;
-  assert.deepEqual(await readFile(file), before); assert.equal(await readFile(damaged.file, 'utf8'), damaged.bytes);
+  assert.deepEqual(stored(dataDir,file), before); assert.equal(stored(dataDir,damaged.file), damaged.bytes);
 });
 
 test('shutdown signals and drains active work after storage failure, retaining the lease until physical settlement', async t => {
-  for (const failure of ['existing hydration latch', 'rename failure during cancellation']) await t.test(failure, async t => {
+  for (const failure of ['existing hydration latch', 'SQLite commit acknowledgment failure during cancellation']) await t.test(failure, async t => {
     const release = held(), started = held(), signals = []; t.after(() => release.resolve());
     const { api, dataDir } = await harness(t, { additionalTools: [customTool(async (_args, { signal }) => { signals.push(signal); if (signals.length === 2) started.resolve(); await release.promise; return toolReceipt({ complete: true }); })] });
     const first = await api.call('blackice_test_action', { requestId: 'shutdown-one' }, client), second = await api.call('blackice_test_action', { requestId: 'shutdown-two' }, client); await started.promise;
-    const work = [...api.active.values()].map(value => value.settled), files = [first, second].map(value => path.join(dataDir, 'direct-execution-jobs', `${value.jobId}.json`));
+    const work = [...api.active.values()].map(value => value.settled), files = [first, second].map(value => value.jobId);
     let damaged;
     if (failure === 'existing hydration latch') damaged = await damagedHistory(api, dataDir);
-    else api.jobs.io = { ...api.jobs.io, rename: async (...args) => { await rename(...args); throw Object.assign(new Error('The receipt rename committed but its acknowledgement failed.'), { code: 'EIO' }); } };
+    else { const exec=api.jobs.db.exec.bind(api.jobs.db);api.jobs.db.exec=sql=>{const result=exec(sql);if(sql==='COMMIT')throw Object.assign(Error('Commit acknowledged uncertainly'),{code:'ERR_SQLITE_ERROR'});return result;}; }
     await assert.rejects(api.close({ timeoutMs: 30 }), { code: 'DIRECT_SHUTDOWN_UNCONFIRMED' });
     assert.equal(signals.every(signal => signal.aborted), true); assert.ok(api.jobs.storageError);
     assert.equal(api.jobs.hasLease, true); await readFile(api.jobs.leaseFile);
-    const evidence = await Promise.all(files.map(file => readFile(file)));
+    const evidence = await Promise.all(files.map(file => stored(dataDir,file)));
     release.resolve(); await Promise.allSettled(work); await api.close();
     assert.equal(api.jobs.hasLease, false); await assert.rejects(readFile(api.jobs.leaseFile), { code: 'ENOENT' });
     for (let index = 0; index < files.length; index++) {
-      assert.deepEqual(await readFile(files[index]), evidence[index]);
+      assert.deepEqual(stored(dataDir,files[index]), evidence[index]);
       const record = JSON.parse(evidence[index]); assert.equal(record.finishedAt, null); assert.equal(record.effects.possible, true);
     }
-    if (damaged) assert.equal(await readFile(damaged.file, 'utf8'), damaged.bytes);
+    if (damaged) assert.equal(stored(dataDir,damaged.file), damaged.bytes);
   });
 });
 
