@@ -999,8 +999,7 @@ for (const throws of [false, true]) test(`unavailable contained browser records 
   assert.match(issue.message, /do not connect or launch an external browser/);
   assert.ok(events.some(event => event.type === 'agent.event' && event.data?.type === 'capability' && event.data.available === false));
   assert.equal(runtime.calls[0].dynamicTools.some(tool => tool.name === 'relay_connections'), false, 'retired registry is not advertised');
-  assert.match(runtime.calls[0].dynamicTools.find(tool => tool.name === 'relay_browser').description, /contained/i);
-  assert.match(runtime.calls[0].dynamicTools.find(tool => tool.name === 'relay_browser').description, /Never attach or launch Chrome/);
+  assert.equal(runtime.calls[0].dynamicTools.some(tool => tool.name === 'relay_browser'), false, 'unavailable contained browser is not advertised');
   assert.ok(runtime.calls[0].dynamicTools.some(tool => tool.name === 'relay_workspace'), 'core workspace remains available');
   await engine.close();
   const restored = await new HarnessEngine({ runtime: new FakeRuntime(), dataDir, defaultCwd: cwd }).init(); engines.push(restored);
