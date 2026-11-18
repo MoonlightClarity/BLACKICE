@@ -6,7 +6,7 @@ import {RETRIEVAL_TOOLS,createRetrievalToolHandler} from '../lib/retrieval-tools
 import path from 'node:path';
 test('release catalog is read-only, fresh, and ignores all legacy/native inputs',async()=>{
  const catalog=createSkillsCatalog({knowledge:{list(){throw Error('legacy contamination');}},nativeSkills(){throw Error('ambient contamination');}});
- const list=await catalog.list();assert.equal(list.entries.length,13);assert.ok(list.entries.every(e=>e.immutable&&e.source==='bundled'&&!('content' in e)));assert.ok(!list.entries.some(e=>/directory/.test(e.id)));
+ const list=await catalog.list();assert.equal(list.entries.length,14);assert.ok(list.entries.every(e=>e.immutable&&e.source==='bundled'&&!('content' in e)));assert.ok(!list.entries.some(e=>/directory/.test(e.id)));
  list.entries[0].title='poison';assert.notEqual((await catalog.list()).entries[0].title,'poison');
  const detail=await catalog.detail({id:'builtin-browser'});detail.content='poison';assert.notEqual(readReleaseSkill(detail.id).content,'poison');
  await assert.rejects(catalog.detail({id:'saved:legacy'}),{status:404});await assert.rejects(catalog.list({source:'codex'}),{status:400});
@@ -21,7 +21,7 @@ test('model sees discovery/read only, no memory, no ambient instructions or pers
  const schema=RETRIEVAL_TOOLS.find(t=>t.name==='relay_skills').inputSchema;assert.deepEqual(schema.properties.action.enum,['search','read']);assert.ok(!schema.properties.content&&!schema.properties.scope);
  const handler=createRetrievalToolHandler({cwd:path.resolve('.'),store:new Proxy({},{get(){throw Error('legacy store read');}})});
  const invoke=arguments_=>handler({name:'relay_skills',arguments:arguments_});
- const all=JSON.parse((await invoke({action:'search'})).contentItems[0].text);assert.equal(all.entries.length,13);assert.equal(all.truncated,false);
+ const all=JSON.parse((await invoke({action:'search'})).contentItems[0].text);assert.equal(all.entries.length,14);assert.equal(all.truncated,false);
  const found=JSON.parse((await invoke({action:'search',query:'browser'})).contentItems[0].text);assert.ok(found.entries.some(e=>e.id==='builtin-browser'));assert.ok(!('content' in found.entries[0]));
  const read=JSON.parse((await invoke({action:'read',id:'builtin-browser'})).contentItems[0].text);assert.match(read.entry.content,/When to use/);
  for(const action of ['save','patch','remove','remember'])await assert.rejects(invoke({action,id:'builtin-browser'}));

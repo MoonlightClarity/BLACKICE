@@ -1,0 +1,27 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm,readFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
+import {readReleaseSkill} from '../lib/release-skills.mjs';
+import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
+const id='builtin-browser-tab-management';
+test('tab management is discoverable on demand and human edits survive restart and reach model reads',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'tab-skill-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const catalog=createSkillsCatalog({dataDir:root});t.after(()=>catalog.close());
+ const base=await catalog.detail({id});assert.equal(base.userEditable,true);assert.equal(base.source,'bundled');
+ assert.ok((await catalog.list({query:'tab management'})).entries.some(row=>row.id===id));
+ const handler=createRetrievalToolHandler({cwd:root,dataDir:root});
+ const read=async()=>JSON.parse((await handler({name:'relay_skills',arguments:{action:'read',id}})).contentItems[0].text).entry;
+ assert.equal((await read()).content,base.content);
+ const content=base.content+'\nOwner note: keep the final comparison tab open.\n';
+ await catalog.save({id,value:{expectedRevision:base.revision,content}});
+ const reopened=createSkillsCatalog({dataDir:root});t.after(()=>reopened.close());
+ assert.equal((await reopened.detail({id})).content,content);assert.equal((await read()).content,content);
+ const bytes=await readFile(path.join(root,'skill-edits','skills.json'));
+ await assert.rejects(catalog.save({id,value:{expectedRevision:base.revision,content:'stale'}}),{status:409});
+ await assert.rejects(handler({name:'relay_skills',arguments:{action:'save',id,content:'model overwrite'}}));
+ assert.deepEqual(await readFile(path.join(root,'skill-edits','skills.json')),bytes);
+ assert.equal(readReleaseSkill(id).content,base.content);
+});
