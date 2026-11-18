@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.6 candidate source, not an installation or publication receipt.** Package version is **2.40.6**. Start with the [2.40.6 notes](RELEASE-NOTES-2.40.6.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.7 candidate source, not an installation or publication receipt.** Package version is **2.40.7**. Start with the [2.40.7 notes](RELEASE-NOTES-2.40.7.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.6](RELEASE-NOTES-2.40.6.md) - simplified context, nested folders and SVG rendering
 
 - [2.40.5](RELEASE-NOTES-2.40.5.md) - narrow filename search and bounded installed-model verification
 
