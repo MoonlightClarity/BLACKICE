@@ -111,7 +111,6 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
     '<div class="next-native-browser" data-browser-mode="native">',
     '<div class="next-browser-navigation" aria-label="Browser navigation">',
     browserOwnershipMarkup(),
-    '<div class="next-browser-tabs" id="next-browser-tabs" role="tablist" aria-label="Browser tabs"></div>',
     '<form id="next-browser-form" class="next-row next-browser-address" role="search">',
     '<button type="button" id="next-browser-back" aria-label="Back" title="Back">←</button>',
     '<button type="button" id="next-browser-forward" aria-label="Forward" title="Forward">→</button>',
@@ -119,11 +118,18 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
     '<input class="next-field" type="text" id="next-browser-url" autocomplete="url" spellcheck="false" inputmode="url" aria-label="Website address" placeholder="Search or enter a website address">',
     '<button type="submit" id="next-browser-go" class="next-primary">Go</button>',
     '<button type="button" id="next-browser-new" aria-label="New tab" title="New tab (Ctrl+T)">+ Tab</button>',
-    '<button type="button" id="next-browser-close-all" title="Global close across conversations: inspect the preview first">Close All Tabs</button>',
-    '<button type="button" id="next-browser-cleanup-open" title="Preview and close only tabs belonging to one named task or conversation">Clean up task…</button>',
-    '<button type="button" id="next-browser-downloads-toggle" aria-expanded="false" aria-controls="next-browser-downloads">Downloads</button>',
     '<button type="button" id="next-browser-passwords">Passwords</button>',
-    '</form></div>',
+    '<button type="button" id="next-browser-tools-toggle" aria-expanded="false" aria-controls="next-browser-tools">Tools</button>',
+    '</form>',
+    '<div id="next-browser-tools" class="next-browser-tools" aria-label="Browser tools" hidden>',
+    '<button type="button" id="next-browser-downloads-toggle" aria-expanded="false" aria-controls="next-browser-downloads">Downloads</button>',
+    '<button type="button" id="next-browser-cleanup-open" title="Preview and close only tabs belonging to one named task or conversation">Clean up task...</button>',
+    '<button type="button" id="next-browser-close-all" title="Global close across conversations: inspect the preview first">Close all tabs...</button>',
+    '</div></div>',
+    '<div class="next-native-browser-body">',
+    '<aside class="next-native-browser-sidebar" aria-label="Tabs and folders">',
+    '<div class="next-browser-tabs" id="next-browser-tabs" role="tablist" aria-label="Browser tabs"></div>',
+    '</aside><div class="next-native-browser-content">',
     '<p id="next-browser-site-notice" class="next-native-browser-status" aria-live="polite" hidden></p>',
     '<p id="next-browser-status" class="next-native-browser-status" role="status" aria-live="polite"></p>',
     browserScopedCleanupMarkup(),
@@ -136,7 +142,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
     '<button id="next-browser-auth-cancel" type="button">Cancel</button></div>',
     '<p id="next-browser-auth-note" role="status" aria-live="polite"></p></form>',
     '<div id="next-browser-native-page" class="next-native-browser-page" tabindex="-1" aria-label="Browser page"></div>',
-    '</div>',
+    '</div></div></div>',
   ].join('');
   const $=id=>mount.querySelector('#'+id),ui={
     tabs:$('next-browser-tabs'),url:$('next-browser-url'),form:$('next-browser-form'),
@@ -147,6 +153,14 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
     authUser:$('next-browser-auth-user'),authPassword:$('next-browser-auth-password'),authSubmit:$('next-browser-auth-submit'),
     authCancel:$('next-browser-auth-cancel'),authNote:$('next-browser-auth-note'),
   };
+  const toolsToggle=$('next-browser-tools-toggle'),toolsPanel=$('next-browser-tools');
+  function showTools(open,restoreFocus=false){
+    toolsPanel.hidden=!open;toolsToggle.setAttribute('aria-expanded',String(open));
+    if(restoreFocus)toolsToggle.focus();scheduleGeometry();
+  }
+  toolsToggle.addEventListener('click',()=>showTools(toolsPanel.hidden));
+  toolsPanel.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();showTools(false,true);}});
+  toolsToggle.addEventListener('keydown',event=>{if(event.key==='Escape'&&!toolsPanel.hidden){event.preventDefault();showTools(false,true);}});
   $('next-browser-passwords').hidden=typeof onNavigate!=='function';
   $('next-browser-passwords').addEventListener('click',()=>onNavigate?.('settings',{settingsSection:'passwords'}));
   let active=false,destroyed=false,selected=null,tabs=[],downloads=[],busy=false,openingBlank=null,
@@ -529,7 +543,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
     // Global status can be an older cached snapshot. Re-read the browser's own
     // state through its sequenced endpoint instead of repainting that snapshot.
     updateStatus(status){if(active&&status?.browser)onEvent({type:'browser.status'});},
-    leave(){saveAuthDraft();active=false;generation++;refreshSequence++;pendingSelection=null;
+    leave(){saveAuthDraft();folders.leave();toolsPanel.hidden=true;toolsToggle.setAttribute('aria-expanded','false');active=false;generation++;refreshSequence++;pendingSelection=null;
       unsubscribe?.();unsubscribe=null;clearTimeout(refreshTimer);refreshTimer=null;
       if(geometryFrame!==null)window.cancelAnimationFrame(geometryFrame);geometryFrame=null;
       if(geometryTimer!==null)window.clearTimeout(geometryTimer);geometryTimer=null;
