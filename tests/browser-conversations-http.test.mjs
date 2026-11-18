@@ -130,6 +130,9 @@ test('browser HTTP status lists saved empty and archived conversations, names fa
   const f = await fixture(t);
   const initial = await f.status();
   assert.deepEqual(new Set(initial.conversations.map(item => item.id)), new Set(['conversation-a', 'conversation-b', 'archived']));
+  // Automatic labels omit leading task verbs; explicit names bypass formatting.
+  assert.equal(initial.conversations.find(item => item.id === 'conversation-a').title, 'A');
+  assert.equal((await f.app.conversations.family('conversation-a')).runs[0].input, 'Research A', 'Formatting must not alter the authored conversation.');
   const destination = initial.conversations.find(item => item.id === 'conversation-b');
   assert.equal(destination.title, 'Named Research B');
   assert.equal(destination.latestRunId, 'b-followup');
@@ -149,7 +152,7 @@ test('browser HTTP status lists saved empty and archived conversations, names fa
 test('browser HTTP moves a live tab branch from Personal to an empty conversation, to another conversation, and back', async t => {
   const f = await fixture(t), page = f.driver.pages.get('page'), popup = f.driver.pages.get('popup');
   for (const [destination, conversationId, title, runId] of [
-    ['conversation', 'conversation-a', 'Research A', 'conversation-a'],
+    ['conversation', 'conversation-a', 'A', 'conversation-a'],
     ['conversation', 'conversation-b', 'Named Research B', 'b-followup'],
     ['user', undefined, null, null],
   ]) {

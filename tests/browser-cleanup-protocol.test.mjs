@@ -14,12 +14,9 @@ test('host completion status reaches both worker and node browser finalizers', a
   assert.match(engine, /const handback = status === 'completed'/);
   assert.match(engine, /const retainedGoal = this\.goals\?\.retainsResources\(run\) === true/);
   assert.match(engine, /releaseOwner\(\{ taskId, runId: run.id, nodeId \}, \{ status: handback \? 'awaiting-user' : retainedGoal \? 'paused' : status, retainForContinuation: retainedGoal \|\| status === 'failed' \|\| status === 'cancelled' \}\)/);
-  // Swarm's result persistence may fail. The nested finally must still
-  // release the exact worker owner and finish awareness with failed status.
+  // Current workers release their exact owner and finish awareness even if cleanup fails.
   assert.match(engine, /const cleanupNodeId=delegatedPlanNodeId\(node.id, task.id\)/);
-  assert.match(engine, /let resultPersistenceFailed=false/);
-  assert.match(engine, /const cleanupStatus=resultPersistenceFailed \? 'failed' : result.status/);
-  assert.match(engine, /try \{ await releaseBrowserOwner\(cleanupNodeId, cleanupStatus\); \}/);
+  assert.match(engine, /try \{ await releaseBrowserOwner\(cleanupNodeId, result.status\); \}/);
   assert.match(engine, /finally \{ this\.tasks\?\.awareness\?\.finish/);
   assert.match(engine, /releaseBrowserOwner\(node.id, cleanupStatus \|\| run.nodes\[node.id\]\?\.status\)/);
 });
