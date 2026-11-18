@@ -106,10 +106,10 @@ test('missing task state with a damaged backup never silently recreates an empty
 });
 
 test('bound relay_task writes use real actor provenance, latest CAS and emit committed snapshots', async t => {
-  const { store } = await harness(t), events = [], handler = createTaskToolHandler({ store, taskId: 'task-one', runId: 'bound-run', nodeId: 'bound-agent', schemaVersion: 3, onEvent: event => events.push(event) }); assert.equal(TASK_TOOL.name, 'relay_task');
+  const { store } = await harness(t), events = [], handler = createTaskToolHandler({ store, taskId: 'task-one', runId: 'bound-run', nodeId: 'bound-agent', schemaVersion: 14, onEvent: event => events.push(event) }); assert.equal(TASK_TOOL.name, 'relay_task');
   const read = await handler({ name: 'relay_task', arguments: { action: 'read' } }); assert.equal(read.success, true); assert.equal(JSON.parse(read.contentItems[0].text).revision, 1); assert.equal(events.length, 0);
-  const result = await handler({ name: 'relay_task', arguments: JSON.stringify({ action: 'plan', expectedRevision: 1, steps: plan }) }); assert.equal(result.success, true); assert.equal(events.length, 1); assert.equal(events[0].type, 'task.state'); assert.equal(events[0].state.provenance.runId, 'bound-run'); assert.equal(events[0].state.provenance.nodeId, 'bound-agent');
-  const conflict = await handler({ name: 'relay_task', arguments: { action: 'step', expectedRevision: 1, stepId: 'inspect', status: 'done' } }); assert.equal(conflict.success, false); assert.equal(conflict.code, 'TASK_STATE_CONFLICT'); assert.equal(events.length, 1);
+  const result = await handler({ name: 'relay_task', arguments: JSON.stringify({ action: 'checkpoint', expectedRevision: 1, decisions: ['Preserve the actual fixture finding.'] }) }); assert.equal(result.success, true); assert.equal(events.length, 1); assert.equal(events[0].type, 'task.state'); assert.equal(events[0].state.provenance.runId, 'bound-run'); assert.equal(events[0].state.provenance.nodeId, 'bound-agent');
+  const conflict = await handler({ name: 'relay_task', arguments: { action: 'checkpoint', expectedRevision: 1, decisions: ['Stale replacement'] } }); assert.equal(conflict.success, false); assert.equal(conflict.code, 'TASK_STATE_CONFLICT'); assert.equal(events.length, 1);
   const nonexistent = await handler({ name: 'relay_task', arguments: { action: 'artifact', expectedRevision: 2, path: 'not-created.txt' } }); assert.equal(nonexistent.success, false); assert.equal((await store.get('task-one')).artifacts.length, 0);
 });
 

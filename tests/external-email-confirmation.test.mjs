@@ -106,23 +106,27 @@ test('backup-recovered email receipts reconcile by observed mid without granting
   await assert.rejects(f.action({ receiptId: prepared.receiptId, operation: 'attempt' }, recovered), { code: 'EXTERNAL_ACTION_RECONCILE' });
 });
 
-test('dynamic describe gives observed mid evidence guidance while worker receipt ownership stays unchanged', async t => {
-  const f = await fixture(t), describe = async extra => {
-    const handler = createTaskToolHandler({ store: f.store, taskId: 'email-task', runId: 'email-run', nodeId: 'agent', schemaVersion: 7, ...extra });
-    const result = await handler({ name: 'relay_task', arguments: { action: 'describe' } }); assert.equal(result.success, true); return JSON.parse(result.contentItems[0].text);
-  };
-  const explanation = (await describe()).externalDestinations.confirmation;
-  assert.match(explanation, /HTTP\(S\)/); assert.match(explanation, /prepared mailto.*mid:.*observed RFC Message-ID/); assert.match(explanation, /transport acceptance.*Sent message/);
-  assert.match(explanation, /neither a prepared message nor the mailto compose address proves sending/); assert.match(explanation, /agent-reported.*not independent machine verification.*acknowledgment/);
-  assert.equal((await describe({ worker: true, scopeStepId: 'worker-scope' })).externalDestinations, undefined);
+test('current task catalog does not advertise retired external receipt actions to coordinators or workers', async t => {
+  const f=await fixture(t),before=await f.store.get('email-task');
+  for(const worker of [false,true]) {
+    const handler=createTaskToolHandler({store:f.store,taskId:'email-task',runId:'email-run',nodeId:'agent',schemaVersion:14,worker});
+    const described=await handler({name:'relay_task',arguments:{action:'describe'}});
+    assert.equal(described.success,true);
+    const value=JSON.parse(described.contentItems[0].text);
+    assert.equal(value.schemaVersion,14);assert.equal(value.externalDestinations,undefined);
+    assert.ok(!value.schema.properties.action.enum.includes('external'));
+    const rejected=await handler({name:'relay_task',arguments:{action:'external',expectedRevision:before.revision,external:confirmation}});
+    assert.equal(rejected.success,false);assert.equal(rejected.code,'TASK_CONTRACT_INVALID');
+  }
+  assert.deepEqual(await f.store.get('email-task'),before);
 });
 
-test('the existing task-tool external.url string records the email reference without changing its catalog', async t => {
-  const f = await fixture(t); await f.action(prepared); await f.action({ receiptId: prepared.receiptId, operation: 'attempt' });
-  const handler = createTaskToolHandler({ store: f.store, taskId: 'email-task', runId: 'email-run', nodeId: 'agent', schemaVersion: 7 });
-  const result = await handler({ name: 'relay_task', arguments: { action: 'external', expectedRevision: (await f.store.get('email-task')).revision, external: confirmation } });
-  assert.equal(result.success, true);
-  const state = JSON.parse(result.contentItems[0].text), receipt = state.externalActions[0];
-  assert.equal(receipt.url, confirmation.url); assert.equal(receipt.referenceKind, 'email-message'); assert.equal(receipt.status, 'confirmed');
-  assert.deepEqual((await f.store.get('email-task')).externalActions, state.externalActions);
+test('retained store email confirmation preserves provenance and rejects stale CAS without mutation',async t=>{
+  const f=await fixture(t);await f.action(prepared);await f.action({receiptId:prepared.receiptId,operation:'attempt'});
+  const before=await f.store.get('email-task');
+  const state=await f.store.externalAction('email-task',confirmation,{expectedRevision:before.revision,runId:'email-run',nodeId:'agent',source:'agent'});
+  const receipt=state.externalActions[0];assert.equal(receipt.url,confirmation.url);assert.equal(receipt.referenceKind,'email-message');assert.equal(receipt.status,'confirmed');
+  assert.equal(state.provenance.runId,'email-run');assert.equal(state.provenance.nodeId,'agent');
+  await assert.rejects(f.store.externalAction('email-task',confirmation,{expectedRevision:before.revision,runId:'email-run',nodeId:'agent'}),{code:'TASK_STATE_CONFLICT'});
+  assert.deepEqual(await f.store.get('email-task'),state);
 });

@@ -84,30 +84,20 @@ test('growing task revisions spill to verified immutable archives before hitting
   assert.equal(firstPacked.length, (await readFile(file)).length, 'archived content not rewritten');
 });
 
-test('repeated stale planning reads after invalid writes terminate instead of looping forever', async t => {
+test('current invalid edits preserve state and explicit call budgets stop repeated reads', async t => {
   const { store } = await fixture(t);
-  const handler = createTaskToolHandler({ store, taskId: 'fixture', runId: 'fixture-run',
-    nodeId: 'agent', task: 'Check the existing job application.', schemaVersion: 12,
-    planningMode: 'on', executionGuardrails: true });
+  const handler = createTaskToolHandler({ store, taskId: 'fixture', runId: 'fixture-run', nodeId: 'agent', schemaVersion: 14, maxCalls: 4 });
   const call = args => handler({ name: 'relay_task', arguments: args });
-  for (let i = 0; i < 2; i++) {
-    const rejected = await call({ action: 'edit', expectedRevision: 1,
-      operations: [{ type: 'update', stepId: 'missing', reason: 'unsupported edit field' }] });
-    assert.equal(rejected.success, false);
-    assert.ok(['INVALID_PLAN_EDIT', 'INVALID_TASK_PLAN'].includes(rejected.code), rejected.code);
+  const before = await store.get('fixture');
+  for(let i=0;i<2;i++) {
+    const rejected = await call({action:'edit', expectedRevision:before.revision, operations:[{type:'update',stepId:'missing'}]});
+    assert.equal(rejected.success,false);
+    assert.equal(rejected.code,'TASK_CONTRACT_INVALID');
   }
-  const latest = await store.get('fixture');
-  let stopped = false;
-  for (let i = 0; i < 20; i++) {
-    try {
-      const view = await call({ action: i % 5 === 0 ? 'describe' : 'read' });
-      assert.equal(view.success, true);
-    } catch (error) {
-      assert.equal(error.code, 'TASK_PLAN_CALL_LOOP');
-      stopped = true;
-      break;
-    }
-  }
-  assert.equal(stopped, true, 'the repeating agent is not allowed to keep consuming model tokens');
-  assert.equal((await store.get('fixture')).revision, latest.revision);
+  for(let i=0;i<2;i++) assert.equal((await call({action:'read'})).success,true);
+  await assert.rejects(call({action:'read'}),{code:'TASK_CALL_LIMIT'});
+  assert.deepEqual(await store.get('fixture'),before);
+  const unbounded=createTaskToolHandler({store,taskId:'fixture',runId:'fixture-run',nodeId:'agent',schemaVersion:14});
+  for(let i=0;i<20;i++) assert.equal((await unbounded({name:'relay_task',arguments:{action:'read'}})).success,true);
+  assert.deepEqual(await store.get('fixture'),before,'ordinary reads have no invented fixed loop limit or mutation');
 });
