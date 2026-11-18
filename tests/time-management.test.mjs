@@ -69,13 +69,11 @@ test('timing wrapper forwards context identity, per-call AbortSignal and all ext
  abort.abort();
  await assert.rejects(clock.wrap(async(_call,ctx)=>{ctx.signal.throwIfAborted();})(call,context),{name:'AbortError'});
 });
-test('old saved defaults migrate missing time management for fresh chats, not explicit Off or saved bytes',async()=>{
- const {readConversationOntology}=await import('../public/next/chat/ontology-preferences.mjs');
- const old={version:2,modules:{inference:false,verification:false}},before=JSON.stringify(old);
- const migrated=readConversationOntology({defaults:old});
- assert.equal(migrated.planningOntology.modules.time_management,true);
- assert.equal(migrated.planningOntology.modules.inference,false);
- assert.equal(JSON.stringify(old),before);
- const disabled={version:2,modules:{...old.modules,time_management:false}};
- assert.equal(readConversationOntology({defaults:disabled}).planningOntology.modules.time_management,false);
+test('fresh Chat ignores legacy time-management policies without mutating saved bytes',async()=>{
+ const{normalizeChatOptions}=await import('../public/next/chat/options-model.mjs');
+ for(const enabled of [undefined,false,true]){
+  const old={version:2,modules:{inference:false,verification:false,...(enabled===undefined?{}:{time_management:enabled})}},before=JSON.stringify(old);
+  const options=normalizeChatOptions({planningOntology:old});
+  assert.equal(options.planningMode,'off');assert.equal(options.planningOntology,undefined);assert.equal(JSON.stringify(old),before);
+ }
 });

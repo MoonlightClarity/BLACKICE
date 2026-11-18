@@ -11,7 +11,9 @@ async function fixture(t,requests=[]){
 test('everyday settings separate app connections and hide empty action review without changing saved controls',async t=>{
  const f=await fixture(t);assert.equal(f.$('#next-settings-section-recovery'),null);assert.equal(f.$('#next-review-notice').hidden,true);
  assert.equal(f.$('#next-settings-section-apps').textContent,'App connections');assert.match(f.$('#next-settings-general').textContent,/Response defaults/);assert.match(f.$('#next-settings-general').textContent,/Advanced task settings/);
- assert.equal(f.$('#next-runtime-guardrails').closest('details').open,false);
+ assert.equal(f.$('#next-runtime-guardrails'),null);
+ assert.equal(f.$('#next-runtime-idle').closest('details').open,false);
+ for(const id of ['next-runtime-effort','next-runtime-tier','next-runtime-verbosity','next-runtime-timeout','next-runtime-context'])assert.ok(f.$('#'+id),id+' remains available');
  assert.equal(f.$('#next-execution-limit'),null);assert.equal(f.$('#next-execution-legacy'),null);
  assert.equal(f.calls.some(x=>x.route==='/api/execution/settings'),false);
  assert.equal(f.calls.some(x=>x.method!=='GET'),false);

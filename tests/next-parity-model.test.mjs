@@ -17,34 +17,33 @@ test('V2 offers native model-specific reasoning and speed choices without false 
   const rows=chatOptionChoices(status,selected);
   assert.ok(rows.efforts.some(item=>item.id==='high'&&!item.disabled));
   assert.equal(rows.tiers.find(item=>item.id==='fast').disabled,false);
-  assert.deepEqual(validateChatOptions(status,selected),{...selected,directoryMode:'off',subagentsMode:'default',planningMode:'ontology',planningExecutionMode:'automatic',
-    planningOntology:{version:2,modules:{inference:false,feasibility:false,decomposition:false,
-      branching:false,replanning:false,metacognition:false,anti_overalignment:false,verification:false,time_management:true,subagents:true}}});
+  assert.deepEqual(validateChatOptions(status,selected),{...selected,planningMode:'off',planningExecutionMode:'automatic'});
   assert.throws(()=>validateChatOptions(status,{...selected,effort:'ultra'}),/does not offer|reasoning/i);
   assert.throws(()=>validateChatOptions(status,{model:'vendor::restricted',serviceTier:'fast'}),/Fast mode|Codex/i);
   assert.throws(()=>validateChatOptions(status,{model:'nonexistent'}),/available model/);
 });
-test('V2 preserves Directory choices and resets subagent overrides without changing model or Planning options',()=>{
+test('V2 discards retired Directory and subagent controls without changing model reasoning or speed',()=>{
   for(const planningMode of ['off','maximal']){
     const selected={model:'codex-reasoning',effort:'high',serviceTier:'fast',planningMode};
     const expected=validateChatOptions(status,selected);
     for(const directoryMode of ['auto','on','off']){
       for(const subagentsMode of ['default','on','off']){
         assert.deepEqual(validateChatOptions(status,{...selected,directoryMode,subagentsMode}),
-          {...expected,directoryMode:directoryMode==='off'?'off':'on',subagentsMode:'default'});
+          expected);
       }
     }
   }
 });
-test('V2 preserves each configurable module Off independently with either Directory state',()=>{
+test('V2 ignores every legacy module policy and Directory state without mutating saved records',()=>{
   const modules={inference:true,feasibility:true,decomposition:true,branching:true,
     replanning:true,metacognition:true,anti_overalignment:true,verification:true,time_management:true,subagents:true};
   for(const moduleId of Object.keys(modules).filter(id=>id!=='subagents'))for(const directoryMode of ['on','off']){
     const policy={version:2,modules:{...modules,[moduleId]:false}};
     const selected=validateChatOptions(status,{model:'codex-reasoning',directoryMode,planningOntology:policy});
-    assert.deepEqual(selected.planningOntology,policy);
-    assert.equal(selected.directoryMode,directoryMode);
-    assert.equal(selected.planningMode,'ontology');
+    assert.equal(selected.planningOntology,undefined);
+    assert.equal(selected.directoryMode,undefined);
+    assert.equal(selected.planningMode,'off');
+    assert.equal(policy.modules[moduleId],false);assert.equal(policy.version,2);
   }
 });
 test('new workflow and continued thread retain the selected reasoning and fast tier',async()=>{

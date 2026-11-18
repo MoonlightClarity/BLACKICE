@@ -605,13 +605,13 @@ const chatStatus={defaultModel:'gpt-6-luna',models:[
     serviceTiers:[{id:'priority'}],contextWindowTokens:100000,maxContextWindowTokens:300000},
 ],runtimeSettings:{defaultContext:{preset:'model',autoCompact:true}}};
 
-test('new schedule configures Chat model, reasoning, speed, planning, execution and context without a saved workflow',async t=>{
+test('new schedule preserves model reasoning speed context and the no-execution guard without retired planning controls',async t=>{
   const f=fixture(t,{status:chatStatus});
   f.component.enter();await settle();await f.clickReady('#next-tasks-tab-schedules');
   const form=f.$('#next-tasks-form'),fields=form.elements;
   assert.equal(fields.planningExecutionMode.type,'hidden');
   assert.equal(fields.planningExecutionMode.value,'automatic');
-  assert.deepEqual(fields.planningMode.options.map(option=>option.value),['ontology','off']);
+  assert.equal(fields.planningMode,undefined);
   assert.equal(fields.taskType.value,'chat');
   assert.equal(f.$('#next-tasks-workflow-fields').hidden,true);
   fields.name.value='Scheduled intelligence';
@@ -619,7 +619,7 @@ test('new schedule configures Chat model, reasoning, speed, planning, execution 
   fields.agentModel.value='gpt-6-luna';await fields.agentModel.dispatch('change',{},true);
   fields.agentEffort.value='high';
   fields.agentServiceTier.value='fast';
-  fields.planningMode.value='forced';
+  assert.equal(fields.planningMode,undefined);
   fields.planningExecutionMode.value='plan_only';
   fields.contextPreset.value='custom';await fields.contextPreset.dispatch('change',{},true);
   fields.contextWindowTokens.value='200000';
@@ -630,7 +630,7 @@ test('new schedule configures Chat model, reasoning, speed, planning, execution 
   assert.match(f.$('#next-tasks-preview-output').textContent,/Plan-only execution has been retired/);
   assert.equal(fields.input.value,'Review new evidence');
   assert.equal(fields.contextWindowTokens.value,'200000');
-  fields.planningMode.value='ontology';fields.planningExecutionMode.value='automatic';
+  fields.planningExecutionMode.value='automatic';
   await form.dispatch('submit');await settle();
   const call=f.calls.find(c=>c.path==='/api/operations/deployments'&&c.method==='POST');
   assert.ok(call,f.$('#next-tasks-preview-output').textContent);
@@ -644,9 +644,7 @@ test('new schedule configures Chat model, reasoning, speed, planning, execution 
   assert.equal(payload.workflow.settings.planningMode,'off');
   assert.equal(Object.hasOwn(payload.workflow.settings,'planningEnforcement'),false);
   assert.equal(payload.workflow.settings.planningExecutionMode,'automatic');
-  assert.equal(payload.workflow.settings.planningOntology.version,2);
-  assert.equal(payload.workflow.settings.planningOntology.modules.anti_overalignment,false);
-  assert.equal(payload.workflow.settings.planningOntology.modules.decomposition,false);
+  assert.equal(payload.workflow.settings.planningOntology,undefined);
   assert.equal(payload.workflow.settings.context.windowTokens,200000);
   assert.equal(agent.context.autoCompact,false);
   assert.equal(agent.context.compactAtTokens,100000);
@@ -693,7 +691,7 @@ test('editing a schedule updates Chat profile without altering pinned attachment
   assert.equal(fields.planningExecutionMode.value,'automatic');
   fields.agentModel.value='gpt-5.6';await fields.agentModel.dispatch('change',{},true);
   fields.agentEffort.value='ultra';fields.agentServiceTier.value='fast';
-  fields.planningMode.value='forced';fields.planningExecutionMode.value='plan_only';
+  assert.equal(fields.planningMode,undefined);fields.planningExecutionMode.value='plan_only';
   fields.contextPreset.value='custom';await fields.contextPreset.dispatch('change',{},true);
   fields.contextWindowTokens.value='200000';
   await form.dispatch('submit');await settle();
@@ -702,7 +700,7 @@ test('editing a schedule updates Chat profile without altering pinned attachment
   assert.deepEqual(f.schedule,before);
   assert.equal(fields.agentModel.value,'gpt-5.6');
   assert.equal(fields.contextWindowTokens.value,'200000');
-  fields.planningMode.value='ontology';fields.planningExecutionMode.value='automatic';
+  fields.planningExecutionMode.value='automatic';
   await form.dispatch('submit');await settle();
   const call=f.calls.find(c=>c.path==='/api/operations/deployments/schedule-a'&&c.method==='PUT');
   assert.ok(call,form.textContent.slice(-500));

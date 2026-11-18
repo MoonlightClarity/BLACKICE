@@ -43,17 +43,17 @@ test('retired virtual machine resources are not approved as Windows installer in
   ]) assert.equal(approvedWindowsPackageFile(file, '2.39.60'), false, file);
 });
 
-test('2.39.98 retains Workbench-free navigation and adds exactly one real Skills workspace', () => {
+test('current navigation omits retired Workbench Swarm and memory controls and retains one Skills workspace', () => {
   const index = read('public/next/index.html');
   const app = read('public/next/app.mjs');
   const server = read('server.mjs');
   const spaces = [...index.matchAll(/data-space="([^"]+)"/g)].map(match => match[1]);
-  // Combined Swarm replaces the visible Planning tab; its exact deep-link
-  // route remains available without resurrecting Workbench or Applications.
-  const retained = ['chat','swarm','cronjobs','browser','knowledge','skills','settings'];
+  // Retained deep links do not restore retired top-level controls.
+  const retained = ['chat','todos','cronjobs','browser','userWorkflows','skills','settings'];
   assert.deepEqual(spaces.filter(name=>retained.includes(name)),retained);
   assert.deepEqual(spaces,retained);
-  assert.equal(spaces.filter(name=>name==='swarm').length,1);
+  assert.equal(spaces.includes('swarm'),false);assert.equal(spaces.includes('knowledge'),false);
+  assert.match(app,/todos:.*createTodosWorkspace/);assert.match(app,/userWorkflows:.*createUserWorkflowsWorkspace/);
   assert.equal(spaces.filter(name=>name==='skills').length,1);
   assert.doesNotMatch(index,/data-space="planning"/);
   assert.match(app,/planning:\(\)=>import\('\.\/workspaces\/planning-current\.mjs'\)/);
