@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { HarnessEngine } from '../lib/engine.mjs';
-import { TaskStateStore, TASK_SCHEMA_VERSION } from '../lib/task-state.mjs';
+import { TaskStateStore, TASK_SCHEMA_VERSION, delegatedPlanNodeId } from '../lib/task-state.mjs';
 import { readContractJournal } from '../lib/planning-contract-runtime.mjs';
 import { describeHostOperation } from '../lib/operation-descriptors.mjs';
 
@@ -150,8 +150,11 @@ test('schema 14 legacy Forced delegation preserves optional canonical owners wit
   const run = await f.run('forced');
   assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
   assert.equal(childCalls, 2);
-  assert.equal(run.taskState.contract.planEpoch, 1);
-  assert.equal(run.taskState.contract.workItems.find(item => item.id === 'inspect-input').owner, 'agent');
+  assert.equal(run.taskState.contract.planEpoch, 2);
+  assert.equal(run.taskState.contract.workItems.find(item => item.id === 'coordinate').owner, 'agent');
+  const expectedAssignments = [['inspect-input', 'reader'], ['inspect-independent', 'independent-reader']].map(([workItemId, childId]) => ({ workItemId, nodeId: delegatedPlanNodeId('agent', childId) }));
+  for (const assignment of expectedAssignments) assert.equal(run.taskState.contract.workItems.find(item => item.id === assignment.workItemId).owner, assignment.nodeId);
+  assert.deepEqual(run.taskState.contractAssignments.map(({ workItemId, nodeId, runId, assignedBy, planEpoch }) => ({ workItemId, nodeId, runId, assignedBy, planEpoch })), expectedAssignments.map(assignment => ({ ...assignment, runId: run.id, assignedBy: 'agent', planEpoch: 2 })));
   assert.ok(run.taskState.contractRuntime.criteria.every(item => !item.satisfied));
   const journal = await readContractJournal(f.tasks, run.taskId);
   assert.equal(journal.records.length, 0);
