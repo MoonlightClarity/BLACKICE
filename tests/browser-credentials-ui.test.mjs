@@ -254,3 +254,15 @@ test('late retrieval cannot reopen a hidden password',async t=>{
  await f.click('[data-credentials-action="reveal"]');f.ui.hidePassword();release();await tick();
  assert.equal(f.$('#credentials-revealed-value').value,'');assert.equal(f.$('#credentials-revealed').hidden,true);
 });
+
+test('saved login pages preserve selection and drafts, clamp after removal, and never reveal secrets',async t=>{
+ const f=await mounted(t);f.current.vault.entries=Array.from({length:45},(_,i)=>({...entry('page-'+i),password:'secret-canary'}));await f.ui.refresh(true);
+ assert.equal(f.mount.querySelectorAll('[data-credentials-entry]').length,20);
+ await select(f,'page-0');await fill(f);
+ await f.click('[data-credentials-action="page-next"]');assert.equal(f.mount.querySelectorAll('[data-credentials-entry]').length,20);assert(f.$('[data-credentials-entry="page-20"]'));
+ await f.click('[data-credentials-action="page-next"]');assert.equal(f.mount.querySelectorAll('[data-credentials-entry]').length,5);assert.equal(f.$('[data-credentials-action="page-next"]').disabled,true);
+ assert.match(f.$('#credentials-selected').textContent,/1 selected across all pages/);
+ assert.equal(f.$('#credentials-password').value,'only-a-synthetic-test-password');
+ assert.doesNotMatch(f.mount.textContent,/secret-canary/);assert.equal(f.calls.filter(([p])=>p.includes('/reveal')).length,0);
+ f.current.vault.entries=f.current.vault.entries.slice(0,2);await f.ui.refresh(true);assert.equal(f.mount.querySelectorAll('[data-credentials-entry]').length,2);assert.match(f.$('#credentials-page').textContent,/1–2 of 2/);
+});

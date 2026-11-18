@@ -202,3 +202,11 @@ test('registry configuration obeys connection validation and preserves unsupport
  f.panel.enter();await settled();f.get('discover').emit('click');await settled();
  const card=f.get('discover-results').children[0];assert.ok(card.children.some(c=>c.textContent.includes('npm: @example/tools')));assert.ok(card.children.some(c=>c.textContent.includes('Manual setup required')));assert.ok(!card.children.some(c=>c.tagName==='BUTTON'));f.panel.destroy();
 });
+
+test('saved server search reaches beyond former forty-item cap and preserves selected drafts',async()=>{
+ const entries=Array.from({length:65},(_,i)=>({...local,id:'server-'+i,name:'Server '+i}));
+ const f=panelFixture(async()=>entries);f.panel.enter();await settled();f.get('list').children[0].emit('click');f.input('name','Keep this draft');
+ const before=f.calls.length;f.input('list-query','SERVER-64');
+ assert.equal(f.get('list').children.length,1);assert.equal(f.get('list').children[0].dataset.connectionId,'server-64');assert.equal(f.get('name').value,'Keep this draft');assert.equal(f.calls.length,before);
+ f.input('list-query','nothing matches');assert.match(f.get('list-note').textContent,/0 of 65/);f.panel.destroy();
+});

@@ -80,11 +80,11 @@ export function connectionCatalogWindow(catalog={},limit=20) {
 export function createConnectionSettings({mount,api,events,notify=()=>{},onChanged=()=>{}}) {
   mount.innerHTML=[
     '<section id="next-connections-root" class="next-connection-settings" aria-label="Tool connections">',
-    '<header class="next-section-actions"><div><h2>Tool connections</h2><p class="next-help">Add each MCP server once here. This shared catalog is available to BLACKICE agents across providers that support tools, including Codex; it is not owned by one provider. Servers configured only in another app are not automatically imported. Use Import tool configuration below to bring an existing server into this catalog.</p></div>',
+    '<header class="next-section-actions"><div><h2>Tool connections</h2><p class="next-help">Manage shared tool servers for BLACKICE agents. Add a server, search saved connections, or import an existing configuration.</p></div>',
     '<div class="next-row"><button type="button" id="next-connections-refresh">Refresh</button><button type="button" id="next-connections-new">Add server</button></div></header>',
-    '<section class="next-card" aria-label="Discover tools"><h3>Find tools in the MCP Registry</h3><p class="next-help">Search public tool-server names, such as filesystem, search, or GitHub. Searching does not install software or connect an account.</p><div class="next-row"><input id="next-connections-discover-query" class="next-field" type="search" maxlength="256" placeholder="Search the public catalog" aria-label="Search public tool catalog"><button id="next-connections-discover" type="button">Search catalog</button></div><p id="next-connections-discover-note" role="status" class="next-help"></p><div id="next-connections-discover-results"></div><button id="next-connections-discover-more" type="button" hidden>More results</button></section>',
+    '<details class="next-card" aria-label="Discover tools"><summary>Find new tools in the MCP Registry</summary><p class="next-help">Search public tool-server names, such as filesystem, search, or GitHub. This broad catalog favors coverage; some listings may be outdated. Verify the server before connecting. Searching installs nothing.</p><div class="next-row"><input id="next-connections-discover-query" class="next-field" type="search" maxlength="256" placeholder="Search the public catalog" aria-label="Search public tool catalog"><button id="next-connections-discover" type="button">Search catalog</button></div><p id="next-connections-discover-note" role="status" class="next-help"></p><div id="next-connections-discover-results"></div><button id="next-connections-discover-more" type="button" hidden>More results</button></details>',
     '<p id="next-connections-feedback" role="status" class="next-help"></p>',
-    '<div class="next-connections-layout"><div id="next-connections-list" class="next-connections-list" aria-label="Saved tool servers"></div>',
+    '<label class="next-label">Find a saved server<input id="next-connections-list-query" class="next-field" type="search" placeholder="Name or connection ID" maxlength="256"></label><p id="next-connections-list-note" class="next-help" role="status"></p><div class="next-connections-layout"><div id="next-connections-list" class="next-connections-list" aria-label="Saved tool servers"></div>',
     '<section class="next-connections-editor"><h3 id="next-connections-heading">Add a tool server</h3>',
     '<p id="next-connections-status" class="next-help" role="status"></p><p id="next-connections-stale" class="next-help" hidden></p>',
     '<form id="next-connections-form" class="next-stack" autocomplete="off" novalidate>',
@@ -155,7 +155,10 @@ export function createConnectionSettings({mount,api,events,notify=()=>{},onChang
   function drawList(){
     ui.list.replaceChildren();
     if(!entries.length)text(ui.list,'No tool servers saved.','p','next-help');
-    for(const entry of entries.slice(0,40)){
+    const query=$('list-query').value.trim().toLocaleLowerCase();const matching=entries.filter(entry=>[entry.name,entry.id].some(value=>String(value||'').toLocaleLowerCase().includes(query)));
+    $('list-note').textContent=matching.length+' of '+entries.length+' saved servers';
+    if(entries.length&&!matching.length)text(ui.list,'No saved servers match.','p','next-help');
+    for(const entry of matching){
       const button=text(ui.list,'','button','next-connections-entry');button.type='button';button.dataset.connectionId=entry.id;
       button.setAttribute('aria-current',String(selected===entry.id));
       text(button,entry.name||entry.id,'strong');
@@ -257,6 +260,8 @@ export function createConnectionSettings({mount,api,events,notify=()=>{},onChang
     const entry=saved();if(busy||importBusy||!entry)return;drafts.delete(selected);remember(entry);paintFields();say('Saved settings reloaded.');
   });
   for(const kind of ['connect','disconnect','remove'])ui[kind].addEventListener('click',()=>void operate(kind));
+  $('list-query').addEventListener('input',drawList);
+  ui.query.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void operate('catalog');}});
   ui['catalog-read'].addEventListener('click',()=>void operate('catalog'));
   ui['catalog-more'].addEventListener('click',()=>{catalogLimit+=20;drawCatalog();});
   const onEvent=event=>{
