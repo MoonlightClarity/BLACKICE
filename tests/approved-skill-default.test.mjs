@@ -19,8 +19,7 @@ test('approved skill ships exact full attachment and fresh effective model read'
  const handler=createRetrievalToolHandler({cwd:root,dataDir:root});
  const result=JSON.parse((await handler({name:'relay_skills',arguments:{action:'read',id}})).contentItems[0].text);
  assert.equal(result.entry.content,base.content);
- const {title,summary,appliesWhen,scope}=base;
- const saved=await catalog.save({id,value:{title,summary,appliesWhen,scope,content:'Exact human draft\n',expectedRevision:entry.revision}});
+ const saved=await catalog.save({id,value:{content:'Exact human draft\n',expectedRevision:entry.revision}});
  assert.equal(saved.revision,2);const file=path.join(root,'skill-edits','skills.json'),before=await readFile(file);
  const reopened=createSkillsCatalog({dataDir:root});assert.equal((await reopened.detail({id})).content,'Exact human draft\n');
  assert.deepEqual(await readFile(file),before);assert.equal(hash(readReleaseSkill(id).content),hash(base.content));
