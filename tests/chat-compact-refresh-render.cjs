@@ -29,6 +29,13 @@ assert.equal(saved.conversations.filter(c=>!c.folderId&&c.folderSource==='manual
 await win.reload();await until('!!document.querySelector(".next-chat-folder-new-chat")');
 for(const width of [1200,640]){win.setSize(width,900);await sleep(150);fs.writeFileSync(path.join(out,'chat-'+width+'.png'),(await win.webContents.capturePage()).toPNG());}
 
+
+await run('document.querySelector(".next-chat-folder-name").click();true');
+assert.equal(await run('getComputedStyle(document.querySelector(".next-chat-folder-name")).display'),'none');
+assert.equal(await run('document.activeElement.className'),'next-chat-folder-rename');
+await run('document.activeElement.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));true');
+assert.equal(await run('!!document.querySelector(".next-chat-folder-rename")'),false);
+
 await run('document.querySelector("#next-chat-new").click();true');
 for(const width of [1200,640,390]){
  win.setSize(width,900);await sleep(180);

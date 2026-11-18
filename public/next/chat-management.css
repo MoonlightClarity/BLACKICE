@@ -76,7 +76,7 @@
 .next-chat .next-sidebar-search{height:32px}
 .next-chat .next-chat-folder-heading{gap:5px;min-height:34px;padding:4px 6px}
 .next-chat .next-chat-folder-heading>.next-chat-folder-name,.next-chat .next-chat-folder-heading>.next-chat-folder-rename{flex:1 1 0;min-width:0;width:auto}
-.next-chat .next-chat-folder-heading>.next-chat-folder-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 0;min-height:26px;background:none;border:0;border-radius:3px;box-shadow:none;text-align:left;font-size:12px}
+.next-chat .next-chat-folder-heading>.next-chat-folder-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 0;min-height:26px;background:none;border:0;border-radius:3px;box-shadow:none;text-align:left;font-size:12px}
 .next-chat .next-chat-folder-heading>small{flex:none}
 .next-chat .next-chat-folder-manage,.next-chat .next-chat-folder-new-chat{flex:none;min-width:0;min-height:26px;max-height:28px;padding:3px 6px;white-space:nowrap;font-size:11px;line-height:18px}
 .next-chat .next-chat-folder-children{margin-left:10px;padding-left:5px}
