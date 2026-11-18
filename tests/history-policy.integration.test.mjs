@@ -286,8 +286,6 @@ test('isolated history cannot adopt an old persistent compaction checkpoint or s
   await assert.rejects(session.app.engine.compactRun(run.id,{nodeId:'agent'}),{code:'CODEX_PRIVATE_COMPACTION_UNAVAILABLE'});
   assert.equal(session.runtime.calls.length,before);
   assert.equal(session.app.engine.getRun(run.id).nodes.agent.threadId,run.nodes.agent.threadId);
-  let journalRead=false;
-  session.app.engine.readNativeHistoryMigration=async()=>{journalRead=true;throw Error('Old journal must not be adopted');};
-  await session.app.engine.recoverNativeHistoryMigration({workflow:run.workflow,modelHandoff:{sourceRunId:run.id,context:'old persistent checkpoint'}});
-  assert.equal(journalRead,false);
+  assert.equal(session.app.engine.recoverNativeHistoryMigration,undefined);
+  assert.equal(session.app.engine.readNativeHistoryMigration,undefined);
 });
