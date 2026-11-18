@@ -37,3 +37,10 @@ test('folder tree exposes only current lifecycle state and safely roots an orpha
  assert.deepEqual(ui.folders.map(f=>[f.id,f.parentId]),[['child',null]]);assert.deepEqual([...ui.folderNames()],[['child','Child']]);
  bucket='deleted';assert.deepEqual(ui.folders.map(f=>f.id),['trash']);
 });
+
+test('draft keeps original parent label and text through external removal and workspace stop',async t=>{
+ const{ui,view}=fixture(t,async()=>{throw Error('No request');});ui.accept({healthy:true,revision:1,folders:[{id:'a',name:'Original'}]});
+ ui.createFolder('a');view.folderName.value='Unsent';ui.accept({healthy:true,revision:2,folders:[]});ui.stop();
+ assert.equal(ui.draft.parentId,'a');assert.equal(view.folderName.value,'Unsent');assert.match(view.folderDraftContext.textContent,/Original.*original destination unavailable/);
+ await view.folderCancel.dispatch('click');assert.equal(ui.draft,null);
+});

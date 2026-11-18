@@ -46,3 +46,11 @@ test('real hierarchy preserves nested rows, collapses ancestors, moves with cont
  const paint=chosen=>paintIndex({list},items,chosen,()=>{},opts);paint(null);const a=list.querySelector('[data-chat-folder="a"]'),b=list.querySelector('[data-chat-folder="b"]'),c=list.querySelector('[data-chat-folder="c"]');assert(a.contains(b));assert(b.contains(c));a.open=false;assert.equal(paint(null).length,0);assert.equal(paint('r').length,1);assert.equal(a.open,true);
  folders[1].parentId=null;paint('r');assert.equal(a.contains(b),false);assert(b.contains(c));assert(c.contains(list.querySelector('[data-conversation="r"]')));
 });
+
+test('child creation remains reachable when filtering or external changes remove its parent',t=>{
+ const d=fixture(t),list=d.element('div'),draft=d.element('form'),input=d.element('input'),cancel=d.element('button');input.value='Keep draft';draft.append(input,cancel);d.mount.append(list);
+ const opts={groupFolders:true,folders:[{id:'parent',name:'Parent'}],folderNames:new Map([['parent','Parent']]),folderDraft:{parentId:'parent',node:draft}};
+ paintIndex({list},[],null,()=>{},opts);assert(list.contains(draft));
+ paintIndex({list},[],null,()=>{},{...opts,showEmptyFolders:false});assert(list.contains(draft),'filtered parent leaves draft at root');
+ paintIndex({list},[],null,()=>{},{...opts,folders:[],folderNames:new Map()});assert(list.contains(draft),'removed parent leaves draft at root');assert.equal(input.value,'Keep draft');assert.equal(opts.folderDraft.parentId,'parent');
+});

@@ -25,6 +25,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
   }
   function refresh() {
     if(destroyed)return;
+    if(draft){const parent=folderById(draft.parentId);view.folderDraftContext.textContent=draft.parentId?'New subfolder in '+draft.parentName+(!parent||(parent.state||'active')!==getBucket()?' (original destination unavailable here)':''):'New top-level folder';}
     const disabled=localBusy||isBusy()||organization.healthy===false;
 
     for(const element of [view.folderNew])element.disabled=disabled||Boolean(draft)||getBucket()!=='active';
@@ -76,9 +77,9 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     if(!isWritable()||draft||getBucket()!=='active')return;
     if(parentId&&!folderById(parentId))return;
     formRevision=organization.revision;
-    draft={parentId,node:view.folderForm};
+    draft={parentId,parentName:parentId?nameOf(parentId):null,node:view.folderForm};
     view.folderName.value='';view.folderName.setAttribute('aria-label',parentId?'New subfolder in '+nameOf(parentId):'New top-level folder');
-    view.folderDialogError.hidden=true;view.folderForm.hidden=false;onChanged();view.folderName.focus();
+    view.folderDialogError.hidden=true;view.folderForm.hidden=false;refresh();onChanged();view.folderName.focus();
   }
   function moveOpen(item) {
     if(!item||!isWritable())return;
@@ -109,7 +110,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
   }
   function stop() {
     for(const dialog of [view.folderMoveDialog,view.folderDeleteDialog])if(dialog.open)dialog.close();
-    draft=null;view.folderForm.hidden=true;movingRoot=null;pendingAction=null;
+    movingRoot=null;pendingAction=null;
   }
   function destroy() {destroyed=true;stop();}
   view.folderNew.addEventListener('click',()=>formOpen(null));

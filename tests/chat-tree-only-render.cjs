@@ -104,5 +104,12 @@ await until('[...document.querySelectorAll(".next-chat-folder-name")].some(n=>n.
 await run('const row=[...document.querySelectorAll(".next-chat-folder-name")].find(n=>n.textContent==="Empty").closest("details");row.querySelector(".next-chat-folder-remove").click();document.querySelector("#next-chat-folder-delete-confirm").click();true');
 await until('!document.querySelector("#next-chat-folder-delete-dialog").open');
 assert.equal(await run('[...document.querySelectorAll(".next-chat-folder-name")].some(n=>n.textContent==="Empty")'),false);
+
+await run('document.querySelector(".next-chat-folder-create").click();document.querySelector("#next-chat-folder-name").value="Keep this draft";document.querySelector("#next-chat-bucket").value="archived";document.querySelector("#next-chat-bucket").dispatchEvent(new Event("change"));true');
+await until('document.querySelector("#next-chat-list").contains(document.querySelector("#next-chat-folder-form"))');
+assert.equal(await run('document.querySelector("#next-chat-folder-name").value'),'Keep this draft');
+assert.match(await run('document.querySelector("#next-chat-folder-draft-context").textContent'),/original destination unavailable/);
+await run('document.querySelector("#next-chat-folder-cancel").click();true');
+assert.equal(await run('!!document.querySelector("#next-chat-list #next-chat-folder-form")'),false);
 fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:true,checks:['Manual nested creation, keyboard move, drag nesting and reload through actual UI','Recursive Archive/Trash/Restore and empty-folder Trash through actual HTTP UI; unrelated chat retained','No automatic folder controls','Actual HTTP folder and global new placement','Close keeps draft and history','1200/640/390 no horizontal overflow','Folder action stays on one compact row','View and multiselect share one row','Mobile folder show/dismiss retained']},null,2));
 })().catch(e=>{fs.writeFileSync(path.join(out,'error.txt'),e.stack);globalThis.failed=true;}).finally(async()=>{win?.destroy();if(server)await server.close();app.exit(globalThis.failed?1:0);});setTimeout(()=>app.exit(2),60000).unref();

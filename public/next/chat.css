@@ -212,3 +212,5 @@
 .next-chat-folder-draft p{flex-basis:100%;color:#efb5b0;margin:0;font-size:11px}
 
 .next-chat-folder-heading .next-chat-folder-archive,.next-chat-folder-heading .next-chat-folder-restore{width:28px;min-width:28px;height:28px;padding:5px;display:inline-flex;align-items:center;justify-content:center}
+
+.next-chat-folder-draft>small{flex-basis:100%;font-size:10px;color:var(--next-muted);overflow-wrap:anywhere}
