@@ -28,6 +28,7 @@ import { createMistralVibeHttp } from './lib/mistral-vibe-http.mjs';
 import { RetiredDesktopController, DESKTOP_RETIRED_MESSAGE } from './lib/desktop-retired.mjs';
 import { NativeWindowManager } from './lib/native-window-tools.mjs';
 import { KnowledgeStore } from './lib/knowledge.mjs';
+import {SkillFolderStore} from './lib/skill-folders.mjs';
 import { createSkillsCatalog, skillIdFromRequestPath } from './lib/skills-catalog.mjs';
 import { PlanningBrowserStore } from './lib/planning-browser.mjs';
 import { PlanningBrowserRuntime } from './lib/planning-browser-runtime.mjs';
@@ -135,7 +136,8 @@ export async function createHarnessServer(options = {}) {
   const applicationWorkspace=options.applicationWorkspace||await new ApplicationWorkspace({dataDir,runtime:options.applicationRuntime,catalog:options.applicationCatalog}).init();
   const knowledge = options.knowledge || new KnowledgeStore({ dataDir });
   await knowledge.init();
-  const skillsCatalog=createSkillsCatalog({knowledge,defaultCwd,nativeSkills:(cwd,options)=>runtime.codex?.inspectSkills?.(cwd,options)||{available:false,skills:[],reason:'Native Codex skill inspection is unavailable.'}});
+  const skillsCatalog=createSkillsCatalog();
+  const skillFolders=new SkillFolderStore({dataDir});
   const planningBrowser = options.planningBrowser || await new PlanningBrowserStore({ dataDir: path.resolve(dataDir), knowledge }).init();
   const planningBrowserRuntime = options.planningBrowserRuntime || new PlanningBrowserRuntime({ store: planningBrowser, runtime, getSettings: () => runtimeSettings.get(), defaultCwd, onUpdated: event => sendEvent(event) });
   const prompts = options.prompts || new PromptTemplateStore({ dataDir }); await prompts.init();
@@ -1312,6 +1314,13 @@ export async function createHarnessServer(options = {}) {
       if (promptAction && req.method === 'POST' && ['delete', 'restore'].includes(promptAction[2])) { const value = await promptBody(req, promptAction[2] === 'delete' ? ['expectedRevision'] : ['expectedRevision', 'revision']); return json(res, 200, { template: await (promptAction[2] === 'delete' ? prompts.remove(promptAction[1], { expectedRevision: value.expectedRevision }) : prompts.restore(promptAction[1], { expectedRevision: value.expectedRevision, revision: value.revision })) }); }
       const promptMatch = pathname.match(/^\/api\/prompts\/([A-Za-z0-9_-]+)$/);
       if (promptMatch && req.method === 'GET') return json(res, 200, { template: prompts.get(promptMatch[1]) });
+      if(pathname==='/api/skills/folders'){
+        if(req.method==='GET')return json(res,200,await skillFolders.read());
+        if(req.method==='POST'){
+          if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Organize skills in BLACKICE on this computer.'});
+          const saved=await skillFolders.mutate(await body(req));sendEvent({type:'skills.folders.updated'});return json(res,200,saved);
+        }
+      }
       if(pathname==='/api/skills'&&req.method==='GET'){
         const query=new URL(req.url,`http://${host}`).searchParams;
         return json(res,200,await skillsCatalog.list({cwd:query.get('cwd')||undefined,query:query.get('query')||'',source:query.get('source')||'all',refresh:query.get('refresh')==='true'}));
@@ -1431,7 +1440,7 @@ export async function createHarnessServer(options = {}) {
         'workspaces/workflow-editor.mjs','workspaces/workflow-edit-model.mjs',
         'workspaces/workflow-overview-model.mjs','workspaces/workflow-canvas-model.mjs','workspaces/workflow-canvas.mjs','workspaces/workflow-graph-author.mjs',
         'workspaces/workflow-graph-edit.mjs','workspaces/browser-folders.mjs','workspaces/browser-model.mjs','workspaces/browser-ownership-ui.mjs','workspaces/browser-scoped-cleanup-ui.mjs','workspaces/browser-native.mjs',
-        'browser.css','knowledge.css','skills.css','workspaces/skills.mjs',
+        'browser.css','knowledge.css','skills.css','workspaces/skills.mjs','core/folder-tree.mjs',
         'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-passwords.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-mcp-apps.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-passwords.css','settings-identity.css','settings-providers.css','settings-connections.css',
         'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/llama-launch-settings.mjs','workspaces/settings-providers.mjs','workspaces/native-write-recovery.mjs','workspaces/settings-provider-directory.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
@@ -1540,6 +1549,7 @@ export async function createHarnessServer(options = {}) {
         await cleanup(() => learning.close());
         await cleanup(() => runtimeSettings.close());
         await cleanup(() => prompts.close());
+        await cleanup(() => skillFolders.close());
         await cleanup(() => email?.close?.());
         await cleanup(() => emailOAuth?.close?.());
         await cleanup(() => emailClient?.close?.());
