@@ -1,12 +1,14 @@
+// Retained saved-graph/sequence-ledger unit coverage, not current native task-tool authoring.
+// Historical UNKNOWN records remain fail-closed; direct graph edits do not restore old wire reconciliation.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskStateStore, createTaskToolHandler } from '../lib/task-state.mjs';
+import { TaskStateStore } from '../lib/task-state.mjs';
+import { assertNoRetainedEffectConflict } from '../lib/legacy-operational-claims.mjs';
 import { createPlanningWorkerGuard, wrapPlanningToolHandler } from '../lib/planning-awareness.mjs';
 
-const body = receipt => JSON.parse(receipt.contentItems[0].text);
 const leaf = (id, status = 'pending', action = 'write') => ({ id, title: `Perform ${id}`, kind: 'action', status,
   result: `The ${id} fixture result.`, note: `Perform the specified ${id} operation against the fixture target.`,
   doneWhen: `The ${id} operation's actual returned result has been checked.`,
@@ -24,14 +26,18 @@ async function fixture(t, { steps = [leaf('first', 'active'), leaf('second')], l
       effects++; await writeFile(path.join(cwd, value.arguments.path), value.arguments.text || 'read observed'); return success();
     }, runId = 'run-one') {
       const guard = await createPlanningWorkerGuard({ store, taskId: 'task-one', runId, nodeId, sequentialEnabled, schemaVersion, executionGuardrails: true }); guards.push(guard);
-      const task = createTaskToolHandler({ store, taskId: 'task-one', runId, nodeId, schemaVersion, executionGuardrails: true });
       const dispatch = wrapPlanningToolHandler(guard, async (value, context) => {
         const denied = await guard.before(value, context); if (denied) return denied;
-        if (value.name === 'relay_task') return guard.after(value, await task(value, context));
+        assert.notEqual(value.name,'relay_task','This retained ledger fixture does not implement a retired model task dispatcher.');
         return execute(value, context);
       });
-      const taskCall = async args => { const receipt = await dispatch({ name: 'relay_task', arguments: args }); assert.equal(receipt.success, true, receipt.contentItems[0].text); return body(receipt); };
-      return { dispatch, task: taskCall, guard };
+      // Direct saved-graph edits and explicit snapshot delivery, not a model tool adapter.
+      const delivered = state => { guard.observeDeliveredSnapshot(state); return state; };
+      return { dispatch, guard,
+        read: async () => delivered(await store.get('task-one')),
+        setStep: async (stepId,patch,expectedRevision) => delivered(await store.setStep('task-one',stepId,patch,{expectedRevision,source:'human',runId,nodeId,executionGuardrails:true})),
+        edit: async (operations,expectedRevision) => delivered(await store.editPlan('task-one',{operations},{expectedRevision,source:'human',runId,nodeId,executionGuardrails:true})),
+      };
     },
     async reopen() { await store.close(); store = await new TaskStateStore({ dataDir: directory }).init(); stores.push(store); },
     sequenceFile() { return `${store.file('task-one')}.sequence`; },
@@ -54,10 +60,10 @@ test('one operation requires actual result reconciliation before activating the 
   assert.equal((await worker.dispatch(call('first'))).success, true);
   assert.equal((await worker.dispatch(call('repeated'))).code, 'TASK_PLAN_RESULT_REQUIRED');
   assert.equal(f.effects, 1);
-  let state = await worker.task({ action: 'read' });
+  let state = await worker.read();
   assert.equal(state.steps.find(step => step.id === 'first').status, 'active', 'A successful tool never marks its leaf done.');
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', status: 'done', evidence: 'The actual first fixture write returned the expected result.' });
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'second', status: 'active' });
+  state = await worker.setStep('first', {status: 'done', evidence: 'The actual first fixture write returned the expected result.' }, state.revision);
+  state = await worker.setStep('second', {status: 'active' }, state.revision);
   assert.equal((await worker.dispatch(call('second'))).success, true);
   assert.equal(f.effects, 2);
 });
@@ -65,8 +71,8 @@ test('one operation requires actual result reconciliation before activating the 
 test('a saved revision alone does not reconcile or replay a completed call', async t => {
   const f = await fixture(t), worker = await f.guard();
   await worker.dispatch(call('first'));
-  let state = await worker.task({ action: 'read' });
-  state = await worker.task({ action: 'edit', expectedRevision: state.revision, operations: [{ type: 'metadata', patch: { focusStepId: 'first' } }] });
+  let state = await worker.read();
+  state = await worker.edit([{ type: 'metadata', patch: { focusStepId: 'first' } }], state.revision);
   assert.equal((await worker.dispatch(call('do-not-repeat'))).code, 'TASK_PLAN_RESULT_REQUIRED');
   assert.equal(f.effects, 1);
 });
@@ -99,8 +105,8 @@ test('a live operation cannot be completed or skipped before its actual result r
     assert.equal(blocked.steps[0].status, 'blocked', 'An honest stop or uncertainty record remains available.');
   } finally { release(); }
   assert.equal((await running).success, true);
-  const current = await worker.task({ action: 'read' });
-  const completed = await worker.task({ action: 'step', expectedRevision: current.revision, stepId: 'first', status: 'done', evidence: 'The actual held operation has now returned success.' });
+  const current = await worker.read();
+  const completed = await worker.setStep('first', {status: 'done', evidence: 'The actual held operation has now returned success.' }, current.revision);
   assert.equal(completed.steps[0].status, 'done');
 });
 
@@ -112,7 +118,7 @@ test('failure and thrown errors return to planning without manufacturing complet
     });
     if (throws) await assert.rejects(worker.dispatch(call('first')), /fixture operation failed/);
     else assert.equal((await worker.dispatch(call('first'))).success, false);
-    const state = await worker.task({ action: 'read' });
+    const state = await worker.read();
     assert.equal(state.steps.find(step => step.id === 'first').status, 'active');
     assert.equal((await worker.dispatch(call('blind-retry'))).code, 'TASK_PLAN_RESULT_REQUIRED');
     const ledger = JSON.parse(await readFile(f.sequenceFile(), 'utf8'));
@@ -133,11 +139,11 @@ test('interrupted work can use a planned read-only reconciliation after uncertai
   await writeFile(f.sequenceFile(), JSON.stringify({ version: 1, taskId: 'task-one', records: [{ stepId: 'uncertain', attempt: 1, token: 'interrupted-token', callId: 'lost-call', runId: 'old-run', nodeId: 'old-worker', planRevision: initial.revision, status: 'running', startedAt: new Date().toISOString(), pid: 2147483647 }] }));
   const worker = await f.guard();
   assert.equal((await worker.dispatch(call('no-evidence'))).code, 'TASK_PLAN_RESULT_REQUIRED');
-  let state = await worker.task({ action: 'read' });
-  state = await worker.task({ action: 'edit', expectedRevision: state.revision, operations: [
+  let state = await worker.read();
+  state = await worker.edit([
     { type: 'update', stepId: 'uncertain', patch: { status: 'blocked', blockedReason: 'The original call may have written the file; its response was lost.', evidence: 'Dispatch was recorded but no result was received before restart.' } },
     { type: 'update', stepId: 'inspect', patch: { status: 'active' } },
-  ] });
+  ], state.revision);
   assert.equal((await worker.dispatch(call('must-not-write'))).code, 'TASK_PLAN_OPERATION_MISMATCH');
   assert.equal((await worker.dispatch(call('inspect', 'read'))).success, true);
   assert.equal((await f.store.get('task-one')).steps.find(step => step.id === 'uncertain').status, 'blocked');
@@ -153,9 +159,9 @@ test('Planning Off does not add dispatch reservations or a new operation require
 test('one attempt cannot dispatch a second call after its result has been reported', async t => {
   const f = await fixture(t, { layout: 'parallel' }), worker = await f.guard();
   await worker.dispatch(call('first'));
-  let state = await worker.task({ action: 'read' });
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', status: 'blocked', blockedReason: 'The returned operation needs a revised follow-up.' });
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', status: 'active' });
+  let state = await worker.read();
+  state = await worker.setStep('first', {status: 'blocked', blockedReason: 'The returned operation needs a revised follow-up.' }, state.revision);
+  state = await worker.setStep('first', {status: 'active' }, state.revision);
   assert.equal((await worker.dispatch(call('same-attempt'))).code, 'TASK_PLAN_REPLAN_REQUIRED');
   assert.equal(f.effects, 1);
 });
@@ -164,8 +170,8 @@ test('schema 9 binds an operation to the planned tool and action, including reas
   const f = await fixture(t, { schemaVersion: 9 }), worker = await f.guard();
   assert.equal((await worker.dispatch(call('wrong-action', 'read'))).code, 'TASK_PLAN_OPERATION_MISMATCH');
   assert.equal((await worker.dispatch({ ...call('wrong-tool'), name: 'relay_browser' })).code, 'TASK_PLAN_OPERATION_MISMATCH');
-  let state = await worker.task({ action: 'read' });
-  state = await worker.task({ action: 'edit', expectedRevision: state.revision, operations: [{ type: 'update', stepId: 'first', patch: { operation: { kind: 'reasoning', target: 'Compare the two fixture options.' } } }] });
+  let state = await worker.read();
+  state = await worker.edit([{ type: 'update', stepId: 'first', patch: { operation: { kind: 'reasoning', target: 'Compare the two fixture options.' } } }], state.revision);
   assert.equal((await worker.dispatch(call('reasoning-bypass'))).code, 'TASK_PLAN_OPERATION_MISMATCH');
   assert.equal(f.effects, 0);
 });
@@ -173,13 +179,13 @@ test('schema 9 binds an operation to the planned tool and action, including reas
 test('explicit revisit opens one new attempt after the actual earlier outcome is saved', async t => {
   const f = await fixture(t, { steps: [leaf('first', 'active')], schemaVersion: 9 }), worker = await f.guard();
   assert.equal((await worker.dispatch(call('first'))).success, true);
-  let state = await worker.task({ action: 'read' });
-  const premature = await worker.dispatch({ name: 'relay_task', arguments: { action: 'edit', expectedRevision: state.revision, operations: [{ type: 'revisit', stepId: 'first', reason: 'New thinking changes the operation.' }] } });
+  let state = await worker.read();
+  const premature = await worker.guard.before({ name: 'relay_task', arguments: { action: 'edit', expectedRevision: state.revision, operations: [{ type: 'revisit', stepId: 'first', reason: 'New thinking changes the operation.' }] } });
   assert.equal(premature.code, 'TASK_PLAN_RESULT_REQUIRED');
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', status: 'done', evidence: 'The first actual write returned its expected fixture result.' });
-  state = await worker.task({ action: 'edit', expectedRevision: state.revision, operations: [{ type: 'revisit', stepId: 'first', reason: 'Reassess the earlier checked write under the new requirement.' }] });
+  state = await worker.setStep('first', {status: 'done', evidence: 'The first actual write returned its expected fixture result.' }, state.revision);
+  state = await worker.edit([{ type: 'revisit', stepId: 'first', reason: 'Reassess the earlier checked write under the new requirement.' }], state.revision);
   assert.equal(state.steps[0].attempt, 2); assert.equal(state.steps[0].pastAttempts[0].status, 'done');
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', status: 'active' });
+  state = await worker.setStep('first', {status: 'active' }, state.revision);
   assert.equal((await worker.dispatch(call('second-attempt'))).success, true);
   assert.equal(f.effects, 2);
 });
@@ -213,7 +219,7 @@ test('an invalid tool response preserves uncertainty and does not leave a live r
   assert.equal(saved.records[0].status, 'running');
 });
 
-for (const claimedDone of [false, true]) test(`an effect followed by AbortError stays uncertain after ${claimedDone ? 'a done claim' : 'a blocked result'} and revisit until actually observed`, async t => {
+for (const claimedDone of [false, true]) test(`an effect followed by AbortError stays uncertain after ${claimedDone ? 'a done claim' : 'a blocked result'} and revisit despite a direct stored observation claim`, async t => {
   const f = await fixture(t, { schemaVersion: 9, layout: 'parallel', steps: [leaf('first', 'active'), leaf('inspect', 'pending', 'read')] });
   let writes = 0;
   const worker = await f.guard('interrupted-worker', async value => {
@@ -224,20 +230,24 @@ for (const claimedDone of [false, true]) test(`an effect followed by AbortError 
   await assert.rejects(worker.dispatch(call('provider-interrupted')), { name: 'AbortError', code: 'ABORT_ERR' });
   const record = JSON.parse(await readFile(f.sequenceFile(), 'utf8')).records[0];
   assert.equal(record.status, 'running'); assert.equal(record.success, undefined);
-  let state = await worker.task({ action: 'read' });
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', ...(claimedDone
+  let state = await worker.read();
+  state = await worker.setStep('first', {...(claimedDone
     ? { status: 'done', evidence: 'The wrapper threw AbortError; the model claims this completed the action without a fresh observation.' }
-    : { status: 'blocked', blockedReason: 'The handler was interrupted after dispatch; its actual effect is unknown.' }) });
-  state = await worker.task({ action: 'edit', expectedRevision: state.revision, operations: [{ type: 'revisit', stepId: 'first', reason: 'Reassess the interrupted operation before deciding on a retry.' }] });
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', status: 'active' });
+    : { status: 'blocked', blockedReason: 'The handler was interrupted after dispatch; its actual effect is unknown.' }) }, state.revision);
+  state = await worker.edit([{ type: 'revisit', stepId: 'first', reason: 'Reassess the interrupted operation before deciding on a retry.' }], state.revision);
+  state = await worker.setStep('first', {status: 'active' }, state.revision);
   assert.equal((await worker.dispatch(call('blind-retry'))).code, 'TASK_PLAN_RECONCILIATION_REQUIRED');
   assert.equal(writes, 1, 'A saved disposition or done claim and new attempt do not establish absence of the earlier effect.');
-  state = await worker.task({ action: 'edit', expectedRevision: state.revision, operations: [
+  state = await worker.edit([
     { type: 'update', stepId: 'first', patch: { status: 'pending' } }, { type: 'update', stepId: 'inspect', patch: { status: 'active' } }
-  ] });
+  ], state.revision);
   const observation = await worker.dispatch(call('observe-interrupted', 'read')); assert.match(observation.contentItems[0].text, /Actual effect 1/);
-  await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'inspect', status: 'done', evidence: 'The actual file read returned Actual effect 1.', reconciliation: { callId: record.callId, outcome: 'confirmed', evidence: 'effect.txt contains the exact first dispatched effect.' } });
-  assert.equal(JSON.parse(await readFile(f.sequenceFile(), 'utf8')).records[0].reconciliation.outcome, 'confirmed');
+  await worker.setStep('inspect', {status: 'done', evidence: 'The actual file read returned Actual effect 1.', reconciliation: { callId: record.callId, outcome: 'confirmed', evidence: 'effect.txt contains the exact first dispatched effect.' } }, state.revision);
+  const preserved=JSON.parse(await readFile(f.sequenceFile(),'utf8')).records[0];
+  assert.equal(preserved.reconciliation,undefined,'a direct plan claim is not a host ledger reconciliation');
+  assert.equal(preserved.status,'running');
+  await assert.rejects(assertNoRetainedEffectConflict(f.store,'task-one',{effect:'write'}),{code:'TASK_CONTRACT_JOURNAL_UNAVAILABLE'});
+  await assertNoRetainedEffectConflict(f.store,'task-one',{effect:'observe'});
   assert.equal(writes, 1);
 });
 
@@ -246,16 +256,16 @@ test('provider call IDs are scoped to run and worker while dispatch IDs remain u
     const f = await fixture(t, { steps: [leaf('first', 'active'), leaf('second'), leaf('third')] });
     const first = await f.guard('same-worker', async () => success());
     assert.equal((await first.dispatch(call('1'))).success, true);
-    let state = await first.task({ action: 'read' });
-    state = await first.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', status: 'done', evidence: 'The first actual response was observed.' });
-    await first.task({ action: 'step', expectedRevision: state.revision, stepId: 'second', status: 'active' });
+    let state = await first.read();
+    state = await first.setStep('first', {status: 'done', evidence: 'The first actual response was observed.' }, state.revision);
+    await first.setStep('second', {status: 'active' }, state.revision);
     const second = await f.guard(newRun ? 'same-worker' : 'other-worker', async () => success(), newRun ? 'run-two' : 'run-one');
     assert.equal((await second.dispatch(call('1'))).success, true, 'A new run or worker may receive the same raw provider ID.');
     const records = JSON.parse(await readFile(f.sequenceFile(), 'utf8')).records;
     assert.equal(records[0].providerCallId, '1'); assert.equal(records[1].providerCallId, '1'); assert.notEqual(records[0].callId, records[1].callId);
-    state = await second.task({ action: 'read' });
-    state = await second.task({ action: 'step', expectedRevision: state.revision, stepId: 'second', status: 'done', evidence: 'The second actual response was observed.' });
-    await second.task({ action: 'step', expectedRevision: state.revision, stepId: 'third', status: 'active' });
+    state = await second.read();
+    state = await second.setStep('second', {status: 'done', evidence: 'The second actual response was observed.' }, state.revision);
+    await second.setStep('third', {status: 'active' }, state.revision);
     const replay = await second.dispatch(call('1'));
     assert.equal(replay.success, true, 'An exact same-scope replay returns its original settled receipt.');
     assert.equal((await second.dispatch(call('1', 'read'))).code, 'TOOL_CALL_ID_CONFLICT', 'A changed payload cannot reuse the original callback ID.');
@@ -264,7 +274,7 @@ test('provider call IDs are scoped to run and worker while dispatch IDs remain u
   }
 });
 
-test('observed absence resolves a lost result without falsely completing its failed effect', async t => {
+test('direct observed absence records its finding without clearing a retained unknown dispatch', async t => {
   const f = await fixture(t, { schemaVersion: 9, layout: 'parallel', steps: [leaf('uncertain', 'active'), leaf('inspect', 'pending', 'read')] });
   const original = await f.store.get('task-one');
   await writeFile(f.sequenceFile(), JSON.stringify({ version: 1, taskId: 'task-one', records: [{ stepId: 'uncertain', attempt: 1, token: 'lost-token', callId: 'lost-call', runId: 'old-run', nodeId: 'old-worker', planRevision: original.revision, status: 'running', startedAt: new Date().toISOString(), pid: 2147483647, tool: 'relay_workspace', action: 'write' }] }));
@@ -277,25 +287,27 @@ test('observed absence resolves a lost result without falsely completing its fai
     }
     writes++; await writeFile(path.join(f.cwd, 'uncertain.txt'), 'The new planned attempt.'); return success();
   });
-  let state = await worker.task({ action: 'read' });
-  state = await worker.task({ action: 'edit', expectedRevision: state.revision, operations: [
+  let state = await worker.read();
+  state = await worker.edit([
     { type: 'update', stepId: 'uncertain', patch: { status: 'blocked', blockedReason: 'The original response was lost; its effect must be observed.', evidence: 'Only a dispatch record was recovered.' } },
     { type: 'update', stepId: 'inspect', patch: { status: 'active' } },
-  ] });
+  ], state.revision);
   assert.equal((await worker.dispatch(call('absence-observation', 'read'))).success, true);
   const claim = { action: 'step', expectedRevision: state.revision, stepId: 'inspect', status: 'done', evidence: 'The actual filesystem read establishes that uncertain.txt is absent.',
     reconciliation: { evidence: '  A fresh filesystem read returned ENOENT for uncertain.txt.  ', outcome: 'absent', callId: 'lost-call' } };
   const invalid = await worker.dispatch({ name: 'relay_task', arguments: { ...claim, reconciliation: { ...claim.reconciliation, callId: 'invented-call' } } });
   assert.equal(invalid.code, 'TASK_PLAN_RECONCILIATION_INVALID');
   assert.equal((await f.store.get('task-one')).revision, state.revision, 'An invalid reconciliation must not save the plan write.');
-  state = await worker.task(claim);
+  const {action:_action,expectedRevision,stepId,...patch}=claim;state = await worker.setStep(stepId,patch,expectedRevision);
   assert.equal(state.steps.find(step => step.id === 'uncertain').status, 'blocked', 'Observed absence is not the requested successful write.');
   const reconciled = JSON.parse(await readFile(f.sequenceFile(), 'utf8'));
-  assert.equal(reconciled.records.find(record => record.callId === 'lost-call').reconciliation.outcome, 'absent');
-  state = await worker.task({ action: 'edit', expectedRevision: state.revision, operations: [{ type: 'revisit', stepId: 'uncertain', reason: 'Fresh observation established no prior effect; perform the planned write as a new attempt.' }] });
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'uncertain', status: 'active' });
-  assert.equal((await worker.dispatch(call('new-write'))).success, true);
-  assert.equal(observations, 1); assert.equal(writes, 1);
+  assert.equal(reconciled.records.find(record => record.callId === 'lost-call').reconciliation,undefined);
+  assert.equal(state.steps.find(step=>step.id==='inspect').reconciliation.outcome,'absent','the actual observation is preserved separately from the original UNKNOWN');
+  await assert.rejects(assertNoRetainedEffectConflict(f.store,'task-one',{effect:'write'}),{code:'TASK_CONTRACT_JOURNAL_UNAVAILABLE'});
+  state = await worker.edit([{ type: 'revisit', stepId: 'uncertain', reason: 'Fresh observation established no prior effect; perform the planned write as a new attempt.' }], state.revision);
+  state = await worker.setStep('uncertain', {status: 'active' }, state.revision);
+  assert.equal((await worker.dispatch(call('new-write'))).code,'TASK_PLAN_RECONCILIATION_REQUIRED');
+  assert.equal(observations, 1); assert.equal(writes, 0);
   assert.equal(state.steps.find(step => step.id === 'uncertain').pastAttempts[0].status, 'blocked');
 });
 
@@ -304,9 +316,9 @@ for (const failedObservation of [false, true]) test(`a ${failedObservation ? 'fa
   const worker = await f.guard('worker', async value => value.arguments.action === 'read' ? { success: false, contentItems: [{ type: 'inputText', text: 'The observation failed.' }] } : success());
   await worker.dispatch(call('first'));
   const firstRecord = JSON.parse(await readFile(f.sequenceFile(), 'utf8')).records[0];
-  let state = await worker.task({ action: 'read' });
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'first', status: 'done', evidence: 'The first operation returned its actual saved path.' });
-  state = await worker.task({ action: 'step', expectedRevision: state.revision, stepId: 'second', status: 'active' });
+  let state = await worker.read();
+  state = await worker.setStep('first', {status: 'done', evidence: 'The first operation returned its actual saved path.' }, state.revision);
+  state = await worker.setStep('second', {status: 'active' }, state.revision);
   await worker.dispatch(call('second', failedObservation ? 'read' : 'write'));
   const rejected = await worker.dispatch({ name: 'relay_task', arguments: { action: 'step', expectedRevision: state.revision, stepId: 'second', status: 'done', evidence: 'The second actual call returned its receipt.', reconciliation: { callId: firstRecord.callId, outcome: 'confirmed', evidence: 'The second call allegedly confirms the first.' } } });
   assert.equal(rejected.code, 'TASK_PLAN_RECONCILIATION_INVALID');
