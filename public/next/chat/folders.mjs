@@ -67,7 +67,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     return items.filter(item=>selected==='ungrouped'?!item.folderId:item.folderId===selected);
   }
   const folderNames=()=>new Map(organization.folders.map(folder=>[folder.id,folder.name]));
-  async function save(operations,{success,after}={}) {
+  async function save(operations,{success,after,expectedRevision=organization.revision,retryConflict=true}={}) {
     if(!isWritable())return false;
     localBusy=true;refresh();
     try {
@@ -75,13 +75,13 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
       for(let attempt=0;attempt<2;attempt++){
         try {
           result=await api('/api/conversation-folders/edit','POST',{
-            expectedRevision:organization.revision,operations
+            expectedRevision:attempt?organization.revision:expectedRevision,operations
           });
           break;
         } catch(error) {
           // Only an explicit server revision rejection establishes that the
           // operation did not commit. No ambiguous request is ever replayed.
-          if(attempt!==0 || error?.status!==409 && error?.code!=='FOLDER_REVISION')throw error;
+          if(!retryConflict || attempt!==0 || error?.status!==409 && error?.code!=='FOLDER_REVISION')throw error;
           const fresh=await api('/api/conversation-folders?state='+encodeURIComponent(getBucket()),'GET');
           if(!fresh.folderOrganization?.healthy)throw error;
           organization=fresh.folderOrganization;
@@ -271,6 +271,14 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     enqueue(getItems());scheduleAuto();
   });
   function manage(id){if(!folderById(id)||!isWritable())return;selected=id;safeSet('blackice.next.chatFolder',selected);refresh();onChanged();if(view.folderSettings)view.folderSettings.open=true;view.folderRename.focus();}
-  return {rename:(id,name)=>folderById(id)?save([{type:'rename_folder',folderId:id,name}],{success:'Folder renamed.'}):Promise.resolve(false),manage,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
+  function beginRename(id){
+    if(!folderById(id)||!isWritable())return null;
+    const revision=organization.revision,before=folderById(id).name;
+    return async name=>{
+      if(organization.revision!==revision||folderById(id)?.name!==before){notice('Folder changed while editing. Your draft was kept. Press Escape and reopen to edit the current name.',true);return false;}
+      return save([{type:'rename_folder',folderId:id,name}],{success:'Folder renamed.',expectedRevision:revision,retryConflict:false});
+    };
+  }
+  return {beginRename,manage,accept,filtered,folderNames,onRowAction,onListLoaded,stop,destroy,refresh,
     get selected(){return selected;},get organization(){return organization;}};
 }

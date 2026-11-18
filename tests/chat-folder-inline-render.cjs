@@ -32,6 +32,21 @@ win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});win.webContent
 await until('!document.querySelector(".next-chat-folder-rename")');
 assert.equal(await run('document.querySelector(".next-chat-folder-name").textContent'),'Renamed chat');
 await win.reload();await until('document.querySelector(".next-chat-folder-name")?.textContent==="Renamed chat"');
+
+await run('document.querySelector(".next-chat-folder-name").click();document.querySelector(".next-chat-folder-rename").value="Stale draft";true');
+await run('(async()=>{const snapshot=await (await fetch("/api/conversation-folders?state=active")).json();const f=snapshot.folderOrganization.folders.find(f=>f.name==="Renamed chat");const response=await fetch("/api/conversation-folders/edit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({expectedRevision:snapshot.folderOrganization.revision,operations:[{type:"rename_folder",folderId:f.id,name:"External name"}]})});if(!response.ok)throw Error(await response.text());return true;})()');
+await run('document.querySelector(".next-tab[data-space=settings]").click();true');
+await run('document.querySelector(".next-tab[data-space=chat]").click();true');
+await until('document.querySelector(".next-chat-folder-name")?.textContent==="External name"');
+assert.equal(await run('document.querySelector(".next-chat-folder-rename").value'),'Stale draft');
+await run('document.querySelector(".next-chat-folder-rename").focus();true');
+win.webContents.sendInputEvent({type:'keyDown',keyCode:'Return'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Return'});
+await until('document.querySelector(".next-chat-folder-rename")?.getAttribute("aria-invalid")==="true"');
+assert.equal(await run('document.querySelector(".next-chat-folder-rename").value'),'Stale draft');
+win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});
+await until('!document.querySelector(".next-chat-folder-rename")');
+assert.equal(await run('document.querySelector(".next-chat-folder-name").textContent'),'External name');
+
 await run('document.fonts.ready.then(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))');await sleep(300);
 fs.writeFileSync(path.join(out,'chat.png'),(await win.webContents.capturePage()).toPNG());
 fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:true,checks:['Single click starts inline rename without dialog','Input focused and selected','Enter saves; Space opens; Escape cancels','Summary collapse unchanged','Actual saved name survives reload']},null,2));

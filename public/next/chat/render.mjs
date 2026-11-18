@@ -210,6 +210,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
         const label=text(summary,'',key?'button':'span',key?'next-chat-folder-name':''),count=text(summary,'','small');
         if(key){label.type='button';label.addEventListener('click',event=>{
           event.preventDefault();event.stopPropagation();if(group.editor)return;
+          const commitRename=group.onRename?.();if(!commitRename)return;
           const input=doc.createElement('input');input.className='next-chat-folder-rename';input.value=group.label.textContent;input.maxLength=60;input.setAttribute('aria-label','Folder name');input.draggable=false;
           group.editor=input;label.hidden=true;summary.insertBefore(input,label);
           const finish=()=>{input.remove();group.editor=null;label.hidden=false;label.focus();};
@@ -218,7 +219,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
           input.addEventListener('keydown',async event=>{
             event.stopPropagation();if(event.key==='Escape'){event.preventDefault();if(!input.disabled)finish();return;}
             if(event.key!=='Enter')return;event.preventDefault();const value=input.value.trim();if(!value||input.disabled){input.setAttribute('aria-invalid','true');return;}
-            input.disabled=true;const ok=await group.onRename?.(value);input.disabled=false;
+            input.disabled=true;const ok=await commitRename(value);input.disabled=false;
             if(ok)finish();else{input.setAttribute('aria-invalid','true');input.focus();}
           });input.focus();input.select();
         });}
@@ -230,7 +231,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
       }
       group.onToggle=()=>onFolderToggle?.(exposed());
       group.onManage=()=>onFolderManage?.(key);
-      group.onRename=value=>onFolderRename?.(key,value);
+      group.onRename=()=>onFolderRename?.(key);
       if(key){group.label.disabled=busy||!onFolderRename;group.label.setAttribute('aria-label','Rename '+name+' folder');group.label.title='Rename folder';}
       if(group.manage){group.manage.hidden=!onFolderManage;group.manage.disabled=busy;group.manage.setAttribute('aria-label','Manage '+name+' folder');group.manage.title='Manage '+name+' folder';}
       if(expandFolders&&total){if(!group.searchExpanded)group.beforeSearchOpen=group.node.open;group.searchExpanded=true;group.node.open=true;}
