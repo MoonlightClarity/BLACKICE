@@ -86,7 +86,7 @@ test('direct stdio cancellation releases server and child before new client',asy
  const worker=await until(async()=>{try{return (await readFile(path.join(dataDir,'events.log'),'utf8')).split('\n').filter(Boolean).map(JSON.parse).find(x=>x.workerPid);}catch{return null;}});
  const pid=client.child.pid;assert.ok(alive(pid)&&alive(worker.workerPid));
  controller.abort();await assert.rejects(pending,{code:'ABORT_ERR',name:'AbortError'});
- await client.close();await until(()=>!alive(pid)&&!alive(worker.workerPid));const next=create();await next.start();assert.equal((await next.call('add',{a:1,b:2})).content[0].text,'3');
+ assert.equal(client.closed,true,'transport failure must initiate cleanup automatically');assert.ok(client.closePromise);await client.closePromise;await until(()=>!alive(pid)&&!alive(worker.workerPid));const next=create();await next.start();assert.equal((await next.call('add',{a:1,b:2})).content[0].text,'3');
 });
 
 test('direct stdio broken pipe releases server and child before new client',async t=>{
@@ -94,7 +94,7 @@ test('direct stdio broken pipe releases server and child before new client',asyn
  const worker=await until(async()=>{try{return (await readFile(path.join(dataDir,'events.log'),'utf8')).split('\n').filter(Boolean).map(JSON.parse).find(x=>x.workerPid);}catch{return null;}});
  const pid=client.child.pid;assert.ok(alive(pid)&&alive(worker.workerPid));
  client.child.stdin.emit('error',new Error('Fixture pipe failure.'));await assert.rejects(pending,/MCP server stopped/);assert.equal(client.closed,true);
- await client.close();await until(()=>!alive(pid)&&!alive(worker.workerPid));const next=create();await next.start();assert.equal((await next.call('add',{a:1,b:2})).content[0].text,'3');
+ assert.equal(client.closed,true,'transport failure must initiate cleanup automatically');assert.ok(client.closePromise);await client.closePromise;await until(()=>!alive(pid)&&!alive(worker.workerPid));const next=create();await next.start();assert.equal((await next.call('add',{a:1,b:2})).content[0].text,'3');
 });
 
 test('specialized reconnect waits for retired transport cleanup',async t=>{
@@ -104,9 +104,13 @@ test('specialized reconnect waits for retired transport cleanup',async t=>{
 });
 
 test('direct stdio timeout and shutdown release real processes and pending work',async t=>{
- const {client,create}=await stdioHarness(t,1000);await client.start();await assert.rejects(client.call('wait',{}),{code:'MCP_TIMEOUT'});await client.close();
+ const {client,create}=await stdioHarness(t,1000);await client.start();const timedOutPid=client.child.pid;await assert.rejects(client.call('wait',{}),{code:'MCP_TIMEOUT'});assert.equal(client.closed,true);assert.ok(client.closePromise);await client.closePromise;await until(()=>!alive(timedOutPid));
  const next=create();await next.start();const pending=next.call('wait',{});pending.catch(()=>{});await until(()=>next.pending.size>0);const pid=next.child.pid;await next.close();await assert.rejects(pending,{code:'ABORT_ERR'});assert.equal(next.pending.size,0);await until(()=>!alive(pid));await assert.rejects(next.start(),/closed/);
 });
+
+async function closeHttpFixture(manager,server){try{await manager?.close();}finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}}
+
+test('HTTP fixture closes its real listener even when manager cleanup fails',async()=>{const server=createServer();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));await assert.rejects(closeHttpFixture({close:async()=>{throw Error('cleanup failed');}},server),/cleanup failed/);assert.equal(server.listening,false);});
 
 async function httpHarness(t, { mode = 'json', secret = '', managerOptions = {} } = {}) {
   const requests = [], enteredSlow = deferred(), cancellation = deferred(), pingReplies = new Map(); let session = 0, expireNext = false;
@@ -136,7 +140,7 @@ async function httpHarness(t, { mode = 'json', secret = '', managerOptions = {} 
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   let result;
-  t.after(async () => { await result?.manager.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  t.after(()=>closeHttpFixture(result?.manager,server));
   result = await managerHarness(t,managerOptions); const url = `http://127.0.0.1:${server.address().port}/mcp`;
   await result.manager.save({ id: 'browseros-neo', transport: 'http', url, headers: secret ? { Authorization: 'Bearer ' + secret } : {} });
   return { ...result, url, requests, enteredSlow, cancellation, expire: () => { expireNext = true; } };
@@ -208,8 +212,9 @@ test('real HTTP Neo SDK descriptions survive progressive discovery and truncatio
     response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const { manager } = await managerHarness(t);
-  t.after(async () => { await manager.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  let manager;
+  t.after(()=>closeHttpFixture(manager,server));
+  ({manager}=await managerHarness(t));
   await manager.save({ id: 'browseros-neo', transport: 'http', url: `http://127.0.0.1:${server.address().port}/mcp` });
   const query = text => manager.tools('browseros-neo',{query:text});
   const run = await query('neo_run');
