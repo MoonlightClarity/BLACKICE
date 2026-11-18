@@ -1,4 +1,3 @@
-// Historical schema-13 regression; canonical schema-14 behavior has separate production-engine acceptance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -10,7 +9,6 @@ import path from 'node:path';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { CodexRuntime } from '../lib/codex.mjs';
 import { HarnessEngine } from '../lib/engine.mjs';
-import { HarnessEngine as CurrentHarnessEngine } from '../lib/engine.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { WORKSPACE_TOOL } from '../lib/workspace-tools.mjs';
 import { capabilityGuidance } from '../lib/tool-routing.mjs';
@@ -222,10 +220,10 @@ test('native contained-browser scope does not start a model turn with unreadable
   assert.equal(records.filter(record => ['thread/start', 'thread/resume', 'turn/start'].includes(record.method)).length, 0);
 });
 
-for(const Engine of [HarnessEngine,CurrentHarnessEngine])test('retired registry catalog refreshes a stopped native session once without dispatch ('+(Engine===HarnessEngine?'legacy':'current')+')',async t=>{
+test('retired registry catalog refreshes a stopped native session once without dispatch',async t=>{
  const {runtime,directory,cwd,wire,cleanup}=await nativeHarness(t);await runtime.start();
  const tasks=await new TaskStateStore({dataDir:directory}).init();
- const engine=await new Engine({runtime,tasks,dataDir:directory,defaultCwd:cwd}).init();cleanup.push(()=>engine.close(),()=>tasks.close());
+ const engine=await new HarnessEngine({runtime,tasks,dataDir:directory,defaultCwd:cwd}).init();cleanup.push(()=>engine.close(),()=>tasks.close());
  const settled=id=>until(()=>{const r=engine.getRun(id);return r.settled&&r;});
  const first=engine.startRun({workflow:graph('routing-native-model'),input:'COMPLETED_RECEIPT: earlier work already done'}),one=await settled(first.id);
  assert.equal(one.status,'completed',one.error);assert.ok(!one.nodes.agent.toolNames.includes('relay_connections'));
