@@ -12,7 +12,7 @@ import { HarnessEngine } from '../lib/engine.mjs';
 import { PlanningBrowserStore } from '../lib/planning-browser.mjs';
 import { ResponseCycleService } from '../lib/response-cycle.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
-import { CONTROL_TOOL, CONTROL_SCHEMA_VERSION,PRE_CANONICAL_CONTROL_TOOL,PRE_CANONICAL_CONTROL_INSTRUCTIONS,PRE_USER_AGENCY_CONTROL_TOOL,PRE_USER_AGENCY_CONTROL_INSTRUCTIONS,PRE_INTENT_CONTROL_TOOL,PRE_INTENT_CONTROL_INSTRUCTIONS, PRE_PERSISTENT_HISTORY_CONTROL_TOOL, PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS, PRE_CONTEXT_CONTROL_TOOL, PRE_CONTEXT_CONTROL_INSTRUCTIONS, PRE_PROFILE_CONTROL_TOOL, PRE_ACCURACY_CONTROL_TOOL, createControlToolHandler } from '../lib/control-tools.mjs';
+import { CONTROL_TOOL, CONTROL_SCHEMA_VERSION, createControlToolHandler } from '../lib/control-tools.mjs';
 import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
 
 const cwd = fileURLToPath(new URL('..', import.meta.url));
@@ -28,7 +28,7 @@ test('extended stays dynamic while legacy 900k and API capacity rules remain com
   assert.throws(() => contextSnapshot({ options: { preset: 'extended' } }), { code: 'INVALID_CONTEXT' });
 });
 
-test('current control tools advertise and persist Extended through runtime_set/get while historical schemas stay unchanged', async t => {
+test('current control tools advertise and persist Extended through runtime_set/get', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-extended-controls-'));
   const settings = await new RuntimeSettingsStore({ dataDir: directory }).init();
   t.after(async () => { await settings.close(); await rm(directory, { recursive: true, force: true }); });
@@ -37,14 +37,7 @@ test('current control tools advertise and persist Extended through runtime_set/g
   const described = await invoke({ action: 'describe' });
   assert.equal(described.success, true);
   assert.ok(described.value.tool.inputSchema.properties.runtime.properties.defaultContext.properties.preset.enum.includes('extended'));
-  for (const historical of [PRE_PROFILE_CONTROL_TOOL, PRE_ACCURACY_CONTROL_TOOL, PRE_CONTEXT_CONTROL_TOOL]) assert.deepEqual(historical.inputSchema.properties.runtime.properties.defaultContext.properties.preset.enum, ['model', '900k', 'custom']);
-  assert.equal(CONTROL_SCHEMA_VERSION,12);
-  assert.ok((described.value.tool.inputSchema.properties.cycle.properties.plan.anyOf||[described.value.tool.inputSchema.properties.cycle.properties.plan]).every(schema=>schema.required.includes('userAgency')));
-  assert.equal(createHash('sha256').update(JSON.stringify(PRE_USER_AGENCY_CONTROL_TOOL)).digest('hex'), '106c35f68bd3c88f672670f81a2c26d2f4d939d546171ca59d0b16620fbec9a3');
-  assert.equal(createHash('sha256').update(PRE_USER_AGENCY_CONTROL_INSTRUCTIONS).digest('hex'), 'f75bbc182b049c0c7b918e663f6813409c87008e09a8e1e170cc1081b230a68f');
-  assert.equal(createHash('sha256').update(JSON.stringify(PRE_CONTEXT_CONTROL_TOOL)).digest('hex'), 'b66363382582754f1de21b9390adc92e5ab4639fba8ee6c620c8e967fe4d11a8');
-  assert.equal(createHash('sha256').update(PRE_CONTEXT_CONTROL_INSTRUCTIONS).digest('hex'), 'bb2474986bc93c57f706685adcb2a8cda43e4d003761abff1c3b5f3e645f6a9c');
-  assert.notEqual(CONTROL_TOOL.inputSchema.properties.runtime.properties.defaultContext, PRE_ACCURACY_CONTROL_TOOL.inputSchema.properties.runtime.properties.defaultContext);
+  assert.equal(CONTROL_SCHEMA_VERSION,13);
   const saved = await invoke({ action: 'runtime_set', runtime: { defaultContext: { preset: 'extended', autoCompact: true } } });
   assert.equal(saved.success, true); assert.deepEqual(saved.value.defaultContext, { preset: 'extended', windowTokens: null, autoCompact: true });
   assert.deepEqual((await invoke({ action: 'runtime_get' })).value.defaultContext, saved.value.defaultContext);
@@ -56,29 +49,7 @@ test('current control tools advertise and persist Extended through runtime_set/g
   assert.equal(invalid.success, false); assert.equal(settings.get().defaultContext.preset, '900k');
 });
 
-for(const savedVersion of [7,8,9,10,11])test('a new engine turn gets schema12 while a saved schema'+savedVersion+' native continuation keeps its exact old tool', async t => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'blackice-context-schema-')), calls = [], runtime = new EventEmitter();
-  runtime.status = () => ({ connected: true, authenticated: true, defaultModel: 'fixture', models: [model] });
-  runtime.runAgent = async options => { calls.push(options); const threadId = options.threadId || 'schema-fixture-thread'; options.onEvent({ type: 'thread', threadId, model: 'fixture', effort: 'high', codexHistory: 'codex' }); return { output: 'Local schema fixture.', threadId, codexHistory: 'codex' }; };
-  const engine = await new HarnessEngine({ runtime, dataDir: directory, defaultCwd: cwd }).init();
-  engine.runtimeSettings = { get: () => ({ codexHistory: 'codex' }) };
-  // This case asserts the current cycle-capable catalog, not a host without Planning.
-  const store = await new PlanningBrowserStore({dataDir:directory}).init();
-  const cycle = new ResponseCycleService({store,engine,runner:{start:()=>assert.fail('Planning Off must not start a response worker.')}});
-  engine.responseCycle = cycle;
-  t.after(async () => { await cycle.close(); await engine.close(); await store.close(); await rm(directory, { recursive: true, force: true }); });
-  const workflow = { id: 'schema-context', name: 'Schema fixture', nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', name: 'Fixture', model: 'fixture', prompt: 'Local protocol fixture.', effort: 'high' }, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' } };
-  const first = engine.startRun({ workflow, input: 'Inspect fixture schema.' }); await engine.executions.get(first.id);
-  assert.equal(engine.getRun(first.id).status, 'completed');
-  assert.equal(engine.getRun(first.id).nodes.agent.controlSchemaVersion, CONTROL_SCHEMA_VERSION);
-  assert.ok(calls[0].dynamicTools.find(tool => tool.name === 'relay_control').inputSchema.properties.runtime.properties.defaultContext.properties.preset.enum.includes('extended'));
-  engine.runs.get(first.id).nodes.agent.controlSchemaVersion = savedVersion;
-  const follow = engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue the recorded schema'+savedVersion+' fixture.' }); await engine.executions.get(follow.id);
-  assert.equal(engine.getRun(follow.id).status, 'completed'); assert.equal(engine.getRun(follow.id).nodes.agent.controlSchemaVersion, savedVersion);
-  assert.equal(calls[1].threadId, 'schema-fixture-thread');
-  assert.deepEqual(calls[1].dynamicTools.find(tool => tool.name === 'relay_control'), savedVersion===11?PRE_CANONICAL_CONTROL_TOOL:savedVersion===10?PRE_USER_AGENCY_CONTROL_TOOL:savedVersion===9?PRE_INTENT_CONTROL_TOOL:savedVersion===8?PRE_PERSISTENT_HISTORY_CONTROL_TOOL:PRE_CONTEXT_CONTROL_TOOL);
-  assert.ok(calls[1].prompt.includes(savedVersion===11?PRE_CANONICAL_CONTROL_INSTRUCTIONS:savedVersion===10?PRE_USER_AGENCY_CONTROL_INSTRUCTIONS:savedVersion===9?PRE_INTENT_CONTROL_INSTRUCTIONS:savedVersion===8?PRE_PERSISTENT_HISTORY_CONTROL_INSTRUCTIONS:PRE_CONTEXT_CONTROL_INSTRUCTIONS));
-});
+
 
 test('native raw default, supported maximum and expected usable window stay separate', () => {
   const cases = [
@@ -289,7 +260,7 @@ test('engine compression locks the saved conversation until completion, error or
   const engine = new HarnessEngine({ runtime, dataDir: cwd, defaultCwd: cwd });
   engine.schedulePersist = () => {}; engine.persist = async () => {};
   const node = { id: 'agent', type: 'agent', name: 'Fixture', model: 'fixture', prompt: 'Local fixture only.', effort: 'high', context: { preset: 'extended' } };
-  const run = { id: 'compact-fixture', taskId: 'shared-task', cwd, status: 'completed', settled: true, events: [], workflow: { id: 'compact-graph', name: 'Fixture', nodes: [{ id: 'input', type: 'input' }, node, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' } }, nodes: { input: { status: 'completed' }, agent: { status: 'completed', threadId: 'saved-native-thread', resolvedModel: 'fixture', codexHistory: 'codex' }, output: { status: 'completed' } } };
+  const run = { id: 'compact-fixture', taskId: 'shared-task', cwd, status: 'completed', settled: true, events: [], workflow: { id: 'compact-graph', name: 'Fixture', nodes: [{ id: 'input', type: 'input' }, node, { id: 'output', type: 'output' }], edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' } }, nodes: { input: { status: 'completed' }, agent: { status: 'completed', threadId: 'saved-native-thread', nativeCatalogVersion:1, toolNames:[], resolvedModel: 'fixture', codexHistory: 'codex' }, output: { status: 'completed' } } };
   engine.runs.set(run.id, run); const choices = structuredClone(run.workflow);
   const first = engine.compactRun(run.id, { nodeId: 'agent' });
   assert.equal(engine.conversationBusy(run), true);

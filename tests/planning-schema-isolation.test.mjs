@@ -53,7 +53,7 @@ test('captured identifiers constrain only their exact reference positions across
 
 test('A then B then empty calls cannot mutate previous results, public schemas, or exported control contracts',()=>{
   const base=Object.fromEntries(kinds.map(kind=>[kind,responseCycleResponseSchema(kind)]));
-  const controlNames=['CONTROL_TOOL','PRE_ACCURACY_CONTROL_TOOL','PRE_PROFILE_CONTROL_TOOL'];
+  const controlNames=['CONTROL_TOOL'];
   const snapshots={base:digest(base),controls:Object.fromEntries(controlNames.map(name=>[name,digest(controls[name])]))};
   const first=Object.fromEntries(kinds.map(kind=>[kind,planningModuleOutputSchema(attempt(kind))])),firstHash=digest(first);
   const next={sources:[{id:'source:beta',kind:'source'}],challenges:[{edgeId:'challenge-beta'}],workflowNodeIds:['workflow-agent-beta'],cycleContext:{effectReceipts:[{id:'receipt-beta'}]}};

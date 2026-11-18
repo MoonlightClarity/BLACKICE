@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {PlanningBrowserStore} from '../lib/planning-browser.mjs';
 import {ResponseCycleService} from '../lib/response-cycle.mjs';
-import {createControlToolHandler,CONTROL_TOOL,PRE_USER_AGENCY_CONTROL_TOOL} from '../lib/control-tools.mjs';
+import {createControlToolHandler,CONTROL_TOOL} from '../lib/control-tools.mjs';
 import {validRemoteArguments} from '../lib/remote-agent-api.mjs';
 import {responseCycleStage,responseCycleTemplate,RESPONSE_CYCLE_STAGES} from '../public/response-cycle-model.mjs';
 
@@ -49,12 +49,12 @@ test('archived response cycles remain readable, but neither old nor current cont
     cycle:{expectedRequestRevision:request.revision,expectedCycleRevision:request.nodes.find(node=>node.id===cycleId).revision,
       expectedPlanRevision:planOf(request).revision,expectedPlanResponseId:before,clientRequestId:'old-plan-edit',plan:savedPlan()}};
   assert.equal(typeof args.action,'string'); // Historical payload remains readable, never executable.
-  for(const schema of [PRE_USER_AGENCY_CONTROL_TOOL,CONTROL_TOOL]){
+  for(const schema of [CONTROL_TOOL]){
     const gateway=createControlToolHandler({engine:{responseCycle:service},run:{id:'archived',cwd:directory},
       nodeId:'archived-agent',toolDefinition:schema});
     const result=await gateway({name:'relay_control',arguments:args});
     assert.equal(result.success,false);
-    assert.match(result.contentItems[0].text,/legacy Planning cycle is retired/);
+    assert.match(result.contentItems[0].text,/current relay_control schema/);
     assert.equal(planOf(await store.get(id)).response.id,before,'rejected action cannot mutate an old cycle');
   }
   assert.equal(modelCalls,0);
