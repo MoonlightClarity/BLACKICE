@@ -337,7 +337,7 @@ export function createBrowserWorkspace(options) {
       for(const id of addressDrafts.keys())if(!tabs.some(tab=>tab.tabId===id))addressDrafts.delete(id);
       if(result.failedTabs?.length)notice('Closed '+result.closed+' tabs; some could not be closed. Refresh before retrying.',true);
       else notify?.('Closed '+result.closed+' browser tabs; in-use tabs retained.');
-    }catch(error){if(active&&!destroyed)notice(error.message,true);}
+    }catch(error){if(currentRequest())notice(error.message,true);}
     finally{busy=false;if(active&&!destroyed)render();}
   }
   async function decide(interaction,decision,promptText) {
