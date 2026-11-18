@@ -51,15 +51,7 @@ test('manual organization creates, files, filters, renames and removes folders w
  f.$('#next-knowledge-source').value='learned';await f.$('#next-knowledge-source').dispatch('change');await until(()=>f.$('[data-knowledge-id="entry"]'));
  assert.equal(f.$('#next-knowledge-filter-note').hidden,true);assert.equal(f.$('#next-knowledge-kind').closest('label').hidden,true);
 });
-test('Skills edits and creates in place, preserves draft on re-entry, and external discovery is opt-in only',async t=>{
- const f=await setup(t,'skill');await until(()=>f.$('[data-skill-id="saved:entry"]'));assert.equal(f.discoveries(),0);
- await f.click('[data-skill-id="saved:entry"]');await until(()=>!f.$('#skills-edit').hidden);await f.click('#skills-edit');await until(()=>f.$('#skills-editor-content').value==='Original content');
- await f.input('#skills-editor-content','Edited skill content');f.workspace.leave();f.workspace.enter();assert.equal(f.$('#skills-editor-content').value,'Edited skill content');
- await f.$('#skills-editor-form').dispatch('submit',{preventDefault(){}});await until(()=>f.store.get('entry').revision===2);assert.equal(f.store.get('entry').cwd,f.original.cwd);
- await until(()=>!f.$('#skills-editor-new').disabled);await f.click('#skills-back');await f.click('#skills-new');await f.input('#skills-editor-title','New skill');await f.input('#skills-editor-content','New procedure');await f.$('#skills-editor-form').dispatch('submit',{preventDefault(){}});await until(()=>f.store.list({kind:'skill'}).length===2);
- await f.click('#skills-back');await until(()=>!f.$('#skills-refresh').disabled);await f.click('#skills-external');await until(()=>f.$('#skills-status').textContent.includes('1 disabled external discoveries'));assert.ok(f.discoveries()>0);assert.equal(f.$('#skills-list').querySelectorAll('button').length,1);
- await f.click('#skills-normal');await until(()=>f.$('[data-skill-id="saved:entry"]'));assert.equal(f.$('#skills-list').textContent.includes('Excluded skill'),false);
-});
+test('Skills catalog never admits saved agent procedures or external discoveries',async t=>{const f=await setup(t,'skill');await until(()=>f.$('[data-skill-id="builtin-browser"]'));assert.equal(f.$('[data-skill-id="saved:entry"]'),null);assert.equal(f.discoveries(),0);assert.equal(f.$('#skills-edit'),null);assert.equal(f.$('#skills-new'),null);assert.ok(f.calls.every(call=>call.method==='GET'));assert.equal(f.store.get('entry').revision,1);});
 
 test('save, Trash and restore immediately release folder controls without refresh',async t=>{
  const f=await setup(t);await until(()=>f.$('[data-knowledge-id="entry"]'));await f.click('[data-knowledge-id="entry"]');await until(()=>f.$('#next-knowledge-content').value==='Original content');
@@ -122,32 +114,6 @@ test('nested memory folders render as descendants and preserve the full selected
  await f.click(button);await until(()=>f.calls.some(call=>call.route.includes('folderId='+child)));await f.click('[data-knowledge-id="entry"]');await until(()=>f.$('#next-knowledge-content').value==='Original content');
  const toggle=f.$('.next-folder-toggle');await f.click(toggle);assert.equal(f.$('.next-folder-toggle').getAttribute('aria-expanded'),'false');
 });
-test('Skills organization is reachable from catalog and compact rows keep full procedures on demand',async t=>{
- const f=await setup(t,'skill');await until(()=>f.$('[data-skill-id="saved:entry"]'));
- let org=await f.store.organize({action:'create',name:'Research',expectedRevision:1});const parent=org.folders[0].id;
- org=await f.store.organize({action:'create',name:'Review',parentId:parent,expectedRevision:org.revision});const child=org.folders[1].id;
- await f.store.organize({action:'move',entryIds:['entry'],folderId:child,expectedRevision:org.revision});
- const entry=f.store.get('entry');await f.store.upsert({...entry,summary:'Detailed '.repeat(40),expectedRevision:entry.revision});
- await f.click('#skills-refresh');await until(()=>f.$('#skills-list').textContent.includes('Review (1)'));
- const row=f.$('[data-skill-id="saved:entry"]');assert.equal(row.textContent,entry.title);assert.equal(row.querySelector('.next-skills-description'),null);assert.equal(row.querySelector('small'),null);
- assert.equal(row.parentElement.parentElement.parentElement.className,'next-skills-folder');
- await f.click(row);await until(()=>f.$('#skills-content').textContent==='Original content');
- await f.click('#skills-organize');assert.equal(f.$('.next-skills-editor-shell').classList.contains('next-skills-organizing'),true);await until(()=>f.$('#skills-editor-folder-parent'));
- await f.click('#skills-back');assert.equal(f.$('.next-skills-root').hidden,false);
-});
+test('Skills inspector exposes release scope without mutable organization controls',async t=>{const f=await setup(t,'skill');await until(()=>f.$('[data-skill-id="builtin-browser"]'));await f.click('[data-skill-id="builtin-browser"]');await until(()=>!f.$('#skills-content').hidden);assert.match(f.$('#skills-meta').textContent,/current website task/);assert.equal(f.$('#skills-organize'),null);assert.ok(f.calls.every(call=>call.route.startsWith('/api/skills')));});
 
-test('Skills search reveals collapsed ancestor folders and restores browsing collapse state',async t=>{
- const f=await setup(t,'skill');await until(()=>f.$('[data-skill-id="saved:entry"]'));
- let org=await f.store.organize({action:'create',name:'Research',expectedRevision:1});const parent=org.folders[0].id;
- org=await f.store.organize({action:'create',name:'Review',parentId:parent,expectedRevision:org.revision});const child=org.folders[1].id;
- await f.store.organize({action:'move',entryIds:['entry'],folderId:child,expectedRevision:org.revision});await f.click('#skills-refresh');await until(()=>f.$('#skills-list').textContent.includes('Review (1)'));
- const groups=()=>f.$('#skills-list').querySelectorAll('.next-skills-folder');
- for(const folder of groups().slice(0,2)){folder.open=false;await folder.dispatch('toggle');}
- await f.input('#skills-query','Original');await until(()=>f.calls.some(call=>call.route.includes('query=Original'))&&!f.$('#skills-refresh').disabled);
- assert.equal(groups()[0].open,true,'search must reveal the collapsed root');assert.equal(groups()[1].open,true,'search must reveal the collapsed subfolder');
- for(const folder of groups().slice(0,2))await folder.dispatch('toggle');
- groups()[1].open=false;await groups()[1].dispatch('toggle');
- await f.input('#skills-query','');await until(()=>!f.$('#skills-refresh').disabled&&groups()[0].open===false);
- assert.equal(groups()[1].open,false,'clearing search restores original child state');
- await f.input('#skills-query','Original');await until(()=>!f.$('#skills-refresh').disabled&&groups()[0].open===true);assert.equal(groups()[1].open,true);
-});
+test('Skills search finds release methods and never searches saved skill content',async t=>{const f=await setup(t,'skill');await until(()=>f.$('[data-skill-id="builtin-browser"]'));await f.input('#skills-query','Original');await until(()=>f.$('#skills-list').textContent.includes('No matching'));await f.input('#skills-query','job');await until(()=>f.$('[data-skill-id="builtin-job-search"]'));assert.equal(f.$('[data-skill-id="saved:entry"]'),null);assert.equal(f.discoveries(),0);});
