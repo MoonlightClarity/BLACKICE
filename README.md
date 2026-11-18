@@ -102,7 +102,7 @@ Ordinary Chat does not require a Planning module selection or Directory mode. Th
 
 ### Skills and organization
 
-The **Skills** workspace presents release-owned, read-only methods. You can organize these skills in nested folders; this organization does not change their contents or turn them into automatically learned memory. Browser tab folders are also nested and preserve the tabs' ownership boundaries.
+The **Skills** workspace presents bundled methods with explicit human editing. Select a skill, choose **Edit skill**, then **Save skill** to persist your title, summary, scope, usage guidance and instructions. Edits survive restart and are used on the next explicit model skill read; they do not rewrite bundled originals or inject themselves into existing conversations. Conflicting saves retain your draft instead of overwriting another edit. Model skill tools remain search/read-only. Nested folders organize the view without changing contents or creating learned memory. Browser tab folders are also nested and preserve the tabs' ownership boundaries.
 
 The **Knowledge/memory**, **My workflows**, and **To-do** workspaces are removed. This does not remove the separate saved workflow graph manager under **Cronjobs**, or the core task and delegation tools. Previously saved files are not automatically deleted merely because their UI or service was retired.
 

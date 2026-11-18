@@ -18,7 +18,7 @@ Start with the [project README](../README.md). A named document's date, original
 | Organize work | Conversation folders, nested Skills and Browser folders, Cronjobs and [Goal mode](GOAL-MODE.md). No automatic Swarm dispatch. |
 | Build or publish a Windows release | [Signing and release](../SIGNING-AND-RELEASE.md) and [third-party notices](../THIRD-PARTY-NOTICES.md) |
 
-**Current candidate:** Directory, old module controls, automatic learning and old Autonomy/Swarm execution are retired. Skills are release-owned and read-only, with user-organized folders. The separate To-do and My workflows spaces have been removed; Cronjobs retain their current saved-workflow editor. Historical documents below do not reactivate those features.
+**Current candidate:** Directory, old module controls, automatic learning and old Autonomy/Swarm execution are retired. Skills have bundled originals plus human-edited persistent overrides, with user-organized folders. Model skill tools are read-only; unrestricted shell access is not an OS-level immutability guarantee. The separate To-do and My workflows spaces have been removed; Cronjobs retain their current saved-workflow editor. Historical documents below do not reactivate those features.
 
 **Workspace navigation:** Chat, Cronjobs, Browser, Skills and Settings. The retained Planning deep link exposes Goal and Activity plus explicit saved graph plans.
 
