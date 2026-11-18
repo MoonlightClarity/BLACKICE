@@ -1,6 +1,7 @@
+import {readSavedDirectJobBytes} from './fixtures/read-direct-sqlite.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { BrowserWorkspace } from '../lib/browser.mjs';
@@ -25,6 +26,6 @@ test('direct diagnostics stay read-scoped, durable, idempotent and ownership-gua
  for(let i=0;i<100;i++){done=await api.getJob(job.jobId,client);if(done.settled)break;await new Promise(r=>setTimeout(r,5));}
  assert.equal(done.status,'succeeded');assert.equal(inspections,0);assert.equal(calls.length,1);
  assert.deepEqual(done.effects,{possible:false,confirmed:false});assert.match(done.result.text.text,/TypeError fixture/);
- assert.match(await readFile(path.join(directory,'direct-execution-jobs',job.jobId+'.json'),'utf8'),/TypeError fixture/);
+ assert.match(readSavedDirectJobBytes(api.jobs.databaseFile,job.jobId),/TypeError fixture/);
  assert.equal((await api.call('blackice_browser_read',args,client)).existing,true);assert.equal(calls.length,1);
 });

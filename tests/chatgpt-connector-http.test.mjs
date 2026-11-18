@@ -234,10 +234,13 @@ test('expired access receives HTTP 401 and refreshing the same grant preserves a
   } finally { release.resolve(); }
 });
 
-test('removing local action approvals preserves legacy pending and cancelled receipts without replay', async t => {
+test('removed approval interactions are rejected while current pending and cancelled receipts never replay', async t => {
   const f = await fixture(t), [grant] = await approvedDirectGrants(f);
   const request = { action: 'write', path: 'legacy-pending.txt', text: 'Must remain unexecuted.' };
-  const admitted = await f.app.directExecution.jobs.admit({ ownerId: grant.client.id, requestId: 'legacy-pending', tool: 'blackice_workspace_write', arguments: request, requiredScopes: ['files:write'], client: grant.client, mutating: true, interaction: { id: 'input_legacy', kind: 'approval', message: 'Historical approval request.' } });
+  const before=await f.app.directExecution.jobs.counts();
+  await assert.rejects(f.app.directExecution.jobs.admit({ ownerId: grant.client.id, requestId: 'legacy-pending', tool: 'blackice_workspace_write', arguments: request, requiredScopes: ['files:write'], client: grant.client, mutating: true, interaction: { id: 'input_legacy', kind: 'approval', message: 'Historical approval request.' } }),{code:'DIRECT_JOB_STORAGE'});
+  assert.deepEqual(await f.app.directExecution.jobs.counts(),before);
+  const admitted = await f.app.directExecution.jobs.admit({ ownerId: grant.client.id, requestId: 'legacy-pending', tool: 'blackice_workspace_write', arguments: request, requiredScopes: ['files:write'], client: grant.client, mutating: true, interaction: { id: 'input_legacy', kind: 'sign_in', message: 'Current sign-in interaction.' } });
   const pendingBefore = await f.app.directExecution.getJob(admitted.job.id, grant.client);
   const retry = await connectorTool(f, grant, 'blackice_workspace_write', { requestId: 'legacy-pending', ...request });
   assert.equal(retry.structuredContent.existing, true); assert.equal(retry.structuredContent.status, 'awaiting_input');

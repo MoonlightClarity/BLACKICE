@@ -1,3 +1,4 @@
+import {readSavedDirectJobBytes} from './fixtures/read-direct-sqlite.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
@@ -66,17 +67,17 @@ test('retired direct cycle calls recover exact durable receipts across reopen bu
  const tool='blackice_planning_cycle',args={requestId:'old-cycle-request',action:'run',graphRequestId:'archive',cycleId:'old-cycle',expectedRequestRevision:4};
  const admitted=await api.jobs.admit({ownerId:client.id,requestId:args.requestId,tool,arguments:args,requiredScopes:['commands:run','planning:write'],client,mutating:true});
  await api.jobs.update(admitted.job.id,()=>({status:'failed',finishedAt:new Date().toISOString(),error:{code:'SAVED_FAILURE',message:'Original failure retained.'},dispatched:true}));
- const original=await readFile(api.jobs.file(admitted.job.id),'utf8');let enqueues=0;
+ const original=readSavedDirectJobBytes(api.jobs.databaseFile,admitted.job.id);let enqueues=0;
  const originalAdmit=api.jobs.admit.bind(api.jobs);api.jobs.admit=(...values)=>{enqueues++;return originalAdmit(...values);};
  assert.ok(!api.tools(client).some(item=>item.name===tool));
  for(let i=0;i<3;i++){const replay=await api.call(tool,args,client);assert.equal(replay.jobId,admitted.job.id);assert.equal(replay.existing,true);assert.equal(replay.status,'failed');}
  await assert.rejects(()=>api.call(tool,{...args,cycleId:'different'},client),{code:'DIRECT_REQUEST_CONFLICT'});
  await assert.rejects(()=>api.call(tool,{...args,requestId:'new-cycle-request'},client),retired);
  await assert.rejects(()=>api.call(tool,args,{...client,id:'other-principal'}),retired);
- assert.equal(enqueues,0);assert.equal((await api.getJob(admitted.job.id,client)).error.code,'SAVED_FAILURE');assert.equal(await readFile(api.jobs.file(admitted.job.id),'utf8'),original);
+ assert.equal(enqueues,0);assert.equal((await api.getJob(admitted.job.id,client)).error.code,'SAVED_FAILURE');assert.equal(readSavedDirectJobBytes(api.jobs.databaseFile,admitted.job.id),original);
  await api.close();api=await new DirectExecutionAPI({dataDir,allowedRoot:dataDir}).init();
  const replay=await api.call(tool,args,client);assert.equal(replay.jobId,admitted.job.id);assert.equal(replay.existing,true);
- assert.equal(await readFile(api.jobs.file(admitted.job.id),'utf8'),original);assert.deepEqual(await api.jobs.counts({ownerId:client.id}),{total:1,unfinished:0});
+ assert.equal(readSavedDirectJobBytes(api.jobs.databaseFile,admitted.job.id),original);assert.deepEqual(await api.jobs.counts({ownerId:client.id}),{total:1,unfinished:0});
 });
 test('an in-memory queued retired cycle is rejected before generic workspace preparation',async t=>{
  const dataDir=await mkdtemp(path.join(tmpdir(),'planning-retired-queued-'));

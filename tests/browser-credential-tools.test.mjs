@@ -1,3 +1,4 @@
+import {readSavedDirectJobBytes} from './fixtures/read-direct-sqlite.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, readFile } from 'node:fs/promises';
@@ -111,7 +112,7 @@ test('direct credential adapters execute under granted scopes with durable safe 
   assert.ok(authorization.length >= 3); assert.ok(authorization.every(scopes => scopes.join() === 'browser:write'));
   assert.doesNotMatch(JSON.stringify(job), new RegExp(password));
   const same = await api.call('blackice_credentials_generate', args, client); assert.equal(same.jobId, pending.jobId); assert.equal(same.existing, true);
-  const ledger = await readFile(api.jobs.file(pending.jobId), 'utf8'); assert.ok(!ledger.includes(password));
+  const ledger = readSavedDirectJobBytes(api.jobs.databaseFile,pending.jobId); assert.ok(!ledger.includes(password));
   assert.equal(tools.find(tool => tool.definition.name.endsWith('_list')).definition.scope, 'browser:read');
   await assert.rejects(api.call('blackice_credentials_fill', { requestId: 'denied_fill', ...target }, { ...client, scopes: ['read', 'browser:read'] }), { code: 'DIRECT_SCOPE_REQUIRED', scope: 'browser:write' });
 });

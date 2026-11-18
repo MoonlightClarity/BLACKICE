@@ -1,3 +1,4 @@
+import {readSavedDirectJobBytes} from './fixtures/read-direct-sqlite.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -149,7 +150,7 @@ test('an exact direct dialog decision resolves the pending interaction without r
   const resolution = await api.call('blackice_browser_action', args, client), done = await waitJob(api, resolution.jobId);
   assert.equal(done.status, 'succeeded', JSON.stringify(done)); assert.equal(calls[0].promptText, promptText); assert.equal(calls.length, 1);
   const result = JSON.parse(done.result.text.text); assert.deepEqual(result.receipt, { replayed: false, decision: 'accept', interactionId });
-  assert.doesNotMatch(JSON.stringify(done), new RegExp(promptText)); assert.doesNotMatch(await readFile(path.join(directory, 'direct-execution-jobs', `${resolution.jobId}.json`), 'utf8'), new RegExp(promptText));
+  assert.doesNotMatch(JSON.stringify(done), new RegExp(promptText)); assert.doesNotMatch(readSavedDirectJobBytes(api.jobs.databaseFile,resolution.jobId), new RegExp(promptText));
   assert.equal((await api.call('blackice_browser_action', args, client)).existing, true); assert.equal(calls.length, 1);
   assert.equal((await api.getJob(blocked.jobId, client)).status, 'awaiting_input', 'Resolving a dialog never relabels or replays its earlier uncertain action.');
 });

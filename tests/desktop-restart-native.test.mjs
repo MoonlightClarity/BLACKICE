@@ -1,3 +1,4 @@
+import {readSavedDirectJob} from './fixtures/read-direct-sqlite.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -45,7 +46,7 @@ async function fixture(t, { holdPrepare = false } = {}) {
       app.assertRestartPrepared();
       const receipt = controller.receipts.at(-1);
       if (receipt.jobId) {
-        const saved = JSON.parse(readFileSync(app.directExecution.jobs.file(receipt.jobId), 'utf8'));
+        const saved = readSavedDirectJob(app.directExecution.jobs.databaseFile,receipt.jobId);
         assert.equal(saved.status, 'succeeded'); assert.ok(Number.isFinite(Date.parse(saved.finishedAt)));
         assert.equal(saved.ownerId, receipt.ownerId);
         native.push({ action: 'relaunch', savedJob: saved.id, savedStatus: saved.status });

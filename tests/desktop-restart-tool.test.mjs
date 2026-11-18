@@ -1,6 +1,6 @@
+import {readSavedDirectJob} from './fixtures/read-direct-sqlite.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -172,7 +172,7 @@ test('API and desktop controller hand off only after the durable job succeeds an
   const origin = { pid: 11001, startedAt: '2026-10-21T01:00:00.000Z', profileDir: dataDir, mode: 'background' };
   const next = { ...origin, pid: 11002, startedAt: '2026-10-21T01:01:00.000Z' };
   let jobId, api;
-  const observeSavedJob = () => savedAtNativeCall.push(JSON.parse(readFileSync(path.join(dataDir, 'direct-execution-jobs', `${jobId}.json`), 'utf8')));
+  const observeSavedJob = () => savedAtNativeCall.push(readSavedDirectJob(api.jobs.databaseFile,jobId));
   const controllerOptions = identity => ({
     profileDir: dataDir, getIdentity: () => identity,
     getLaunchOptions: () => ({ execPath: process.execPath, args: ['--profile-dir', dataDir, '--background'], profileDir: dataDir, mode: identity.mode }),
