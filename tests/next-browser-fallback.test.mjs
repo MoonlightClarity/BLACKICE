@@ -231,3 +231,16 @@ test('fallback failed close all is reported without automatic replay',async t=>{
  window.confirm=()=>true;await f.click('#next-browser-close-all');await until(()=>f.$('#next-browser-status').textContent.includes('receipt uncertain'));
  assert.equal(attempts,1);assert.equal(f.state.tabs.length,2);assert.equal(f.$('#next-browser-status').dataset.error,'true');
 });
+
+test('late close-all status cannot overwrite newer workspace lifetime or its address draft',async t=>{
+ const gate=deferred();let afterClose=false,oldRead=false,closed=0;
+ const f=await tabFixture(t,{hook:async(call,state,captured)=>{
+  if(call.route==='/api/browser/close-all'){closed++;afterClose=true;return{closed:0};}
+  if(call.route.startsWith('/api/browser/status')&&afterClose&&!oldRead){oldRead=true;return gate.promise;}
+ }});window.confirm=()=>true;
+ await f.click('#next-browser-close-all');await until(()=>oldRead);
+ f.workspace.leave();f.state.tabs.push({browser:'relay',visible:false,tabId:'newest',url:'https://fixture.example/newest',title:'Newest',documentId:'n:1'});f.state.activeTab='newest';f.workspace.enter();
+ await until(()=>f.selected()==='newest');await f.input('#next-browser-url','Keep newest address draft');
+ gate.resolve({tabs:[],activeTab:null});await settle();await settle();
+ assert.equal(f.selected(),'newest');assert.equal(f.$('#next-browser-url').value,'Keep newest address draft');assert.equal(closed,1);
+});

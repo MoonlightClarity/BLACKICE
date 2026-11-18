@@ -6,8 +6,8 @@ export function browserCollectionTree(collections,tabs){
 }
 // One app-owned tree moves the existing tab rows. Selection/close handlers and
 // host collection/ownership persistence remain authoritative, without an extension.
-export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,notice}){
- let collections=[],host=null,pending=false,destroyed=false,editor=null,rows=[],extras=[],selectedBefore=null;
+export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,notice,onModalChange=()=>{}}){
+ let collections=[],host=null,pending=false,destroyed=false,editor=null,editorDialog=null,rows=[],extras=[],selectedBefore=null;
  const collapsed=new Set(),renameDrafts=new Map();let renaming=null;
  const blocked=()=>pending||isBusy()||destroyed;
  const el=(tag,label,cls)=>{const n=host.ownerDocument.createElement(tag);if(label)n.textContent=label;if(cls)n.className=cls;return n;};
@@ -59,13 +59,13 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
    }
   });renameDrafts.set(folder.id,input);return input;
  }
- function dismiss(){editor?.remove();editor=null;paint();}
+ function dismiss(){editorDialog?.close?.();editorDialog?.remove();editorDialog=null;editor?.remove();editor=null;onModalChange(false);paint();}
  function edit(folder=null,tabId=null){
   if(blocked())return;
-  editor?.remove();const form=el('form',null,'next-browser-folder-editor');editor=form;
+  editorDialog?.close?.();editorDialog?.remove();editorDialog=null;editor?.remove();const form=el('form',null,'next-browser-folder-editor');editor=form;
   form.setAttribute('aria-label',tabId?'Move tab to folder':folder?'Edit tab folder':'New tab folder');
   const heading=el('strong',tabId?'Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab') :folder?'Edit folder':'New folder');form.append(heading);
-  if(tabId)form.setAttribute('role','dialog');
+  if(tabId){editorDialog=el('dialog',null,'next-chat-management-dialog next-browser-move-dialog');editorDialog.setAttribute('aria-label','Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab')+' to folder');editorDialog.append(form);editorDialog.addEventListener('cancel',event=>{event.preventDefault();if(!pending)dismiss();});}
   const parent=el('select');parent.setAttribute('aria-label',tabId?'Folder':'Parent folder');
   const none=el('option',tabId?'Unfiled':'Top level');none.value='';parent.append(none);
   const excluded=folder?descendants(collections,folder.id):new Set();
@@ -114,7 +114,7 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   for(const f of tree.roots)host.append(branch(f));
   host.append(branch({id:'',name:'Unfiled',tabs:tree.loose,children:[]}));
   host.append(...transientRows,...extras);
-  if(editor){host.insertBefore(editor,toolbar.nextSibling||host.children[1]||null);for(const n of editor.querySelectorAll('button,input,select'))n.disabled=blocked();}
+  if(editor){if(editorDialog){if(!editorDialog.isConnected)host.parentElement.append(editorDialog);if(editor.hidden){editorDialog.close?.();onModalChange(false);}else if(!editorDialog.open){onModalChange(true);editorDialog.showModal?.();}}else host.insertBefore(editor,toolbar.nextSibling||host.children[1]||null);for(const n of editor.querySelectorAll('button,input,select'))n.disabled=blocked();}
   if(renaming&&renameDrafts.get(renaming)===focus)focus.focus({preventScroll:true});
   else if(editor&&!editor.hidden&&editor.contains(focus))focus.focus({preventScroll:true});
   else if(focusKey)[...host.querySelectorAll('[data-folder-control]')].find(n=>n.dataset.folderControl===focusKey)?.focus({preventScroll:true});
@@ -125,6 +125,6 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   groupTabs(strip){host=strip;rows=[...strip.querySelectorAll('.next-browser-tab-group')];extras=[...strip.children].filter(n=>n.classList.contains('next-native-more-tabs')||n.classList.contains('next-browser-tabs-empty'));paint();},
   leave(){renaming=null;if(editor)editor.hidden=true;paint();},
   update(data){collections=Array.isArray(data.collections)?data.collections:[];},render:paint,
-  destroy(){destroyed=true;renameDrafts.clear();editor?.remove();editor=null;rows=[];host=null;}
+  destroy(){destroyed=true;onModalChange(false);renameDrafts.clear();editorDialog?.close?.();editorDialog?.remove();editorDialog=null;editor?.remove();editor=null;rows=[];host=null;}
  };
 }

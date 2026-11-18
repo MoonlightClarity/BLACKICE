@@ -91,10 +91,10 @@ test('folder drag rejects cycles and moves observed folders only',async t=>{
  await f.$('.next-browser-folder-toolbar').dispatch('drop',{dataTransfer:dt('c')});assert.deepEqual(f.calls,[{browser:'relay',action:'collection_move',collectionId:'c',parentCollectionId:null}]);
 });
 
-test('Move opens a named dialog immediately below toolbar, retains choice through refresh and Escape cancels',async t=>{
+test('Move opens a named dialog as a genuine modal, retains choice through refresh and Escape cancels',async t=>{
  const f=fixture(t);await f.click('.next-browser-tab-move');const form=f.$('.next-browser-folder-editor');
- assert.equal(form.getAttribute('role'),'dialog');assert.equal(form.getAttribute('aria-label'),'Move tab to folder');
- assert.equal(f.strip.children[1],form);const target=form.querySelector('select');target.value='p';f.render();
- assert.equal(form.querySelector('select').value,'p');assert.equal(f.strip.children[1],form);
+ assert.equal(form.parentElement.tagName,'DIALOG');assert.equal(form.getAttribute('aria-label'),'Move tab to folder');
+ assert.equal(form.parentElement.open,true);const target=form.querySelector('select');target.value='p';f.render();
+ assert.equal(form.querySelector('select').value,'p');assert.equal(form.parentElement.open,true);
  await f.key(form,'Escape');assert.equal(f.$('.next-browser-folder-editor'),null);assert.equal(f.calls.length,0);
 });

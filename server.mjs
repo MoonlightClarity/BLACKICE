@@ -595,6 +595,9 @@ export async function createHarnessServer(options = {}) {
         const input=await body(req,32768);
         // Root membership is metadata-only and never turns a browser folder or
         // task plan into shared memory or a conversation identity.
+        // A newly accepted run may still be queued for durable catalog capture.
+        // Validate against the settled catalog rather than racing that write.
+        await conversations.chain;
         const roots=new Set(conversations.list('all').map(item=>item.rootId));
         const pending=conversationFolders.edit(input,{exists:id=>roots.has(id)});
         fileMutations.add(pending);

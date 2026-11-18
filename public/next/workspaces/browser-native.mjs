@@ -264,11 +264,12 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
     onMoveStatus(data,options){applyStatus(data,options);},
     onMoveEnd(){busy=false;render();void drainNewTabs();},
   });
-  const folders=createBrowserFolders({mount,api,getTabs:()=>usage.visible(tabs),getSelected:()=>selected,isBusy:()=>busy,select,refresh,notice});
+  let folderModal=false;
+  const folders=createBrowserFolders({mount,api,onModalChange:open=>{folderModal=open;if(open)surface.hide();else scheduleGeometry();},getTabs:()=>usage.visible(tabs),getSelected:()=>selected,isBusy:()=>busy,select,refresh,notice});
   function geometry(){
     geometryFrame=null;
     if(geometryTimer!==null){window.clearTimeout(geometryTimer);geometryTimer=null;}
-    if(!active||!surfaceReady||mount.hidden||!current()){surface.hide();return;}
+    if(!active||folderModal||!surfaceReady||mount.hidden||!current()){surface.hide();return;}
     const bounds=nativePageBounds(ui.page.getBoundingClientRect(),{width:window.innerWidth,height:window.innerHeight});
     surface.show(selected,bounds);
   }

@@ -45,7 +45,7 @@ async function fixture(t) {
   });
   t.after(() => workspace.destroy()); workspace.enter();
   await until(() => dom.$('#next-browser-url').value === state.tabs[0].url && surfaceCalls.some(call => call.action === 'attach'));
-  return { ...dom, state, workspace,
+  return { ...dom, state, workspace,surfaceCalls,
     async refresh() {
       const previous = reads;
       for (const handler of subscribers) handler({ type: 'browser.status' });
@@ -91,4 +91,14 @@ test('native status refresh preserves an unsent address draft and leaves an unch
   await f.$('#next-browser-form').dispatch('submit');
   await until(() => !f.$('#next-browser-go').disabled);
   assert.equal(address.value, 'An address still being typed', 'An invalid submission retains the draft.');
+});
+
+test('Move tab modal hides native page until dismissal and restores selected page without navigation',async t=>{
+ const f=await fixture(t),before=f.surfaceCalls.length;await f.click('.next-browser-tab-move');
+ assert.equal(f.$('.next-browser-move-dialog').open,true);assert.ok(f.surfaceCalls.slice(before).some(call=>call.action==='hide'));
+ const hiddenAt=f.surfaceCalls.length;await f.refresh();await sleep(20);
+ assert.equal(f.surfaceCalls.slice(hiddenAt).some(call=>call.action==='attach'),false);
+ await f.$('.next-browser-folder-editor').dispatch('keydown',{key:'Escape'});
+ await until(()=>f.surfaceCalls.slice(hiddenAt).some(call=>call.action==='attach'&&call.tabId==='search'));
+ assert.equal(f.$('.next-browser-move-dialog'),null);
 });

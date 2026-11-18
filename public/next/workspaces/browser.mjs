@@ -326,12 +326,13 @@ export function createBrowserWorkspace(options) {
     const candidates=tabs.filter(tab=>!tab.inUse);
     if(!candidates.length){notice('All tabs are marked in use. Release a mark before bulk closing.');return;}
     if(typeof window.confirm!=='function'||!window.confirm('Close '+candidates.length+' unused tabs? Tabs marked in use will stay open.'))return;
-    sequence++;busy=true;render();
+    const generation=++sequence,session=lifecycle;busy=true;render();
+    const currentRequest=()=>active&&!destroyed&&session===lifecycle&&generation===sequence;
     try{
       const result=await api('/api/browser/close-all','POST',{}, {deadlineMs:30000});
-      if(destroyed)return;
+      if(!currentRequest())return;
       const data=await api('/api/browser/status?view=contained');
-      if(destroyed)return;
+      if(!currentRequest())return;
       applyStatus(data);
       for(const id of addressDrafts.keys())if(!tabs.some(tab=>tab.tabId===id))addressDrafts.delete(id);
       if(result.failedTabs?.length)notice('Closed '+result.closed+' tabs; some could not be closed. Refresh before retrying.',true);
