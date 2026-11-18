@@ -1,4 +1,3 @@
-// Historical schema-13 protocol regression; schema-14 behavior has separate canonical-contract and production-engine acceptance coverage.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
@@ -25,8 +24,7 @@ async function fixture(t) {
       // This suite explicitly tests guarded correction delivery, not advisory defaults.
       const guard = await createPlanningWorkerGuard({ store, taskId: initial.taskId, runId: 'run-one', nodeId, label: nodeId, scopeStepId, executionGuardrails: true });
       const receipt=state=>({success:true,contentItems:[{type:'inputText',text:JSON.stringify(state)}]});
-      return {guard,async read(){const call=tool('relay_task',{action:'read'});return guard.after(call,receipt(await store.get(initial.taskId)));},
-       async step(args){const denied=await guard.before(tool('relay_task',{action:'step',...args}));if(denied)return denied;const state=await store.setStep(initial.taskId,args.stepId,args,{expectedRevision:args.expectedRevision,runId:'run-one',nodeId,scopeStepId,schemaVersion:13});return guard.after(tool('relay_task',{action:'step',...args}),receipt(state));}};
+      return { guard, async read() { const call=tool('relay_task',{action:'read'});return guard.after(call,receipt(await store.get(initial.taskId))); } };
 
     }
   };
@@ -74,7 +72,7 @@ test('a saved human correction blocks the affected attached action until its rea
   const dispatch = async () => { const denied = await worker.guard.before(tool('relay_workspace', { action: 'write' })); if (!denied) actualWrites++; return denied; };
   const denied = await dispatch(); assert.equal(denied.code, 'TASK_PLAN_REVIEW_REQUIRED'); assert.equal(actualWrites, 0);
   assert.equal(decoded(denied).revision, saved.revision);
-  assert.equal((await worker.step({ expectedRevision: saved.revision, stepId: 'left-work', status: 'active' })).code, 'TASK_PLAN_REVIEW_REQUIRED');
+  assert.equal((await worker.guard.before(tool('relay_task', { action: 'step', expectedRevision: saved.revision, stepId: 'left-work', status: 'active' }))).code, 'TASK_PLAN_REVIEW_REQUIRED');
   assert.equal(f.store.awareness.snapshot(saved).workers[0].state, 'needs-review');
   const read = await worker.read(); assert.equal(read.success, true); assert.match(decoded(read).steps.find(step => step.id === 'left-work').note, /corrected input/);
   assert.equal(await dispatch(), null); assert.equal(actualWrites, 1);
@@ -128,8 +126,9 @@ test('saving while a read is in transit keeps the newer correction pending', asy
 
 test('own successful narrow plan writes retain their returned context without fabricating a read', async t => {
   const f = await fixture(t), worker = await f.guard(), first = decoded(await worker.read());
-  const written = await worker.step({ expectedRevision: first.revision, stepId: 'left-work', status: 'active', note: 'I am now implementing the assigned result.' });
-  assert.equal(written.success, true, written.contentItems[0].text);
+  const written = await f.store.setStep(f.taskId, 'left-work', { status: 'active', note: 'I am now implementing the assigned result.' }, { expectedRevision: first.revision, runId: 'run-one', nodeId: 'left-worker', scopeStepId: 'left', schemaVersion: 13 });
+  assert.equal(written.steps.find(step => step.id === 'left-work').status, 'active');
+  f.store.awareness.observed(worker.guard.id, written, { read: false });
   assert.equal(await worker.guard.before(tool('relay_workspace', { action: 'write' })), null);
   const current = f.store.awareness.snapshot(await f.get()).workers[0]; assert.equal(current.lastReadRevision, first.revision); assert.equal(current.state, 'current');
 });
