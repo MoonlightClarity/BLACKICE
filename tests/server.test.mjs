@@ -19,12 +19,12 @@ class FakeRuntime extends EventEmitter {
 async function application(t, options = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'relay-http-test-'));
   const app = await createHarnessServer({ runtime: new FakeRuntime(), port: 0, dataDir: path.join(directory, 'data'), defaultCwd: path.join(directory, 'workspace'), ...options });
-  const url = await app.listen();
   t.after(async () => {
     await app.close();
     assert.match(path.basename(directory), /^relay-http-test-/);
     await rm(directory, { recursive: true, force: true });
   });
+  const url = await app.listen();
   const target = new URL(url);
   const request = (route, options = {}) => new Promise((resolve, reject) => {
     const payload = options.body === undefined ? undefined : typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
@@ -136,27 +136,27 @@ test('HTTP Stop for one chat leaves another chat and queued starts running indep
   } finally { secondRecorded.resolve(); holds.forEach((hold, index) => hold.resolve({ output: 'Fixture cleanup.', threadId: `isolated-stop-thread-${index}` })); }
 });
 
-test('HTTP Stop all still stops every chat and waits for queue saves when browser and learning cleanup fail', async t => {
+test('HTTP Stop all still stops every chat and waits for queue saves when browser and compaction cleanup fail without a learning service', async t => {
   const holds = [deferred(), deferred()], saved = deferred(), calls = [], events = [], runtime = new FakeRuntime();
   runtime.runAgent = async options => { const index = calls.length; calls.push(options); return holds[index].promise; };
   const { app, request, auth } = await application(t, { runtime, maxConcurrentRuns: 2 });
   const post = (route, body = {}) => request(route, { method: 'POST', headers: auth, body });
-  const original = { browser: app.browser.cancel, learning: app.learning.cancelBackground, pause: app.inbox.pause, compactions: app.engine.cancelCompactions };
+  const original = { browser: app.browser.cancel, pause: app.inbox.pause, compactions: app.engine.cancelCompactions };
   let stopping;
   try {
     const first = await post('/api/runs', { workflow: graph, input: 'FIRST CLEANUP FAILURE CHAT' }), second = await post('/api/runs', { workflow: graph, input: 'SECOND CLEANUP FAILURE CHAT' }); await until(() => calls.length === 2, 'both cleanup fixtures start');
     app.inbox.pause = async (...args) => { events.push('inbox'); const result = await original.pause.apply(app.inbox, args); await saved.promise; events.push('saved'); return result; };
     app.browser.cancel = () => { events.push('browser'); throw new Error('Fixture browser adapter did not acknowledge Stop.'); };
-    app.learning.cancelBackground = async () => { events.push('learning'); throw new Error('Fixture learning cleanup failed.'); };
-    app.engine.cancelCompactions = (...args) => { events.push('compactions'); return original.compactions.apply(app.engine, args); };
+    assert.equal(app.learning, undefined);
+    app.engine.cancelCompactions = (...args) => { events.push('compactions'); original.compactions.apply(app.engine, args); throw new Error('Fixture compaction cleanup failed.'); };
     let responded = false; stopping = post('/api/runs/stop-all').then(result => { responded = true; return result; });
-    await until(() => events.includes('learning') && app.inbox.status().paused && app.operations.status().paused, 'all cleanup actions are attempted');
+    await until(() => events.includes('browser') && app.inbox.status().paused && app.operations.status().paused, 'all cleanup actions are attempted');
     assert.ok(calls.every(call => call.signal.aborted)); assert.equal(app.engine.getRun(first.data.id).status, 'cancelled'); assert.equal(app.engine.getRun(second.data.id).status, 'cancelled'); assert.ok(events.includes('compactions'));
     await new Promise(resolve => setImmediate(resolve)); assert.equal(responded, false, 'an adapter failure cannot skip the admitted queue-save acknowledgement');
-    saved.resolve(); const result = await stopping; assert.equal(result.status, 500); assert.equal(result.data.cancelled, 2); assert.equal(result.data.error, 'Some stop actions need attention.'); assert.ok(result.data.details.some(detail => detail.includes('browser adapter'))); assert.ok(result.data.details.some(detail => detail.includes('learning cleanup'))); assert.ok(events.includes('saved'));
+    saved.resolve(); const result = await stopping; assert.equal(result.status, 500); assert.equal(result.data.cancelled, 2); assert.equal(result.data.error, 'Some stop actions need attention.'); assert.ok(result.data.details.some(detail => detail.includes('browser adapter'))); assert.ok(result.data.details.some(detail => detail.includes('compaction cleanup'))); assert.ok(events.includes('saved'));
   } finally {
     saved.resolve(); if (stopping) await stopping.catch(() => {});
-    app.browser.cancel = original.browser; app.learning.cancelBackground = original.learning; app.inbox.pause = original.pause; app.engine.cancelCompactions = original.compactions;
+    app.browser.cancel = original.browser; app.inbox.pause = original.pause; app.engine.cancelCompactions = original.compactions;
     holds.forEach(hold => hold.resolve({ output: 'Fixture cleanup.' }));
   }
 });

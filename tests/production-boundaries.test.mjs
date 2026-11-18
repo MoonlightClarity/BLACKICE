@@ -46,8 +46,8 @@ async function fixture(t, { hold = false } = {}) {
     const home = await fetch(url); cookie = home.headers.get('set-cookie').split(';', 1)[0]; await home.arrayBuffer();
     await until(() => effects.reconnects >= apps.length, 'initial provider startup'); return app;
   }
-  await boot();
   t.after(async () => { for (const gate of waiting) gate.resolve(); for (const instance of apps) await instance.close(); assert.equal(path.dirname(directory), path.resolve(tmpdir())); assert.match(path.basename(directory), /^relay-production-boundaries-/); await rm(directory, { recursive: true, force: true }); });
+  await boot();
   const request = (route, { method = 'GET', auth = true, body, headers = {} } = {}) => new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     const req = http.request(new URL(route, url), { method, headers: { ...(auth ? { Cookie: cookie } : {}), ...(payload === undefined ? {} : { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }), ...headers } }, response => {
@@ -105,7 +105,7 @@ test('maintenance refuses an actual running chat and allows admission after sett
   const admitted = await context.start(); await until(() => context.calls.length === 1);
   await assert.rejects(app.beginMaintenance(), error => error.status === 409 && /active work/.test(error.message)); assert.notEqual(app.engine.maintenanceRequested, true);
   context.waiting[0].resolve(); await until(() => app.engine.getRun(admitted.data.id).settled);
-  assert.equal(app.learning.status().retired,true);assert.equal(app.learning.active,false);assert.equal(context.calls.length,1);
+  assert.equal(app.learning,undefined);assert.equal(context.calls.length,1);
   await app.beginMaintenance();assert.equal(app.engine.maintenanceRequested,true);app.endMaintenance();
 
 });
@@ -153,10 +153,10 @@ test('maintenance rejects valid webhook deliveries before they mutate durable jo
 test('retired learning cannot enqueue provider work while maintenance pause writes are settling', async t => {
   const context = await fixture(t), { app } = context;
   const first = await context.start(); await until(() => app.engine.getRun(first.data.id).settled);
-  const retired=await context.request('/api/learning/review',{method:'POST',body:{runId:first.data.id}});assert.equal(retired.status,410);assert.equal(retired.data.code,'LEARNING_RETIRED');
+  const retired=await context.request('/api/learning/review',{method:'POST',body:{runId:first.data.id}});assert.equal(retired.status,404);
   const paused = deferred(), release = deferred(), original = app.inbox.pause.bind(app.inbox);
   app.inbox.pause = async (...args) => { const value = await original(...args); paused.resolve(); await release.promise; return value; };
   const maintenance = app.beginMaintenance(); await paused.promise;
-  try { assert.equal(app.engine.maintenanceRequested,true);assert.equal(app.learning.active,false);assert.equal(app.learning.status().retired,true);assert.equal(context.calls.length,1); }
+  try { assert.equal(app.engine.maintenanceRequested,true);assert.equal(app.learning,undefined);assert.equal(context.calls.length,1); }
   finally { release.resolve(); await maintenance; app.inbox.pause = original; app.endMaintenance(); }
 });

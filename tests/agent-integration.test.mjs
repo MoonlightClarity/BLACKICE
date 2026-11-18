@@ -29,7 +29,7 @@ async function application(t,{execute,connectionsFactory,maxConcurrentRuns=4}={}
   const runtime=new Runtime(execute),connections=connectionsFactory?await connectionsFactory({dataDir,cwd}):undefined;
   const app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,runtime,desktop:new NoDesktop(),maxConcurrentRuns,...(connections?{connections}:{})});
   t.after(async()=>{await app.close();assert.match(path.basename(directory),/^relay-agent-integration-/);await rm(directory,{recursive:true,force:true});});
-  assert.equal(app.learning.status().retired,true);
+  assert.equal(app.learning,undefined);
   const url=await app.listen(),home=await fetch(url),cookie=home.headers.get('set-cookie').split(';',1)[0];await home.arrayBuffer();
   const request=async(route,{method='GET',body,authenticated=true}={})=>{const response=await fetch(new URL(route,url),{method,headers:{...(authenticated?{Cookie:cookie}:{}),...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,data:await response.json()};};
   const settled=id=>waitFor(()=>{const run=app.engine.getRun(id);return run.settled&&run;},'foreground run');
@@ -88,8 +88,8 @@ test('completed foreground tasks never schedule a background learning provider t
   for(const input of ['First foreground task','Second foreground task']){
     const run=await settled(app.engine.startRun({workflow:graph(),input}).id);assert.equal(run.status,'completed',run.error);
   }
-  await tick();assert.equal(runtime.calls.length,2);assert.deepEqual(app.learning.status(),{available:false,retired:true,enabled:false});
-  assert.equal(app.learning.active,false);assert.equal(app.knowledge.listApprovals().length,0);assert.equal(app.knowledge.list().length,0);
+  await tick();assert.equal(runtime.calls.length,2);assert.equal(app.learning,undefined);
+  assert.equal(app.knowledge,undefined);
   await assert.rejects(readFile(path.join(dataDir,'learning.json')),{code:'ENOENT'});
 });
 
@@ -97,9 +97,9 @@ test('retired learning routes cannot create a review or publish generated knowle
   const {app,runtime,request,settled,dataDir}=await application(t);
   const run=await settled(app.engine.startRun({workflow:graph(),input:'Verify the fixture export'}).id);assert.equal(run.status,'completed',run.error);
   for(const route of ['/api/learning/review','/api/learning/settings']){
-    const result=await request(route,{method:'POST',body:{runId:run.id,mode:'auto'}});assert.equal(result.status,410);assert.equal(result.data.code,'LEARNING_RETIRED');
+    const result=await request(route,{method:'POST',body:{runId:run.id,mode:'auto'}});assert.equal(result.status,404);
   }
-  await tick();assert.equal(runtime.calls.length,1);assert.equal(app.knowledge.list().length,0);assert.equal(app.knowledge.listApprovals().length,0);
+  await tick();assert.equal(runtime.calls.length,1);assert.equal(app.knowledge,undefined);
   await assert.rejects(readFile(path.join(dataDir,'learning.json')),{code:'ENOENT'});
 });
 
@@ -133,7 +133,7 @@ test('owner identity edits stay durable while retired learning routes reject mut
   const saved=await request('/api/identity/soul',{method:'PUT',body:{content:'# Relay persona\n\nUse specific evidence in handoffs.\n',expectedRevision:initial.revision,expectedHash:initial.diskHash}});assert.equal(saved.status,200);
   const restored=await request('/api/identity/soul/restore',{method:'POST',body:{revision:initial.revision,expectedRevision:saved.data.revision,expectedHash:saved.data.diskHash}});assert.equal(restored.status,200);assert.equal(restored.data.content,initial.content);assert.equal(restored.data.provenance.restoredFrom,initial.revision);
   for(const [route,method,body] of [['/api/learning','GET'],['/api/learning/settings','POST',{mode:'off'}],['/api/learning/settings','POST',{mode:'invalid'}],['/api/learning/review','POST',{runId:'missing'}]]){
-    const result=await request(route,{method,body});assert.equal(result.status,410);assert.equal(result.data.code,'LEARNING_RETIRED');
+    const result=await request(route,{method,body});assert.equal(result.status,404);
   }
   await assert.rejects(readFile(path.join(dataDir,'learning.json')),{code:'ENOENT'});
   const entered=deferred(),release=deferred();app.desktop.setEnabled=async()=>{entered.resolve();await release.promise;return{enabled:false};};const closing=app.close();await entered.promise;

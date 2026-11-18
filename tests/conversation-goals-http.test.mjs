@@ -36,8 +36,9 @@ async function fixture(t, runtime = new Runtime()) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-goal-http-'));
   const options = { runtime, port: 0, dataDir: path.join(directory, 'data'), defaultCwd: path.join(directory, 'workspace'), remoteAccess: false };
   const app = await createHarnessServer(options);
+  t.after(async () => { await app.close(); await rm(directory, { recursive: true, force: true }); });
   const url = await app.listen();
-  assert.equal(app.learning.status().retired,true,'No background learning runs alongside Goal tests.');
+  assert.equal(app.learning,undefined,'No background learning runs alongside Goal tests.');
   const home = await fetch(url);
   const cookie = home.headers.get('set-cookie').split(';')[0];
   const request = async (route, body, authenticated = true, method = body === undefined ? 'GET' : 'POST') => {
@@ -45,7 +46,6 @@ async function fixture(t, runtime = new Runtime()) {
     const text = await response.text(); let data = text; try { data = JSON.parse(text); } catch {}
     return { status: response.status, data };
   };
-  t.after(async () => { await app.close(); await rm(directory, { recursive: true, force: true }); });
   return { app, options, runtime, request };
 }
 const input = (objective, maxTurns = null) => ({ workflow: graph, input: { task: objective, directoryMode: 'off', planningMode: 'off', goal: { objective, maxTurns } } });
