@@ -18,7 +18,7 @@ test('no renderer or Electron IPC entry point can launch a native application', 
 test('unrelated workspace tabs stay registered', () => {
   const html = text('public/next/index.html');
   // Retired Swarm and memory spaces have explicit owner-managed replacements.
-  for (const space of ['chat','todos','cronjobs','browser','userWorkflows','skills','settings'])
+  for (const space of ['chat','todos','cronjobs','browser','skills','settings'])
     assert.match(html, new RegExp('data-space="' + space + '"'));
   assert.doesNotMatch(html, /data-space="planning"|data-space="workbench"|data-space="swarm"|data-space="knowledge"/);
 });

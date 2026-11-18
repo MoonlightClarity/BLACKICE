@@ -15,7 +15,6 @@ const modules={
   cronjobs:()=>import('./workspaces/tasks.mjs').then(m=>m.createCronjobsWorkspace),
   workflows:()=>import('./workspaces/workflow-execution.mjs').then(m=>m.createWorkflowWorkspace),
   browser:()=>import('./workspaces/browser.mjs').then(m=>m.createBrowserWorkspace),
-  userWorkflows:()=>import('./workspaces/user-workflows.mjs').then(m=>m.createUserWorkflowsWorkspace),
   skills:()=>import('./workspaces/skills.mjs').then(m=>m.createSkillsWorkspace),
   settings:()=>import('./workspaces/settings.mjs').then(m=>m.createSettingsWorkspace),
 };

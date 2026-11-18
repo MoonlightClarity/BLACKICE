@@ -15,7 +15,7 @@ test('ordinary engine never loads or extracts persistent learning or runs module
  const runtime=new Runtime(),unexpected=()=>{throw Error('Retired context path invoked');};
  const learning={getContext:unexpected,listLessons:unexpected,scheduleAfterRun:unexpected,cancelBackground:async()=>false};
  const knowledge={context:unexpected};
- const engine=await new HarnessEngine({runtime,dataDir:path.join(root,'data'),defaultCwd:cwd,learning,knowledge,nativeSwarmTools:unexpected,userWorkflows:{list:unexpected,read:unexpected,execute:unexpected}}).init();
+ const engine=await new HarnessEngine({runtime,dataDir:path.join(root,'data'),defaultCwd:cwd,learning,knowledge,nativeSwarmTools:unexpected}).init();
  t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});
  engine.autonomy=new Proxy({}, {get:()=>unexpected});
  engine.runtimeSettings={get:()=>({subagentsEnabled:true,executionGuardrails:false,planningOntology:{version:2,modules:{verification:true,time_management:true,metacognition:true}}})};
@@ -26,7 +26,7 @@ test('ordinary engine never loads or extracts persistent learning or runs module
  assert.doesNotMatch(runtime.calls[0].prompt,/RELEVANT RETAINED|AVAILABLE CATALOG|RELAY KNOWLEDGE/);
  assert.equal(runtime.calls[0].dynamicTools.some(tool=>tool.name==='relay_workspace'),true);
  assert.equal(result.nodes.agent.moduleActivation,undefined);
- assert.equal(runtime.calls[0].dynamicTools.some(tool=>tool.name==='relay_user_workflow'),true);
+ assert.equal(runtime.calls[0].dynamicTools.some(tool=>tool.name==='relay_user_workflow'),false);
  assert.equal(runtime.calls[0].dynamicTools.some(tool=>tool.name.startsWith('relay_swarm')),false);
  assert.equal(runtime.calls[0].dynamicTools.some(tool=>tool.name==='relay_autonomy'),false);
 });

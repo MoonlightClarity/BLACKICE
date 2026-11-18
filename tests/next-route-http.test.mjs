@@ -66,7 +66,7 @@ test('real BLACKICE server serves only the current interface and keeps old bookm
     '/next/workspaces/browser-native.mjs', '/next/workspaces/browser-scoped-cleanup-ui.mjs',
     '/next/base.css','/next/chat.css','/next/chat-management.css','/next/brand.css','/next/controls.css','/next/browser.css','/next/knowledge.css',
     '/next/workspaces/task-lifecycle.mjs',
-    '/next/workspaces/skills.mjs','/next/workspaces/user-workflows.mjs',
+    '/next/workspaces/skills.mjs',
     '/next/workspaces/settings.mjs','/next/workspaces/settings-identity.mjs',
     '/next/workspaces/settings-providers.mjs','/next/workspaces/settings-connections.mjs','/next/workspaces/settings-import.mjs',
     '/next/settings.css','/next/settings-identity.css','/next/settings-providers.css','/next/settings-connections.css',

@@ -49,11 +49,11 @@ test('current navigation omits retired Workbench Swarm and memory controls and r
   const server = read('server.mjs');
   const spaces = [...index.matchAll(/data-space="([^"]+)"/g)].map(match => match[1]);
   // Retained deep links do not restore retired top-level controls.
-  const retained = ['chat','todos','cronjobs','browser','userWorkflows','skills','settings'];
+  const retained = ['chat','todos','cronjobs','browser','skills','settings'];
   assert.deepEqual(spaces.filter(name=>retained.includes(name)),retained);
   assert.deepEqual(spaces,retained);
   assert.equal(spaces.includes('swarm'),false);assert.equal(spaces.includes('knowledge'),false);
-  assert.match(app,/todos:.*createTodosWorkspace/);assert.match(app,/userWorkflows:.*createUserWorkflowsWorkspace/);
+  assert.match(app,/todos:.*createTodosWorkspace/);
   assert.equal(spaces.filter(name=>name==='skills').length,1);
   assert.doesNotMatch(index,/data-space="planning"/);
   assert.match(app,/planning:\(\)=>import\('\.\/workspaces\/planning-current\.mjs'\)/);

@@ -28,8 +28,6 @@ import { createMistralVibeHttp } from './lib/mistral-vibe-http.mjs';
 import { RetiredDesktopController, DESKTOP_RETIRED_MESSAGE } from './lib/desktop-retired.mjs';
 import { NativeWindowManager } from './lib/native-window-tools.mjs';
 import { KnowledgeStore } from './lib/knowledge.mjs';
-import {UserWorkflowStore} from './lib/user-workflows.mjs';
-import {handleUserWorkflowHttp} from './lib/user-workflow-http.mjs';
 import { createSkillsCatalog, skillIdFromRequestPath } from './lib/skills-catalog.mjs';
 import { PlanningBrowserStore } from './lib/planning-browser.mjs';
 import { PlanningBrowserRuntime } from './lib/planning-browser-runtime.mjs';
@@ -137,7 +135,6 @@ export async function createHarnessServer(options = {}) {
   const applicationWorkspace=options.applicationWorkspace||await new ApplicationWorkspace({dataDir,runtime:options.applicationRuntime,catalog:options.applicationCatalog}).init();
   const knowledge = options.knowledge || new KnowledgeStore({ dataDir });
   await knowledge.init();
-  const userWorkflows=options.userWorkflows||await new UserWorkflowStore({dataDir}).init();
   const skillsCatalog=createSkillsCatalog({knowledge,defaultCwd,nativeSkills:(cwd,options)=>runtime.codex?.inspectSkills?.(cwd,options)||{available:false,skills:[],reason:'Native Codex skill inspection is unavailable.'}});
   const planningBrowser = options.planningBrowser || await new PlanningBrowserStore({ dataDir: path.resolve(dataDir), knowledge }).init();
   const planningBrowserRuntime = options.planningBrowserRuntime || new PlanningBrowserRuntime({ store: planningBrowser, runtime, getSettings: () => runtimeSettings.get(), defaultCwd, onUpdated: event => sendEvent(event) });
@@ -167,7 +164,7 @@ export async function createHarnessServer(options = {}) {
   const email = options.email || null;
   const emailSnapshot = req => email ? ({ ...email.snapshot(), localManagement: req?.headers['x-blackice-remote'] !== '1', setupHints: {} }) : ({ available: false, retired: true });
   const ownerRecovery=createOwnerRecovery({enabled:options.nativeOwnerRecovery===true});
-  const engine = options.engine || new HarnessEngine({ ownerRecovery, runtime, dataDir, defaultCwd, desktop, knowledge, userWorkflows, browser, identity, connections, tasks, attachments, email, ...(options.maxConcurrentRuns !== undefined ? {maxConcurrentRuns:options.maxConcurrentRuns} : {}) });
+  const engine = options.engine || new HarnessEngine({ ownerRecovery, runtime, dataDir, defaultCwd, desktop, knowledge, browser, identity, connections, tasks, attachments, email, ...(options.maxConcurrentRuns !== undefined ? {maxConcurrentRuns:options.maxConcurrentRuns} : {}) });
   engine.ownerRecovery=ownerRecovery;
   const activeBrowserCleanupRunIds = () => {
     const ids = new Set(engine.executionStatus().activeRunIds || []);
@@ -1324,8 +1321,7 @@ export async function createHarnessServer(options = {}) {
         const query=new URL(req.url,`http://${host}`).searchParams;
         return json(res,200,await skillsCatalog.detail({id:skillId,cwd:query.get('cwd')||undefined}));
       }
-      if(await handleUserWorkflowHttp({req,res,pathname,body,json,workflows:userWorkflows,engine,defaultCwd,recoverClientRequest,sendEvent}))return;
-      if(pathname==='/api/knowledge'||pathname.startsWith('/api/knowledge/'))return json(res,410,{code:'KNOWLEDGE_RETIRED',error:'Memories and mutable skills are retired. Use explicitly approved user workflows or release skills.'});
+      if(pathname==='/api/knowledge'||pathname.startsWith('/api/knowledge/'))return json(res,410,{code:'KNOWLEDGE_RETIRED',error:'Memories and mutable skills are retired. Use release skills.'});
       if(pathname==='/api/file-patches'&&req.method==='GET'){const query=new URL(req.url,`http://${host}`).searchParams;return json(res,200,await engine.filePatches.list({...(query.get('cwd')?{cwd:query.get('cwd')}:{}),...(query.get('runId')?{runId:query.get('runId')}:{}),...(query.has('offset')?{offset:Number(query.get('offset'))}:{}),...(query.has('limit')?{limit:Number(query.get('limit'))}:{})}));}
       const filePatchMatch=pathname.match(/^\/api\/file-patches\/([a-zA-Z0-9_-]+)(?:\/(undo))?$/);
       if(filePatchMatch&&req.method==='GET'&&!filePatchMatch[2])return json(res,200,await engine.filePatches.get(filePatchMatch[1]));
@@ -1435,7 +1431,7 @@ export async function createHarnessServer(options = {}) {
         'workspaces/workflow-editor.mjs','workspaces/workflow-edit-model.mjs',
         'workspaces/workflow-overview-model.mjs','workspaces/workflow-canvas-model.mjs','workspaces/workflow-canvas.mjs','workspaces/workflow-graph-author.mjs',
         'workspaces/workflow-graph-edit.mjs','workspaces/browser-folders.mjs','workspaces/browser-model.mjs','workspaces/browser-ownership-ui.mjs','workspaces/browser-scoped-cleanup-ui.mjs','workspaces/browser-native.mjs',
-        'browser.css','knowledge.css','skills.css','workspaces/skills.mjs','workspaces/user-workflows.mjs',
+        'browser.css','knowledge.css','skills.css','workspaces/skills.mjs',
         'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-passwords.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-mcp-apps.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-passwords.css','settings-identity.css','settings-providers.css','settings-connections.css',
         'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/llama-launch-settings.mjs','workspaces/settings-providers.mjs','workspaces/native-write-recovery.mjs','workspaces/settings-provider-directory.mjs','workspaces/settings-connections.mjs','workspaces/settings-import.mjs'];
@@ -1478,7 +1474,7 @@ export async function createHarnessServer(options = {}) {
   const heartbeat = setInterval(() => { for (const res of clients) if(!writeEventStream(res,': heartbeat\n\n'))clients.delete(res); }, 15000);
   heartbeat.unref();
   return {
-    server, engine, goals, ownerRecovery, runtime, runtimeSettings, desktop, knowledge, userWorkflows, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace,nativeWindows, identity, learning, connections, tasks, planningOrganization, planningBrowser, planningBrowserRuntime, taskViability, responseCycle, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
+    server, engine, goals, ownerRecovery, runtime, runtimeSettings, desktop, knowledge, prompts, browser,browserProfiles,browserCredentials,browserCredentialMirror,browserCredentialDestinations,applicationWorkspace,nativeWindows, identity, learning, connections, tasks, planningOrganization, planningBrowser, planningBrowserRuntime, taskViability, responseCycle, attachments, email, emailOAuth, emailClient, inbox, conversations, operations,projects,capabilities,liveEdits,diagnostics,supportSnapshot,beginMaintenance,endMaintenance,assertRestartReady,assertRestartPrepared,beginRestart,endRestart,remoteAccess,remoteAgentApi,chatGPTConnector,chatGPTOAuth,directExecution,chatGPTPlanning,connectorSetup,
     async listen({ waitForRemote = true } = {}) {
       if (typeof waitForRemote !== 'boolean') throw new TypeError('Choose whether to wait for remote startup.');
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
@@ -1559,7 +1555,6 @@ export async function createHarnessServer(options = {}) {
         await cleanup(() => browser.close());
         await cleanup(async () => {
           // Cancellation and rejected edits do not represent an unsaved committed snapshot.
-          await userWorkflows.close();
           await knowledge.writeChain.catch(() => {});
           const saved = knowledge.status();
           if (!saved.healthy) throw new Error(saved.error || 'Local knowledge could not be saved.');
