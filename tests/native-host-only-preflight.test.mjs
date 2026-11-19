@@ -6,9 +6,11 @@ import path from 'node:path';
 import os from 'node:os';
 import {CodexRuntime} from '../lib/codex.mjs';
 import {ProviderRuntime} from '../lib/providers.mjs';
+import {CHAT_PLANNING_MODULES,createChatPlanningPass} from '../lib/chat-planning-pass.mjs';
+import {createChatPlanningProviderInvoker} from '../lib/chat-planning-provider.mjs';
 import {PLANNING_RESPONSE_DISABLED_FEATURES} from '../lib/response-profile.mjs';
 
-async function fixture(t,{ignoredFeature}={}){
+async function fixture(t,{ignoredFeature,answer='SYNTHETIC_PROTECTED_OK',onTurn}={}){
  const dir=await mkdtemp(path.join(os.tmpdir(),'blackice-native-preflight-'));
  const cwd=path.join(dir,'workspace');await mkdir(cwd);
  const client=new CodexRuntime({command:process.execPath,cwd,isolatedHistory:false,runTimeoutMs:5000,
@@ -25,11 +27,12 @@ async function fixture(t,{ignoredFeature}={}){
     enabled:params.threadId?name===ignoredFeature:true})),nextCursor:null};
   if(method==='thread/start')return {thread:{id:'thread-'+(++next),ephemeral:params.ephemeral===true},
     sandbox:{type:'readOnly',networkAccess:false},approvalPolicy:params.approvalPolicy};
-  if(method==='thread/unsubscribe')return {};
+  if(['thread/unsubscribe','turn/interrupt'].includes(method))return {};
   if(method==='turn/start'){
     const id='turn-'+next;
-    setImmediate(()=>client._notification('turn/completed',{threadId:params.threadId,
-      turn:{id,status:'completed',items:[{type:'agentMessage',id:'synthetic-answer',phase:'final_answer',text:'SYNTHETIC_PROTECTED_OK'}]}}));
+    const complete=()=>client._notification('turn/completed',{threadId:params.threadId,
+      turn:{id,status:'completed',items:[{type:'agentMessage',id:'synthetic-answer',phase:'final_answer',text:answer}]}});
+    if(onTurn)onTurn(complete);else setImmediate(complete);
     return {turn:{id,status:'inProgress'}};
   }
   throw Error('Unexpected synthetic RPC: '+method);
@@ -124,4 +127,49 @@ test('two waiters share one native preflight without sharing caller cancellation
  assert.equal(calls.filter(x=>x.method==='thread/start').length,1,'Only one shared preflight session is created');
  assert.equal(calls.filter(x=>x.method==='thread/unsubscribe').length,1);
  assert.equal(calls.filter(x=>x.method==='turn/start').length,0);
+});
+
+const planningScope={taskId:'task1',runId:'run1',nodeId:'agent'};
+const planningArtifact={status:'proposed',focus:'route',reason:'Check the failed route',
+  actions:[{id:'route',objective:'Inspect the installed route',dependsOn:[]}]};
+async function nativePlanningFixture(t,opts={}) {
+ const f=await fixture(t,{answer:JSON.stringify(planningArtifact),...opts});
+ const runtime=await new ProviderRuntime({codex:f.client,dataDir:f.dir}).init();
+ const model='gpt-6-luna',events=[],writes=[];
+ const pass=createChatPlanningPass({mode:'on',...planningScope,signal:opts.signal,emit:event=>events.push(event),
+  assertAdmission:()=>{},read:()=>({taskId:'task1',revision:0,actions:[],receipts:[]}),
+  invoke:createChatPlanningProviderInvoker({runtime,model,cwd:f.cwd,...planningScope,assertAdmission:()=>{}}),
+  commit:input=>{writes.push(input);return {taskId:'task1',revision:1};}});
+ return {...f,run:()=>pass.run(CHAT_PLANNING_MODULES[0].id),events,writes};
+}
+test('Chat Planning selected-native production adapter reaches exact-model Codex response-only RPC',async t=>{
+ const f=await nativePlanningFixture(t);
+ assert.equal((await f.run()).status,'completed');
+ assert.deepEqual(f.events.map(row=>row.phase),['started','completed']);
+ assert.equal(f.writes.length,1);
+ const turns=f.calls.filter(row=>row.method==='turn/start').map(row=>row.params), opens=f.calls.filter(row=>row.method==='thread/start').map(row=>row.params);
+ assert.equal(turns.length,1,'The native capability preflight does not infer; the module does once.');
+ assert.equal(opens.length,2,'One capability preflight and one phase session.');
+ assert.equal(turns[0].model,'gpt-6-luna');
+ assert.deepEqual(turns[0].sandboxPolicy,{type:'readOnly',networkAccess:false});
+ assert.ok(opens.every(row=>row.model==='gpt-6-luna'&&row.allowProviderModelFallback===false&&row.ephemeral===true&&row.dynamicTools===undefined));
+ assert.ok(opens.every(row=>row.config['features.shell_tool']===false));
+});
+test('unsupported selected-native restriction does not start a module turn or write a plan',async t=>{
+ const f=await nativePlanningFixture(t,{ignoredFeature:'browser_use'});
+ assert.equal((await f.run()).status,'failed');
+ assert.equal(f.calls.filter(row=>row.method==='turn/start').length,0);
+ assert.equal(f.writes.length,0);
+ assert.deepEqual(f.events.map(row=>row.phase),['started','failed']);
+});
+test('late valid native module artifact after cancel cannot commit',async t=>{
+ let notify;
+ const started=new Promise(resolve=>notify=resolve),controller=new AbortController();
+ const f=await nativePlanningFixture(t,{signal:controller.signal,onTurn:notify});
+ const work=f.run(), complete=await started;
+ controller.abort();
+ complete();
+ assert.equal((await work).status,'cancelled');
+ assert.equal(f.writes.length,0);
+ assert.deepEqual(f.events.map(row=>row.phase),['started','cancelled']);
 });
