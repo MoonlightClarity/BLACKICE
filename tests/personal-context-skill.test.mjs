@@ -55,7 +55,9 @@ test('both Past Chats modes can load Personal Context and obtain fresh evidence 
       assert.equal(options.threadId,undefined);
       assert.doesNotMatch(options.prompt,/Earlier assistant reported|until 6 AM|Separate relevance from authority/);
       assert.doesNotMatch(options.developerInstructions,/Separate relevance from authority/,'no unconditional body injection');
-      assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_history'),mode==='on');
+      const historyActions=options.dynamicTools.find(tool=>tool.name==='relay_history')?.inputSchema.properties.action.enum||[];
+      assert.equal(historyActions.includes('search'),mode==='on');
+      assert.equal(historyActions.includes('read'),mode==='on');
       const tool=async(name,args)=>{
         audit.actions.push(name+'.'+(args.action??'call'));
         const call={name,arguments:args,callId:mode+'-'+audit.actions.length};
