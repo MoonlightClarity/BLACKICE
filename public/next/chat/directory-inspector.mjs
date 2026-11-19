@@ -18,8 +18,8 @@ export function createDirectoryInspector({frame,api,getRuns}){
   try{const result=await api('/api/conversations/'+encodeURIComponent(id)+'/directory?'+query,'GET',undefined,{signal:controller.signal});if(destroyed||!dialog.open||token!==generation||taskId!==root||turn.value!==id)return;
    if(result.taskId!==root||result.runId!==id)throw Error('Directory scope mismatch.');
    revision=result.revision;offset=result.nextOffset;status.textContent=result.coverage.reason+' Context: '+result.coverage.receiptAvailability+'.';
-   if(!append){const task=branch(tree,'Task '+root);task.open=true;const selected=branch(task,'Turn '+id+(result.enabled?' · Directory On':' · Directory Off'));selected.open=true;
-    for(const receipt of category.value==='context'?result.receipts:[])branch(selected,'Context prepared · '+receipt.nodeId,JSON.stringify(receipt.context,null,2));
+   if(!append){const task=branch(tree,'Task '+root);task.open=true;const selected=branch(task,'Turn '+id+(result.enabled?' · Directory On':' · Directory Off'));selected.open=true;branch(selected,'Saved turn state',JSON.stringify(result.terminal||{},null,2));selected.append(make('p','Recorded cause: '+(result.terminal?.code||'No recorded cause')));
+    for(const receipt of category.value==='context'?result.receipts:[]){if(receipt.context.hostTools)branch(selected,'BLACKICE tool handler calls (not all provider actions)',JSON.stringify(receipt.context.hostTools,null,2));branch(selected,'Context prepared · '+receipt.nodeId,JSON.stringify(receipt.context,null,2));}
     const label=make('p','Source: Directory diagnostics, selected task only. Prepared inputs are not proof of exact model context. providerObservedAt means adapter activity, not proof the main model received each source. Tool return is not verified task completion.');selected.append(label);}
    const host=tree.querySelector('details details')||tree;for(const action of result.actions)branch(host,(action.tool||action.kind)+' · '+action.state,JSON.stringify(action,null,2));more.hidden=offset===null;
   }catch(error){if(!destroyed&&dialog.open&&token===generation)status.textContent=error.message;}
