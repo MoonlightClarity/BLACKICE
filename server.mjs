@@ -1094,7 +1094,7 @@ export async function createHarnessServer(options = {}) {
       const identityMatch = pathname.match(/^\/api\/identity\/(soul|user)(?:\/(versions|restore))?$/);
       if (identityMatch && req.method === 'GET' && identityMatch[2] !== 'restore') return json(res, 200, identityMatch[2] === 'versions' ? await identity.versions(identityMatch[1]) : await identity.read(identityMatch[1]));
       if (identityMatch && (req.method === 'PUT' && !identityMatch[2] || req.method === 'POST' && identityMatch[2] === 'restore')) { const value = await body(req); const result = identityMatch[2] === 'restore' ? await identity.restore({ ...value, kind: identityMatch[1], provenance: { source: 'user' } }) : await identity.update({ ...value, kind: identityMatch[1], provenance: { source: 'user' } }); sendEvent({ type: 'identity.updated', data: identity.status(), at: new Date().toISOString() }); return json(res, 200, result); }
-      if (pathname === '/api/local-models' || /^\/api\/local-models\/(?:load|unload|import|downloads|config|activate)$/.test(pathname)) {
+      if (pathname === '/api/local-models' || /^\/api\/local-models\/(?:load|unload|import|downloads|config|activate|discover)$/.test(pathname)) {
         const result = await localModelHTTP({
           manager: localModels, runtime, pathname, method: req.method,
           remote: req.headers['x-blackice-remote'] === '1',

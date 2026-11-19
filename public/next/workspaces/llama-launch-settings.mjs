@@ -1,12 +1,12 @@
 /** Local GGUF setup. Viewing settings never loads a model. */
-export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, pickFiles=globalThis.window?.relayDesktop?.pickFiles?()=>window.relayDesktop.pickFiles():null}={}) {
+export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, onDiscovered=()=>{}, pickFiles=globalThis.window?.relayDesktop?.pickFiles?()=>window.relayDesktop.pickFiles():null}={}) {
  const doc=mount.ownerDocument;
  const make=(tag,text='',css='')=>{const n=doc.createElement(tag);n.textContent=text;if(css)n.className=css;return n;};
  const label=(text,input)=>{const n=make('label',text,'next-label');n.append(input);return n;};
  const button=text=>{const n=make('button',text);n.setAttribute('type','button');return n;};
  const input=id=>{const n=make('input','','next-field');n.id=id;n.setAttribute('type','text');return n;};
  const quick=make('section','','next-stack next-llama-quick');
- quick.append(make('h3','Local model directory'),make('p','Choose a GGUF folder or an individual model file. Existing files stay where they are.','next-help'));
+ quick.append(make('h3','Local model directory'),make('p','Put GGUF files in the models folder, then discover them. You can also choose a file without moving it.','next-help'));
  const directory=make('section','','next-stack');directory.id='next-local-model-directory';quick.append(directory);
  const guide=make('ol','','next-help');guide.id='next-llama-model-guide';
  for(const text of ['Get a model: download a text-generation model in GGUF format from its publisher. Check its memory requirements and license first.','Choose the downloaded model file below. Keep it in a permanent folder; BLACKICE uses the original file rather than copying it.','Select Save & load model. Once loaded, choose it from the chat model selector.'])guide.append(make('li',text));
@@ -51,7 +51,7 @@ export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, pick
   const c=make(type==='select'?'select':'input','','next-field');c.id='next-llama-default-'+key;
   if(type==='select')for(const v of ['auto','on','off']){const o=make('option',v);o.setAttribute('value',v);c.append(o);}
   else c.setAttribute('type',type);
-  controls[key]=c;(key==='modelsDirectory'?directory:section).append(label(key==='modelsDirectory'?'Models folder (absolute path)':title,c));
+  controls[key]=c;(key==='modelsDirectory'?directory:section).append(label(key==='modelsDirectory'?'Custom models folder (blank uses default)':title,c));
  }
  const paths=make('textarea','','next-field');paths.id='next-llama-paths';paths.rows=4;
  const overrides=make('textarea','','next-field');overrides.id='next-llama-overrides';overrides.rows=4;
@@ -69,20 +69,43 @@ export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, pick
  try{const snapshot=await api('/api/local-models/config','POST',{expectedRevision:revision,settings});if(valid(token)){const latest=Object.fromEntries(definitions.map(([key])=>[key,controls[key].value])),latestPaths=paths.value,latestOverrides=overrides.value;draw(snapshot);for(const [key]of definitions)if(key!=='modelsDirectory'||latest[key]!==draft[key])controls[key].value=latest[key];paths.value=latestPaths;overrides.value=latestOverrides;feedback.textContent='Models folder saved. No model was moved or loaded.';}}
  catch(error){if(valid(token))feedback.textContent=error.message||'Could not save models folder.';}
  finally{pending=false;if(alive)sync();}
- });directory.append(saveDirectory,make('p','Sets the llama.cpp discovery folder. Does not move, download or load models. Ollama and LM Studio keep their own storage.','next-help'));
+ });
+ const directoryStatus=make('p','','next-help');directoryStatus.id='next-local-directory-status';directoryStatus.setAttribute('role','status');
+ const discoverModels=button('Discover folder models');discoverModels.id='next-local-directory-discover';
+ const directoryCommands=make('div','','next-row');directoryCommands.append(saveDirectory,discoverModels);
+ directory.append(directoryStatus,directoryCommands,make('p','Discovery starts or restarts the idle BLACKICE llama.cpp router. Does not move, download or load models. Ollama and LM Studio keep their own storage.','next-help'));
  quick.append(status,label('Model file',file),label('Model name',name),row,feedback,section);mount.append(quick);
- let alive=true,active=false,pending=false,picking=false,refreshing=false,generation=0,revision=null,recommended=null,baseline=null,pendingRestart=false;
+ let alive=true,active=false,pending=false,picking=false,refreshing=false,generation=0,revision=null,recommended=null,baseline=null,pendingRestart=false,discoveryDirectory=null;
  const valid=token=>alive&&active&&token===generation;
- const sync=()=>{start.disabled=pending||picking||refreshing||revision===null||!file.value.trim()||!name.value.trim();browse.disabled=pending||picking||refreshing;reload.disabled=pending||picking||refreshing;save.disabled=pending||picking||refreshing||revision===null;saveDirectory.disabled=save.disabled;reset.disabled=pending||picking||refreshing;file.disabled=pending;name.disabled=pending;};
+ const sync=()=>{start.disabled=pending||picking||refreshing||revision===null||!file.value.trim()||!name.value.trim();browse.disabled=pending||picking||refreshing;reload.disabled=pending||picking||refreshing;save.disabled=pending||picking||refreshing||revision===null;saveDirectory.disabled=save.disabled;discoverModels.disabled=save.disabled||!discoveryDirectory?.available||controls.modelsDirectory.value.trim()!==(baseline?.modelsDirectory||'');reset.disabled=pending||picking||refreshing;file.disabled=pending;name.disabled=pending;};
+ controls.modelsDirectory.addEventListener('input',sync);
+ discoverModels.addEventListener('click',async()=>{
+  if(!alive||!active||discoverModels.disabled)return;
+  const token=generation;pending=true;feedback.textContent='Discovering GGUF models.';sync();
+  try{
+   const result=await api('/api/local-models/discover','POST',{});
+   if(!valid(token))return;
+   await onDiscovered(result);
+   if(valid(token))feedback.textContent=result.owned
+    ? (result.models.length?'Found '+result.models.length+' local model'+(result.models.length===1?'':'s')+'. Choose a model below to load it.':'No GGUF models appeared in the router catalog. Check the folder path and refresh after adding weights.')
+    : 'An existing llama.cpp server supplied the catalog. Its files and discovery settings are managed by that server.';
+  }catch(error){if(valid(token))feedback.textContent=error.message||'Could not discover local models.';}
+  finally{pending=false;if(alive)sync();}
+ });
  const suggested=filename=>filename.split(/[\\/]/).pop().replace(/\.gguf$/i,'').replace(/[=[\];#:\x00-\x1f\x7f]/g,'-').slice(0,256);
  function fill(value){for(const [key]of definitions)controls[key].value=String(value[key]??'');paths.value=JSON.stringify(value.modelPaths||{},null,2);overrides.value=JSON.stringify(value.modelOverrides||{},null,2);}
  function draw(snapshot){
   pendingRestart=Boolean(snapshot.process?.pendingRestart);baseline=structuredClone(snapshot.settings||{});
   revision=snapshot.revision;recommended=snapshot.recommended;fill(snapshot.settings||{});
+  discoveryDirectory=snapshot.modelDirectory||null;
+  controls.modelsDirectory.placeholder=snapshot.defaultModelsDirectory||'';
+  directoryStatus.textContent=discoveryDirectory
+   ? (discoveryDirectory.usingDefault?'Default models folder: ':'Active models folder: ')+discoveryDirectory.path+(discoveryDirectory.error?' ('+discoveryDirectory.error+')':'')
+   : 'Models folder unavailable.';
   const r=snapshot.runtime;
   status.textContent=r?(r.source==='bundled'?'Included llama.cpp runtime':r.source==='custom'?'Custom llama.cpp runtime':'Runtime unavailable')+(r.version?' · '+r.version:'')+(r.backend?' · '+r.backend:'')+(r.message?' — '+r.message:''):'Runtime status unavailable. Existing launch settings are preserved.';
   const args=snapshot.launchArgs||[];
-  preview.textContent=args.length?'Effective next-launch arguments:\nllama-server '+args.join(' ')+'\nModel-specific settings are generated in a separate INI file.':'No launch preview yet: choose a GGUF model above.';
+  preview.textContent=args.length?'Effective next-launch arguments:\nllama-server '+args.join(' ')+'\nModel-specific settings are generated in a separate INI file.':'No launch preview is available.';
   feedback.textContent=snapshot.process?.pendingRestart?'Saved settings are pending. Loading a model applies them when the owned server is idle; active work is not interrupted.':snapshot.process?.owned?'BLACKICE-owned server running. Saving does not restart it.':'Ready to configure a local model.';
   sync();
  }

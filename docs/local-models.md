@@ -21,15 +21,19 @@ Start LM Studio's local server at `http://127.0.0.1:1234`, refresh the Local mod
 BLACKICE connects directly to the official `llama-server` OpenAI-compatible API. Neither Ollama nor LM Studio is required.
 
 1. The Windows x64 installer includes a pinned **llama.cpp v1.0.0** runtime; no separate runtime installation is needed. Other platforms or custom setups can use a compatible `llama-server` from the [official release](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0). Model weights remain separate. See [bundled runtime provenance](BUNDLED-LLAMA.md).
-2. Put existing GGUF weights in a folder (for example `C:\Models`). From a terminal, start **router mode**:
+2. In **Config → Local Models → llama.cpp**, BLACKICE displays the default `models` directory under its profile data directory. It creates the folder when needed. Put existing GGUF weights there, select **Discover folder models**, then **Load & add to BLACKICE**. Discovery starts or refreshes the idle BLACKICE-owned router without downloading or loading weights. It waits for active work to finish rather than interrupting it. Save a custom absolute folder to use weights without moving them; clear it to restore the default. BLACKICE does not create a missing custom folder.
+
+For an independently managed server, follow this separate path:
+
+1. Put existing GGUF weights in a folder (for example `C:\Models`). From a terminal, start **router mode**:
 
    ```powershell
    llama-server --host 127.0.0.1 --port 8080 --models-dir "C:\Models" --models-max 1 --no-models-autoload
    ```
 
-3. Open **Settings → Models → Local models**, choose **llama.cpp 1.0**, and refresh.
-4. Choose an available model, then **Load & add to BLACKICE**. BLACKICE calls `POST /models/load`, confirms the model is loaded, and registers `local_llamacpp::model-id` without changing any conversation defaults.
-5. **Unload** calls `POST /models/unload`; it releases the active model but never deletes its GGUF weights or saved BLACKICE conversations.
+2. Open **Config → Local Models**, choose **llama.cpp**, and refresh. An independently managed server supplies its own catalog and does not use the BLACKICE folder setting.
+3. Choose an available model, then **Load & add to BLACKICE**. BLACKICE calls `POST /models/load`, confirms the model is loaded, and registers `local_llamacpp::model-id` without changing any conversation defaults.
+4. **Unload** calls `POST /models/unload`; it releases the active model but never deletes its GGUF weights or saved BLACKICE conversations.
 
 **Single-model mode:** An existing `llama-server -m "C:\Models\my-model.gguf" --host 127.0.0.1 --port 8080` is also supported. The already-running model appears in BLACKICE and can be added to Chat, but it cannot be unloaded through the router API; stop or restart its server process instead.
 
@@ -43,7 +47,7 @@ BLACKICE reads `GET /models` (router) or `GET /v1/models` (single process), send
 - **Unload** releases runtime memory without deleting the weight files or conversation history.
 - **Import & load** registers a new Ollama model from a local file/folder, then loads and registers it with BLACKICE.
 - Local runtime APIs are bound to `127.0.0.1`; these endpoints do not upload model files to cloud providers.
-- The feature requires an external Ollama, LM Studio, or llama.cpp server to be installed and running. Offline runtimes are displayed as unavailable; the integration tests work without installing any of them.
+- Ollama and LM Studio need an installed and running external server. BLACKICE can start its included llama.cpp router on demand; independently managed servers can still be used.
 - Ollama, LM Studio and llama.cpp models vary in tool-calling support, context size and memory needs. Model availability does not by itself guarantee compatibility with every BLACKICE agent workflow.
 
 ### Validation scope

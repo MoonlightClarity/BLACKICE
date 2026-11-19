@@ -71,7 +71,13 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
   const launchMount = node('div');launchMount.hidden = true;
   card.append(row, launchMount, runtimeStatus, choiceRow, contextLabel, contextHelp, setup, importDetails, feedback);
   mount.append(card);
-  const launchSettings = createLlamaCppLaunchSettings({mount:launchMount,api,onChanged:async result=>{await onChanged();await refreshCatalog({preferredEngine:'llamacpp',preferredModel:result.model});}});
+  const launchSettings = createLlamaCppLaunchSettings({mount:launchMount,api,onChanged:async result=>{await onChanged();await refreshCatalog({preferredEngine:'llamacpp',preferredModel:result.model});},
+    onDiscovered:async result=>{
+      generation++;
+      const item={id:'llamacpp',name:'llama.cpp',available:true,mode:result.mode,models:result.models};
+      snapshot={engines:[...snapshot.engines.filter(entry=>entry.id!=='llamacpp'),item]};
+      updateChoices();
+    }});
   let alive = true, active = false, busy = false, generation = 0, snapshot = { engines: [] };
   let downloadGeneration = 0, discovering = false, downloadAssets = [];
   const selected = () => snapshot.engines?.find(item => item.id === engine.value) || { available: false, models: [] };
@@ -96,7 +102,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
     if ((value.models || []).some(item => item.id === previous)) models.value = previous;
     runtimeStatus.textContent = value.available
       ? value.name + ' is running · ' + (value.models || []).length + ' local models found.'
-      : isLlama ? 'No llama.cpp server is running. Choose a GGUF model above to start one.' : value.name + ' is not available. Start its local server to list and load models.' + (value.error ? ' ' + value.error : '');
+      : isLlama ? 'No llama.cpp server is running. Discover the models folder or choose a GGUF file above.' : value.name + ' is not available. Start its local server to list and load models.' + (value.error ? ' ' + value.error : '');
     if (value.available && isLlama) runtimeStatus.textContent += value.mode === 'router'
       ? ' Router mode supports model load and unload.'
       : ' Single-model server: the running model can be added to Chat, but only the server owner can unload it.';

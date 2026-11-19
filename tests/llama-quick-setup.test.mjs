@@ -67,6 +67,27 @@ test('runtime status is exposed on config GET and POST; remote never probes runt
  assert.equal((await localModelHTTP({...base,method:'POST',value:{expectedRevision:0,settings:{}}})).body.runtime.source,'bundled');assert.equal(probes,2);
 });
 
+test('the effective default folder stays visible; discovery is explicit and never loads a model',async t=>{
+ const folder='C:\\Profile\\data\\models',models=[{id:'fixture',loaded:false}];
+ const f=fixture(t,{hook:c=>{
+  if(c.route.endsWith('/config')&&c.method==='GET') return {revision:1,settings:DEFAULT_LLAMA_CPP_SETTINGS,recommended:DEFAULT_LLAMA_CPP_SETTINGS,
+   defaultModelsDirectory:folder,modelDirectory:{path:folder,available:true,usingDefault:true},process:{}};
+  if(c.route.endsWith('/discover'))return {owned:true,models};
+ }});
+ await f.enter();
+ assert.equal(f.$('#next-local-directory-status').textContent,'Default models folder: '+folder);
+ assert.equal(f.$('#next-llama-default-modelsDirectory').value,'');
+ assert.equal(f.$('#next-llama-default-modelsDirectory').placeholder,folder);
+ assert.equal(f.writes().length,0);
+ await f.input('#next-llama-default-modelsDirectory','C:\\GGUF');
+ assert.equal(f.$('#next-local-directory-discover').disabled,true);
+ await f.input('#next-llama-default-modelsDirectory','');
+ await f.click('#next-local-directory-discover');
+ assert.deepEqual(f.writes().map(c=>[c.route,c.body]),[['/api/local-models/discover',{}]]);
+ assert.match(f.$('#next-llama-default-feedback').textContent,/Found 1 local model/);
+ assert.equal(f.changed,0);
+});
+
 test('late picker after leaving never changes model selection',async t=>{
  const g=gate(),f=fixture(t,{pickFiles:()=>g.promise});await f.enter();
  const pending=f.click('#next-llama-model-browse');await tick();f.panel.leave();g.resolve(['C:\\Models\\late.gguf']);await pending;
