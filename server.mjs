@@ -1,3 +1,4 @@
+import {handleDirectoryDiagnosticsHttp} from './lib/directory-diagnostics-http.mjs';
 import { stoppedBrowserOwnerStatus, activeBrowserOwnerStatus, readStoppedTabEffects } from './lib/browser-stopped-adoption.mjs';
 import {VisualArtifacts,visualTool,nativeVisualTools,handleVisualHttp} from './lib/visual-artifacts.mjs';
 import {handleConversationActivityHttp} from './lib/conversation-activity-http.mjs';
@@ -614,6 +615,7 @@ export async function createHarnessServer(options = {}) {
       if(await handleVisualHttp({req,res,pathname,body,json,store:visuals,mutations:fileMutations}))return;
       if(await handleConversationGoalsHttp({req,res,pathname,goals,body,json,mutations:fileMutations}))return;
       if(/^\/api\/conversations\/[a-zA-Z0-9_-]+\/autonomy$/.test(pathname))return json(res,410,{code:'AUTONOMY_RETIRED',error:'Autonomy is retired. Use an explicit Goal or scheduled task.'});
+      if(await handleDirectoryDiagnosticsHttp({req,res,pathname,conversations,json}))return;
       if(await handleConversationActivityHttp({req,res,pathname,conversations,json}))return;
       if (await handlePlanningDiagnosticsHttp({req,res,pathname,service:planningDiagnostics,body,json,fileMutations})) return;
       if (pathname === '/api/planning-browser' || pathname.startsWith('/api/planning-browser/')) {
@@ -1415,7 +1417,7 @@ export async function createHarnessServer(options = {}) {
       const nextFiles = ['schedule-folders.css','visuals.css','index.html','base.css','chat.css','chat-management.css','brand.css','work-visual.css','intelligence-planning.css','intelligence-map.css','controls.css','layout-fixes.css','planning-ontology.css','planning-browser.css','planning-current.css','guard.js','app.mjs',
         'core/api.mjs','core/workspace-navigation.mjs','core/dom.mjs','core/events.mjs','core/model-picker.mjs','core/context-controls.mjs','model-picker.css',
         'chat/chat.mjs','chat/folders.mjs','chat/visuals.mjs','chat/model.mjs','chat/render.mjs','chat/svg-previews.mjs','chat/send.mjs','chat/goals.mjs','chat/planning-timeline.mjs',
-        'chat/activity-inspector.mjs','chat/options-model.mjs','chat/artifacts.mjs','parity.css',
+        'chat/activity-inspector.mjs','chat/directory-inspector.mjs','chat/options-model.mjs','chat/artifacts.mjs','parity.css',
         'chat/reader-model.mjs','chat/reader-worker.mjs','chat/reader-client.mjs','chat/tool-failure.mjs',
         // Native hosting UI assets are registered at the public root below.
         'workspaces/planning.mjs','workspaces/planning-browser.mjs','workspaces/planning-current.mjs','workspaces/planning-current-model.mjs','workspaces/response-cycle-ui.mjs','workspaces/tradecraft-timeline.mjs','workspaces/planning-visual.mjs','workspaces/intelligence-planning-model.mjs','workspaces/intelligence-planning-ui.mjs','workspaces/intelligence-map-model.mjs','workspaces/intelligence-map-ui.mjs','workspaces/tasks.mjs','workspaces/schedule-folders.mjs','workspaces/schedule-inspection-model.mjs','workspaces/tasks-visual-model.mjs','workspaces/task-lifecycle.mjs','workspaces/workflow-execution.mjs',

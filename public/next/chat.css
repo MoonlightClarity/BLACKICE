@@ -214,3 +214,5 @@
 .next-chat-folder-heading .next-chat-folder-archive,.next-chat-folder-heading .next-chat-folder-restore{width:28px;min-width:28px;height:28px;padding:5px;display:inline-flex;align-items:center;justify-content:center}
 
 .next-chat-folder-draft>small{flex-basis:100%;font-size:10px;color:var(--next-muted);overflow-wrap:anywhere}
+
+.next-directory-inspector{width:min(850px,94vw);max-height:88vh;background:var(--next-workspace-background);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:18px}.next-directory-inspector pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}.next-directory-inspector details{margin:8px 0 8px 16px}.next-directory-inspector summary{cursor:pointer;overflow-wrap:anywhere}.next-directory-inspector>button,.next-directory-inspector>select{margin:4px}

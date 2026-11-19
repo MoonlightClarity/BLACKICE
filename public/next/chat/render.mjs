@@ -105,7 +105,7 @@ export function createChatFrame(mount) {
     cycleNotice:find('next-chat-cycle-notice'),cycleStatus:find('next-chat-cycle-status'),openPlan:find('next-chat-open-plan'),executionMode:find('next-chat-execution-mode'),
     form:find('next-chat-form'),input:find('next-chat-input'),attachments:find('next-chat-attachments'),model:find('next-chat-model'),
     goalToggle:find('next-chat-goal-toggle'),goalCard:find('next-chat-goal-card'),goalStatus:find('next-chat-goal-status'),goalObjective:find('next-chat-goal-objective'),goalProgress:find('next-chat-goal-progress'),goalDeadline:find('next-chat-goal-deadline'),goalReason:find('next-chat-goal-reason'),goalEdit:find('next-chat-goal-edit'),goalPause:find('next-chat-goal-pause'),goalResume:find('next-chat-goal-resume'),goalClear:find('next-chat-goal-clear'),goalDialog:find('next-chat-goal-dialog'),goalForm:find('next-chat-goal-form'),goalTitle:find('next-chat-goal-title'),goalInput:find('next-chat-goal-input'),goalContext:find('next-chat-goal-context'),goalLimit:find('next-chat-goal-limit'),goalDeadlineInput:find('next-chat-goal-deadline-input'),goalError:find('next-chat-goal-error'),goalCancel:find('next-chat-goal-cancel'),goalSave:find('next-chat-goal-save'),
-    effort:find('next-chat-effort'),tier:find('next-chat-tier'),pastChats:find('next-chat-past-chats'),send:find('next-chat-send'),hint:find('next-chat-hint') };
+    effort:find('next-chat-effort'),tier:find('next-chat-tier'),pastChats:find('next-chat-past-chats'),directoryDiagnostics:find('next-chat-directory-diagnostics'),send:find('next-chat-send'),hint:find('next-chat-hint') };
 }
 
 // Keep DOM identity while live metadata changes. The cache contains only the
