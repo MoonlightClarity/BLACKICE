@@ -33,6 +33,11 @@ test('Maximal is a separate owner-local export, including after archive recovery
  assert.equal((await fetch(exportUrl(maximal.id).replace('taskId='+maximal.id,'taskId=other'),{headers})).status,404);
  const read=async()=>{const res=await fetch(exportUrl(maximal.id),{headers});assert.equal(res.status,200);const body=await res.json();assert.equal(body.taskId,maximal.id);assert.equal(body.runId,maximal.id);assert.equal(body.audience,'machine');assert(body.entries.length>=3);assert.doesNotMatch(JSON.stringify(body),/PRIVATE_INPUT_CANARY|PRIVATE_OUTPUT_CANARY/);return body;};
  const live=await read();await app.conversations.chain;app.engine.runs.delete(maximal.id);
- assert.equal((await app.conversations.get(maximal.id)).turnMachineTrace,undefined);
+ const ordinary=await app.conversations.get(maximal.id);assert.equal(ordinary.turnMachineTrace,undefined);
+ assert.deepEqual((await read()).entries,live.entries);
+ app.engine.restoreArchivedRun(ordinary);
+ assert.deepEqual((await read()).entries,live.entries);
+ await app.conversations.capture(app.engine.getRun(maximal.id));
+ app.engine.runs.delete(maximal.id);
  assert.deepEqual((await read()).entries,live.entries);
 });

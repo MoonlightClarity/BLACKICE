@@ -25,12 +25,15 @@ class Runtime extends EventEmitter {
   calls.push({prep:options.responseOnly===true,tools:options.dynamicTools?.map(tool=>tool.name)||[]});
   if(options.responseOnly)return {output:JSON.stringify({status:'proposed',focus:'inspect',reason:'Test the openable outline',actions:[{id:'inspect',objective:'Review starter row',dependsOn:[]}]})};
   const use=async args=>{
-   const result=await options.onToolCall({name:'relay_directory_action',callId:'fixture-'+args.action,arguments:args});
+   const call={name:'relay_directory_action',callId:'fixture-'+args.action,arguments:args};
+   const result=await options.onToolCall(call);
+   options.onToolResultDelivered?.({call,result});
    assert.equal(result.success,true,JSON.stringify(result));
    return JSON.parse(result.contentItems[0].text);
   };
   const state=await use({action:'read'});
-  await use({action:'block',id:'inspect',revision:state.revision,claim:'Synthetic starter sighted'});
+  assert.equal(state.actions[0].id,'inspect');
+  await use({action:'block',id:'inspect',claim:'Synthetic starter sighted'});
   options.onEvent?.({type:'message',text:'Offline fixture turn completed.'});
   return {output:'Offline fixture turn completed.'};
  }
@@ -46,13 +49,13 @@ class Runtime extends EventEmitter {
  await until('actual independent Chat selectors',()=>run(`[${ids.map(JSON.stringify).join(',')}].every(id=>!!document.querySelector(id))`));
  const values=()=>run(`[${ids.map(JSON.stringify).join(',')}].map(id=>document.querySelector(id).value)`);
  assert.deepEqual(await values(),['off','off','off']);
- await fill(ids[0],'on');await fill(ids[1],'on');
- assert.deepEqual(await values(),['on','on','off']);
+ await fill(ids[0],'on');await fill(ids[1],'on');await fill(ids[2],'maximal');
+ assert.deepEqual(await values(),['on','on','maximal']);
  await fill('#next-chat-input','Fixture: editable action outline');
  await run('document.querySelector("#next-chat-send").click()');
  const done=await until('admitted synthetic turn',()=>[...server.engine.runs.values()].find(row=>row.settled));
  assert.equal(done.status,'completed',done.error);
- assert.equal(done.directoryActions,'on');assert.equal(done.chatPlanning,'on');assert.equal(done.directoryDiagnostics,'off');
+ assert.equal(done.directoryActions,'on');assert.equal(done.chatPlanning,'on');assert.equal(done.directoryDiagnostics,'maximal');
  assert.equal(calls.length,2);assert.deepEqual(calls[0],{prep:true,tools:[]});
  assert.ok(calls[1].tools.includes('relay_directory_action'));
  assert.deepEqual(done.planningModuleReceipts.map(row=>row.phase),['started','completed']);
@@ -93,6 +96,10 @@ class Runtime extends EventEmitter {
  assert.equal(await run('!!document.querySelector(\'dialog[aria-label="Action Directory"][open]\')'),false);
  const diagnosticText=await text('dialog[aria-label="Turn receipts"][open]');
  assert.doesNotMatch(diagnosticText,/App-authored independent follow-up|User redirect from renderer/);
+ await until('Maximal export controls are visible',()=>run('[...document.querySelectorAll(\'dialog[aria-label="Turn receipts"][open] button\')].some(b=>b.textContent==="Download trace JSON" && b.getClientRects().length)'));
+ const trace=await run(`fetch(${JSON.stringify('/api/conversations/'+done.id+'/directory?taskId='+done.id+'&view=machine')}).then(r=>r.json())`);
+ assert.equal(trace.audience,'machine');assert(trace.entries.some(e=>e.kind==='directory.snapshot'&&e.metadata.phase==='delivered'));
+ assert.doesNotMatch(JSON.stringify(trace),/Synthetic starter sighted/);
  await click('Back to Receipts','dialog[aria-label="Turn receipts"][open]');
  await until('back restores Receipts',()=>run('!!document.querySelector(".next-activity-inspector[open]") && !document.querySelector(\'dialog[aria-label="Turn receipts"][open]\')'));
  fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({

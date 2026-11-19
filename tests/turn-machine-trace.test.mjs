@@ -97,7 +97,8 @@ test('real conversation archive reopens the safe journal independently of retain
   run.events.length=0;
   await first.capture(run);await first.close();
   const reopened=await new ConversationArchive({dataDir:dir,engine:new NoLive()}).init();stores.push(reopened);
-  const saved=await reopened.get(run.id);
+  const ordinary=await reopened.get(run.id);assert.equal(ordinary.turnMachineTrace,undefined);
+  const saved=await reopened.get(run.id,{includeMachineTrace:true});
   assert.equal(saved.events.length,0);
   const trace=projectTurnMachineTrace(saved);
   assert.equal(trace.entries.length,2);
