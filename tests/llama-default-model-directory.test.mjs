@@ -13,20 +13,21 @@ async function fixture(t) {
  const executable=path.join(root,'llama-server.exe');await fs.writeFile(executable,'fixture, never executed');
  const launches=[],requests=[];
  async function init(){
-  let online=false,rows=[];
+  let online=false,rows=[],directory;
+  const readModels=async()=>{rows=(await fs.readdir(directory)).filter(n=>n.endsWith('.gguf')).map(n=>({id:n.slice(0,-5),status:'unloaded'}));};
   const fetchImpl=async(url,options)=>{
-   const route=new URL(url).pathname;requests.push({route,method:options.method});
+   const {pathname:route,search}=new URL(url);requests.push({route,method:options.method});
    if(!online)throw Error('Router fixture is stopped.');
    if(route==='/props')return Response.json({role:'router'});
-   if(route==='/models')return Response.json({data:rows});
+   if(route==='/models'){if(search==='?reload=1'){requests.at(-1).reload=true;await readModels();}return Response.json({data:rows});}
    throw Error('Unexpected route '+route);
   };
   const spawnImpl=(_cmd,args)=>{
-   const directory=args[args.indexOf('--models-dir')+1];
+   directory=args[args.indexOf('--models-dir')+1];
    launches.push(directory);
    const child=new EventEmitter();child.pid=6000+launches.length;
    child.kill=()=>{online=false;queueMicrotask(()=>child.emit('close',0));};
-   void fs.readdir(directory).then(names=>{rows=names.filter(n=>n.endsWith('.gguf')).map(n=>({id:n.slice(0,-5),status:'unloaded'}));online=true;});
+   void readModels().then(()=>{online=true;});
    return child;
   };
   return new LocalModelManager({dataDir:path.join(root,'profile'),fetchImpl,spawnImpl,llamaExecutableCandidates:[executable]}).init();
@@ -55,10 +56,12 @@ test('fresh profile creates the declared default, and owned router discovers a G
  await fs.writeFile(path.join(directory,'added.gguf'),'fixture bytes, not loaded');
  const deferred=await f.api(manager,'POST',{},'/api/local-models/discover');
  assert.equal(deferred.status,409);assert.equal(deferred.body.code,'LOCAL_LLAMA_RESTART_BUSY');assert.deepEqual(f.launches,[directory]);
+ assert.equal(f.requests.some(r=>r.reload),false,'an active lease prevents a catalog reload');
  active.release();
  const rescanned=await f.api(manager,'POST',{},'/api/local-models/discover');
  assert.deepEqual(rescanned.body.models.map(m=>m.id).sort(),['added','fixture']);
- assert.deepEqual(f.launches,[directory,directory]);
+ assert.deepEqual(f.launches,[directory],'same configuration refresh does not replace the router');
+ assert.equal(f.requests.filter(r=>r.reload).length,1);
  await manager.close();
  const restarted=await f.init();t.after(()=>restarted.close());
  assert.equal((await f.api(restarted)).body.modelDirectory.path,directory);
@@ -85,6 +88,10 @@ test('explicit folder is preserved across restart, unavailable folders are not c
  assert.equal(result.status,200);assert.equal(result.body.models[0].id,'custom');assert.deepEqual(f.launches,[missing]);
  const cleared=await f.api(restarted,'POST',{expectedRevision:config.revision,settings:{...config.settings,modelsDirectory:''}});
  assert.equal(cleared.body.modelDirectory.path,initial.defaultModelsDirectory);
+ const applied=await f.api(restarted,'POST',{},'/api/local-models/discover');
+ assert.equal(applied.status,200);assert.deepEqual(applied.body.models,[]);
+ assert.deepEqual(f.launches,[missing,initial.defaultModelsDirectory]);
+ assert.equal(f.requests.some(r=>r.reload),false,'a fresh router already read its new directory');
 });
 
 test('a non-directory at the default location is reported; no model or conflicting file is touched',async t=>{

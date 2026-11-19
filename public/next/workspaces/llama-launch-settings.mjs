@@ -73,7 +73,7 @@ export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, onDi
  const directoryStatus=make('p','','next-help');directoryStatus.id='next-local-directory-status';directoryStatus.setAttribute('role','status');
  const discoverModels=button('Discover folder models');discoverModels.id='next-local-directory-discover';
  const directoryCommands=make('div','','next-row');directoryCommands.append(saveDirectory,discoverModels);
- directory.append(directoryStatus,directoryCommands,make('p','Discovery may restart the idle BLACKICE llama.cpp router and unload cached models. It does not move, download or load models. Ollama and LM Studio keep their own storage.','next-help'));
+ directory.append(directoryStatus,directoryCommands,make('p','Discovery refreshes the idle BLACKICE llama.cpp router. Changed settings require a restart; a restart or a changed model file can unload cached models. Discovery does not move, download or load models. Ollama and LM Studio keep their own storage.','next-help'));
  quick.append(status,label('Model file',file),label('Model name',name),row,feedback,section);mount.append(quick);
  let alive=true,active=false,pending=false,picking=false,refreshing=false,generation=0,revision=null,recommended=null,baseline=null,pendingRestart=false,discoveryDirectory=null;
  const restartHint='Saved settings take effect the next time the idle router starts or restarts. Active work is not interrupted.';
@@ -88,7 +88,7 @@ export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, onDi
    if(!valid(token))return;
    await onDiscovered(result);
    if(valid(token))feedback.textContent=result.owned
-    ? (result.models.length?'Found '+result.models.length+' local model'+(result.models.length===1?'':'s')+'. Choose a model below to load it.':'No GGUF models appeared in the router catalog. Check the folder path and refresh after adding weights.')
+    ? (result.models.length?'Found '+result.models.length+' local model'+(result.models.length===1?'':'s')+'. Choose a model below to load it.':'The router catalog is empty. Check the configured folder and refresh after adding weights.')
     : 'An existing llama.cpp server supplied the catalog. Its files and discovery settings are managed by that server.';
   }catch(error){if(valid(token))feedback.textContent=error.message||'Could not discover local models.';}
   finally{pending=false;if(alive)sync();}
