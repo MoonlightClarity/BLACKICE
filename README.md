@@ -8,9 +8,23 @@ The goal is to reduce the work of managing the agent: copying instructions betwe
 
 **[Download for Windows](https://github.com/MoonlightClarity/BLACKICE/releases)** · **[Source](https://github.com/MoonlightClarity/BLACKICE)** · **[Issues](https://github.com/MoonlightClarity/BLACKICE/issues)** · **[Apache-2.0 license](LICENSE)**
 
-> **Source guide:** This README describes the current source, not proof of an installed or published build. Check the [published release notes](https://github.com/MoonlightClarity/BLACKICE/releases) for the exact installer you use. Source tests and renderer checks do not establish packaged-installation success.
+> **Source status (November 18, 2026):** The default branch identifies itself as **2.40.6 candidate source**, not a verified installed or published release. This README describes intended and implemented behavior in that source; it is **not** a claim that every feature is present in a downloadable installer or that complex tasks reliably complete unattended. Consult the [2.40.6 source notes](RELEASE-NOTES-2.40.6.md) and the [published release notes](https://github.com/MoonlightClarity/BLACKICE/releases) for version-specific evidence. Source tests, renderer checks, and synthetic trials do not replace an exact-installer or live-workflow qualification.
 
 **Guide:** [Getting started](#getting-started) · [Capabilities](#what-you-can-delegate) · [Models](#models-and-providers) · [Planning and Activity](#planning-and-activity) · [Goals and continuing work](#goal-mode-and-continuing-work) · [Troubleshooting](#configuration-and-troubleshooting) · [Contributors](#contributors)
+
+## Current capability and evidence boundaries
+
+The distinction between an implemented tool, a verified integration, and a reliably completed real-world task matters. This is the conservative snapshot for the **2.40.6 default-branch source**; installed versions can differ.
+
+| Area | What the current source provides | What is **not** established |
+| --- | --- | --- |
+| **Direct external-assistant tools** | An authenticated MCP connection can let a configured ChatGPT conversation call BLACKICE file, command, browser, and planning tools. Direct tool calls return to the originating assistant without starting a second BLACKICE model. | Every external client, installation, grant, or remote connection working automatically. Gemini and Claude have separate documented setup and compatibility requirements. |
+| **Browser, file, and command actions** | A contained browser with observed controls; bounded file operations and patches; command execution; durable action IDs and readable receipts. | Universal website compatibility, uninterrupted multi-page forms, failure-free filename discovery, or exactly-once effects on external sites. |
+| **Conversation and work records** | Saved conversations, explicit task/graph records, and retained-event Activity views; configured model/provider identity persists with a conversation. | Directory-style automatic context injection, an always-running Swarm coordinator, or proof that long-running tasks cannot encounter context or state contamination. |
+| **Continuing work** | Goal controls and editable Cronjobs with run records; compatible single-agent queue/skip schedules can continue an existing task and conversation. | Fully unattended, end-to-end job-search reliability or execution while the Windows host is off. |
+| **Skills and model choices** | Read-only release-owned Skills; native Codex and optional advanced or local-model configurations. | Model-written mutable Skills, automatic learning, guaranteed local-model tool use, or free access to a particular hosted provider. |
+
+**Retired from current use:** the old nine-method Planning switches, Directory execution/context editor, editable memory/automatic-learning services, and prior Autonomy/Swarm automatic execution paths. Historical files or references can remain on disk; they are not evidence that those paths still run. The [2.40.6 notes](RELEASE-NOTES-2.40.6.md) also document unresolved legacy dependencies and compatibility boundaries.
 
 ## Why BLACKICE exists
 
@@ -38,7 +52,7 @@ BLACKICE is a general workspace. These examples show how its capabilities combin
 | **“Research these options and recommend one.”** | Read local material, browse sources, split independent questions among workers when useful, and compare findings. | A recommendation or document with supporting sources, tradeoffs, and unresolved questions. |
 | **“Fix this bug and check the result.”** | Inspect the repository, edit the relevant files, run commands or tests, and inspect their output. | The actual changes, the checks performed, and the observed result. |
 | **“Complete this website workflow using these files.”** | Navigate pages, inspect controls, fill forms, upload documents, and observe the resulting page. | The destination's confirmation or a precise account of the remaining step. |
-| **“Find suitable roles and apply using my resumes.”** | Evaluate roles against your constraints, prepare forms, upload materials, and consult application history before submission. | Distinct application records with confirmed, pending, or unresolved outcomes. |
+| **“Find suitable roles and apply using my resumes.”** | With a compatible model and supported websites, evaluate roles against stated constraints, prepare forms, upload materials, and consult application history before submission. | Records that distinguish destination-confirmed, pending, and unresolved application outcomes; not an assurance that every application completed. |
 | **“Run this check every morning.”** | Save the prompt, model, working folder, and relevant context in a scheduled workflow. | A history of runs and their results that you can inspect, edit, pause, or resume. |
 
 The selected model performs the reasoning. BLACKICE supplies the workspace, tools, orchestration, and records around that reasoning. Native Codex and configured API models can supply inference while your Windows computer hosts the working environment.
@@ -173,7 +187,7 @@ Model accounts, API keys, quotas, and service capabilities come from the selecte
 - **Missing tool:** review **Settings → Tools** and whether its connection is enabled and actually connected; also check that the selected model supports tool use. Available tools depend on both the host and the active model.
 - **After an update:** refresh runtime status and reconnect the model runtime only if needed. For direct ChatGPT use, reuse a healthy existing connection and verify a fresh status request. If its address or authorization changed, follow the [connector recovery instructions](CHATGPT-CONNECTOR.md) instead of blindly registering duplicates.
 
-**Known limits:** the host must be running for tools and schedules; website authentication and unsupported controls can interrupt work; external action receipts can remain uncertain. Source-level fixes are **not installed-release guarantees**. Incompatible legacy native sessions are rejected, and the repository-wide zero-legacy inventory remains incomplete.
+**Known limits:** the host must be running for tools and schedules; website authentication, changing pages, unsupported controls, and model/tool incompatibility can interrupt work; external action receipts can remain uncertain. **File discovery, long-run context isolation, startup variability, and multi-site job-search throughput remain validation priorities.** One successful focused or synthetic check must not be generalized into a reliability guarantee. Source-level fixes are **not installed-release guarantees**. Incompatible legacy native sessions are rejected, old v1/v2 effects may remain unreconciled, and the repository-wide zero-legacy inventory remains incomplete.
 
 ### Data and remote access
 
