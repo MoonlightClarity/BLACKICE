@@ -31,7 +31,7 @@ export function projectFamily(family) {
        ...(run.autonomy?.automatic||run.autonomyDispatch?{autonomy:{automatic:true}}:{}),
       error:diagnosticText(run.error),errorCode:diagnosticCode(run.errorCode),
       ...(chatErrorText(run.error)?{error:chatErrorText(run.error)}:{}),
-      planningMode:run.planningMode,planningEnforcement:run.planningEnforcement,
+      planningMode:run.planningMode,planningEnforcement:run.planningEnforcement,pastChats:run.pastChats,
       ...(run.planningOntology?{planningOntology:run.planningOntology}:{}),
       planningExecutionMode:run.planningExecutionMode,
       ...(run.executionModes?{executionModes:run.executionModes}:{}),

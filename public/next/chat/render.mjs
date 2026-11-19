@@ -60,6 +60,7 @@ export function createChatFrame(mount) {
     '<label>Reasoning <select id="next-chat-effort"><option value="default">Model default</option></select></label>',
     '<label>Speed <select id="next-chat-tier"><option value="default">Standard</option></select></label>',
     '<label title="Prompt guidance, not a fixed response length. Auto adds no answer detail guidance.">Answer detail <select id="next-chat-verbosity" aria-label="Answer detail guidance"><option value="auto">Auto</option>'+CHAT_ANSWER_DETAIL_LEVELS.map(level=>'<option value="'+level+'">'+level+'</option>').join('')+'</select></label>',
+    '<label title="On allows searching other chats. Off applies to future BLACKICE chat lookups, not this conversation or local files. Saves when you send.">Past chats <select id="next-chat-past-chats" aria-label="Past chats for the next response"><option value="off">Off</option><option value="on">On demand</option></select></label>',
     '<input id="next-chat-execution-mode" type="hidden" value="automatic">',
     '<button id="next-chat-goal-toggle" class="next-chat-goal-toggle" type="button" role="switch" aria-checked="false">Goal: Off</button><span class="next-chat-spacer"></span><button class="next-primary" type="submit" id="next-chat-send">Send</button></div>',
     '</form>',
@@ -94,7 +95,7 @@ export function createChatFrame(mount) {
     cycleNotice:find('next-chat-cycle-notice'),cycleStatus:find('next-chat-cycle-status'),openPlan:find('next-chat-open-plan'),executionMode:find('next-chat-execution-mode'),
     form:find('next-chat-form'),input:find('next-chat-input'),attachments:find('next-chat-attachments'),model:find('next-chat-model'),
     goalToggle:find('next-chat-goal-toggle'),goalCard:find('next-chat-goal-card'),goalStatus:find('next-chat-goal-status'),goalObjective:find('next-chat-goal-objective'),goalProgress:find('next-chat-goal-progress'),goalDeadline:find('next-chat-goal-deadline'),goalReason:find('next-chat-goal-reason'),goalEdit:find('next-chat-goal-edit'),goalPause:find('next-chat-goal-pause'),goalResume:find('next-chat-goal-resume'),goalClear:find('next-chat-goal-clear'),goalDialog:find('next-chat-goal-dialog'),goalForm:find('next-chat-goal-form'),goalTitle:find('next-chat-goal-title'),goalInput:find('next-chat-goal-input'),goalContext:find('next-chat-goal-context'),goalLimit:find('next-chat-goal-limit'),goalDeadlineInput:find('next-chat-goal-deadline-input'),goalError:find('next-chat-goal-error'),goalCancel:find('next-chat-goal-cancel'),goalSave:find('next-chat-goal-save'),
-    effort:find('next-chat-effort'),tier:find('next-chat-tier'),verbosity:find('next-chat-verbosity'),send:find('next-chat-send'),hint:find('next-chat-hint') };
+    effort:find('next-chat-effort'),tier:find('next-chat-tier'),verbosity:find('next-chat-verbosity'),pastChats:find('next-chat-past-chats'),send:find('next-chat-send'),hint:find('next-chat-hint') };
 }
 
 // Keep DOM identity while live metadata changes. The cache contains only the

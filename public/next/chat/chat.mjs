@@ -64,6 +64,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   };
   let runtimeStatus=getStatus?.()||{};
   const root = () => rootId(state.selected) || 'new';
+  const pastChatsDrafts=new Map();
+  const selectedPastChats=()=>pastChatsDrafts.get(root())??state.runs.at(-1)?.pastChats??(state.selected?'on':'off');
   const visualMount=mount.ownerDocument.createElement('div');view.scroll.append(visualMount);
   const visuals=createVisualWorkspace({mount:visualMount,api,getConversationId:root,notify:message=>notify(message)});
   const selectedBucket=()=>state.selected?.state||state.bucket;
@@ -128,6 +130,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     syncContext();
     activityInspector.refresh(state.selected?state.runs.at(-1)?.id:null);
     const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting()||goalControls?.isBusy();
+    view.pastChats.value=selectedPastChats();
+    view.pastChats.disabled=Boolean(busy||state.loading||bucket!=='active'||state.runs.some(running));
     goalControls?.update({conversationId:root(),running:state.runs.some(run=>run.status==='running'&&run.settled!==true),readonly:bucket!=='active',busy:state.pending||state.managing||state.loading});
     executionNotice.hidden=Boolean(item)||root()!=='new'||bucket!=='active'||state.options.planningExecutionMode!=='plan_only';
     enableAutomatic.disabled=busy||state.loading||state.attachmentsPending;
@@ -481,7 +485,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       const context=active?undefined:contextControls.read();
       const submittedContextRevision=contextControls.revision;
       const result=await submitChat({api,runs:current,task,model:previous&&!submittedModel.explicit?undefined:options.model,
-        effort:options.effort,serviceTier:options.serviceTier,verbosity:options.verbosity,context,goal,
+        effort:options.effort,serviceTier:options.serviceTier,verbosity:options.verbosity,context,goal,pastChats:active?undefined:selectedPastChats(),
         planningMode:options.planningMode,planningExecutionMode:options.planningExecutionMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
         cwd:(()=>{try{return localStorage.getItem('blackice.next.cwd')||status?.cwd||'';}catch{return status?.cwd||'';}})()});
       const unchanged=consumeDraft&&state.inputOwner===submittedOwner&&state.inputRevision===submittedRevision;
@@ -492,6 +496,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         hint(result.receipt.delivery==='rejected'?'Direction saved; live delivery was rejected.':result.receipt.delivery==='uncertain'?'Direction saved; live delivery is uncertain.':(result.receipt.queued===true||result.receipt.delivery==='queued')?'Direction queued.':'Direction delivered.');
       } else if(result.run?.id) {
         modelSelections.consume(submittedModel);
+        pastChatsDrafts.delete(submittedContextOwner);
         const run=result.run;
         if(context!==undefined)contextControls.commit(submittedContextOwner,context,submittedContextRevision);
         const item=previous ? {...previous,runId:run.id,latestRunId:run.id}
@@ -679,6 +684,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     state.bucket=view.bucket.value;state.list=[];state.indexLimit=CHAT_INDEX_BATCH;
       state.generation++;showNew({focus:false});void loadList();
   });
+  view.pastChats.addEventListener('change',()=>{if(!view.pastChats.disabled)pastChatsDrafts.set(root(),view.pastChats.value);});
   view.form.addEventListener('submit',event=>{event.preventDefault();void send();});
   view.input.addEventListener('keydown',event=>{
     if(event.isComposing)return;
