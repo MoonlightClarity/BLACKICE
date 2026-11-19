@@ -178,11 +178,11 @@ function handle(channel, fn) {
   });
 }
 
-async function detachDesktop() {
+async function detachDesktop(reason='Emergency stop requested.') {
   desktopRestart?.cancelPending();
-  const pausingOperations=harness?.operations?.pause('Emergency stop requested.');
+  const pausingOperations=harness?.operations?.pause(reason);
   pausingOperations?.catch(()=>{});
-  const pausingInbox = harness?.inbox?.pause('Emergency stop requested. Resume the inbox when ready.');
+  const pausingInbox = harness?.inbox?.pause(reason+' Resume the inbox when ready.');
   pausingInbox?.catch(() => {});
   harness?.browser?.cancel();
   const detaching = Promise.resolve().then(() => harness?.desktop?.setEnabled(false));
@@ -192,7 +192,7 @@ async function detachDesktop() {
     try { harness.engine.cancelRun(run.id); cancelled++; } catch (error) { console.warn(error.message); }
   }
   cancelled += harness?.engine.cancelCompactions() || 0;
-  await harness?.learning?.cancelBackground('Emergency stop requested.');
+  await harness?.learning?.cancelBackground(reason);
   await pausingInbox;
   await pausingOperations;
   await detaching;
@@ -216,10 +216,8 @@ async function shutdown() {
     nativeAppSurface.close();
     clearTimeout(windowSaveTimer);
     const savingWindow=saveWindowState();
-    // A prepared restart has already admitted an idle, drained runtime. Preserve
-    // the saved queue settings instead of applying the emergency-stop pauses.
-    if (restartClosing) await Promise.resolve(harness?.desktop?.setEnabled(false)).catch(error => diagnostics.recordError('desktop', 'desktop_detach_failed', error));
-    else await detachDesktop().catch(error => diagnostics.recordError('desktop', 'emergency_stop_failed', error));
+    // Normal shutdown drains queues and cancels active work through harness.close().
+    // Persisting a pause is reserved for an explicit stop or a fatal failure.
     await savingWindow;
     try { await startup.drainAfter(() => harness?.close()); session.defaultSession?.flushStorageData();await session.defaultSession?.cookies.flushStore().catch(()=>{});await diagnostics.record({ component: 'desktop', event: 'stopped' }); }
     catch (error) { await diagnostics.recordError('desktop', 'stop_failed', error); throw error; }
@@ -440,7 +438,7 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     fatalFailure = true;
     rendererRecovery?.stop();
     void diagnostics.recordError('desktop', event, error);
-    void detachDesktop().catch(() => {}).finally(() => app.quit());
+    void detachDesktop('BLACKICE stopped after a desktop error.').catch(() => {}).finally(() => app.quit());
   };
   process.on('uncaughtException', error => failClosed(error, 'uncaught_exception'));
   process.on('unhandledRejection', error => failClosed(error, 'unhandled_rejection'));

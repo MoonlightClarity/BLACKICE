@@ -792,3 +792,19 @@ test('Cron outline shows only this schedule saved conversations without result a
  await f.clickReady('#next-tasks-refresh');row=f.$('[data-schedule-id="schedule-a"]');assert.equal(row.open,true);assert.equal(row.querySelectorAll('[data-schedule-result-run]').length,2);
  assert.deepEqual(f.jobs,before);assert.ok(f.calls.every(call=>call.method==='GET'));assert.equal(f.calls.some(call=>call.path==='/api/runs'),false);assert.equal(f.$('[data-result-acknowledge]'),null);assert.equal(f.$('#next-tasks-results'),null);assert.equal(f.$('#next-tasks-jobs'),null);
 });
+
+test('Cronjobs shows a neutral pause status without claiming the user requested an emergency stop',async t=>{
+  const operationsStatus={paused:true,pauseReason:'Emergency stop requested.',blockedReason:'Emergency stop requested. Resume the inbox when ready.'};
+  const f=fixture(t,{operationsStatus,hook:async call=>{
+    if(call.path.endsWith('/resume')){
+      assert.deepEqual(call.payload,{resumeInbox:true});
+      Object.assign(operationsStatus,{paused:false,blockedReason:null});
+      return operationsStatus;
+    }
+  }});f.component.enter();await settle();
+  assert.equal(f.$('#next-tasks-info').textContent,'Schedules paused.');
+  assert.equal(f.$('#next-tasks-resume').disabled,false);
+  assert.equal(f.calls.some(call=>call.method==='POST'),false,'Opening Cronjobs does not resume anything.');
+  await f.clickReady('#next-tasks-resume');
+  assert.match(f.$('#next-tasks-info').textContent,/Schedules ready/);
+});

@@ -623,8 +623,8 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
     view.resume.disabled=(enabled&&!status.blockedReason)||busy;
     view.resume.textContent=status.blockedReason?'Resume schedules and inbox':'Resume';
     view.info.textContent=scheduleProgress||mutationError|| (status.healthy===false?status.error||'Task storage needs attention.'
-      :status.paused?'Schedules paused: '+(status.pauseReason||'manual pause')
-      :status.blockedReason?'Dispatch blocked: '+status.blockedReason
+      :status.paused?(cronjobsOnly?'Schedules paused.':'Schedules paused: '+(status.pauseReason||'manual pause'))
+      :status.blockedReason?(cronjobsOnly?'Schedules blocked: task inbox paused.':'Dispatch blocked: '+status.blockedReason)
       :status.ticker?.state==='stale'?'Scheduler heartbeat stale. Last successful tick: '+humanTime(status.ticker.lastSuccessAt)
       :status.ticker?.state==='error'?'Scheduler tick failed: '+(status.ticker.lastError||'Unknown failure')
       :'Schedules ready · '+(status.enabled||0)+' enabled · '+(status.running||0)+' running'+(status.ticker?.lastSuccessAt?' · Last tick: '+humanTime(status.ticker.lastSuccessAt):''));

@@ -117,3 +117,33 @@ test('browser tree HTTP assets and the full app module import graph resolve thro
   assert.ok(visited.has('/browser-tree-model.mjs'), 'The real app import graph reaches the new browser tree model.');
   assert.ok(visited.has('/browser-ui.mjs')); assert.ok(visited.has('/observe-ui.mjs'));
 });
+
+test('ordinary desktop quit closes the harness without persisting an emergency pause', async t => {
+  const f = await fixture(t);
+  const main = await readFile(new URL('../desktop/main.mjs', import.meta.url),'utf8');
+  const source = main.slice(main.indexOf('async function detachDesktop('), main.indexOf('function profileMaintenance('));
+  const diag={record:async()=>{},recordError:async()=>{},close:async()=>{}};
+  const {shutdown} = new Function('harness','diagnostics','profile',`
+    let shutdownPromise, runtimeRecord, windowSaveTimer, restartReady, desktopRestart, rendererRecovery;
+    const runtimeWriteChain=Promise.resolve(), restartClosing=false;
+    const noop=()=>{};
+    const nativeApps={close:async()=>{}}, assertNativeParentUnowned=noop;
+    const desktopLifecycle={stop:noop}, startup={stop:noop, drainAfter:op=>op()};
+    const globalShortcut={unregisterAll:noop}, nativeAppSurface={close:noop}, saveWindowState=noop;
+    const fs={rm:async()=>{}}, path={join:(...parts)=>parts.join('/')};
+    const app={getPath:()=>profile}, session={};
+    ${source}
+    return {shutdown};
+  `)(f.app,diag,f.directory);
+  const beforeOperations=f.app.operations.status(),beforeInbox=f.app.inbox.status();
+  assert.equal(beforeOperations.paused,false);
+  assert.equal(beforeInbox.paused,false);
+  await shutdown();
+  const dir=path.join(f.directory,'data');
+  for(const file of ['operations.json','inbox.json']){
+    const {settings}=JSON.parse(await readFile(path.join(dir,file),'utf8'));
+    assert.equal(settings.paused,false,file);
+    assert.equal(settings.pauseReason,null,file);
+  }
+  assert.ok(f.effects.includes('cancel'),'The browser must still be cancelled on quit.');
+});
