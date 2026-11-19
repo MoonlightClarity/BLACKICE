@@ -346,6 +346,18 @@
         "revision": "1"
       },
       "bodyFile": "chart-storytelling.md"
+    },
+    {
+      "id": "library-personal-context",
+      "title": "Personal Context",
+      "aliases": ["personal context", "usual style", "as we discussed", "previous decision", "prior preferences", "pick up where we left off", "continue previous work", "what did we decide"],
+      "description": "Use relevant user preferences and earlier project decisions without importing an old task, deadline, or unverified claim. Continue current research even without past-chat lookup.",
+      "tags": ["methods", "preferences", "continuity", "provenance"],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "personal-context.md"
     }
   ]
 }

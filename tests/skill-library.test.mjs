@@ -76,9 +76,9 @@ test('the default first-party pack is selectable by real format and task queries
  const next=await call({action:'search',offset:page.nextOffset,limit:13});
  const rows=page.entries.concat(next.entries);
  const pack=rows.filter(row=>row.provenance?.kind==='first-party');
- assert.equal(page.totalMatches,25);
+ assert.equal(page.totalMatches,26);
  assert.equal(next.nextOffset,null);
- assert.equal(pack.length,22);
+ assert.equal(pack.length,23);
  assert.deepEqual(pack.map(row=>row.id).sort(),manifest.entries.map(row=>row.id).sort());
  assert.deepEqual((await fs.readdir(root)).sort(),['index.json',...manifest.entries.map(row=>row.bodyFile)].sort());
  assert.ok(rows.every(row=>!('content' in row)&&!('bodyFile' in row)));
