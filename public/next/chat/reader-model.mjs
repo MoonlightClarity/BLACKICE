@@ -1,6 +1,7 @@
 import { conversationRuns, messagesOfRun } from './model.mjs';
 import { recordedChatModels,projectCyclePlanning,chatErrorText,projectConversationGoal } from './model.mjs';
 import { projectPlanningActivity } from './planning-timeline.mjs';
+import { chatToolFailure } from './tool-failure.mjs';
 import { contextOptions, contextStatistics, compactionStatistics } from '../core/context-controls.mjs';
 const records = value => Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
 // Saved run failures are user-facing diagnostics, not internal event traces.
@@ -67,7 +68,7 @@ export function projectFamily(family) {
         })),
       },
       outcomeRecoveryByNode:Object.fromEntries(Object.entries(run.nodes||{}).map(([id,node])=>[id,node?.status==='running'?node?.modularReview?.status||'inactive':'inactive'])),
-      nodes,precomputedMessages:messages,planningActivity:projectPlanningActivity(run),events:[],
+      nodes,precomputedMessages:messages,planningActivity:projectPlanningActivity(run),toolFailure:chatToolFailure(run),events:[],
     };
   });
   return {rootId:family?.rootId||null,state:family?.state||'active',

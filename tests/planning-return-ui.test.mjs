@@ -252,3 +252,26 @@ test('only an observed final-message start after a dated review adds public resp
   assert.deepEqual(planningActivityForEvent(run.id, { ...started, at: '2026-10-29T12:00:03.000Z' }, run.taskState), [], 'an earlier start is not work after the review');
   assert.deepEqual(planningActivityForEvent(run.id, { ...started, data: { ...started.data, stage: 'completed' } }, run.taskState), []);
 });
+
+test('a saved Chat turn shows one inspectable tool failure without renaming the response or leaking raw fields', () => {
+  const source=planningReturnRun();
+  source.status='completed';source.settled=true;
+  const receipt=(nodeId,data)=>({nodeId,data:{type:'tool.result',tool:'relay_workspace',action:'run',...data}});
+  const failure=receipt('agent',{success:false,operationKey:'same',message:'Command exited with code 127.',stderr:'private raw stderr'});
+  source.events.push(failure,failure,receipt('other',{success:true,operationKey:'same'}),receipt('agent',{success:true,operationKey:'different'}));
+  const fromSaved=()=>projectFamily({runs:[source]}).runs[0];
+  const run=fromSaved(),timeline=fakeTimeline();
+  paintHistory({timeline},[run]);
+  assert.equal(run.events.length,0);
+  assert.match(timeline.textContent,/Response saved/);
+  assert.equal(descendants(timeline,node=>node.tagName==='summary'&&node.textContent==='Tool failure recorded').length,1);
+  assert.match(timeline.textContent,/Command exited with code 127/);
+  assert.doesNotMatch(timeline.textContent,/private raw stderr|matching call later succeeded|task stopped/i);
+  source.events.push(receipt('agent',{success:true,operationKey:'same'}));
+  paintHistory({timeline},[fromSaved()]);
+  assert.match(timeline.textContent,/Tool failure recorded; matching call later succeeded/);
+  source.events=source.events.filter(item=>item.data?.success!==false);
+  source.events.push(receipt('agent',{status:'failed',message:'No explicit outcome',operationKey:'different'}));
+  paintHistory({timeline},[fromSaved()]);
+  assert.doesNotMatch(timeline.textContent,/Tool failure recorded|No explicit outcome/);
+});

@@ -5,6 +5,7 @@ import { text, formatDate } from '../core/dom.mjs';
 import { runText, displayChatRequest, messagesOfRun, chatResponseState, windowedRuns, windowedMessages, CHAT_MESSAGE_BATCH, rootId, lastRunId, running, CHAT_INDEX_BATCH, conversationIndexWindow, conversationGoalStatus } from './model.mjs';
 import { chatOptionChoices } from './options-model.mjs';
 import { createRegisteredArtifactResolver } from '../../conversation-model.mjs';
+import { chatToolFailure } from './tool-failure.mjs';
 import { taskPlanView } from '../../task-plan-model.mjs';
 import { chatDisplayPhases, chatWorkSummary, chatProgressPreview, chatOutlineStatusLabel } from './planning-timeline.mjs';
 
@@ -392,8 +393,8 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     const delivery=chatResponseState(run,allMessages);
     const {shown:messages,hidden:olderMessages}=windowedMessages(
       allMessages,messageLimits?.get(run.id)??CHAT_MESSAGE_BATCH);
-    const failure=chatRunError(run);
-    const signature=[run,run.status,run.settled,run.output,failure?.message,failure?.code,request,run.retryOf,earlier&&displayChatRequest(earlier),
+    const failure=chatRunError(run),toolFailure=run.toolFailure??chatToolFailure(run);
+    const signature=[run,run.status,run.settled,run.output,failure?.message,failure?.code,toolFailure?.label,toolFailure?.detail,request,run.retryOf,earlier&&displayChatRequest(earlier),
       run===shown.at(-1),run.taskState,run.taskState?.revision,run.planningActivity,run.workflow,markdown,
       delivery.missing,delivery.pausedAfterPlan,delivery.needsFollowup,delivery.errors.join('\n'),
       messageLimits?.get(run.id),allMessages.length,...(run.attachmentIds||[]).flatMap(id=>[id,getAttachment?.(id)?.name]),
@@ -593,6 +594,11 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     const completedLabel=delivery.missing?'No response received':delivery.pausedAfterPlan?'Plan ready':'Response saved';
     const pill=text(footer,run.status==='completed'&&run.settled===true?completedLabel:run.status==='completed'&&run.settled===false?'Finishing…':run.status||'saved','span','next-status-pill');
     pill.dataset.state=run.status||'saved';
+    if(toolFailure&&run.settled===true){
+      const receipt=text(footer,'','details','next-turn-note');
+      text(receipt,toolFailure.label,'summary');
+      text(receipt,toolFailure.detail,'p');
+    }
     if(run.status==='completed'&&run.settled===true&&hasPlan&&!planView.complete)text(footer,'Unfinished steps','span','next-turn-note');
     if (['failed','cancelled'].includes(run.status) && run.settled===true && !delivery.needsFollowup) {
       const retry=text(footer,'Retry','button');retry.type='button';retry.addEventListener('click',()=>cache.callbacks.onStop?.('retry',run.id));
