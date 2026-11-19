@@ -38,3 +38,32 @@ test('blocked dependency replay permits an honest final after one recovery but d
   }
  }
 });
+
+test('focus-after-read live trace replay advances without repeating the successful workspace read',async t=>{
+ const{engine}=await setup(t,async o=>{
+  const dir=(action,args={})=>o.onToolCall({name:'relay_directory_action',callId:'dir-'+action,arguments:{action,...args}});
+  const plan=await dir('plan',{actions:[{id:'find',objective:'Find local input',dependsOn:[]},{id:'use',objective:'Inspect another source',dependsOn:['find']}]});
+  assert.equal(plan.success,true);
+  const read=await o.onToolCall({name:'relay_workspace',callId:'first-list',arguments:{action:'list',path:'.'}});
+  assert.equal(read.success,true,JSON.stringify(read));
+  const note=read.contentItems.at(-1).text;
+  assert.match(note,/cite this same-turn read/);
+  const [receipt]=note.match(/receipt-[0-9]+/);
+  const obs=()=>dir('observe',{id:'find',claim:'Read the local inputs',receipts:[receipt]});
+  assert.equal((await obs()).code,'DIRECTORY_OBSERVATION');
+  assert.equal((await dir('focus',{id:'find'})).success,true);
+  const observed=await obs();assert.equal(observed.success,true,JSON.stringify(observed));
+  const state=JSON.parse(observed.contentItems[0].text);assert.deepEqual(state.ready,['use']);
+  assert.equal((await dir('block',{id:'use',claim:'Offline replay ends here'})).success,true);
+  assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);
+  return{output:'Found the local input; no other source was contacted.'};
+ });
+ for(const mode of ['off','on','maximal']){
+  const run=engine.startRun({workflow:graph,input:{task:'Inspect input and another source',directoryActions:'on',directoryDiagnostics:mode}});
+  await engine.executions.get(run.id);const result=engine.getRun(run.id);assert.equal(result.status,'completed',result.error);
+  const ledger=await engine.actionDirectories.get(run.id,'Inspect input and another source');
+  assert.equal(ledger.read().receipts.length,1);
+  assert.equal(ledger.read().receipts[0].linkedByActionId,'find');
+  if(mode==='maximal')assert(engine.runs.get(run.id).turnMachineTrace.head.some(e=>e.kind==='directory.mutation'&&e.metadata.linkedReadCount===1));
+ }
+});

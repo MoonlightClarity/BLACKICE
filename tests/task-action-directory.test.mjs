@@ -44,3 +44,27 @@ test('blocked dependencies do not erase unknown effects or survive an authorized
  assert.deepEqual(ledger.read().ready,['check']);
  assert.equal(ledger.finalStatus().ready,false);
 });
+
+test('successful same-turn unassigned reads can be explicitly linked once without rewriting admission attribution',async()=>{
+ const ledger=create();const first={runId:'turn',nodeId:'agent',observationOnly:true};
+ await ledger.edit({action:'plan',revision:0,actions:[{id:'read',objective:'Find input',dependsOn:[]},{id:'next',objective:'Use input',dependsOn:['read']}]});
+ const read=async(options=first,success=true)=>ledger.execute({name:'relay_find_files'},async()=>({success}),options);
+ const oldTurn=await read({...first,runId:'other'});
+ const oldNode=await read({...first,nodeId:'other'});
+ const failed=await read(first,false);
+ const stale=await read({...first,expectedActionRevision:0});
+ const returned=await read();
+ assert.equal(returned.canLinkRead,true); assert.equal(stale.canLinkRead,false);assert.equal(failed.canLinkRead,false);
+ await ledger.edit({action:'focus',id:'read',revision:ledger.read().revision});
+ const observe=(id,receipts)=>ledger.edit({action:'observe',id,revision:ledger.read().revision,claim:'Observed input',receipts},first);
+ for(const invalid of [oldTurn,oldNode,failed,stale])await assert.rejects(observe('read',[returned.receiptId,invalid.receiptId]),{code:'DIRECTORY_EVIDENCE'});
+ assert.equal(ledger.read().receipts.at(-1).linkedByActionId,undefined);
+ await observe('read',[returned.receiptId]);
+ const state=ledger.read();
+ const saved=state.receipts.find(r=>r.id===returned.receiptId);
+ assert.equal(saved.actionId,null);assert.equal(saved.linkedByActionId,'read');
+ const reloaded=create({snapshot:state});assert.equal(reloaded.read().receipts.at(-1).linkedByActionId,'read');
+ await ledger.edit({action:'focus',id:'next',revision:ledger.read().revision});
+ await assert.rejects(observe('next',[returned.receiptId]),{code:'DIRECTORY_EVIDENCE'});
+ assert.equal(ledger.read().actions[1].state,'active');
+});
