@@ -56,6 +56,7 @@ class Runtime extends EventEmitter {
  assert.equal(calls.length,2);assert.deepEqual(calls[0],{prep:true,tools:[]});
  assert.ok(calls[1].tools.includes('relay_directory_action'));
  assert.deepEqual(done.planningModuleReceipts.map(row=>row.phase),['started','completed']);
+ await until('module receipt renders in actual Chat activity',async()=>String(await text('.next-chat-planning-modules')).includes('Task decomposition: Plan recorded'));
  await until('actual Action outline launch appears',()=>run('[...document.querySelectorAll("button")].some(b=>!b.hidden&&b.textContent==="Action outline")'));
  await click('Action outline');
  await until('Directory opening from real button',async()=>String(await text(dialog)).includes('Review starter row'));
@@ -91,7 +92,7 @@ class Runtime extends EventEmitter {
  const diagnosticText=await text('dialog[aria-label="Turn diagnostics"][open]');
  assert.doesNotMatch(diagnosticText,/App-authored independent follow-up|User redirect from renderer/);
  fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({
-  passed:true,synthetic:true,checks:['Three independent actual controls and admitted modes','Offline host Planning phase and Directory main tool kept separate','Actual Action outline opens','Add/focus/block persisted as human','Reopen retains saved state','1200/390 outline fit','Turn diagnostics independent'],
+  passed:true,synthetic:true,checks:['Three independent actual controls and admitted modes','Offline host Planning phase, public activity and Directory main tool kept separate','Actual Action outline opens','Add/focus/block persisted as human','Reopen retains saved state','1200/390 outline fit','Turn diagnostics independent'],
  },null,2));
 })().catch(error=>{fs.writeFileSync(path.join(out,'error.txt'),error.stack);process.exitCode=1;}).finally(async()=>{
  win?.destroy();if(server)await server.close();app.exit(process.exitCode||0);

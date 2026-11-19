@@ -39,6 +39,45 @@ export function applyChatSkillLoadEvent(run,event){
   return true;
 }
 
+
+const publicPlanningModules=Object.freeze({
+ 'builtin-decomposition':['Task decomposition','pending-actions'],
+ 'builtin-task-grounding':['Calibrated Depth and Action','grounded-choice'],
+ 'builtin-structured-analysis':['Structured Analytic Techniques','revised-choice'],
+});
+const planningPhaseNames=Object.freeze({
+ started:'Started',completed:'Plan recorded',failed:'Did not complete',
+ 'needs-evidence':'Needs evidence',cancelled:'Cancelled','not-needed':'Not needed',
+});
+const has=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
+export function projectPlanningModuleReceipts(run,values=run?.planningModuleReceipts){
+ if(run?.chatPlanning!=='on'||!Array.isArray(values))return [];
+ const accepted=new Map();
+ for(const value of values.slice(0,12)){
+  if(!value||value.type!=='planning.module'||value.runId!==run.id||value.taskId!==(run.taskId||run.id)||
+    typeof value.nodeId!=='string'||!has(run.nodes||{},value.nodeId)||
+    !has(publicPlanningModules,value.moduleId)||!has(planningPhaseNames,value.phase))continue;
+  const [title,artifact]=publicPlanningModules[value.moduleId];
+  if(value.artifact!==artifact)continue;
+  const prior=accepted.get(value.moduleId);
+  if(prior&&prior.phase!=='started')continue;
+  accepted.set(value.moduleId,{type:'planning.module',runId:run.id,taskId:run.taskId||run.id,nodeId:value.nodeId,
+   moduleId:value.moduleId,artifact,title,phase:value.phase,label:planningPhaseNames[value.phase]});
+ }
+ return [...accepted.values()];
+}
+export function mergeChatPlanningModuleReceipts(run,known,incoming){
+ return projectPlanningModuleReceipts(run,[...projectPlanningModuleReceipts(run,known),...projectPlanningModuleReceipts(run,incoming)]);
+}
+export function applyChatPlanningModuleEvent(run,event){
+ if(!run||event?.type!=='agent.event'||event.runId!==run.id||event.nodeId!==event.data?.nodeId)return false;
+ const last=projectPlanningModuleReceipts(run);
+ const next=mergeChatPlanningModuleReceipts(run,last,[event.data]);
+ if(JSON.stringify(last)===JSON.stringify(next))return false;
+ run.planningModuleReceipts=next;
+ return true;
+}
+
 const phaseIds=new Set(['feasibility','inference','plan','think','respond']);
 const evidenceText=value=>typeof value==='string'&&value.length<=200?value:null;
 export function projectCyclePlanning(cycle){
@@ -366,6 +405,7 @@ export function mergeChatRunUpdate(previous, updated) {
   }));
   const result={...previous,status:updated.status??previous.status,settled:updated.settled??previous.settled,
     nodes,output:updated.output??previous.output,updatedAt:updated.updatedAt||previous.updatedAt};
+  if(Array.isArray(updated.planningModuleReceipts))result.planningModuleReceipts=mergeChatPlanningModuleReceipts(result,previous.planningModuleReceipts,updated.planningModuleReceipts);
   if(Array.isArray(updated.skillLoadReceipts))result.skillLoadReceipts=mergeChatSkillLoadReceipts(previous.skillLoadReceipts,updated.skillLoadReceipts);
   if(Object.hasOwn(updated,'error'))result.error=chatErrorText(updated.error)||undefined;
   if(Object.hasOwn(updated,'errorCode'))result.errorCode=updated.errorCode;
