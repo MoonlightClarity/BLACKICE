@@ -1,4 +1,4 @@
-﻿
+
 import test from 'node:test';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -10,11 +10,11 @@ import {readReleaseSkill,searchReleaseSkills} from '../lib/release-skills.mjs';
 import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
 import {SkillFolderStore} from '../lib/skill-folders.mjs';
 const ids=['builtin-decomposition','builtin-task-grounding','builtin-structured-analysis'];
-test('only three current release definitions exist; removed defaults are not fallback content',async()=>{
+test('the three inline definitions are preserved; removed defaults are not fallback content',async()=>{
  assert.deepEqual(searchReleaseSkills().map(x=>x.id),ids);
  const hashes=['e0cba61e8cfc4f8953aef1b5fdb21130075ed8dc626b9692920ecd20568d8a8e','5a0f2a99882ff9483f758e37da8ebfa01a9c964f2dea357b8c5d7f333e556576','8615e23de4559575e6f0c9a81086006ae6843e547bd77d587cb981415dac6fd4'];
  assert.deepEqual(ids.map(id=>createHash('sha256').update(readReleaseSkill(id).content).digest('hex')),hashes);
- const catalog=createSkillsCatalog();assert.deepEqual((await catalog.list()).entries.map(x=>x.id),ids);
+ const catalog=createSkillsCatalog();assert.deepEqual((await catalog.list()).entries.filter(x=>x.id.startsWith('builtin-')).map(x=>x.id),ids);
  for(const id of ['builtin-browser','builtin-browser-tab-management','builtin-file-discovery','builtin-job-search','builtin-inference','builtin-time-management','builtin-feasibility','builtin-branching','builtin-replanning','builtin-metacognition','builtin-verification','builtin-delegation']){
   assert.throws(()=>readReleaseSkill(id),{status:404});await assert.rejects(catalog.detail({id}),{status:404});
  }
@@ -26,7 +26,9 @@ test('actual saved documents survive removal without retaining bundled definitio
  const state={version:1,entries:{'builtin-browser-tab-management':{revision:7,content},'my-custom-method':{revision:3,content:'My personal text without a heading'},'builtin-file-discovery':{revision:4,deleted:true},'builtin-browser':{revision:8,deleted:true,content:'# My deleted edited method'}}};
  const bytes=JSON.stringify(state,null,2);await writeFile(file,bytes);
  const catalog=createSkillsCatalog({dataDir:root});t.after(()=>catalog.close());
- assert.equal((await catalog.list()).entries.length,5);assert.equal((await catalog.list({source:'bundled'})).entries.length,3);
+ const defaults=(await createSkillsCatalog().list()).entries.map(e=>e.id);
+ assert.deepEqual((await catalog.list()).entries.map(e=>e.id),[...defaults,'builtin-browser-tab-management','my-custom-method']);
+ assert.deepEqual((await catalog.list({source:'bundled'})).entries.map(e=>e.id),defaults);
  assert.equal((await catalog.detail({id:'builtin-browser-tab-management'})).content,content);assert.equal((await catalog.detail({id:'my-custom-method'})).title,'my custom method');
  assert.deepEqual((await catalog.list({source:'deleted'})).entries.map(x=>x.id),['builtin-browser']);
  await assert.rejects(catalog.detail({id:'builtin-file-discovery'}),{status:404});

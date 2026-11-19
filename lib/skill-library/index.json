@@ -23,6 +23,7 @@
       "tags": [
         "documents",
         "word",
+        "docx",
         "editing"
       ],
       "source": {
@@ -68,6 +69,7 @@
       "tags": [
         "data",
         "spreadsheet",
+        "xlsx",
         "audit"
       ],
       "source": {

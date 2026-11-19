@@ -67,3 +67,35 @@ test('pack rejects duplicate identities and external body references before disc
  const dupe=await fixture(t,[skill('same'),skill('same',{bodyFile:'other.md'})]);
  await assert.rejects(()=>dupe.library.list(),/Invalid or duplicate/);
 });
+test('the default first-party pack is selectable by real format and task queries',async()=>{
+ const root=new URL('../lib/skill-library/',import.meta.url);
+ const manifest=JSON.parse(await fs.readFile(new URL('index.json',root),'utf8'));
+ const invoke=createRetrievalToolHandler({cwd:process.cwd()});
+ const call=async args=>decode(await invoke({name:'relay_skills',arguments:args}));
+ const page=await call({action:'search'});
+ const next=await call({action:'search',offset:page.nextOffset});
+ const rows=page.entries.concat(next.entries);
+ const pack=rows.filter(row=>row.provenance?.kind==='first-party');
+ assert.equal(page.totalMatches,22);
+ assert.equal(next.nextOffset,null);
+ assert.equal(pack.length,19);
+ assert.deepEqual(pack.map(row=>row.id).sort(),manifest.entries.map(row=>row.id).sort());
+ assert.deepEqual((await fs.readdir(root)).sort(),['index.json',...manifest.entries.map(row=>row.bodyFile)].sort());
+ assert.ok(rows.every(row=>!('content' in row)&&!('bodyFile' in row)));
+ for(const [query,id] of [
+  ['PDF','library-pdf-evidence'],
+  ['DOCX','library-word-review'],
+  ['xlsx','library-spreadsheet-inspection'],
+  ['code review','library-code-review'],
+ ]){
+  const result=await call({action:'search',query});
+  assert.equal(result.entries[0].id,id);
+  const selected=await call({action:'read',id});
+  const file=manifest.entries.find(entry=>entry.id===id).bodyFile;
+  assert.equal(selected.entry.content,await fs.readFile(new URL(file,root),'utf8'));
+ }
+ // This meaningful body word isn't metadata. Search must never read or discover through pack bodies.
+ const body=await fs.readFile(new URL('word-review.md',root),'utf8');
+ assert.match(body,/paragraphs/);
+ assert.ok(!(await call({action:'search',query:'paragraphs'})).entries.some(row=>row.id==='library-word-review'));
+});
