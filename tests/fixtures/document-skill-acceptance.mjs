@@ -38,3 +38,46 @@ export function scoreSkill({events, target, marker, output, settled, metadataMax
   };
   return {...report, passed: Object.values(report).every(Boolean)};
 }
+
+
+/** An answer score, a delivery receipt and overhead are separate measurements.
+ * An inline control is self-contained, so the exact same facts require no read.
+ */
+export function scoreHandoff({events, targets, expected, output, settled, inline = false,
+  selectedSkill = 'library-document-comparison', skillMarker, skillReceipts = []}) {
+  const first = events[events[0]?.op === 'attachments.list' ? 1 : 0];
+  const find = events.findIndex(event => event.op === 'files.find' && event.success &&
+    Object.values(targets).some(target => event.matches?.includes(target)));
+  const usable = Object.entries(targets).map(([format, target]) => {
+    const assertions = format === 'pdf' ? [expected.dispatchCode, expected.discrepancy.pdf] :
+      [expected.ticketCode, expected.discrepancy.docx];
+    return events.findIndex(event => event.op === 'workspace.read' && event.success &&
+      event.target === target && assertions.every(value => event.text?.includes(value)));
+  });
+  let json;
+  try { json = JSON.parse(output?.trim().replace(/^\x60{3}json\s*([\s\S]*?)\s*\x60{3}$/i, '$1')); } catch {}
+  const answer = settled === true && json?.dispatchCode === expected.dispatchCode &&
+    json?.ticketCode === expected.ticketCode && json?.discrepancy?.pdf === expected.discrepancy.pdf &&
+    json?.discrepancy?.docx === expected.discrepancy.docx;
+  const skillBodyReturned = events.some(event => event.op === 'skills.read' && event.id === selectedSkill &&
+    event.success === true && Boolean(skillMarker) && event.text?.includes(skillMarker));
+  const skillDelivered = skillBodyReturned && skillReceipts.some(receipt => receipt.type === 'skill_loaded' && receipt.skillId === selectedSkill);
+  const callsThroughEvidence = !inline && usable.every(index => index >= 0) ? Math.max(...usable) + 1 : null;
+  const count = predicate => events.filter(predicate).length;
+  const usefulCalls = new Set(inline ? [] : [find, ...usable].filter(index => index >= 0));
+  return {
+    settled: settled === true,
+    firstActionAfterAttachmentCheck: first?.op ?? null,
+    firstUsefulTool: inline ? null : events.find((_, index) => usefulCalls.has(index))?.op ?? null,
+    earlyFileDiscovery: !inline && find >= 0 && events[find] === first,
+    correctAnswer: answer,
+    groundedAnswer: answer && (inline || usable.every(index => index >= 0)),
+    skillBodyReturned,
+    skillDelivered,
+    skillCalls: count(event => event.op.startsWith('skills.')),
+    shellCalls: count(event => event.op === 'workspace.run' || event.op === 'shell'),
+    allCalls: events.length,
+    extraCalls: events.length - usefulCalls.size,
+    callsThroughEvidence,
+  };
+}

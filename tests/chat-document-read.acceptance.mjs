@@ -8,32 +8,7 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {scoreDocument} from './fixtures/document-skill-acceptance.mjs';
-import {zip} from './fixtures/office-zip.mjs';
-
-function syntheticPdf(marker) {
-  const stream = 'BT /F1 12 Tf 40 740 Td (' + marker + ') Tj ET\n';
-  const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Count 1 /Kids [3 0 R] >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    '<< /Length ' + stream.length + ' >>\nstream\n' + stream + 'endstream'];
-  let result = '%PDF-1.7\n';
-  const offsets = [];
-  for (const [index, object] of objects.entries()) {
-    offsets.push(result.length);
-    result += (index + 1) + ' 0 obj\n' + object + '\nendobj\n';
-  }
-  const xref = result.length;
-  return Buffer.from(result + 'xref\n0 6\n0000000000 65535 f \n' +
-    offsets.map(offset => String(offset).padStart(10, '0') + ' 00000 n \n').join('') +
-    'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
-}
-
-function syntheticDocx(marker) {
-  return zip({
-    '[Content_Types].xml': '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
-    'word/document.xml': '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>' + marker + '</w:t></w:r></w:p></w:body></w:document>',
-  });
-}
+import {syntheticPdf,syntheticDocx} from './fixtures/synthetic-handoff.mjs';
 
 for (const {format, rejected} of [{format:'pdf',rejected:false},{format:'pdf',rejected:true},{format:'docx',rejected:false}]) test(rejected
   ? 'scripted Chat can distinguish a found file from an unreadable PDF and report the real blocker'
