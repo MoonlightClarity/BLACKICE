@@ -30,7 +30,9 @@ test('contained ownership and sign-in pause retain BLACKICE-only task browser ro
    assert.match(options.prompt,/Use only the BLACKICE contained browser/);
    const browserTool=options.dynamicTools.find(tool=>tool.name==='relay_browser');assert.match(browserTool.description,/Never attach or launch Chrome/);assert.match(browserTool.description,/Retain tabs and in-progress forms/);
    assert.match(browserTool.description,/No existing tabs or prior session work is not a browser blocker/);
-   assert.match(browserTool.description,/inspect the intended owned tab or open the requested target in this turn/);
+   assert.match(browserTool.description,/First decompose the request and select its critical-path step/);
+   assert.match(browserTool.description,/When research needs website sources, inspect the intended owned tab or open the relevant target in this turn/);
+   assert.match(browserTool.description,/opening a browser is not a mandatory first action/);
    assert.match(browserTool.description,/does not create background autonomy, schedule a goal, or authorize external effects beyond the current request/);
    assert.doesNotMatch(options.prompt,/Do not call (?:host )?Chrome|Preserve an in-progress form/);
    assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_connections'),false);
