@@ -764,9 +764,9 @@ export class ElectronBrowserDriver extends EventEmitter {
     wc.on('will-attach-webview', event => event.preventDefault());
     if (this.liveSurface) wc.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame === true) this.cancelAuthentication(tab); });
     wc.on('did-frame-navigate', (_event, _url, _responseCode, _statusText, isMainFrame, frameProcessId, frameRoutingId) => {
-      this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId);
+      this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url);
     });
-    wc.on('did-navigate-in-page', (_event, _url, isMainFrame, frameProcessId, frameRoutingId) => this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId));
+    wc.on('did-navigate-in-page', (_event, _url, isMainFrame, frameProcessId, frameRoutingId) => this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url));
     wc.on('did-fail-load', (_event, code, description, _url, isMainFrame) => { if (isMainFrame !== false && code !== -3) { tab.loadError = String(description || `Navigation failed (${code}).`); this.emit('changed'); } });
     wc.on('page-title-updated', (_event, value) => { tab.title = value; this.persist(); this.emit('changed'); });
     const handoffExternal = (event, target) => {
@@ -1309,9 +1309,10 @@ export class ElectronBrowserDriver extends EventEmitter {
         if (!mainStamp) throw Object.assign(error('The main browser frame changed before observation. Take a fresh snapshot before acting.'), { code: 'BROWSER_SNAPSHOT_DOCUMENT_CHANGED' });
         // Electron does not promise subtree traversal order. Ad-heavy pages can
         // have more descendants than the cap; always inspect their main document.
-        allFrames = [mainFrame, ...mainFrame.framesInSubtree.filter(frame => frame !== mainFrame)].slice(0, 30);
-        const currentFrames = new Set(allFrames);
-        for (const [ref, frame] of tab.refs) if (!currentFrames.has(frame)) { tab.refs.delete(ref); tab.refContexts?.delete(ref); }
+        const orderedFrames = [mainFrame, ...mainFrame.framesInSubtree.filter(frame => frame !== mainFrame)];
+        allFrames = orderedFrames.slice(0, 30);
+        const currentFrames = new Set(allFrames), actualFrames = new Set(orderedFrames);
+        for (const [ref, frame] of tab.refs) if (!currentFrames.has(frame)) this.retireReference(tab, ref, { reason: actualFrames.has(frame) ? 'reference-evicted' : 'frame-changed' });
       } catch (reason) {
         cancel(signal);
         if (reason?.code === 'BROWSER_SNAPSHOT_DOCUMENT_CHANGED') {
@@ -1363,32 +1364,37 @@ export class ElectronBrowserDriver extends EventEmitter {
       // Publish refs only after every captured document is still current. Retain
       // the starting token: unrelated frame churn must not bless unobserved raw
       // keyboard/coordinate context with a newer whole-page document token.
-      if (frameDisposed) for (const ref of tab.refs.keys()) if (!this.referenceCurrent(tab, ref)) { tab.refs.delete(ref); tab.refContexts?.delete(ref); }
+      if (frameDisposed) for (const ref of tab.refs.keys()) if (!this.referenceCurrent(tab, ref)) this.retireReference(tab, ref, this.referenceDiagnostic(tab, ref));
       this.rememberReferences(tab, captured, observedDocumentId);
       return { tabId: tab.id, url: observedUrl, documentId: observedDocumentId, title: this.tabTitle(tab), frames, ...(tab.siteNotices?.length ? { siteNotices: structuredClone(tab.siteNotices) } : {}), ...(frames.some(f => f.truncated) ? { hint: 'Large page: supply query to narrow the controls/text, or scroll a virtualized region and inspect again.' } : {}), ...(errors.length ? { frameErrors: errors } : {}), ...(tab.loadError ? { navigationError: tab.loadError } : {}), ...(tab.inputWarning ? { inputWarning: tab.inputWarning } : {}), ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
     }
   }
   async element(tab, args, action, signal, extra = {}) {
     if (typeof args.ref !== 'string' || !this.referenceCurrent(tab, args.ref)) {
-      if (typeof args.ref === 'string') { tab.refs.delete(args.ref); tab.refContexts?.delete(args.ref); }
-      throw Object.assign(error('Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', actionDispatched: false });
+      const diagnostic = this.referenceDiagnostic(tab, args.ref);
+      if (typeof args.ref === 'string') this.retireReference(tab, args.ref, diagnostic);
+      throw Object.assign(error('Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', actionDispatched: false, browserReferenceDiagnostic: diagnostic });
     }
     const frame = tab.refs.get(args.ref);
     let result;
     try {
       const main = tab.window.webContents.mainFrame;
-      if (frame !== main && !main.framesInSubtree.includes(frame)) throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', actionDispatched: false });
+      if (frame !== main && !main.framesInSubtree.includes(frame)) throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', actionDispatched: false, browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref, 'frame-changed') });
       result = await this.pageWork(tab, frame.executeJavaScript(`(${elementActionResult.toString()})(${elementAction.toString()},${smoothPageScroll.toString()},${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })},${inspectObservedFormControl.toString()})`), signal);
     } catch (reason) {
-      if (disposedFrame(reason)) { tab.refs.delete(args.ref); tab.refContexts?.delete(args.ref); throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE' }); }
+      if (disposedFrame(reason)) {
+        const diagnostic = this.referenceDiagnostic(tab, args.ref, 'frame-changed');
+        this.retireReference(tab, args.ref, diagnostic);
+        throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: diagnostic });
+      }
       throw reason;
     }
     if (result?.__blackiceElementError) {
       const { message, code, inputDispatched } = result.__blackiceElementError;
       // A renderer ref rejection happens before the operation reaches its input path.
-      throw Object.assign(error(message), { code, ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true } : action === 'select' && inputDispatched === false ? { inputDispatched: false } : {}) });
+      throw Object.assign(error(message), { code, ...(code === 'BROWSER_REF_STALE' ? { browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref, 'control-changed') } : {}), ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true } : action === 'select' && inputDispatched === false ? { inputDispatched: false } : {}) });
     }
-    if (!this.referenceCurrent(tab, args.ref)) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE' });
+    if (!this.referenceCurrent(tab, args.ref)) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref) });
     return { frame, result };
   }
   async observeOperation(args, { signal, owner: context, receiptBindings = [], expectedDocumentId, expectedUrl, recoveryInspection = false } = {}) {
@@ -1546,18 +1552,48 @@ export class ElectronBrowserDriver extends EventEmitter {
       return { submissionRequested: true, authenticated: false };
     };
   }
-  retireAllReferences(tab) {
+  // Retain the cause of invalidation without holding old native frame objects or URLs.
+  retireReference(tab, ref, { reason, topUrlChanged, frameUrlChanged, frameLineageChanged }) {
+    const context = tab.refContexts?.get(ref);
+    if (context) {
+      const retired = tab.retiredRefs ||= new Map();
+      retired.delete(ref);
+      retired.set(ref, { reason, observedRevision: context.stamp.revision, topUrlChanged, frameUrlChanged, frameLineageChanged });
+      while (retired.size > MAX_OBSERVED_REFS) retired.delete(retired.keys().next().value);
+    }
+    tab.refs.delete(ref); tab.refContexts?.delete(ref);
+  }
+  referenceDiagnostic(tab, ref, fallback) {
+    const currentRevision = tab.revision;
+    if (typeof ref !== 'string' || !ref) return { reason: 'reference-missing', currentRevision };
+    const stamp = tab.refContexts?.get(ref)?.stamp;
+    if (!stamp) return { ...(tab.retiredRefs?.get(ref) || { reason: fallback || 'reference-unknown' }), currentRevision };
+    const current = this.frameStamp(tab, stamp.frame);
+    let topUrlChanged;
+    try { topUrlChanged = tab.window.webContents.getURL() !== stamp.topUrl; } catch { /* no comparable top URL */ }
+    const frameUrlChanged = current ? current.url !== stamp.url : undefined;
+    const frameLineageChanged = current ? JSON.stringify(current.lineage) !== JSON.stringify(stamp.lineage) : undefined;
+    const reason = stamp.window !== tab.window || stamp.mainRevision !== (tab.mainRevision || 0) || topUrlChanged
+      ? 'document-changed' : !current || frameUrlChanged || frameLineageChanged ? 'frame-changed' : fallback || 'binding-mismatch';
+    return { reason, observedRevision: stamp.revision, currentRevision, topUrlChanged, frameUrlChanged, frameLineageChanged };
+  }
+  retireAllReferences(tab, reason = 'document-changed', url) {
     tab.mainRevision = (tab.mainRevision || 0) + 1;
+    for (const [ref, context] of tab.refContexts || []) this.retireReference(tab, ref, {
+      reason, topUrlChanged: typeof url === 'string' ? url !== context.stamp.topUrl : undefined
+    });
     tab.refs.clear(); tab.refContexts?.clear(); tab.frameRevisions?.clear();
   }
-  navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId) {
+  navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, url) {
     tab.revision++;
-    if (isMainFrame !== false || !Number.isInteger(frameProcessId) || frameProcessId < 0 || !Number.isInteger(frameRoutingId) || frameRoutingId < 0) this.retireAllReferences(tab);
+    if (isMainFrame !== false || !Number.isInteger(frameProcessId) || frameProcessId < 0 || !Number.isInteger(frameRoutingId) || frameRoutingId < 0) this.retireAllReferences(tab, isMainFrame === false ? 'frame-changed' : 'document-changed', isMainFrame === true ? url : undefined);
     else {
       const key = `${frameProcessId}-${frameRoutingId}`, revisions = tab.frameRevisions ||= new Map();
       revisions.set(key, (revisions.get(key) || 0) + 1);
-      for (const [ref, context] of tab.refContexts || []) if (context.stamp.lineage.some(value => value.key === key)) { tab.refs.delete(ref); tab.refContexts.delete(ref); }
-      if (revisions.size > MAX_OBSERVED_REFS) this.retireAllReferences(tab);
+      for (const [ref, context] of tab.refContexts || []) if (context.stamp.lineage.some(value => value.key === key)) this.retireReference(tab, ref, {
+        reason: 'frame-changed', frameLineageChanged: true, frameUrlChanged: context.stamp.lineage[0]?.key === key && typeof url === 'string' ? url !== context.stamp.url : undefined
+      });
+      if (revisions.size > MAX_OBSERVED_REFS) this.retireAllReferences(tab, 'reference-evicted');
     }
     // Native dialog/chooser decisions keep their existing whole-page guard.
     this.clearInteraction(tab); this.persist(); this.emit('changed');
@@ -1572,7 +1608,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         seen.add(cursor);
         const key = `${cursor.processId}-${cursor.routingId}`;
         lineage.push({ key, revision: tab.frameRevisions?.get(key) || 0 });
-        if (cursor === main) return { frame, window: tab.window, mainRevision: tab.mainRevision || 0, url: frame.url, topUrl: tab.window.webContents.getURL(), lineage };
+        if (cursor === main) return { frame, window: tab.window, mainRevision: tab.mainRevision || 0, revision: tab.revision, url: frame.url, topUrl: tab.window.webContents.getURL(), lineage };
         cursor = cursor.parent;
       }
     } catch (reason) { if (throwDisposed && disposedFrame(reason)) throw reason; }
@@ -1590,8 +1626,9 @@ export class ElectronBrowserDriver extends EventEmitter {
       documents.add(documentId); while (documents.size > 8) documents.delete(documents.values().next().value);
       tab.refs.delete(item.ref); tab.refs.set(item.ref, stamp.frame);
       contexts.set(item.ref, { stamp, documents });
+      tab.retiredRefs?.delete(item.ref);
     }
-    while (tab.refs.size > MAX_OBSERVED_REFS) { const ref = tab.refs.keys().next().value; tab.refs.delete(ref); contexts.delete(ref); }
+    while (tab.refs.size > MAX_OBSERVED_REFS) { const ref = tab.refs.keys().next().value; this.retireReference(tab, ref, { reason: 'reference-evicted' }); }
   }
   referenceCurrent(tab, ref, documentId) {
     const context = tab.refContexts?.get(ref);
@@ -1654,7 +1691,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (!current || ['pageX', 'pageY', 'clientWidth', 'clientHeight'].some(key => current[key] !== viewport[key])) throw error('The pointer viewport changed during verification.');
     } catch (cause) {
       if (cause?.name === 'AbortError' || ['BROWSER_CONTAINMENT_LOST', 'BROWSER_RENDERER_GONE', 'BROWSER_INTERACTION_PENDING'].includes(cause?.code)) throw cause;
-      throw Object.assign(error('The pointer target changed or could not be verified. Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE' });
+      throw Object.assign(error('The pointer target changed or could not be verified. Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: this.referenceDiagnostic(tab, expected.ref) });
     } finally {
       if (objectId) void this.cdp(tab, 'Runtime.releaseObject', { objectId }, undefined, undefined, sessionId).catch(() => {});
     }

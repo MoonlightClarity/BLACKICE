@@ -107,3 +107,12 @@ test('real conversation archive reopens the safe journal independently of retain
   assert.equal(trace.entries[1].metadata.revision,8);
   assert.doesNotMatch(JSON.stringify(trace),/never copied into trace/);
 });
+
+test('browser binding diagnosis survives machine export with only host comparisons and run-scoped call reference',()=>{
+ const run=fixture();
+ recordTurnMachineEvent(run,wrap({type:'browser.reference',action:'click',phase:'rejected',tool:'relay_browser',code:'BROWSER_REF_STALE',bindingReason:'document-changed',observedRevision:4,currentRevision:8,topUrlChanged:true,frameLineageChanged:false,actionDispatched:false,callId:'click-call',url:'PRIVATE_URL',ref:'PRIVATE_REF',frameId:'PRIVATE_FRAME'}));
+ const [entry]=projectTurnMachineTrace(run).entries;
+ assert.equal(entry.kind,'browser.reference');assert.match(entry.callRef,/^[a-f0-9]{24}$/);
+ assert.deepEqual(entry.metadata,{observedRevision:4,currentRevision:8,bindingReason:'document-changed',phase:'rejected',action:'click',tool:'relay_browser',code:'BROWSER_REF_STALE',topUrlChanged:true,frameLineageChanged:false,actionDispatched:false});
+ assert.doesNotMatch(JSON.stringify(entry),/PRIVATE|click-call/);
+});

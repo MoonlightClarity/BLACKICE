@@ -12,3 +12,15 @@ test('Maximal effect gates record exact comparisons and final reasons; all depth
  assert.deepEqual(snapshots[0],snapshots[1]);assert.deepEqual(snapshots[1],snapshots[2]);
 });
 test('core trace exceptions never alter dispatch, persisted state or final result',async()=>{const ledger=new TaskActionDirectory({taskId:'task',objective:'Fixture'});await ledger.edit({action:'plan',revision:0,actions:[{id:'a',objective:'A',dependsOn:[]}]});await ledger.edit({action:'focus',id:'a',revision:1});let calls=0;await ledger.execute({name:'relay_workspace'},async()=>{calls++;return{success:true};},{runId:'run',nodeId:'agent',expectedActionRevision:2,trace:()=>{throw Error('sink');}});assert.equal(calls,1);assert.equal(ledger.read().receipts[0].state,'returned');assert.deepEqual(ledger.finalStatus({trace:()=>{throw Error('sink');}}),ledger.finalStatus());});
+
+test('browser reference diagnosis is scoped to Maximal and never includes ref, URLs or frame identifiers',()=>{
+ const call={name:'relay_browser',callId:'browser-click',arguments:{action:'click',ref:'PRIVATE_REF',url:'PRIVATE_URL'}};
+ const error={code:'BROWSER_REF_STALE',actionDispatched:false,browserReferenceDiagnostic:{reason:'document-changed',observedRevision:4,currentRevision:8,topUrlChanged:true,frameUrlChanged:'PRIVATE_FRAME',ref:'PRIVATE_REF',url:'PRIVATE_URL'}};
+ for(const level of ['off','on','maximal']){
+  const events=[],log=createDirectoryTelemetry({level,emit:e=>events.push(e)});
+  log.browserReference(call,error);log.browserReference({...call,namespace:'foreign'},error);
+  if(level!=='maximal'){assert.deepEqual(events,[]);continue;}
+  assert.deepEqual(events,[{type:'browser.reference',phase:'rejected',tool:'relay_browser',action:'click',code:'BROWSER_REF_STALE',callId:'browser-click',actionDispatched:false,bindingReason:'document-changed',observedRevision:4,currentRevision:8,topUrlChanged:true,sequence:1}]);
+  assert.doesNotMatch(JSON.stringify(events),/PRIVATE/);
+ }
+});
