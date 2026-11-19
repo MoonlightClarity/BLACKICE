@@ -92,9 +92,10 @@ test('Past Chats Off denies unrelated local history/model output; On demand enab
   const off=await run('Keep this same-chat note: '+continuityMarker);
   assert.equal(off.pastChats,'off','Fresh Chat defaults to Off.');
   const offRequests=requests.get('off');
-  assert.equal(available(offRequests[0],'relay_history'),false);
+  assert.equal(available(offRequests[0],'relay_history'),true);
+  assert.deepEqual(offRequests[0].tools.find(t=>t.function?.name==='relay_history').function.parameters.properties.action.enum,['previous_turn_diagnostics']);
   assert.equal(available(offRequests[0],'relay_agents'),true);
-  assert.match(receipt(offRequests[1],'off-history'),/not attached/i);
+  assert.match(receipt(offRequests[1],'off-history'),/Past Chats is Off/i);
   assert.match(receipt(offRequests[1],'off-get'),/Past Chats is Off/i);
   assert.doesNotMatch(JSON.stringify(offRequests),new RegExp(oldMarker),'No unrelated output was delivered.');
   assert.doesNotMatch(receipt(offRequests[1],'off-list'),new RegExp(oldRun.id));
@@ -121,6 +122,6 @@ test('Past Chats Off denies unrelated local history/model output; On demand enab
   phase='post';const post=await run('Continue without retrieving unrelated chats.',[off,on],'off');
   assert.equal(post.pastChats,'off');
   assert.equal(post.taskId,off.taskId);
-  assert.equal(available(requests.get('post')[0],'relay_history'),false);
+  assert.deepEqual(requests.get('post')[0].tools.find(t=>t.function?.name==='relay_history').function.parameters.properties.action.enum,['previous_turn_diagnostics']);
   assert.equal(post.modelHandoff?.reason,'past-chats-scope');
 });
