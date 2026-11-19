@@ -1,9 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.20 candidate source, not an installation or publication receipt.** Package version is **2.40.20**. Start with the [2.40.20 notes](RELEASE-NOTES-2.40.20.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.21 candidate source, not an installation or publication receipt.** Package version is **2.40.21**. Start with the [2.40.21 notes](RELEASE-NOTES-2.40.21.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
 
+- [2.40.21](RELEASE-NOTES-2.40.21.md) - browser reference prevention and recovery; usable task handoffs
 - [2.40.20](RELEASE-NOTES-2.40.20.md) - Action Outline, Cronjobs and Skills UI fixes
 - [2.40.19](RELEASE-NOTES-2.40.19.md) - clearer Directory focus and continuation
 - [2.40.18](RELEASE-NOTES-2.40.18.md) - browser reference binding diagnostics
