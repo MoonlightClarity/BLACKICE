@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarnessEngine } from '../lib/engine.mjs';
@@ -62,7 +63,14 @@ test('a fresh coordinator receives opaque credentials and retries generation wit
   assert.ok(first.nodes.agent.toolNames.includes('relay_credentials'));
   const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Retry the same protected credential request.' }).id); done(next);
   assert.equal(f.generated.length, 1); assert.equal(f.owners.size, 1);
-  await f.engine.persist(); const stored = await readFile(path.join(f.root, 'runs.json'), 'utf8'); assert.doesNotMatch(stored, /"password"\s*:/);
+  await f.engine.persist();
+  const db = new DatabaseSync(path.join(f.root, 'run-state.sqlite'), { readOnly: true });
+  try {
+    const stored = db.prepare('SELECT id, payload FROM records ORDER BY rowid').all();
+    assert.deepEqual(stored.map(row => row.id), [first.id, next.id]);
+    assert.ok(JSON.parse(stored[0].payload).nodes.agent.toolNames.includes('relay_credentials'));
+    for (const row of stored) assert.doesNotMatch(row.payload, /"password"\s*:/, 'Run '+row.id+' persisted a password field.');
+  } finally { db.close(); }
 });
 
 test('unavailable encrypted storage does not advertise a credential tool', async t => {
