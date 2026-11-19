@@ -90,3 +90,6 @@
 .next-schedule-rename-actions{position:absolute;right:4px;top:3px;display:flex;gap:4px;background:var(--surface)}
 .next-schedule-rename-actions[hidden]{display:none!important}
 .next-schedule-folder-branch>summary:has(.next-schedule-rename-actions:not([hidden]))>.next-schedule-folder-add,.next-schedule-folder-branch>summary:has(.next-schedule-rename-actions:not([hidden]))>.next-schedule-folder-remove{visibility:hidden}
+
+/* A quiet list hint, not the shared empty-state card. */
+.next-cronjobs-workspace .next-cronjobs-empty{margin:4px 0 8px;padding:4px 8px;font-size:12px;line-height:1.5;color:var(--muted);text-align:left;border:0;background:none;min-height:0}

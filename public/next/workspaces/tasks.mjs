@@ -630,7 +630,7 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       :'Schedules ready · '+(status.enabled||0)+' enabled · '+(status.running||0)+' running'+(status.ticker?.lastSuccessAt?' · Last tick: '+humanTime(status.ticker.lastSuccessAt):''));
     view.deployments.replaceChildren();
     const deployments=chronologicalSchedules(Array.isArray(snapshot.deployments)?snapshot.deployments:[]);
-    if(!deployments.length)add(view.deployments,'p',cronjobsOnly?'No cronjobs yet. Select New cronjob to get started.':'No saved schedules yet. Select New schedule to get started.','next-empty');
+    if(!deployments.length)add(view.deployments,'p',cronjobsOnly?'No cronjobs yet.':'No saved schedules yet. Select New schedule to get started.',cronjobsOnly?'next-cronjobs-empty':'next-empty');
     const groups=scheduleFolders.group(view.deployments,deployments,snapshot.organization);
     for(const task of deployments){
       const row=add(groups.target(task),cronjobsOnly?'details':'article','',cronjobsOnly?'next-cronjob-row':'next-card');
