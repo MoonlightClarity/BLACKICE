@@ -1,4 +1,17 @@
 import {folderRows,descendants} from '../core/folder-tree.mjs';
+const functionalGroups=new Map([
+ ['data','Data & spreadsheets'],['documents','Documents'],['methods','General methods'],
+ ['research','Research & web'],['web','Research & web'],['coding','Software & QA'],['accessibility','Software & QA'],
+ ['diagram','Visual communication'],['charts','Visual communication'],['writing','Writing & handoffs'],
+]);
+const generalMethods=new Set(['builtin-decomposition','builtin-task-grounding','builtin-structured-analysis']);
+const skillOrder=new Intl.Collator('en',{sensitivity:'base',numeric:true});
+const compareSkills=(a,b)=>skillOrder.compare(a.title,b.title)||skillOrder.compare(a.id,b.id);
+const otherGroup='Other skills';
+const methodsGroup=functionalGroups.get('methods');
+const groupOf=item=>(generalMethods.has(item.id)?methodsGroup:functionalGroups.get(item.tags?.[0]))||otherGroup;
+const groupPriority=name=>name===methodsGroup?0:name===otherGroup?2:1;
+const compareGroups=(a,b)=>groupPriority(a)-groupPriority(b)||skillOrder.compare(a,b);
 /** The document is authoritative. Folders only organize the view. */
 export function createSkillsWorkspace({mount,api}) {
  mount.innerHTML='<div class="next-panel next-skills-root"><div class="next-panel-inner"><header class="next-panel-head"><div><h1>Skills</h1></div><button id="skills-refresh" type="button">Refresh</button></header><label class="next-label">Find a skill<input id="skills-query" class="next-field" type="search" maxlength="256"></label><p id="skills-status" role="status" aria-live="polite"></p><div class="next-skills-layout"><aside class="next-skills-aside" aria-label="Skills and folders"><form id="skills-folder-form" class="skills-inline-create" hidden><label class="next-label">New folder<input id="skills-folder-name" class="next-field" maxlength="60" required></label><button id="skills-create-save" type="submit">Create folder</button><button id="skills-create-cancel" type="button">Cancel</button></form><div id="skills-root" class="skills-tree-root" title="Drop here to move to the top level"><span>Skills</span><button id="skills-new-folder" type="button">New folder</button></div><ul id="skills-list" class="next-skills-list"></ul><details id="skills-trash"><summary>Deleted skills</summary><p class="next-help">Deleted skills are excluded from future skill lookups. Restore brings back your last saved edit, or the current bundled default. Discarded unsaved changes are not restored. Deleted skills keep their folder placement; restore and move them before deleting that folder.</p><ul id="skills-trash-list" class="next-skills-list"></ul></details></aside><section class="next-card next-skills-inspector" aria-label="Skill document"><h2 id="skills-heading">Select a skill</h2><p id="skills-detail-status" role="status" aria-live="polite"></p><form id="skills-editor" hidden><div class="next-skills-actions"><button id="skills-save" type="submit">Save</button><button id="skills-discard" type="button">Discard changes</button></div><p id="skills-save-status" role="status" aria-live="polite"></p><label class="next-label">Skill document<textarea id="skills-edit-content" maxlength="200000" class="next-field" rows="24" required spellcheck="false"></textarea></label></form><section id="skills-delete-confirm" class="skills-delete-confirm" hidden role="alert"><p id="skills-delete-message"></p><button id="skills-delete-yes" type="button">Delete skill</button><button id="skills-delete-cancel" type="button">Cancel</button></section></section></div></div></div>';
@@ -70,13 +83,22 @@ export function createSkillsWorkspace({mount,api}) {
   if(!rename||blocked())return;const current=rename;
   void mutate({action:'update',id:current.id,name:current.value},{expectedRevision:current.revision,onSaved:()=>{rename=null;},afterPaint:()=>focusFolder(current.id)});
  }
- function focusPage(key,direction){[...mount.querySelectorAll('[data-page-key]')].find(node=>node.dataset.pageKey===(key??'root')&&node.dataset.pageDirection===direction&&!node.disabled)?.focus?.();}
+ function focusPage(key,direction){
+  const buttons=[...mount.querySelectorAll('[data-page-key]')].filter(node=>node.dataset.pageKey===(key??'root')&&!node.disabled);
+  (buttons.find(node=>node.dataset.pageDirection===direction)??buttons[0])?.focus?.();
+ }
  function pageRows(rows,key,parent){
   const count=Math.max(1,Math.ceil(rows.length/pageSize)),page=Math.min(pages.get(key)||0,count-1);pages.set(key,page);
-  if(count>1){const li=add(parent,'li'),nav=add(li,'nav');nav.className='skills-pagination';nav.setAttribute('aria-label',key==='trash'?'Deleted skills pages':key===null?'All skills pages':'Folder pages');
-   const prev=add(nav,'button','Previous');prev.type='button';icon(prev,'back','Previous page');prev.dataset.pageKey=key??'root';prev.dataset.pageDirection='previous';prev.dataset.boundary=String(page===0);prev.addEventListener('click',()=>{if(blocked()||page===0)return;pages.set(key,page-1);paint();focusPage(key,'previous');});
-   add(nav,'span',(page+1)+' / '+count+' · '+rows.length+' items');
-   const next=add(nav,'button','Next');next.type='button';icon(next,'chevron','Next page');next.dataset.pageKey=key??'root';next.dataset.pageDirection='next';next.dataset.boundary=String(page===count-1);next.addEventListener('click',()=>{if(blocked()||page===count-1)return;pages.set(key,page+1);paint();focusPage(key,'next');});
+  if(count>1){
+   const li=add(parent,'li'),nav=add(li,'nav');li.className='skills-pagination-row';nav.className='skills-pagination';nav.setAttribute('aria-label',key==='trash'?'Deleted skills pages':key===null?'Skills pages':'Pages in '+organization?.folders.find(row=>row.id===key)?.name);
+   const pageButton=(direction,delta,iconKind,label)=>{
+    const target=page+delta,button=add(nav,'button');
+    button.type='button';icon(button,iconKind,label);button.dataset.pageKey=key??'root';button.dataset.pageDirection=direction;button.dataset.boundary=String(target<0||target>=count);
+    button.addEventListener('click',()=>{if(blocked()||target<0||target>=count)return;pages.set(key,target);paint();focusPage(key,direction);});
+   };
+   pageButton('previous',-1,'back','Previous page');
+   const position=add(nav,'span',(page+1)+' / '+count);position.setAttribute('aria-label','Page '+(page+1)+' of '+count);
+   pageButton('next',1,'chevron','Next page');
   }
   return rows.slice(page*pageSize,(page+1)*pageSize);
  }
@@ -88,9 +110,15 @@ export function createSkillsWorkspace({mount,api}) {
   const rows=searching?allRows.filter(row=>matchingFolders.has(row.id)):allRows;
   function renderChildren(parentId,parent){
    if(creation?.parentId===parentId){const line=add(parent,'li');line.className='skills-folder-create-line';line.append(el('folder-form'));}
-   const children=[...rows.filter(row=>row.parentId===parentId).map(row=>({row})),...items.filter(item=>(organization?.assignments[item.id]??null)===parentId).map(item=>({item}))];
+   const documents=items.filter(item=>(organization?.assignments[item.id]??null)===parentId);
+   const grouped=parentId===null&&!searching;
+   if(!searching)documents.sort((a,b)=>(grouped?compareGroups(groupOf(a),groupOf(b)):0)||compareSkills(a,b));
+   const children=[...rows.filter(row=>row.parentId===parentId).map(row=>({row})),...documents.map(item=>({item}))];
+   let priorGroup=null;
    for(const child of pageRows(children,parentId,parent)){
-    if(child.item){const item=child.item,li=add(parent,'li');li.className='skills-document-line';
+    if(child.item){const item=child.item;
+     if(grouped){const group=groupOf(item);if(group!==priorGroup){const section=add(parent,'li');section.className='skills-function-group';add(section,'h3',group);priorGroup=group;}}
+     const li=add(parent,'li');li.className='skills-document-line';
      const button=add(li,'button',item.title);button.type='button';button.className='skills-document-row';button.dataset.skillId=item.id;button.setAttribute('aria-pressed',String(selected===item.id));button.addEventListener('click',()=>void select(item.id));drag(button,'skill',item.id);
      const remove=add(li,'button','Delete');remove.type='button';remove.className='skills-document-delete';remove.dataset.deleteSkill=item.id;icon(remove,'trash','Delete '+item.title);remove.addEventListener('click',()=>requestDelete(item));continue;
     }

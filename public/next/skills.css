@@ -43,12 +43,21 @@
 .skills-delete-confirm{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:5px}
 .skills-delete-confirm button{margin-right:8px}
 
-.skills-pagination{display:flex;align-items:center;gap:6px;justify-content:space-between;padding:6px 0;font-size:11px}.skills-pagination button{width:auto;min-height:28px}.skills-document-line{display:flex;align-items:center;gap:4px}.skills-document-line>.skills-document-row{flex:1;min-width:0}.skills-document-line>.skills-document-delete{flex:none;width:auto;font-size:11px;padding:4px}
+.skills-pagination-row{display:flex;justify-content:flex-end;padding-block:2px}
+.skills-pagination{display:inline-flex;align-items:center;gap:2px;padding:1px;border:1px solid var(--line);border-radius:6px;color:var(--muted)}
+.skills-pagination>span{min-width:38px;padding-inline:3px;text-align:center;font-size:11px;font-variant-numeric:tabular-nums}
+.skills-document-line{display:flex;align-items:center;gap:4px}
+.skills-document-line>.skills-document-row{flex:1;min-width:0}
+.skills-document-line>.skills-document-delete{flex:none;width:auto;font-size:11px;padding:4px}
+.skills-function-group h3{margin:6px 0 1px;padding:4px 8px;color:var(--muted);font-size:12px;text-align:left}
 
 /* One inline tree: explicit root/child creation and SVG-only row actions. */
 .skills-tree-root{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:5px 0}
 .skills-icon-action{display:inline-flex!important;align-items:center;justify-content:center;flex:none!important;width:30px!important;min-width:30px;min-height:30px;padding:5px!important}
 .skills-icon-action svg,.skills-folder-icon svg{display:block;width:18px;height:18px;flex:none}
+.skills-pagination .skills-icon-action{width:28px!important;min-width:28px;min-height:28px;padding:4px!important;border-color:transparent;background:transparent}
+.skills-pagination .skills-icon-action:hover:not(:disabled){color:var(--text);background:var(--next-button-hover-background)}
+.skills-pagination .skills-icon-action svg{width:14px;height:14px}
 .skills-folder-icon{border:0;background:none;width:18px;height:18px;color:#c6ad70}
 .skills-folder-icon::before{display:none}
 .skills-folder-arrow.is-open svg{transform:rotate(90deg)}
