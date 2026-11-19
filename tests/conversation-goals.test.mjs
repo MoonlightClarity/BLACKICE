@@ -468,8 +468,9 @@ test('autonomous recovery preserves prepared work, then detects repeated destina
       assert.match(turn.input,/Validate the prepared work-history field/);
       const stale = await call({action:'click',ref:'old-control'});
       assert.equal(stale.code,'BROWSER_REF_STALE');
-      const current = await call({action:'snapshot'});
-      assert.match(current.contentItems[0].text,/verification challenge displayed/);
+      assert.equal(stale.actionDispatched,false);
+      const current = JSON.parse(stale.contentItems[0].text).recovery.observation;
+      assert.match(JSON.stringify(current),/verification challenge displayed/);
       await report(options,'progress',{evidence:'An observed human verification challenge is still present.',blockedBranch:'Prepared application verification',nextAction:'Check a supported verification route for the prepared application.'});
     } else {
       assert.match(turn.input,/Return to the most advanced unfinished branch/);
