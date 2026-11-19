@@ -183,7 +183,7 @@ export function paintIndex(view, items, chosen, onSelect, {limit=CHAT_INDEX_BATC
       entry.check?.setAttribute('aria-label','Select '+title);
       entry.summary?.setAttribute('aria-label','Actions for '+title);
     }
-    const status=conversationGoalStatus(item.goal,item)||String(item.status==='completed'&&item.settled===true?'Finished':item.status==='completed'&&item.settled===false?'Finishing…':item.status||'Saved').replaceAll('_',' ');
+    const status=conversationGoalStatus(item.goal,item)||String(item.status==='completed'&&item.settled===true?(Object.values(item.nodes||{}).some(node=>node.directoryOutcome==='incomplete')?'Task incomplete':'Finished'):item.status==='completed'&&item.settled===false?'Finishing…':item.status||'Saved').replaceAll('_',' ');
     if(entry.status!==status){setText(entry.statusNode,status);entry.status=status;}
     const date=item.updatedAt||item.createdAt;
     if(entry.date!==date){setText(entry.dateNode,formatDate(date));entry.date=date;}
@@ -620,7 +620,8 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       }
     }
     const footer=text(section,'','div','next-turn-meta');
-    const completedLabel=delivery.missing?'No response received':delivery.pausedAfterPlan?'Plan ready':'Response saved';
+    const directoryIncomplete=Object.values(run.nodes||{}).some(node=>node.directoryOutcome==='incomplete');
+    const completedLabel=directoryIncomplete?'Task incomplete':delivery.missing?'No response received':delivery.pausedAfterPlan?'Plan ready':'Response saved';
     const pill=text(footer,run.status==='completed'&&run.settled===true?completedLabel:run.status==='completed'&&run.settled===false?'Finishing…':run.status||'saved','span','next-status-pill');
     pill.dataset.state=run.status||'saved';
     if(toolFailure&&run.settled===true){

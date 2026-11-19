@@ -20,7 +20,7 @@ test('blocked dependency replay permits an honest final after one recovery but d
   const outOfOrder=await call({action:'observe',id:'route',claim:'Candidate observed',receipts:[]},2);assert.equal(outOfOrder.code,'DIRECTORY_OBSERVATION');assert.match(outOfOrder.contentItems[0].text,/not focused/);
   assert.equal((await o.onBeforeFinal({signal:o.signal})).continue,true);
   assert.equal((await call({action:'focus',id:'route'},3)).success,true);
-  assert.equal((await call({action:'block',id:'route',claim:'Page changed and the candidate could not be confirmed.'},4)).success,true);
+  assert.equal((await call({action:'block',id:'route',blocker:'prerequisite-unavailable',claim:'Page changed and the candidate could not be confirmed.'},4)).success,true);
   assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);
   return{output:'Could not confirm the route. No dependent work was performed.'};
  });
@@ -28,7 +28,7 @@ test('blocked dependency replay permits an honest final after one recovery but d
   const run=engine.startRun({workflow:graph,input:{task:'Check a candidate route',directoryActions:'on',directoryDiagnostics:mode}});
   await engine.executions.get(run.id);
   const result=engine.getRun(run.id);
-  assert.equal(result.status,'completed',result.error);assert.match(result.output,/No dependent work/);
+  assert.equal(result.status,'completed',result.error);assert.equal(result.nodes.a.directoryOutcome,'incomplete');assert.match(result.output,/No dependent work/);
   const ledger=await engine.actionDirectories.get(run.id,'Check a candidate route');
   assert.deepEqual(ledger.finalStatus().dependencyBlocked,[{id:'dependent',blockedBy:['route']}]);
   assert.equal(ledger.read().receipts.length,0);
@@ -54,7 +54,7 @@ test('focus-after-read live trace replay advances without repeating the successf
   assert.equal((await dir('focus',{id:'find'})).success,true);
   const observed=await obs();assert.equal(observed.success,true,JSON.stringify(observed));
   const state=JSON.parse(observed.contentItems[0].text);assert.deepEqual(state.ready,['use']);
-  assert.equal((await dir('block',{id:'use',claim:'Offline replay ends here'})).success,true);
+  assert.equal((await dir('block',{id:'use',blocker:'no-viable-route',claim:'Offline replay ends here'})).success,true);
   assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);
   return{output:'Found the local input; no other source was contacted.'};
  });
@@ -243,4 +243,38 @@ test('a finished source read gets one bounded Directory reconciliation turn, wit
   await engine.executions.get(run.id);
   assert.equal(engine.getRun(run.id).status,expected,engine.getRun(run.id).error);
  }
+});
+
+test('an unsuitable option is recorded without closing a shared prerequisite',async t=>{
+ const {engine,root}=await setup(t,async o=>{
+  const dir=(action,args={})=>o.onToolCall({name:'relay_directory_action',callId:'dir-'+action,arguments:{action,...args}});
+  const state=r=>{assert.equal(r.success,true,JSON.stringify(r));return JSON.parse(r.contentItems[0].text);};
+  state(await dir('plan',{actions:[{id:'source',objective:'Find a usable source',dependsOn:[]},{id:'use',objective:'Use it',dependsOn:['source']}]}));
+  state(await dir('focus',{id:'source'}));
+  const failed=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:path.join(root,'missing')},callId:'missing-source'});
+  assert.equal(failed.success,false);
+  const withFailed=state(await dir('read'));
+  const receipt=withFailed.receipts.at(-1).id;
+  assert.equal((await dir('block',{id:'source',claim:'First source is missing'})).code,'DIRECTORY_BLOCKER');
+  const noted=state(await dir('note',{id:'source',claim:'First source is missing; try the working folder',receipts:[receipt]}));
+  assert.equal(noted.focus,'source');
+  assert.deepEqual(noted.actions[0].notes[0].receipts,[receipt]);
+  assert.deepEqual(noted.dependencyBlocked,[]);
+  assert.equal((await dir('note',{id:'source',claim:'Same evidence',receipts:[receipt]})).code,'DIRECTORY_NOTE');
+  assert.equal((await o.onBeforeFinal({signal:o.signal})).continue,true);
+  const valid=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:root},callId:'alternate-source'});
+  assert.equal(valid.success,true);
+  const found=state(await dir('read')).receipts.at(-1).id;
+  assert.deepEqual(state(await dir('observe',{id:'source',claim:'A usable source was located',receipts:[found]})).ready,['use']);
+  state(await dir('focus',{id:'use'}));
+  await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:root},callId:'use-source'});
+  const used=state(await dir('read')).receipts.at(-1).id;
+  state(await dir('observe',{id:'use',claim:'The alternative was used',receipts:[used]}));
+  return{output:'Used the alternative source'};
+ });
+ const run=engine.startRun({workflow:graph,input:{task:'Find and use a source',directoryActions:'on'}});
+ await engine.executions.get(run.id);
+ const result=engine.getRun(run.id);
+ assert.equal(result.status,'completed',result.error);
+ assert.equal(result.nodes.a.directoryOutcome,undefined);
 });

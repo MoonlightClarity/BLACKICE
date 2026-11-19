@@ -22,6 +22,7 @@ export function createActionDirectory({frame,api,getRuns}){
    if(failed||unknown){const warning=make('small',[failed&&failed+' failed',unknown&&unknown+' unresolved'].filter(Boolean).join(' \u00b7 '));warning.className='action-outline-chip';warning.dataset.warning='true';title.append(warning);}
    body.className='action-outline-detail';body.append(make('p','Action ID: '+action.id),make('p','Depends on: '+(action.dependsOn.join(', ')||'none')));
    if(dependencyBlock)body.append(make('p','Blocked by: '+dependencyBlock.blockedBy.join(', ')));
+   for(const finding of action.notes||[])body.append(make('p','Progress: '+finding.claim));
    if(action.observation)body.append(make('p',action.observation.authority+': '+action.observation.claim));
    if(evidence.length){attempts.className='action-outline-attempts';for(const r of evidence)appendAttempt(attempts,r);body.append(attempts);}
    const editable=action.state==='pending'||action.state==='active';

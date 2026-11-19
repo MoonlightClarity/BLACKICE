@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.26 candidate source, not an installation or publication receipt.** Package version is **2.40.26**. Start with the [2.40.26 notes](RELEASE-NOTES-2.40.26.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.27 candidate source, not an installation or publication receipt.** Package version is **2.40.27**. Start with the [2.40.27 notes](RELEASE-NOTES-2.40.27.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.27](RELEASE-NOTES-2.40.27.md) - Directory progress notes and incomplete outcomes
 
 - [2.40.26](RELEASE-NOTES-2.40.26.md) - Critical Path alternatives and continuation
 
