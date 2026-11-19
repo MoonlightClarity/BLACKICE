@@ -656,3 +656,26 @@ test('expiry of a saved Goal does not abort an unbound same-chat question', asyn
   await waitFor(()=>engine.getRun(question.id).settled);
   assert.equal(engine.getRun(question.id).status,'completed');
 });
+test('Goal scope refreshes legacy native catalogs held only in resume state on Continue and Retry', async t => {
+  const {engine,runtime}=await fixture(t,async (_options,n)=>{
+    if(n===1)throw Error('Fixture native call interrupted.');
+    return output(n);
+  },{goals:{autoStart:false}});
+  const seed=engine.startRun({workflow:graph(),input:'Original human request.'});
+  await waitFor(()=>engine.getRun(seed.id).settled);
+  const saved=engine.runs.get(seed.id).nodes.agent;
+  delete saved.threadId; delete saved.toolNames; delete saved.nativeCatalogVersion;
+  Object.assign(saved,{resumeThreadId:'fixture-native-resume-only',resumeNativeCatalogVersion:1,resumeToolNames:['relay_goal'],diagnosticsSchemaVersion:1});
+  const continued=engine.continueRun(seed.id,{nodeId:'agent',message:'Independent human follow-up.'});
+  assert.equal(continued.modelHandoff.reason,'goal-mode-capability');
+  assert.equal(continued.modelHandoff.sourceThreadId,'fixture-native-resume-only');
+  await waitFor(()=>engine.getRun(continued.id).settled);
+  const retried=engine.retryRun(seed.id);
+  assert.equal(retried.nodeHandoffs.agent.reason,'goal-mode-capability');
+  assert.equal(retried.nodeHandoffs.agent.sourceThreadId,'fixture-native-resume-only');
+  await waitFor(()=>engine.getRun(retried.id).settled);
+  for(const options of runtime.calls.slice(1)){
+    assert.equal(options.threadId,undefined);
+    assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_goal'),false);
+  }
+});
