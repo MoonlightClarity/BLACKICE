@@ -1,0 +1,39 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readBundledSkill} from '../lib/skill-library.mjs';
+import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
+import {ACTION_DIRECTORY_TOOL,TaskActionDirectory} from '../lib/task-action-directory.mjs';
+import {TASK_COMPLETION_GUIDANCE} from '../lib/task-completion-guidance.mjs';
+
+test('What Makes Done is a discoverable advisory skill with actionable examples',async()=>{
+ const catalog=createSkillsCatalog();
+ const row=(await catalog.list({query:'definition of done'})).entries.find(x=>x.id==='library-what-makes-done');
+ assert.equal(row?.title,'What Makes Done');
+ const {content}=await readBundledSkill('library-what-makes-done');
+ for(const pattern of [/same query and cursor/,/continue with the others/,/when the employer or application service confirms it/,/cutoff is in the future/,/representative totals/,/advisory/])assert.match(content,pattern);
+ assert.match(TASK_COMPLETION_GUIDANCE,/take it now instead of returning a status-only answer/);
+ assert.match(ACTION_DIRECTORY_TOOL.description,/add and take the next useful authorized step/);
+});
+
+test('receipt-backed discovery advances to delivery; a confirmation is a separate action',async()=>{
+ const d=new TaskActionDirectory({taskId:'fixture',objective:'Submit one synthetic application'});
+ const opt=()=>({expectedActionRevision:d.read().actionRevision});
+ const edit=x=>d.edit(x,opt());
+ await edit({action:'plan',actions:[{id:'source',objective:'Find a usable posting',dependsOn:[]},{id:'apply',objective:'Submit fixture form and observe confirmation',dependsOn:['source']}]});
+ const result=(text,observationOnly)=>d.execute({name:'relay_browser'},async()=>({success:true,contentItems:[{type:'inputText',text}]}),{runId:'run',nodeId:'agent',observationOnly,...opt()});
+ await edit({action:'focus',id:'source'});
+ const source=await result('Fixture posting link',true);
+ await edit({action:'observe',id:'source',claim:'Usable posting located',receipts:[source.receiptId]});
+ assert.deepEqual(d.read().ready,['apply']);
+ assert.equal(d.finalStatus().ready,false);
+ await edit({action:'focus',id:'apply'});
+ const confirmation=await result('Fixture receiving service confirmed submission #1',false);
+ await edit({action:'observe',id:'apply',claim:'Receiving service confirmed fixture submission #1',receipts:[confirmation.receiptId]});
+ assert.equal(d.finalStatus().ready,true);
+});
+
+test('Simplest Complete Path applies beyond coding without replacing delivery or verification',async()=>{
+ const {content}=await readBundledSkill('library-simplest-complete-path');
+ for(const expected of [/research, writing, operations, and software/,/smallest informative check/,/another comparison would not change the next action/,/Don't design a fuzzy-matching system/,/Dropping the submission is not simplification/,/Verify what makes the result usable/])assert.match(content,expected);
+ assert.doesNotMatch(content,/token (?:budget|conservation|saving)|(?:save|conserve|reduce) tokens/i);
+});

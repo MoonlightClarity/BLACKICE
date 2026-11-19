@@ -251,8 +251,9 @@
     },
     {
       "id": "library-focused-regression",
+      "aliases": ["test a ui change", "browser regression", "test a local web app"],
       "title": "Verify a code change",
-      "description": "Choose focused regression checks and distinguish verified behavior from untested paths.",
+      "description": "Choose focused regression checks, including controlled browser tests, and distinguish verified behavior from untested paths.",
       "tags": [
         "coding",
         "testing",
@@ -260,7 +261,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "blackice-browser-fixture-v2"
       },
       "bodyFile": "focused-regression.md"
     },
@@ -385,6 +386,49 @@
         "revision": "1"
       },
       "bodyFile": "intent-inference.md"
+    },
+    {
+      "id": "library-what-makes-done",
+      "title": "What Makes Done",
+      "description": "Define evidence of real completion and take the next useful authorized action when work is unfinished.",
+      "tags": [
+        "methods",
+        "completion",
+        "proactivity"
+      ],
+      "aliases": [
+        "definition of done",
+        "finish the task",
+        "next useful action",
+        "completion evidence"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "blackice-what-makes-done-v1"
+      },
+      "bodyFile": "what-makes-done.md"
+    },
+    {
+      "id": "library-simplest-complete-path",
+      "title": "Simplest Complete Path",
+      "description": "Avoid overthinking across tasks: use the simplest route that fully delivers the requested result and verify what matters.",
+      "tags": [
+        "methods",
+        "proactivity",
+        "ponytail"
+      ],
+      "aliases": [
+        "stop overthinking",
+        "simplest solution",
+        "simplest complete path",
+        "avoid overengineering",
+        "simpler approach"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "blackice-simplest-complete-path-v1"
+      },
+      "bodyFile": "simplest-complete-path.md"
     }
   ]
 }

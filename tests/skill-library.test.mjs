@@ -73,12 +73,19 @@ test('the default first-party pack is selectable by real format and task queries
  const invoke=createRetrievalToolHandler({cwd:process.cwd()});
  const call=async args=>decode(await invoke({name:'relay_skills',arguments:args}));
  const page=await call({action:'search',limit:13});
- const next=await call({action:'search',offset:page.nextOffset,limit:13});
- const rows=page.entries.concat(next.entries);
+ const rows=[...page.entries];
+ const visited=new Set();
+ for(let next=page.nextOffset; next!==null;){
+  assert.ok(Number.isInteger(next) && !visited.has(next),'Catalog cursor advances');
+  visited.add(next);
+  const batch=await call({action:'search',offset:next,limit:13});
+  rows.push(...batch.entries);
+  next=batch.nextOffset;
+ }
  const pack=rows.filter(row=>row.provenance?.kind==='first-party');
- assert.equal(page.totalMatches,26);
- assert.equal(next.nextOffset,null);
- assert.equal(pack.length,23);
+ assert.equal(page.totalMatches,manifest.entries.length+3);
+ assert.equal(rows.length,page.totalMatches);
+ assert.equal(new Set(rows.map(row=>row.id)).size,rows.length);
  assert.deepEqual(pack.map(row=>row.id).sort(),manifest.entries.map(row=>row.id).sort());
  assert.deepEqual((await fs.readdir(root)).sort(),['index.json',...manifest.entries.map(row=>row.bodyFile)].sort());
  assert.ok(rows.every(row=>!('content' in row)&&!('bodyFile' in row)));
@@ -90,6 +97,10 @@ test('the default first-party pack is selectable by real format and task queries
   ['concept diagram','library-concept-diagram'],
   ['web accessibility','library-accessibility-spot-check'],
   ['story with a chart','library-chart-storytelling'],
+  ['definition of done','library-what-makes-done'],
+  ['simplest solution','library-simplest-complete-path'],
+  ['stop overthinking','library-simplest-complete-path'],
+  ['browser regression','library-focused-regression'],
  ]){
   const result=await call({action:'search',query});
   assert.equal(result.entries[0].id,id);
