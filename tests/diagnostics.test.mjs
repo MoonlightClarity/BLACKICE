@@ -240,3 +240,13 @@ test('reopening startup timing logs revalidates phases and strips hostile payloa
   assert.deepEqual(snapshot.events[0], { at: timed.at, component: 'system', event: 'startup_phase', level: 'info', phase: 'remote-route', durationMs: 431, outcome: 'failed' });
   assert.doesNotMatch(JSON.stringify(snapshot), /PRIVATE_/);
 });
+
+test('desktop EPIPE retains its safe code across reload without logging message or stack', async t => {
+  const {store,dataDir,directory}=await harness(t);
+  await store.recordError('desktop','uncaught_exception',Object.assign(new Error('PRIVATE_PIPE_DETAIL'),{code:'EPIPE',stack:'PRIVATE_PIPE_STACK'}));
+  await store.close();
+  const restored=new DiagnosticsStore({dataDir});t.after(()=>restored.close());
+  const {events}=await restored.snapshot();
+  assert.deepEqual(events.map(({at,...event})=>event),[{component:'desktop',event:'uncaught_exception',level:'error',code:'EPIPE'}]);
+  assert.doesNotMatch(await fs.readFile(path.join(directory,'events.0.jsonl'),'utf8'),/PRIVATE_PIPE_/);
+});
