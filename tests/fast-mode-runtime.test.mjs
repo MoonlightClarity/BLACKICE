@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarnessEngine, validateWorkflow } from '../lib/engine.mjs';
+import { persistedRunRows } from './fixture-persisted-runs.mjs';
 import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { createHarnessServer } from '../server.mjs';
@@ -75,7 +76,7 @@ test('new-chat speed defaults are captured without changing existing chats, and 
   const interrupted = await f.settle(engine, engine.startRun({ workflow: workflow('native-fast', 'fast'), input: 'Preserve interrupted Fast.', planningMode: 'off' }).id);
   assert.equal(interrupted.status, 'failed');
   const retried = await f.settle(engine, engine.retryRun(interrupted.id).id); assert.equal(retried.status, 'completed'); assert.equal(f.runtime.calls.at(-1).serviceTier, 'fast');
-  const stored = JSON.parse(await readFile(path.join(f.directory, 'engine', 'runs.json'), 'utf8'));
+  const stored = persistedRunRows(path.join(f.directory, 'engine'));
   assert.equal(stored.find(run => run.id === retried.id).workflow.nodes.find(node => node.id === 'agent').serviceTier, 'fast');
 });
 

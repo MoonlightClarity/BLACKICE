@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarnessEngine, validateWorkflow } from '../lib/engine.mjs';
+import { persistedRunRows } from './fixture-persisted-runs.mjs';
 import { TaskStateStore, currentTaskTool } from '../lib/task-state.mjs';
 import { MethodStore } from '../lib/methods.mjs';
 import { TaskInbox } from '../lib/inbox.mjs';
@@ -324,8 +325,13 @@ test('Off identity and disabled automatic planning apply to delegated workers wi
 
 test('invalid saved planning modes recover through the existing backup path and preserve corrupt evidence', async t => {
   const f = await fixture(t, async options => ({ output: 'Saved Off result.', threadId: 'planning-mode-thread' }));
-  const first = await f.settle(f.start({ planningMode: 'off' }).id); finished(first); await f.engine.persist(); await f.engine.close();
-  const file = path.join(f.directory, 'runs.json'), raw = JSON.parse(await readFile(file, 'utf8')); raw[0].planningMode = 'unbounded'; await writeFile(file, JSON.stringify(raw));
+  const first = await f.settle(f.start({ planningMode: 'off' }).id); finished(first); await f.engine.close();
+  const valid = persistedRunRows(f.directory);
+  const malformed = structuredClone(valid); malformed[0].planningMode = 'unbounded';
+  // Deliberately simulate first import from an old profile, not a new engine writing JSON.
+  await rm(path.join(f.directory, 'run-state.sqlite'));
+  await writeFile(path.join(f.directory, 'runs.json.bak'), JSON.stringify(valid));
+  await writeFile(path.join(f.directory, 'runs.json'), JSON.stringify(malformed));
   await f.reopen(); assert.equal(f.engine.getRun(first.id).planningMode, 'off'); assert.ok(f.engine.storageStatus().recovered.includes('runs.json'));
   const preserved = (await readdir(f.directory)).find(name => name.startsWith('runs.json.corrupt-')); assert.ok(preserved); assert.match(await readFile(path.join(f.directory, preserved), 'utf8'), /unbounded/);
 });

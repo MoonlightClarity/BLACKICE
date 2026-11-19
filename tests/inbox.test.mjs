@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { TaskInbox, engineAtCapacity } from '../lib/inbox.mjs';
 import { HarnessEngine } from '../lib/engine.mjs';
+import { persistedRunRows } from './fixture-persisted-runs.mjs';
 import { createHarnessServer } from '../server.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
@@ -124,11 +125,11 @@ test('Stop also cancels a previously admitted explicit start waiting behind anot
 });
 
 test('real engine admission persists inbox metadata before runtime and ignores retired learning hooks',async t=>{
-  const directory=await mkdtemp(path.join(tmpdir(),'relay-inbox-engine-')),cwd=path.join(directory,'workspace');await mkdir(cwd);const release=deferred(),entered=deferred();let calls=0,stopping=0;
-  const runtime={status:()=>({connected:true,authenticated:true}),runAgent:async options=>{calls++;const runs=JSON.parse(await readFile(path.join(directory,'runs.json'),'utf8')),saved=runs.find(run=>run.metadata?.inboxId);assert.ok(saved,'admission is on disk before runtime execution');const queue=JSON.parse(await readFile(path.join(directory,'inbox.json'),'utf8'));assert.equal(queue.items[0].dispatchId,saved.metadata.inboxDispatchId);entered.resolve();return{output:'Verified real engine fixture.',threadId:'inbox-fixture-thread'};}};
+  const directory=await mkdtemp(path.join(tmpdir(),'relay-inbox-engine-')),cwd=path.join(directory,'workspace');await mkdir(cwd);const release=deferred();let calls=0,stopping=0,admission,dispatchId;
+  const runtime={status:()=>({connected:true,authenticated:true}),runAgent:async()=>{calls++;admission=persistedRunRows(directory).find(run=>run.metadata?.inboxId);const queue=JSON.parse(await readFile(path.join(directory,'inbox.json'),'utf8'));dispatchId=queue.items[0].dispatchId;return{output:'Verified real engine fixture.',threadId:'inbox-fixture-thread'};}};
   const learning={cancelBackground:()=>{stopping++;return release.promise;},getContext:()=>({lessons:[],skills:[],facts:[],truncated:false}),scheduleAfterRun:async()=>{}};
   const engine=await new HarnessEngine({runtime,dataDir:directory,defaultCwd:cwd,learning}).init(),inbox=await new TaskInbox({dataDir:directory,engine}).init();t.after(async()=>{release.resolve();await inbox.close();await engine.close();assert.match(path.basename(directory),/^relay-inbox-engine-/);await rm(directory,{recursive:true,force:true});});
-  const item=await inbox.add({input:'Use the persisted admission journal',cwd,workflow:workflowNoPlanning()}),started=await inbox.runNow(item.id);assert.equal(started.run.metadata.inboxId,item.id);assert.equal(stopping,0);await entered.promise;assert.equal(stopping,0);await until(()=>inbox.get(item.id).status==='completed');assert.equal(calls,1);assert.equal(inbox.get(item.id).runId,started.run.id);
+  const item=await inbox.add({input:'Use the persisted admission journal',cwd,workflow:workflowNoPlanning()}),started=await inbox.runNow(item.id);assert.equal(started.run.metadata.inboxId,item.id);assert.equal(stopping,0);await until(()=>engine.getRun(started.run.id).settled);const settled=engine.getRun(started.run.id);assert.equal(settled.status,'completed',settled.error||settled.nodes.agent?.error);assert.equal(admission?.id,started.run.id,'admission is on disk before runtime execution');assert.ok(dispatchId);assert.equal(dispatchId,admission.metadata.inboxDispatchId);assert.equal(stopping,0);await until(()=>inbox.get(item.id).status==='completed');assert.equal(calls,1);assert.equal(inbox.get(item.id).runId,started.run.id);
 });
 
 test('HTTP inbox capture stays usable while a real task runs, auth applies, and stopping one chat leaves queued work eligible',async t=>{
@@ -154,7 +155,7 @@ for(const action of ['cancel','close'])test(`${action} while the real engine adm
   const first=await inbox.add({input:'Cancel before inference',cwd,workflow:workflowNoPlanning()}),second=await inbox.add({input:'Keep next task saved',cwd,workflow:workflowNoPlanning()});await inbox.configure({autoRun:true});await until(()=>delayed,'engine admission save');await entered.promise;await until(()=>inbox.get(first.id).runId);const runId=inbox.get(first.id).runId;
   let closing;if(action==='cancel'){await inbox.pause('Stop while admission is saving');engine.cancelRun(runId);}else{await inbox.close();closing=engine.close();}
   await tick();assert.equal(calls,0);assert.equal(engine.getRun(runId).status,'cancelled');release.resolve();if(closing)await closing;await until(()=>engine.getRun(runId).settled);if(action==='cancel')await until(()=>inbox.get(first.id).status==='cancelled');
-  assert.equal(calls,0);assert.equal(inbox.get(second.id).status,'queued');assert.equal(engine.controllers.size,0);assert.equal(engine.executions.size,0);const disk=JSON.parse(await readFile(path.join(directory,'runs.json'),'utf8'));assert.equal(disk.find(run=>run.id===runId).status,'cancelled');
+  assert.equal(calls,0);assert.equal(inbox.get(second.id).status,'queued');assert.equal(engine.controllers.size,0);assert.equal(engine.executions.size,0);const disk=persistedRunRows(directory);assert.equal(disk.find(run=>run.id===runId).status,'cancelled');
 });
 
 test('a pump admitted before failure reconciliation cannot bypass pause-on-failure while waiting behind an inbox write',async t=>{

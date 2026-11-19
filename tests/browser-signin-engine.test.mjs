@@ -2,10 +2,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
+import {persistedRunRows} from './fixture-persisted-runs.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 
 test('contained sign-in blocks external browser fallback while independent workspace reads remain usable',async t=>{
@@ -54,7 +55,7 @@ test('contained sign-in blocks external browser fallback while independent works
  assert.equal(run.browserSignIn.status,'awaiting-user');
  assert.equal(run.events.filter(e=>e.data?.type==='browser.signin').length,1,'duplicate reports must be idempotent');
  await engine.persist();
- const contents=JSON.parse(await readFile(path.join(dataDir,'runs.json'),'utf8'));
+ const contents=persistedRunRows(dataDir);
  assert.equal(contents.find(item=>item.id===run.id)?.browserSignIn?.origin,'https://www.linkedin.com');
 });
 

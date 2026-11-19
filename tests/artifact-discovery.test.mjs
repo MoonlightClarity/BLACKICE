@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { discoverableFileLinks, discoverFinalArtifacts } from '../lib/artifact-discovery.mjs';
 import { TaskStateStore, createTaskToolHandler } from '../lib/task-state.mjs';
 import { HarnessEngine } from '../lib/engine.mjs';
+import { persistedRunRows } from './fixture-persisted-runs.mjs';
 import { createRegisteredArtifactResolver } from '../public/conversation-model.mjs';
 import { renderTaskFiles, renderTaskState } from '../public/task-state-ui.mjs';
 import { safeSvgPreview } from '../public/svg-preview.mjs';
@@ -138,7 +139,7 @@ test('real engine discovers a workspace-written SVG final link and persists its 
   assert.equal(run.status, 'completed',run.error||run.nodes.agent?.error); assert.equal(run.taskState.artifacts.length, 1); assert.equal(run.taskState.artifacts[0].fileName, 'chess.svg');
   const receipt = run.nodes.agent.artifactDiscovery; assert.equal(receipt.registered.length, 1); assert.equal(receipt.skipped.length, 1); assert.equal(receipt.skipped[0].code, 'ENOENT'); assert.ok(events.some(event => event.data?.type === 'task.artifacts'));
   assert.equal(await readFile(path.join(cwd, 'chess.svg'), 'utf8'), svg); assert.equal((await store.previewArtifact(run.taskId, run.taskState.artifacts[0].id)).text, svg);
-  await engine.close(); const disk = JSON.parse(await readFile(path.join(directory, 'engine', 'runs.json'), 'utf8')); assert.deepEqual(disk.find(item => item.id === run.id).nodes.agent.artifactDiscovery, receipt);
+  await engine.close(); const disk = persistedRunRows(path.join(directory, 'engine')); assert.deepEqual(disk.find(item => item.id === run.id).nodes.agent.artifactDiscovery, receipt);
 });
 
 test('an unavailable optional discovery store leaves an error receipt while the completed agent answer is preserved', async t => {

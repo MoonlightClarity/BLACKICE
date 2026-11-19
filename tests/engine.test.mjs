@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { HarnessEngine, validateWorkflow } from '../lib/engine.mjs';
+import { persistedRunRows } from './fixture-persisted-runs.mjs';
 import { ConversationArchive } from '../lib/conversations.mjs';
 import { DesktopController } from '../lib/desktop.mjs';
 
@@ -486,17 +487,22 @@ test('evicted admission receipts require archive recovery and never dispatch ano
 });
 
 test('request receipts are persisted before runtime actions and retries do not inherit submission identity', async t => {
-  let dataDir;
+  let dataDir, admissionBeforeRuntime;
   const runtime = new FakeRuntime(async () => {
-    const runs = JSON.parse(await readFile(path.join(dataDir, 'runs.json'), 'utf8'));
-    if (runtime.calls.length === 1) { assert.equal(runs[0].metadata.clientRequestId, 'durable-before-action'); throw new Error('Fixture failure.'); }
+    if (runtime.calls.length === 1) {
+      admissionBeforeRuntime = persistedRunRows(dataDir).find(run => run.metadata?.clientRequestId === 'durable-before-action');
+      throw new Error('Fixture failure.');
+    }
     return { output: 'Retry complete.', threadId: 'retry-thread' };
   });
   const context = await harness(t, runtime); dataDir = context.dataDir; const { engine } = context;
   const request = { requestId: 'durable-before-action', workflow: workflow(), input: 'Persist before action.' }, first = engine.startRun(request);
   await waitFor(() => engine.getRun(first.id).settled, 'first run fails');
+  assert.equal(admissionBeforeRuntime?.id, first.id, 'provider observed the committed admission receipt');
+  assert.match(engine.getRun(first.id).nodes.agent.error, /Fixture failure\./);
   const retry = engine.retryRun(first.id); assert.equal(retry.metadata?.clientRequestId, undefined);
   await waitFor(() => engine.getRun(retry.id).settled, 'retry settles');
+  assert.equal(engine.getRun(retry.id).status, 'completed');
   assert.equal(engine.startRun(request).id, first.id); assert.equal(runtime.calls.length, 2);
 });
 

@@ -2,10 +2,11 @@ import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {mkdtemp,mkdir,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
+import {persistedRunRows} from './fixture-persisted-runs.mjs';
 import {RuntimeSettingsStore} from '../lib/runtime-settings.mjs';
 import {TaskStateStore} from '../lib/task-state.mjs';
 
@@ -100,7 +101,7 @@ test('a failed child execution remains inspectable in the durable parent run aft
   t.after(async()=>{await engine.close();await prefs.close();await tasks.close();await rm(root,{recursive:true,force:true});});
   const run=await finish(engine,engine.startRun({workflow:taskGraph(),input:'Review an independent fixture and report any execution failure.'}).id);
   assert.equal(run.status,'completed',run.error);assert.equal(run.nodes.agent.planning.status,'off');assert.equal(childReceipt.status,'failed');assert.equal(childReceipt.output,undefined);
-  await engine.persist();const stored=JSON.parse(await readFile(path.join(dataDir,'runs.json'),'utf8')).find(value=>value.id===run.id),terminal=stored.events.find(event=>event.data?.type==='subagent'&&event.data.id==='independent'&&event.data.status==='failed').data;
+  await engine.persist();const stored=persistedRunRows(dataDir).find(value=>value.id===run.id),terminal=stored.events.find(event=>event.data?.type==='subagent'&&event.data.id==='independent'&&event.data.status==='failed').data;
   assert.equal(terminal.id,'independent');assert.equal(terminal.threadId,'failed-child-thread');assert.equal(terminal.turnId,'failed-child-turn');assert.equal(terminal.model,'fixture-model');assert.deepEqual(terminal.usage,{inputTokens:60,outputTokens:12,totalTokens:72});assert.deepEqual(terminal.toolSummary,{completed:1,failed:0});assert.equal(terminal.message,childReceipt.error);assert.equal(terminal.durationMs,childReceipt.durationMs);
   assert.ok(!stored.events.some(event=>event.data?.type==='subagent'&&event.data.status==='completed'));
 });
