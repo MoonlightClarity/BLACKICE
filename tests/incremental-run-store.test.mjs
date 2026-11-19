@@ -43,6 +43,38 @@ test('conversation cleanup measures and removes run database without touching wo
  await assert.rejects(fs.stat(path.join(dir,'run-state.sqlite')),{code:'ENOENT'});assert.equal(await fs.readFile(path.join(dir,'workflows.json'),'utf8'),workflows);
 });
 
+
+test('file-patch close failure still checkpoints and stops the real run worker',async t=>{
+ const {engine,dir}=await setup(t);
+ const record=run('r');engine.runs.set(record.id,record);await engine.persist();
+ record.output='saved during shutdown';engine.markRunDirty(record.id);
+ const error=new Error('File patch storage could not close.');
+ engine.filePatches.close=async()=>{throw error;};
+ const worker=engine.runStore.worker, closeStore=engine.runStore.close.bind(engine.runStore);
+ engine.runStore.close=async()=>{await closeStore();throw new Error('Secondary run storage shutdown error.');};
+ await assert.rejects(engine.close(),reason=>reason===error);
+ engine.runStore.close=closeStore;
+ assert.equal(engine.runStore.worker,null);assert.equal(worker.threadId,-1);
+ await assert.rejects(engine.close(),reason=>reason===error);
+ const store=new IncrementalRunStore(dir);
+ try{assert.equal((await store.load()).runs[0].output,'saved during shutdown');}
+ finally{await store.close();}
+});
+
+test('run store close RPC rejection still terminates the worker and shares the first failure',async t=>{
+ const {dir}=await setup(t);
+ const notDirectory=path.join(dir,'ordinary-file');await fs.writeFile(notDirectory,'fixture');
+ const store=new IncrementalRunStore(notDirectory);
+ try{
+  const openError=await store.load().then(()=>assert.fail('Expected an invalid storage directory'),error=>error);
+  assert.ok(openError.code);const worker=store.worker;assert.ok(worker.threadId>0);
+  const first=store.close(),second=store.close();assert.equal(first,second);
+  await assert.rejects(store.load(),/closing/);
+  await assert.rejects(first,{code:openError.code});
+  assert.equal(store.worker,null);assert.equal(worker.threadId,-1);
+ }finally{await store.close();}
+});
+
 test('corrupt authoritative SQLite fails without silently importing stale JSON',async t=>{
  const{engine,dir}=await setup(t);engine.runs.set('r',run('r'));await engine.persist();await engine.runStore.close();
  await fs.writeFile(path.join(dir,'run-state.sqlite'),'not a sqlite database');await fs.writeFile(path.join(dir,'runs.json'),'[]');

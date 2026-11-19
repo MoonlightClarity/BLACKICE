@@ -446,6 +446,7 @@ for (const firstFailure of ['storage', 'desktop']) {
     assert.deepEqual(stages, ['desktop', 'storage', 'provider'], 'later cleanup runs once even after earlier errors');
     assert.equal(app.server.listening, false);
     assert.equal(app.engine.closed, true);
+    assert.equal(app.engine.runStore.worker, null, 'SQLite worker must stop even when final checkpoint fails');
     await assert.rejects(close(), error => error === expectedError);
     assert.equal(stages.length, 3, 'repeated close shares the original shutdown result');
   });
