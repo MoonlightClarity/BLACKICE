@@ -1,9 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.12 candidate source, not an installation or publication receipt.** Package version is **2.40.12**. Start with the [2.40.12 notes](RELEASE-NOTES-2.40.12.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.13 candidate source, not an installation or publication receipt.** Package version is **2.40.13**. Start with the [2.40.13 notes](RELEASE-NOTES-2.40.13.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
 
+- [2.40.13](RELEASE-NOTES-2.40.13.md) - blocked Directory dependencies and a separate Receipts route
 - [2.40.12](RELEASE-NOTES-2.40.12.md) - independent Directory outline revisions and three receipt depths
 - [2.40.11](RELEASE-NOTES-2.40.11.md) - action-oriented Directory, Planning, and Goal and browser task boundaries
 - [2.40.10](RELEASE-NOTES-2.40.10.md) - default local llama.cpp model folder and discovery

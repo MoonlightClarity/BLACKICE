@@ -1,5 +1,5 @@
 /** On-demand diagnostic outline. Never supplies this projection to a model. */
-export function createDirectoryInspector({frame,api,getRuns,showLauncher=true,onBack}){
+export function createTurnReceiptsInspector({frame,api,getRuns,showLauncher=true,onBack}){
  const doc=frame.ownerDocument,make=(tag,value='')=>{const n=doc.createElement(tag);n.textContent=value;return n;};
  const launch=make('button','Turn receipts');launch.type='button';launch.hidden=true;launch.title='Inspect this task’s context provenance and retained action receipts';
  if(showLauncher)(frame.querySelector('.next-chat-head-actions')||frame).append(launch);
@@ -19,8 +19,8 @@ export function createDirectoryInspector({frame,api,getRuns,showLauncher=true,on
   if(destroyed||!dialog.open||!turn.value||!taskId)return;generation++;controller?.abort();controller=new AbortController();const token=generation,id=turn.value,root=taskId;
   if(!append){offset=null;revision=null;tree.replaceChildren();}more.hidden=true;status.textContent='Reading selected task records…';
   const query=new URLSearchParams({taskId:root,offset:String(append?offset||0:0),limit:'30',view:category.value,q:search.value});if(append&&revision)query.set('revision',revision);
-  try{const result=await api('/api/conversations/'+encodeURIComponent(id)+'/directory?'+query,'GET',undefined,{signal:controller.signal});if(destroyed||!dialog.open||token!==generation||taskId!==root||turn.value!==id)return;
-   if(result.taskId!==root||result.runId!==id)throw Error('Directory scope mismatch.');
+  try{const result=await api('/api/conversations/'+encodeURIComponent(id)+'/receipts?'+query,'GET',undefined,{signal:controller.signal});if(destroyed||!dialog.open||token!==generation||taskId!==root||turn.value!==id)return;
+   if(result.taskId!==root||result.runId!==id)throw Error('Turn receipts scope mismatch.');
    revision=result.revision;offset=result.nextOffset;machine.hidden=result.depth!=='maximal';status.textContent=result.coverage.reason+' Context: '+result.coverage.receiptAvailability+'.';
    if(!append){const task=branch(tree,'Task '+root);task.open=true;const selected=branch(task,'Turn '+id+(' · '+(result.depth==='maximal'?'Maximal':result.depth==='detailed'||result.enabled?'Detailed':'Basic')));selected.open=true;branch(selected,'Saved turn state',JSON.stringify(result.terminal||{},null,2));selected.append(make('p',result.terminal?.code?'Recorded cause: '+result.terminal.code:'No recorded cause.'));
     for(const receipt of category.value==='context'?result.receipts:[]){if(receipt.context.hostTools)branch(selected,'BLACKICE tool handler calls (not all provider actions)',JSON.stringify(receipt.context.hostTools,null,2));branch(selected,'Context prepared · '+receipt.nodeId,JSON.stringify(receipt.context,null,2));}
@@ -37,7 +37,7 @@ export function createDirectoryInspector({frame,api,getRuns,showLauncher=true,on
   status.textContent='Preparing the Maximal trace.';
   try{
    const query=new URLSearchParams({taskId:root,view:'machine'});
-   const value=await api('/api/conversations/'+encodeURIComponent(id)+'/directory?'+query,'GET',undefined,{signal:pending.signal});
+   const value=await api('/api/conversations/'+encodeURIComponent(id)+'/receipts?'+query,'GET',undefined,{signal:pending.signal});
    if(!valid())return;
    if(value.taskId!==root||value.runId!==id)throw Error('Trace scope mismatch.');
    const serialized=JSON.stringify(value);

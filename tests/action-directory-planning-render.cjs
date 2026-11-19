@@ -71,6 +71,10 @@ class Runtime extends EventEmitter {
   return ledger.read().actions.find(action=>action.objective==='App-authored independent follow-up');
  };
  const added=await row();assert.equal(added.authority,'human');
+ await fill(dialog+' input[aria-label="New action objective"]','Dependent fixture step');
+ await fill(dialog+' input[aria-label="New action dependencies"]',added.id);
+ await click('Add action',dialog);
+ await until('dependent fixture step is saved',async()=>String(await text(dialog)).includes('Dependent fixture step'));
  const selected=dialog+' details';
  const rowClick=label=>run(`(()=>{const row=[...document.querySelectorAll(${JSON.stringify(selected)})].find(r=>r.querySelector('summary').textContent.includes('App-authored independent follow-up'));row.open=true;[...row.querySelectorAll('button')].find(b=>b.textContent===${JSON.stringify(label)}).click();})()`);
  await rowClick('Focus');
@@ -79,6 +83,8 @@ class Runtime extends EventEmitter {
  await rowClick('Block');
  await until('canonical block persisted',async()=>(await row())?.state==='blocked');
  assert.equal((await row()).observation.claim,'User redirect from renderer');
+ await until('derived dependency blocker displayed',async()=>String(await text(dialog)).includes('blocked by '+added.id));
+ assert(await run("[...document.querySelectorAll('dialog[open] details')].find(r=>r.querySelector('summary').textContent.includes('Dependent fixture step')).querySelector('button').disabled"));
  await click('Close',dialog);
  await click('Action outline');
  await run(`document.querySelector(${JSON.stringify(dialog)}).dispatchEvent(new Event('close'))`);
@@ -98,7 +104,7 @@ class Runtime extends EventEmitter {
  const diagnosticText=await text('dialog[aria-label="Turn receipts"][open]');
  assert.doesNotMatch(diagnosticText,/App-authored independent follow-up|User redirect from renderer/);
  await until('Maximal export controls are visible',()=>run('[...document.querySelectorAll(\'dialog[aria-label="Turn receipts"][open] button\')].some(b=>b.textContent==="Download trace JSON" && b.getClientRects().length)'));
- const trace=await run(`fetch(${JSON.stringify('/api/conversations/'+done.id+'/directory?taskId='+done.id+'&view=machine')}).then(r=>r.json())`);
+ const trace=await run(`fetch(${JSON.stringify('/api/conversations/'+done.id+'/receipts?taskId='+done.id+'&view=machine')}).then(r=>r.json())`);
  assert.equal(trace.audience,'machine');assert(trace.entries.some(e=>e.kind==='directory.snapshot'&&e.metadata.phase==='delivered'));
  assert.doesNotMatch(JSON.stringify(trace),/Synthetic starter sighted/);
  await run('Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async value=>{window.fixtureTrace=JSON.parse(value);}}})');

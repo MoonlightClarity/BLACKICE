@@ -9,3 +9,38 @@ test('cancelled dispatch is not issued; concurrent dispatch does not bypass pend
 test('replanning preserves attempted scope and direct host receipts contain no payload',async()=>{const ledger=create();await plan(ledger);await focus(ledger);await ledger.execute({name:'relay_browser',arguments:{password:'secret'}},async()=>({success:false,contentItems:[{text:'private'}]}),{runId:'run',nodeId:'agent'});await assert.rejects(ledger.edit({action:'plan',revision:ledger.read().revision,actions:[{id:'find',objective:'Pretend finished',dependsOn:[]}]}),{code:'DIRECTORY_RECORDED_ACTION'});assert.doesNotMatch(JSON.stringify(ledger.read()),/secret|private/);assert.equal(ledger.read().receipts[0].success,false);});
 test('unknown permits host-classified observation, not model-authorized replay, and independent blocked work can proceed',async()=>{const ledger=create({admitRecovery:call=>call.name==='relay_observe'});await plan(ledger);await focus(ledger);await assert.rejects(ledger.execute({name:'relay_browser'},async()=>{throw Error('lost');},{runId:'run',nodeId:'agent'}));const unknown=ledger.read().receipts[0].id;await assert.rejects(ledger.execute({name:'relay_browser'},async()=>({success:true}),{runId:'run',nodeId:'agent',recoveryFor:unknown}),{code:'DIRECTORY_UNKNOWN'});const observation=await ledger.execute({name:'relay_observe'},async()=>({success:true}),{runId:'run',nodeId:'agent',recoveryFor:unknown});assert.equal(observation.directory.receipts[0].state,'unknown');await ledger.edit({action:'block',revision:ledger.read().revision,id:'find',claim:'Effect remains uncertain; do not repeat.'});await ledger.edit({action:'plan',revision:ledger.read().revision,actions:[{id:'find',objective:'Find candidate jobs',dependsOn:[]},{id:'check',objective:'Check candidate requirements',dependsOn:['find']},{id:'other',objective:'Inspect independent source',dependsOn:[],reason:'Original effect uncertain',sourceRefs:[unknown]}]});await focus(ledger,'other');await ledger.execute({name:'relay_observe'},async()=>({success:true}),{runId:'run',nodeId:'agent'});assert.equal(ledger.finalStatus().ready,false);});
 test('human steering during host work preserves the dispatched receipt and prevents stale observation',async()=>{const ledger=create();await plan(ledger);await focus(ledger);let finish;const work=ledger.execute({name:'relay_browser'},()=>new Promise(r=>{finish=r;}),{runId:'run',nodeId:'agent'});while(!finish)await new Promise(r=>setTimeout(r,1));const stale=ledger.read().revision;await ledger.edit({action:'block',revision:stale,id:'find',claim:'User redirected this action.'},{authority:'human'});finish({success:true});await work;await assert.rejects(ledger.edit({action:'observe',revision:stale,id:'find',claim:'Done',receipts:['receipt-1']}),{code:'DIRECTORY_CHANGED'});assert.equal(ledger.read().actions[0].state,'blocked');assert.equal(ledger.read().actions[0].observation.authority,'human');assert.equal(ledger.read().receipts[0].state,'returned');});
+
+test('a blocked prerequisite settles transitive dead paths without completing them or skipping an independent path', async()=>{
+ const ledger=create();
+ const actions=[{id:'first',objective:'Primary route',dependsOn:[]},{id:'second',objective:'Downstream action',dependsOn:['first']},{id:'third',objective:'Transitive child',dependsOn:['second']},{id:'independent',objective:'Try alternative',dependsOn:[]}];
+ await ledger.edit({action:'plan',revision:0,actions});
+ await ledger.edit({action:'block',id:'first',claim:'Primary route unavailable',revision:1});
+ const state=ledger.read();
+ assert.deepEqual(state.dependencyBlocked,[{id:'second',blockedBy:['first']},{id:'third',blockedBy:['first']}]);
+ assert.deepEqual(state.ready,['independent']);
+ assert.deepEqual(ledger.finalStatus().pending,['independent']);
+ assert.equal(ledger.finalStatus().ready,false);
+ await assert.rejects(ledger.edit({action:'focus',id:'second',revision:state.revision}),{code:'DIRECTORY_NOT_READY'});
+ await ledger.edit({action:'focus',id:'independent',revision:state.revision});
+ const result=await ledger.execute({name:'relay_find_files'},async()=>({success:true}),{runId:'run',nodeId:'agent'});
+ await ledger.edit({action:'observe',id:'independent',claim:'Alternative inspected',receipts:[result.receiptId],revision:ledger.read().revision});
+ const done=ledger.finalStatus();
+ assert.equal(done.ready,true);assert.equal(done.reason,'blocked-paths');assert.deepEqual(done.pending,[]);
+ assert.deepEqual(done.blocked,['first']);
+ assert.equal(ledger.read().actions.find(a=>a.id==='second').state,'pending');
+ assert.equal(ledger.read().actions.find(a=>a.id==='third').observation,undefined);
+});
+
+test('blocked dependencies do not erase unknown effects or survive an authorized replan of a pending path',async()=>{
+ const ledger=create();
+ await plan(ledger);await focus(ledger);
+ await assert.rejects(ledger.execute({name:'relay_browser'},async()=>{throw Error('transport lost');},{runId:'run',nodeId:'agent'}));
+ await ledger.edit({action:'block',id:'find',claim:'Effect not known',revision:ledger.read().revision});
+ assert.equal(ledger.finalStatus().reason,'unknown-effects');
+ assert.deepEqual(ledger.finalStatus().dependencyBlocked,[{id:'check',blockedBy:['find']}]);
+ const actions=ledger.read().actions.map(a=>({id:a.id,objective:a.objective,dependsOn:[]}));
+ await ledger.edit({action:'plan',actions,revision:ledger.read().revision});
+ assert.deepEqual(ledger.read().dependencyBlocked,[]);
+ assert.deepEqual(ledger.read().ready,['check']);
+ assert.equal(ledger.finalStatus().ready,false);
+});
