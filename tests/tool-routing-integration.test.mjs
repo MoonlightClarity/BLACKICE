@@ -93,7 +93,7 @@ test('engine native follow-up guidance excludes newly available tools that are a
   const records=await wire(),resume=records.find(item=>item.method==='thread/resume');assert.match(resume.params.developerInstructions,/ACTUAL ATTACHED CATALOG/);assert.equal(resume.params.dynamicTools,undefined);const turn=records.filter(item=>item.method==='turn/start').at(-1);assert.equal(occurrences(JSON.stringify(turn.params.input),'NATIVE_ENGINE_FOLLOWUP'),1);assert.equal(occurrences(JSON.stringify(turn.params.input),'CAPABILITY ROUTING — BEFORE ACTION'),0);
 });
 
-test('the legacy relay history setting preserves native continuation and contained browser guidance in its tool definition', async t => {
+test('the legacy relay history setting preserves native continuation and contained browser recovery guidance without changing the tool definition', async t => {
   const { runtime, directory, cwd, wire, cleanup } = await nativeHarness(t);
   await runtime.start();
   const engine = await new HarnessEngine({ runtime, dataDir: directory, defaultCwd: cwd }).init();
@@ -111,7 +111,7 @@ test('the legacy relay history setting preserves native continuation and contain
   assert.equal(firstReceipt.tools.includes('relay_connections'),false);
   assert.match(firstReceipt.instructions, /A tool or method named in a prior assistant plan/);
   const browserDefinition=(await wire()).find(record=>record.method==='thread/start').params.dynamicTools.find(tool=>tool.name==='relay_browser');
-  assert.doesNotMatch(firstReceipt.instructions,/BROWSER STATE RECOVERY|relay_browser:/);
+  assert.match(firstReceipt.instructions,/relay_browser:.*stopped-task-recovery/);
   assert.match(browserDefinition.description, /contained BLACKICE browser/);
   assert.match(browserDefinition.description, /Never attach or launch Chrome/);
   assert.match(browserDefinition.description, /empty tabs list means this task has no visible pages/);
@@ -126,14 +126,14 @@ test('the legacy relay history setting preserves native continuation and contain
   assert.equal(two.nodes.agent.codexHistory, 'codex');
   assert.equal(two.nodes.agent.threadId, one.nodes.agent.threadId);
   const secondReceipt = JSON.parse(two.nodes.agent.output);
-  assert.doesNotMatch(secondReceipt.instructions, /BROWSER STATE RECOVERY|relay_browser:/);
+  assert.match(secondReceipt.instructions,/relay_browser:.*stopped-task-recovery/);
   assert.equal(secondReceipt.tools.includes('relay_connections'),false);
   assert.ok(JSON.stringify(secondReceipt.input).includes(selectedInput));
   assert.deepEqual(manifest(secondReceipt.instructions).map(item => item.name), secondReceipt.tools);
   const openings = (await wire()).filter(item => ['thread/start', 'thread/resume'].includes(item.method));
   assert.deepEqual(openings.map(item => item.method), ['thread/start', 'thread/resume'], 'The legacy setting preserves the saved native thread.');
   for (const record of openings) {
-    assert.doesNotMatch(record.params.developerInstructions, /BROWSER STATE RECOVERY|relay_browser:/);
+    assert.match(record.params.developerInstructions,/relay_browser:.*stopped-task-recovery/);
     assert.doesNotMatch(record.params.developerInstructions, /relay_connections:/);
   }
 });

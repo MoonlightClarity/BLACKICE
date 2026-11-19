@@ -13,6 +13,13 @@ test('browser commands are recognized before desktop startup and mutations need 
   for (const args of [['browser', 'connect-chrome'], ['browser', 'call', '--connection=chrome-live', '--tool=click', '--arguments-file=x.json'], ['browser', 'profiles', '--source=arbitrary'], ['browser', 'tools', '--connection=x', '--connection=y']]) assert.throws(() => parseBrowserArgs(args), { code: 'BROWSER_CLI_ARGUMENTS' });
 });
 
+test('stopped-task browser discovery is an explicit CLI choice',async()=>{
+ const normal=await browserCLIRequest(parseBrowserArgs(['browser','tabs','--request-id=list-one']));
+ const recovery=await browserCLIRequest(parseBrowserArgs(['browser','tabs','--include-ownership-candidates','--request-id=recover-one']));
+ assert.equal(normal.arguments.query,undefined);
+ assert.equal(recovery.arguments.query,'stopped-task-recovery');
+});
+
 test('call arguments are JSON data and exact request IDs reach the shared tool', async t => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'blackice-browser-cli-')); t.after(() => rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'args.json'), args = { text: 'A literal $(value), `quote`, and newline\n', uid: '4_2' };

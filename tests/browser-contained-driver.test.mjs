@@ -2409,7 +2409,13 @@ test('stopped-task adoption preserves live page, typed form state, popups and du
   const before={window:tab.window,loads:windows[0].loads.length,protocol:windows[0].protocol.length};
   const listed=await browser.perform({action:'tabs'},{owner:next});
   assert.equal(listed.tabs.length,0);
-  const candidate=listed.ownershipCandidates.find(row=>row.tabId===tab.id);assert.equal(candidate.adoption.eligible,true);
+  assert.equal(Object.hasOwn(listed,'ownershipCandidates'),false);
+  const fresh=await browser.perform({action:'open',url:'https://other.example.test/new-search'},{owner:next});
+  assert.ok(driver.tabs.has(fresh.tabId));assert.deepEqual(tab.owner,previous);assert.equal(effectsChecked,0);
+  assert.equal(Object.hasOwn(fresh,'ownershipCandidates'),false);
+  const recovery=await browser.perform({action:'tabs',query:'stopped-task-recovery'},{owner:next});
+  assert.deepEqual(recovery.tabs.map(item=>item.tabId),[fresh.tabId]);
+  const candidate=recovery.ownershipCandidates.find(row=>row.tabId===tab.id);assert.equal(candidate.adoption.eligible,true);
   await assert.rejects(browser.perform({action:'snapshot',tabId:tab.id},{owner:next}),{code:'BROWSER_TAB_OWNERSHIP'});
   const args={action:'take_ownership',tabId:tab.id,expectedUrl:candidate.url,expectedDocumentId:candidate.documentId,expectedOwnerKey:candidate.ownerKey};
   const result=await browser.perform(args,{owner:next});
@@ -2467,10 +2473,16 @@ test('pending effect adoption protection survives browser persistence and restar
   const saved=restored.status().tabs.find(row=>row.tabId===tab.id);
   assert.equal(saved.uncertainEffects,true);assert.equal(saved.adoption.eligible,true);
   const next={taskId:'restored-new',runId:'new-run',nodeId:'agent'};
-  const result=await restored.changeOwnership({action:'take_ownership',tabId:saved.tabId,expectedUrl:saved.url,expectedDocumentId:saved.documentId,expectedOwnerKey:JSON.stringify([old.taskId,old.nodeId,old.runId])},'agent',next);
+  const browser=new BrowserWorkspace({driver:restored});t.after(()=>browser.close());
+  const normal=await browser.perform({action:'tabs'},{owner:next});
+  assert.deepEqual(normal.tabs,[]);assert.equal(Object.hasOwn(normal,'ownershipCandidates'),false);
+  const recovery=await browser.perform({action:'tabs',query:'stopped-task-recovery'},{owner:next});
+  const candidate=recovery.ownershipCandidates.find(row=>row.tabId===saved.tabId);assert.ok(candidate);
+  assert.equal(restored.tabs.get(saved.tabId).window,null,'discovering a restored closed window does not reopen it');
+  const result=await browser.perform({action:'take_ownership',tabId:saved.tabId,expectedUrl:candidate.url,expectedDocumentId:candidate.documentId,expectedOwnerKey:candidate.ownerKey},{owner:next});
   assert.equal(result.ownershipReceipt.adoption.inheritedEffects.uncertain,true);
   assert.equal(restored.status().tabs.find(row=>row.tabId===tab.id).inheritedEffects.uncertain,true);
-  await restored.close();
+  await browser.close();
 });
 
 test('stopped-task adoption obeys cancellation and destination capacity without navigation',async t=>{
@@ -2640,7 +2652,7 @@ test('real connector API idle owner can be adopted once by a native agent and ac
  assert.equal(windows[0].protocol.filter(row=>row.method==='Page.handleJavaScriptDialog').length,1);
  await api.jobs.update(active.id,()=>({status:'succeeded',finishedAt:new Date().toISOString(),effects:{possible:true,confirmed:true}}));
  const next={taskId:'next-native',runId:'next-run',nodeId:'agent'};
- const listed=await browser.perform({action:'tabs'},{owner:next}),candidate=listed.ownershipCandidates.find(row=>row.tabId===tab.id);
+ const listed=await browser.perform({action:'tabs',query:'stopped-task-recovery'},{owner:next}),candidate=listed.ownershipCandidates.find(row=>row.tabId===tab.id);
  assert.equal(candidate.adoption.eligible,true);
  const args={action:'take_ownership',tabId:tab.id,expectedUrl:candidate.url,expectedDocumentId:candidate.documentId,expectedOwnerKey:candidate.ownerKey};
  const result=await browser.perform(args,{owner:next});
@@ -2687,7 +2699,7 @@ test('legacy exposed owner key works through model handler and direct API withou
  assert.equal(windows[0].protocol.filter(row=>row.method==='Page.handleJavaScriptDialog').length,1);
  await api.jobs.update(active.id,()=>({status:'succeeded',finishedAt:new Date().toISOString(),effects:{possible:true,confirmed:true}}));
  const next={taskId:'next-native',runId:'next-run',nodeId:'agent'};
- const listed=await browser.perform({action:'tabs'},{owner:next}),candidate=listed.ownershipCandidates.find(row=>row.tabId===tab.id);
+ const listed=await browser.perform({action:'tabs',query:'stopped-task-recovery'},{owner:next}),candidate=listed.ownershipCandidates.find(row=>row.tabId===tab.id);
  assert.equal(candidate.adoption.eligible,true);
  const args={action:'take_ownership',tabId:tab.id,expectedUrl:candidate.url,expectedDocumentId:candidate.documentId,destinationOwnerKey:candidate.ownerKey};
  const {createBrowserToolHandler}=await import('../lib/browser.mjs'); const modelHandler=createBrowserToolHandler({browser,owner:next,maxCalls:4}); const call={name:'relay_browser',arguments:args}; const descriptor=await modelHandler.describeOperation(call); const modelResult=await modelHandler(call,{operationId:'legacy-model-adopt',operationDescriptor:descriptor}); assert.equal(modelResult.success,true,JSON.stringify(modelResult)); const result={ownershipReceipt:tab.ownershipReceipt};

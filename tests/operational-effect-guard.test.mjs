@@ -89,6 +89,18 @@ test('receipts persist across lifetimes without vetoing a new explicit browser c
   assert.equal(f.counts().dispatched,3);
 });
 
+test('an exact retained browser effect is not replayed and does not gate new reads or unrelated pages',async t=>{
+  const f=await fixture(t), guard=f.guard('tracking'), wrap=guard.wrap(f.raw);
+  const click={...args('click','retained-click'),descriptor:descriptor('submit-A',jobA)};
+  const previous=await wrap(click);
+  assert.equal((await guard.records())[0].state,'unknown');
+  assert.deepEqual(await wrap(click),previous);
+  assert.equal(f.counts().dispatched,1);
+  assert.equal((await wrap({...args('snapshot','observe-A'),descriptor:descriptor('read-A',jobA,'observe')})).success,true);
+  assert.equal((await wrap({...args('open','unrelated-open'),descriptor:descriptor('new-page',jobB,'observe')})).success,true);
+  assert.equal(f.counts().dispatched,3);
+});
+
 test('explicit simultaneous browser calls are observed without cross-task veto',async t=>{
   const f=await fixture(t),otherStore=await f.makeStore();
   const [a,b]=await Promise.all([

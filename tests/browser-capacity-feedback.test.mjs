@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BrowserWorkspace, createBrowserToolHandler } from '../lib/browser.mjs';
+import { BROWSER_TOOL, BrowserWorkspace, createBrowserToolHandler } from '../lib/browser.mjs';
+
+import { capabilityGuidance } from '../lib/tool-routing.mjs';
+import { createProviderExecutionContract } from '../lib/provider-execution-contract.mjs';
 
 const owner = { taskId: 'task', runId: 'run', nodeId: 'agent' };
 const parsed = result => JSON.parse(result.contentItems[0].text);
@@ -8,7 +11,7 @@ function fixture(t, { limit = 3, capacity = true } = {}) {
   const tabs = [
     { tabId: 'sibling-private-id', owner: { ...owner, nodeId: 'reviewer' }, suspended: false },
     { tabId: 'saved-owned', owner, suspended: true },
-    { tabId: 'other-task-private-id', owner: { ...owner, taskId: 'other-task' }, suspended: false },
+    { tabId: 'other-task-private-id', owner: { ...owner, taskId: 'other-task' }, suspended: false, url: 'https://stopped.example.test/', documentId: 'stopped-doc', adoption: {eligible:true,status:'completed'} },
     { tabId: 'personal-private-id', suspended: false },
     { tabId: 'reserved-human-id', purpose: 'chat-mode', owner, suspended: false },
     { tabId: 'firefox:external', browser: 'firefox', owner, suspended: false },
@@ -39,15 +42,32 @@ test('open reports the shared task live budget while preserving worker-scoped pa
   assert.equal(response.success, true); const result = parsed(response);
   assert.deepEqual(result.taskCapacity, { live: 2, limit: 3, remaining: 1 });
   assert.deepEqual(result.tabs.map(tab => tab.tabId), ['saved-owned', 'opened-1']);
-  assert.deepEqual(result.ownershipCandidates, [
-    { tabId: 'sibling-private-id', ownerKey: JSON.stringify(['task', 'reviewer', 'run']) },
-    { tabId: 'saved-owned', ownerKey: JSON.stringify(['task', 'agent', 'run']) },
-    { tabId: 'other-task-private-id', ownerKey: JSON.stringify(['other-task', 'agent', 'run']) },
-    { tabId: 'personal-private-id', ownerKey: null },
-    { tabId: 'opened-1', url: 'https://example.invalid/research', ownerKey: JSON.stringify(['task', 'agent', 'run']) },
-  ].map(candidate => ({ ...candidate, adoption: { eligible: false, reason: 'Owner lifecycle is unavailable.' } })), 'Ownership candidates expose identity and explicit unavailable lifecycle metadata, not page contents.');
+  assert.equal(Object.hasOwn(result,'ownershipCandidates'),false,'opening own work does not expose unrelated inventory');
   assert.doesNotMatch(JSON.stringify(result), /reserved-human-id|protected-private-id|firefox:external/);
   assert.deepEqual(f.calls.map(call => call.action), ['open'], 'Feedback must not automatically close, suspend, or navigate any page.');
+});
+
+test('fresh/recovery guidance reaches the model without replacing the saved browser catalog',()=>{
+  const contract=createProviderExecutionContract({dynamicTools:[BROWSER_TOOL],planningContractVersion:14});
+  assert.equal(contract.catalogHash, '76d38f31fe6411c52f19867fb315ae9d8b66e431883a0486ff90b697792f6da6');
+  assert.ok(BROWSER_TOOL.inputSchema.properties.query);
+  const guidance=capabilityGuidance([BROWSER_TOOL],{planningMode:'off'});
+  assert.match(guidance,/same persistent browser profile and sign-ins/);
+  assert.match(guidance,/tabs with query:"stopped-task-recovery"/);
+  assert.match(guidance,/before a conflicting repeat only/);
+});
+
+test('only an intentional tabs recovery exposes an eligible foreign identity to the model',async t=>{
+  const f=fixture(t);
+  const normal=parsed(await f.call({action:'tabs'}));
+  assert.deepEqual(normal.tabs.map(t=>t.tabId),['saved-owned']);
+  assert.equal(Object.hasOwn(normal,'ownershipCandidates'),false);
+  const recovery=parsed(await f.call({action:'tabs',query:'stopped-task-recovery'}));
+  assert.deepEqual(recovery.tabs,normal.tabs);
+  assert.deepEqual(recovery.ownershipCandidates.map(t=>[t.tabId,t.documentId]),[['other-task-private-id','stopped-doc']]);
+  assert.doesNotMatch(JSON.stringify(recovery),/sibling-private-id|personal-private-id|protected-private-id|reserved-human-id/);
+  const noRecovery=parsed(await f.call({action:'tabs',query:'example.test'}));
+  assert.equal(Object.hasOwn(noRecovery,'ownershipCandidates'),false);
 });
 
 test('limit errors preserve no-dispatch semantics and lead to usable tabs, navigate, suspend and open recovery without raising limits', async t => {

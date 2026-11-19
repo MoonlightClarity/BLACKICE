@@ -594,7 +594,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       moved.humanCreated = family || !change.owner; moved.userPinned = family || !change.owner;
       if (change.adoption) {
         const prior = moved.inheritedEffects?.sources || [];
-        moved.inheritedEffects = { uncertain: Boolean(moved.inheritedEffects?.uncertain || inheritedEffects.uncertain), sources: [...prior, inheritedEffects].slice(-64), omittedSources: (moved.inheritedEffects?.omittedSources || 0) + Math.max(0, prior.length + 1 - 64), instruction: 'Ownership transfer did not resolve or replay historical effects. Check existing outcomes before repeating a possible submission.' };
+        moved.inheritedEffects = { uncertain: Boolean(moved.inheritedEffects?.uncertain || inheritedEffects.uncertain), sources: [...prior, inheritedEffects].slice(-64), omittedSources: (moved.inheritedEffects?.omittedSources || 0) + Math.max(0, prior.length + 1 - 64), instruction: 'Ownership transfer did not resolve or replay historical effects. Check only an outcome that could conflict with the next write before repeating it; reading and unrelated work can continue.' };
       }
       moved.ownershipReceipt = receipt;
     }
