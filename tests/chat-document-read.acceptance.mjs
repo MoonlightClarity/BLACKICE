@@ -27,7 +27,9 @@ function syntheticPdf(marker) {
     'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
 }
 
-test('scripted Chat runs real nested filename search and direct PDF read, then uses returned text', {timeout:15000}, async t => {
+for (const rejected of [false,true]) test(rejected
+  ? 'scripted Chat can distinguish a found file from an unreadable PDF and report the real blocker'
+  : 'scripted Chat runs real nested filename search and direct PDF read, then uses returned text', {timeout:15000}, async t => {
   const dir = await fs.mkdtemp(path.join(tmpdir(), 'blackice-chat-find-read-'));
   let engine;
   t.after(async () => {
@@ -38,7 +40,7 @@ test('scripted Chat runs real nested filename search and direct PDF read, then u
   await fs.mkdir(cwd); await fs.mkdir(nested,{recursive:true});
   const target = path.join(nested,'Synthetic analyst resume.pdf');
   const marker = 'Marker-' + randomUUID();
-  const bytes = syntheticPdf(marker);
+  const bytes = rejected ? Buffer.from('invalid synthetic PDF\n') : syntheticPdf(marker);
   await fs.writeFile(target,bytes);
   const events = [];
 
@@ -52,6 +54,15 @@ test('scripted Chat runs real nested filename search and direct PDF read, then u
       events.push({op:'files.find',success:found.success,matches});
       assert.deepEqual(matches,[target]);
       const read = await onToolCall({name:'relay_workspace',arguments:{action:'read',path:matches[0]}});
+      if (rejected) {
+        assert.equal(read.success,false);
+        const error=read.contentItems[0].text;
+        assert.match(error,/no PDF header/i);
+        assert.match(error,/damaged or use another format/i);
+        assert.doesNotMatch(error,new RegExp(marker));
+        events.push({op:'workspace.read',success:false,target:matches[0],error});
+        return {output:'File found but not read. '+error+' Export a fresh PDF or supply a DOCX.',threadId:'synthetic-chat-document-thread'};
+      }
       const page = JSON.parse(read.contentItems[0].text);
       const text = page.pages?.[0]?.text;
       events.push({op:'workspace.read',success:read.success,target:matches[0],text});
@@ -76,8 +87,19 @@ test('scripted Chat runs real nested filename search and direct PDF read, then u
   assert.equal(run?.status,'completed',run?.error);
   assert.equal(run?.goal ?? null,null,'Chat fixture must not admit an automatic Goal');
   const result = scoreDocument({events,target,marker,output:JSON.stringify(run.output),settled:run.settled});
-  assert.equal(result.passed,true,JSON.stringify(result));
-  assert.equal(result.callsThroughUsable,2);
+  if (rejected) {
+    assert.equal(result.passed,false,'A found but unreadable file is not a successful read');
+    assert.equal(result.callsThroughUsable,null);
+    assert.equal(result.foundBeforeRead,true);
+    assert.equal(result.noShell,true);
+    assert.deepEqual(events.map(e=>[e.op,e.success]),[['files.find',true],['workspace.read',false]]);
+    assert.match(JSON.stringify(run.output),/File found but not read.*no PDF header.*damaged or use another format/i);
+    assert.match(JSON.stringify(run.output),/Export a fresh PDF or supply a DOCX/);
+    assert.doesNotMatch(JSON.stringify(run.output),new RegExp(marker));
+  } else {
+    assert.equal(result.passed,true,JSON.stringify(result));
+    assert.equal(result.callsThroughUsable,2);
+  }
   assert.deepEqual(await fs.readdir(nested),[path.basename(target)]);
   assert.deepEqual(await fs.readdir(cwd),[]);
   assert.deepEqual(await fs.readFile(target),bytes);
