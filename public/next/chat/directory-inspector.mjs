@@ -1,11 +1,11 @@
 /** On-demand diagnostic outline. Never supplies this projection to a model. */
 export function createDirectoryInspector({frame,api,getRuns}){
  const doc=frame.ownerDocument,make=(tag,value='')=>{const n=doc.createElement(tag);n.textContent=value;return n;};
- const launch=make('button','Directory');launch.type='button';launch.hidden=true;launch.title='Inspect this task’s context provenance and retained action receipts';
+ const launch=make('button','Turn diagnostics');launch.type='button';launch.hidden=true;launch.title='Inspect this task’s context provenance and retained action receipts';
  (frame.querySelector('.next-chat-head-actions')||frame).append(launch);
  const category=make('select'),search=make('input');category.setAttribute('aria-label','Directory category');for(const name of ['context','tools']){const option=make('option',name==='context'?'Context':'Tool calls');option.value=name;category.append(option);}category.value='context';search.type='search';search.maxLength=120;search.placeholder='Filter tool metadata';search.setAttribute('aria-label','Filter tool metadata');search.hidden=true;
- const dialog=make('dialog'),heading=make('h2','Directory diagnostics'),close=make('button','Close'),turn=make('select'),refresh=make('button','Refresh'),status=make('p'),tree=make('div'),more=make('button','More actions');
- dialog.className='next-directory-inspector';dialog.setAttribute('aria-label','Directory diagnostics');turn.setAttribute('aria-label','Directory turn');status.setAttribute('role','status');for(const b of [close,refresh,more])b.type='button';more.hidden=true;
+ const dialog=make('dialog'),heading=make('h2','Turn diagnostics'),close=make('button','Close'),turn=make('select'),refresh=make('button','Refresh'),status=make('p'),tree=make('div'),more=make('button','More actions');
+ dialog.className='next-directory-inspector';dialog.setAttribute('aria-label','Turn diagnostics');turn.setAttribute('aria-label','Directory turn');status.setAttribute('role','status');for(const b of [close,refresh,more])b.type='button';more.hidden=true;
  dialog.append(heading,close,turn,category,search,refresh,status,tree,more);frame.append(dialog);
  let taskId=null,generation=0,controller=null,offset=null,revision=null,destroyed=false;
  const reset=()=>{generation++;controller?.abort();controller=null;offset=null;revision=null;tree.replaceChildren();more.hidden=true;};
