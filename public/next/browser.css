@@ -230,8 +230,8 @@
 /* Folder/tab outline: indentation carries hierarchy, not nested button cards. */
 .next-browser-folder-tree .next-browser-folder-heading{gap:2px;min-height:30px}
 .next-browser-folder-tree .next-browser-folder-heading button{background:transparent;border:0;box-shadow:none;border-radius:3px}
-.next-browser-folder-tree .next-browser-folder-toggle.next-browser-icon-button,.next-browser-folder-tree .next-browser-folder-remove.next-browser-icon-button{flex:0 0 24px;width:24px;min-width:24px;padding:4px!important}
-.next-browser-folder-tree :is(.next-browser-folder-toggle,.next-browser-folder-remove) svg{width:14px;height:14px}
+.next-browser-folder-tree :is(.next-browser-folder-toggle,.next-browser-folder-child,.next-browser-folder-remove).next-browser-icon-button{flex:0 0 24px;width:24px;min-width:24px;padding:4px!important}
+.next-browser-folder-tree :is(.next-browser-folder-toggle,.next-browser-folder-child,.next-browser-folder-remove) svg{width:14px;height:14px}
 .next-browser-folder-remove{color:var(--muted)}
 .next-browser-folder-name{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .next-browser-folder-count{flex:none;padding:0 7px;color:var(--muted);font-size:10px}

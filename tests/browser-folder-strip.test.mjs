@@ -100,3 +100,28 @@ test('Move opens a named dialog as a genuine modal, retains choice through refre
  assert.equal(form.querySelector('select').value,'p');assert.equal(form.parentElement.open,true);
  await f.key(form,'Escape');assert.equal(f.$('.next-browser-folder-editor'),null);assert.equal(f.calls.length,0);
 });
+
+test('folder row creates a child under the chosen folder, reveals it, and leaves top-level creation unchanged',async t=>{
+ const f=fixture(t),add=f.$('[data-folder-control="create:c"]');
+ assert.equal(add.getAttribute('aria-label'),'New subfolder in Projects / Research');
+ assert.ok(add.querySelector('svg'));
+ assert.equal(f.$('[data-collection-id=""] .next-browser-folder-child'),null);
+ await f.click('[data-folder-control="toggle:c"]');
+ await f.click('[data-folder-control="create:c"]');
+ const form=f.$('.next-browser-folder-editor'),parent=form.querySelector('select'),name=form.querySelector('input');
+ assert.equal(form.getAttribute('aria-label'),'New subfolder in Projects / Research');
+ assert.equal(parent.value,'c');
+ name.value='Discard';
+ await f.key(form,'Escape');
+ assert.equal(f.calls.length,0);
+ assert.equal(f.$('[data-folder-control="toggle:c"]').getAttribute('aria-expanded'),'false');
+ await f.click('[data-folder-control="create:c"]');
+ const reopened=f.$('.next-browser-folder-editor');
+ reopened.querySelector('input').value='Companies';
+ await reopened.dispatch('submit');
+ assert.deepEqual(f.calls,[{browser:'relay',action:'collection_create',name:'Companies',parentCollectionId:'c'}]);
+ assert.equal(f.$('[data-folder-control="toggle:c"]').getAttribute('aria-expanded'),'true');
+ assert.equal(f.$('.next-browser-folder-editor'),null);
+ await f.click('.next-browser-folder-add');
+ assert.equal(f.$('.next-browser-folder-editor').querySelector('select').value,'');
+});

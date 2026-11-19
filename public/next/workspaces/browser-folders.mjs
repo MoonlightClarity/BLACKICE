@@ -70,19 +70,20 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   });renameDrafts.set(folder.id,input);return input;
  }
  function dismiss(){editorDialog?.close?.();editorDialog?.remove();editorDialog=null;editor?.remove();editor=null;onModalChange(false);paint();}
- function edit(tabId=null){
+ function edit(tabId=null,parentId=null){
   if(blocked())return;
   editorDialog?.close?.();editorDialog?.remove();editorDialog=null;editor?.remove();const form=el('form',null,'next-browser-folder-editor');editor=form;
-  form.setAttribute('aria-label',tabId?'Move tab to folder':'New tab folder');
-  const heading=el('strong',tabId?'Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab'):'New folder');form.append(heading);
+  const createLabel=parentId?'New subfolder in '+folderPath(collections,parentId):'New folder';
+  form.setAttribute('aria-label',tabId?'Move tab to folder':parentId?createLabel:'New tab folder');
+  const heading=el('strong',tabId?'Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab'):createLabel);form.append(heading);
   if(tabId){editorDialog=el('dialog',null,'next-chat-management-dialog next-browser-move-dialog');editorDialog.setAttribute('aria-label','Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab')+' to folder');editorDialog.append(form);editorDialog.addEventListener('cancel',event=>{event.preventDefault();if(!pending)dismiss();});}
   const parent=el('select');parent.setAttribute('aria-label',tabId?'Folder':'Parent folder');
   const none=el('option',tabId?'Unfiled':'Top level');none.value='';parent.append(none);
   for(const f of collections){const o=el('option',folderPath(collections,f.id));o.value=f.id;parent.append(o);}
   let name;if(!tabId){name=el('input');name.placeholder='Folder name';name.maxLength=200;name.required=true;name.setAttribute('aria-label','Folder name');form.append(name);}
-  parent.value=tabId?getTabs().find(t=>t.tabId===tabId)?.collectionId||'':'';form.append(parent);
+  parent.value=tabId?getTabs().find(t=>t.tabId===tabId)?.collectionId||'':parentId||'';form.append(parent);
   const save=button(tabId?'Move':'Save',()=>{});save.type='submit';form.append(save,button('Cancel',dismiss));
-  form.addEventListener('submit',async e=>{e.preventDefault();const action=tabId?'tab_collect':'collection_create';const args=tabId?{tabId,collectionId:parent.value||null}:{name:name.value,parentCollectionId:parent.value||null};if(await request(action,args))dismiss();});
+  form.addEventListener('submit',async e=>{e.preventDefault();const action=tabId?'tab_collect':'collection_create';const args=tabId?{tabId,collectionId:parent.value||null}:{name:name.value,parentCollectionId:parent.value||null};if(await request(action,args)){if(!tabId)collapsed.delete(args.parentCollectionId);dismiss();}});
   form.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(!pending)dismiss();}});
   paint();form.scrollIntoView?.({block:'nearest'});(name||parent).focus();
  }
@@ -113,7 +114,8 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
    const total=el('span',String(count(f)),'next-browser-folder-count');total.setAttribute('aria-label',count(f)+' tabs');
    const icon=el('span',null,'next-browser-folder-icon');icon.setAttribute('aria-hidden','true');icon.innerHTML=browserIconMarkup('folderOutline');
    heading.append(toggle,icon,renaming===f.id?renameField(f):label,total);
-   if(f.id){const remove=button(null,()=>void request('collection_remove',{collectionId:f.id}),'next-browser-folder-remove');remove.dataset.folderControl='remove:'+f.id;browserIconButton(remove,'close','Remove folder '+folderPath(collections,f.id),'Remove folder, keep tabs');heading.append(remove);}
+   if(f.id){const child=button(null,()=>edit(null,f.id),'next-browser-folder-child');child.dataset.folderControl='create:'+f.id;browserIconButton(child,'folder','New subfolder in '+folderPath(collections,f.id));heading.append(child);
+    const remove=button(null,()=>void request('collection_remove',{collectionId:f.id}),'next-browser-folder-remove');remove.dataset.folderControl='remove:'+f.id;browserIconButton(remove,'close','Remove folder '+folderPath(collections,f.id),'Remove folder, keep tabs');heading.append(remove);}
    group.append(heading,content);heading.title='Drag to move. Ctrl+Enter: indent. Ctrl+Shift+Enter: outdent.';
    if(f.id){heading.draggable=!blocked();heading.addEventListener('dragstart',e=>{if(e.target.closest('input,select,textarea')){e.preventDefault();e.stopPropagation();return;}if(blocked()){e.preventDefault();return;}e.stopPropagation();e.dataTransfer.setData('application/x-blackice-folder',f.id);e.dataTransfer.effectAllowed='move';});heading.addEventListener('keydown',e=>void outlineKey(e,f.id,null));}
    dropTarget(heading,f.id);dropTarget(group,f.id);
