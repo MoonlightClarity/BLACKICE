@@ -1,12 +1,13 @@
 import { stableId } from '../core/dom.mjs';
 import { replyTarget, canContinueRun } from './model.mjs';
 import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
+import {isChatAnswerDetail} from './options-model.mjs';
 
 /** Send once; the existing server executes and persists the real run.
  * Failures preserve unsent drafts, and no mutation is silently replayed.
  */
-export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', verbosity = 'balanced', planningMode, planningExecutionMode = 'automatic', cwd = '', attachmentIds=[], context, goal }) {
-  if(!['concise','balanced','detailed'].includes(verbosity))throw Error('Choose valid answer detail guidance.');
+export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', verbosity = 'auto', planningMode, planningExecutionMode = 'automatic', cwd = '', attachmentIds=[], context, goal }) {
+  if(!isChatAnswerDetail(verbosity))throw Error('Choose valid answer detail guidance.');
   const chosenPlanningMode = 'off';
   const latest=replyTarget(runs);
   planningExecutionMode=assertExecutablePlanningMode(planningExecutionMode,latest.run?.planningExecutionMode,latest.run?.workflow?.settings?.planningExecutionMode);

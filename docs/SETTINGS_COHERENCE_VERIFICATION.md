@@ -2,7 +2,7 @@
 
 Config separates General, Behavior & profile, Models, Passwords, Storage & Data, Troubleshooting, and App connections. Models separates accounts, local models, the catalog, and API setup. Operational task limits and access remain collapsed in General. Destructive and security warnings remain where needed.
 
-Response choices belong to Chat, not Config. Chat persists Reasoning, Speed and Answer detail; Answer detail is prompt guidance, not a fixed response length. Choices reach new and continued agent nodes. Config saves omit defaultEffort, defaultServiceTier and verbosity. Existing non-Chat runtime defaults remain unchanged.
+Response choices belong to Chat, not Config. Chat persists Reasoning, Speed and Answer detail. Answer detail offers Auto (no depth instruction or example) or 1–10 (a current-response depth instruction and a matching hypothetical example). It guides presentation, not reasoning effort or a fixed response length. Choices reach new and continued agent nodes, not an already-running turn. Config saves omit defaultEffort, defaultServiceTier and verbosity. Existing non-Chat runtime defaults remain unchanged.
 
 Verification for b58aac1: 312 focused Config, Chat, engine, runtime and actual HTTP provider-request tests passed. Request assertions verify explicit Chat default reasoning and standard speed suppress saved global overrides, while answer-detail guidance reaches the prompt. This checks dispatch behavior, not real-model compliance.
 

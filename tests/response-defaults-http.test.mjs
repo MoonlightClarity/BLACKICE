@@ -28,15 +28,21 @@ test('saved defaults traverse real engine and provider HTTP adapter, without cla
  assert.equal(done.nodes.agent.output,'Synthetic transport receipt.');
  const api=async(route,method,body)=>route==='/api/workflows'?body:route==='/api/runs'?engine.startRun(body):engine.continueRun(route.split('/')[3],body);
  const wait=async id=>{for(let i=0;i<1000;i++){const run=engine.getRun(id);if(run.settled)return run;await new Promise(r=>setTimeout(r,10));}throw Error('Chat did not settle');};
- const chat=await submitChat({api,runs:[],task:'Explicit Chat choices.',model:'fixture::fixture',cwd:dir,effort:'default',serviceTier:'default',verbosity:'detailed'});
+ const chat=await submitChat({api,runs:[],task:'Explicit Chat choices.',model:'fixture::fixture',cwd:dir,effort:'default',serviceTier:'default',verbosity:10});
  const first=await wait(chat.run.id);assert.equal(first.status,'completed',first.error);
  assert.equal(requests[1].reasoning_effort,undefined);assert.equal(requests[1].service_tier,undefined);
- assert.match(JSON.stringify(requests[1].messages),/Provide a well-organized, thorough response/);
- assert.equal(first.workflow.nodes.find(n=>n.type==='agent').verbosity,'detailed');
- const follow=await submitChat({api,runs:[first],task:'A concise follow-up.',model:'fixture::fixture',cwd:dir,verbosity:'concise'});
+ assert.match(JSON.stringify(requests[1].messages),/ANSWER DETAIL 10\/10.*Example for a hypothetical file-edit question.*First compare versions/);
+ assert.equal(first.workflow.nodes.find(n=>n.type==='agent').verbosity,10);
+ const follow=await submitChat({api,runs:[first],task:'A concise follow-up.',model:'fixture::fixture',cwd:dir,effort:'high',verbosity:2});
  const second=await wait(follow.run.id);assert.equal(second.status,'completed',second.error);
- assert.equal(second.workflow.nodes.find(n=>n.type==='agent').verbosity,'concise');
- assert.match(JSON.stringify(requests.at(-1).messages),/Be brief and direct/);
+ assert.equal(second.workflow.nodes.find(n=>n.type==='agent').verbosity,2);
+ assert.equal(requests.at(-1).reasoning_effort,'high');
+ assert.match(JSON.stringify(requests.at(-1).messages),/ANSWER DETAIL 2\/10.*Example for a hypothetical file-edit question.*Use the spare copy so the original stays intact/);
+ assert.doesNotMatch(JSON.stringify(requests.at(-1).messages),/ANSWER DETAIL 10\/10/);
+ const automatic=await submitChat({api,runs:[second],task:'Use Auto now.',model:'fixture::fixture',cwd:dir});
+ const third=await wait(automatic.run.id);assert.equal(third.status,'completed',third.error);
+ assert.equal(third.workflow.nodes.find(n=>n.type==='agent').verbosity,'auto');
+ assert.doesNotMatch(JSON.stringify(requests.at(-1).messages),/ANSWER DETAIL \d+\/10|Example for a hypothetical file-edit question|RESPONSE VERBOSITY DEFAULT/);
  assert.equal(settings.get().verbosity,'concise','Chat does not mutate global defaults.');
 
 });

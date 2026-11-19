@@ -4,13 +4,16 @@ import { UNKNOWN_CHAT_MODEL } from './model.mjs';
 import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
 
 export const DEFAULT_CHAT_OPTIONS=Object.freeze({
-  model:'default',effort:'default',serviceTier:'default',verbosity:'balanced',planningMode:'off',planningExecutionMode:'automatic',
+  model:'default',effort:'default',serviceTier:'default',verbosity:'auto',planningMode:'off',planningExecutionMode:'automatic',
 });
+export const CHAT_ANSWER_DETAIL_LEVELS=Object.freeze(Array.from({length:10},(_,i)=>i+1));
+export const isChatAnswerDetail=value=>value==='auto'||CHAT_ANSWER_DETAIL_LEVELS.includes(value);
 export function normalizeChatOptions(value={}){
   const model=typeof value?.model==='string'&&value.model.length<=400?value.model:'default';
   const effort=typeof value?.effort==='string'&&value.effort.length<=25?value.effort:'default';
   const serviceTier=['default','fast'].includes(value?.serviceTier)?value.serviceTier:'default';
-  const verbosity=['concise','balanced','detailed'].includes(value?.verbosity)?value.verbosity:'balanced';
+  const valueFromSelect=typeof value?.verbosity==='string'&&/^(?:[1-9]|10)$/.test(value.verbosity)?Number(value.verbosity):value?.verbosity;
+  const verbosity=isChatAnswerDetail(valueFromSelect)?valueFromSelect:'auto';
   const planningMode='off';
   const planningExecutionMode=value?.planningExecutionMode??'automatic';
   return {model,effort,serviceTier,verbosity,planningMode,planningExecutionMode};
