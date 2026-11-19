@@ -1,4 +1,4 @@
-import {browserIconButton} from './browser-usage-ui.mjs';
+import {browserIconButton,browserIconMarkup} from './browser-usage-ui.mjs';
 import {folderPath,descendants} from '../core/folder-tree.mjs';
 export function browserCollectionTree(collections,tabs){
  const map=new Map((collections||[]).map(f=>[f.id,{...f,children:[],tabs:[]}]));
@@ -25,7 +25,7 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   if(!collections.some(f=>f.id===id)||id===parentId||descendants(collections,id).has(parentId))return;
   return request('collection_move',{collectionId:id,parentCollectionId:parentId||null});
  }
- function outlineKey(e,folderId,tabId){
+ async function outlineKey(e,folderId,tabId){
   if(e.key!=='Enter'||!e.ctrlKey||e.altKey||e.metaKey||e.target.closest('input,select,textarea'))return;
   e.preventDefault();e.stopPropagation();if(blocked())return;
   const folder=collections.find(f=>f.id===folderId),tab=getTabs().find(t=>t.tabId===tabId);
@@ -35,7 +35,16 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   else{const siblings=collections.filter(f=>(f.parentId||null)===(parentId||null));
    const index=folder?siblings.findIndex(f=>f.id===folderId):siblings.length;target=siblings[index-1]?.id;
    if(!target){notice('No preceding folder to indent into. Drag onto a folder instead.');return;}}
-  if(folder)void moveFolder(folderId,target);else if(tab)void request('tab_collect',{tabId,collectionId:target});
+  const tree=host,doc=tree.ownerDocument,hadFocus=e.target===doc.activeElement;
+  const moved=folder?await moveFolder(folderId,target):tab?await request('tab_collect',{tabId,collectionId:target}):false;
+  if(destroyed||host!==tree||!tree.isConnected||tree.closest('[hidden]'))return;
+  if(moved&&collapsed.delete(target))paint();
+  // Rebuilding the busy outline temporarily disables its labels and drops focus.
+  // Restore only a previously focused control, never a newer focus outside the outline.
+  if(hadFocus&&doc.activeElement===doc.body){
+   const controls=folder?tree.querySelectorAll('[data-folder-control]'):tree.querySelectorAll('[data-tab-id]');
+   [...controls].find(n=>folder?n.dataset.folderControl==='edit:'+folderId:n.dataset.tabId===tabId)?.focus({preventScroll:true});
+  }
  }
  function dropTarget(node,parentId){
   node.addEventListener('dragover',e=>{if(blocked())return;const types=[...e.dataTransfer.types];
@@ -61,21 +70,19 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   });renameDrafts.set(folder.id,input);return input;
  }
  function dismiss(){editorDialog?.close?.();editorDialog?.remove();editorDialog=null;editor?.remove();editor=null;onModalChange(false);paint();}
- function edit(folder=null,tabId=null){
+ function edit(tabId=null){
   if(blocked())return;
   editorDialog?.close?.();editorDialog?.remove();editorDialog=null;editor?.remove();const form=el('form',null,'next-browser-folder-editor');editor=form;
-  form.setAttribute('aria-label',tabId?'Move tab to folder':folder?'Edit tab folder':'New tab folder');
-  const heading=el('strong',tabId?'Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab') :folder?'Edit folder':'New folder');form.append(heading);
+  form.setAttribute('aria-label',tabId?'Move tab to folder':'New tab folder');
+  const heading=el('strong',tabId?'Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab'):'New folder');form.append(heading);
   if(tabId){editorDialog=el('dialog',null,'next-chat-management-dialog next-browser-move-dialog');editorDialog.setAttribute('aria-label','Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab')+' to folder');editorDialog.append(form);editorDialog.addEventListener('cancel',event=>{event.preventDefault();if(!pending)dismiss();});}
   const parent=el('select');parent.setAttribute('aria-label',tabId?'Folder':'Parent folder');
   const none=el('option',tabId?'Unfiled':'Top level');none.value='';parent.append(none);
-  const excluded=folder?descendants(collections,folder.id):new Set();
-  for(const f of collections)if(!excluded.has(f.id)){const o=el('option',folderPath(collections,f.id));o.value=f.id;parent.append(o);}
-  let name;if(!tabId){name=el('input');name.value=folder?.name||'';name.placeholder='Folder name';name.maxLength=200;name.required=true;name.setAttribute('aria-label','Folder name');form.append(name);}
-  parent.value=tabId?getTabs().find(t=>t.tabId===tabId)?.collectionId||'':folder?.parentId||'';form.append(parent);
+  for(const f of collections){const o=el('option',folderPath(collections,f.id));o.value=f.id;parent.append(o);}
+  let name;if(!tabId){name=el('input');name.placeholder='Folder name';name.maxLength=200;name.required=true;name.setAttribute('aria-label','Folder name');form.append(name);}
+  parent.value=tabId?getTabs().find(t=>t.tabId===tabId)?.collectionId||'':'';form.append(parent);
   const save=button(tabId?'Move':'Save',()=>{});save.type='submit';form.append(save,button('Cancel',dismiss));
-  if(folder)form.append(button('Remove folder, keep tabs',async()=>{if(await request('collection_remove',{collectionId:folder.id}))dismiss();}));
-  form.addEventListener('submit',async e=>{e.preventDefault();const action=tabId?'tab_collect':folder?'collection_rename':'collection_create';const args=tabId?{tabId,collectionId:parent.value||null}:{...(folder?{collectionId:folder.id,expectedName:folder.name}:{}),name:name.value,parentCollectionId:parent.value||null};if(await request(action,args))dismiss();});
+  form.addEventListener('submit',async e=>{e.preventDefault();const action=tabId?'tab_collect':'collection_create';const args=tabId?{tabId,collectionId:parent.value||null}:{name:name.value,parentCollectionId:parent.value||null};if(await request(action,args))dismiss();});
   form.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(!pending)dismiss();}});
   paint();form.scrollIntoView?.({block:'nearest'});(name||parent).focus();
  }
@@ -94,20 +101,21 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   const toolbar=el('div',null,'next-browser-folder-toolbar');toolbar.append(el('strong','Tabs'),button('+ Folder',()=>edit(), 'next-browser-folder-add'));if(editor?.hidden)toolbar.append(button('Resume folder edit',()=>{editor.hidden=false;paint();editor.querySelector('input,select')?.focus();},'next-browser-folder-resume'));browserIconButton(toolbar.querySelector('.next-browser-folder-add'),'folder','New folder');host.append(toolbar);toolbar.title='Drop here to move to top level';dropTarget(toolbar,null);
   const tabRow=tab=>{const row=byId.get(tab.tabId);if(!row)return null;
    row.draggable=!blocked();row.ondragstart=e=>{if(blocked()){e.preventDefault();return;}e.dataTransfer.setData('application/x-blackice-tab',tab.tabId);e.dataTransfer.effectAllowed='move';};
-   row.onkeydown=e=>outlineKey(e,null,tab.tabId);row.oncontextmenu=e=>{e.preventDefault();edit(null,tab.tabId);};
-   row.querySelector('.next-browser-tab-move')?.remove();const move=button('Move',()=>edit(null,tab.tabId),'next-browser-tab-move');browserIconButton(move,'move','Move '+(tab.title||tab.url||'tab')+' to folder');row.append(move);return row;};
+   row.onkeydown=e=>void outlineKey(e,null,tab.tabId);row.oncontextmenu=e=>{e.preventDefault();edit(tab.tabId);};
+   row.querySelector('.next-browser-tab-move')?.remove();const move=button('Move',()=>edit(tab.tabId),'next-browser-tab-move');browserIconButton(move,'move','Move '+(tab.title||tab.url||'tab')+' to folder');row.append(move);return row;};
   const count=f=>f.tabs.length+f.children.reduce((n,c)=>n+count(c),0);
   function branch(f){
    const group=el('section',null,'next-browser-folder-group');group.dataset.collectionId=f.id;
    const heading=el('div',null,'next-browser-folder-heading'),content=el('div',null,'next-browser-folder-children');content.hidden=collapsed.has(f.id);
-   const toggle=button(content.hidden?'\u25b8':'\u25be',()=>{collapsed.has(f.id)?collapsed.delete(f.id):collapsed.add(f.id);paint();},'next-browser-folder-toggle');toggle.dataset.folderControl='toggle:'+f.id;toggle.setAttribute('aria-expanded',String(!content.hidden));toggle.setAttribute('aria-label',(content.hidden?'Expand ':'Collapse ')+f.name);
+   const toggle=button(null,()=>{collapsed.has(f.id)?collapsed.delete(f.id):collapsed.add(f.id);paint();},'next-browser-folder-toggle');toggle.dataset.folderControl='toggle:'+f.id;toggle.setAttribute('aria-expanded',String(!content.hidden));browserIconButton(toggle,content.hidden?'caretRight':'caretDown',(content.hidden?'Expand ':'Collapse ')+f.name);
    const label=f.id?button(f.name,()=>rename(f),'next-browser-folder-name next-browser-folder-menu'):el('span',f.name,'next-browser-folder-name');
    if(f.id){label.setAttribute('aria-label','Rename '+folderPath(collections,f.id));label.title='Rename folder';label.dataset.folderControl='edit:'+f.id;}
    const total=el('span',String(count(f)),'next-browser-folder-count');total.setAttribute('aria-label',count(f)+' tabs');
-   const icon=el('span',null,'next-browser-folder-icon');icon.setAttribute('aria-hidden','true');
-   heading.append(toggle,icon,renaming===f.id?renameField(f):label,total);group.append(heading,content);
-   heading.addEventListener('contextmenu',e=>{if(f.id){e.preventDefault();edit(f);}});heading.title='Drag to move. Ctrl+Enter: indent. Ctrl+Shift+Enter: outdent.';
-   if(f.id){heading.draggable=!blocked();heading.addEventListener('dragstart',e=>{if(e.target.closest('input,select,textarea')){e.preventDefault();e.stopPropagation();return;}if(blocked()){e.preventDefault();return;}e.stopPropagation();e.dataTransfer.setData('application/x-blackice-folder',f.id);e.dataTransfer.effectAllowed='move';});heading.addEventListener('keydown',e=>outlineKey(e,f.id,null));}
+   const icon=el('span',null,'next-browser-folder-icon');icon.setAttribute('aria-hidden','true');icon.innerHTML=browserIconMarkup('folderOutline');
+   heading.append(toggle,icon,renaming===f.id?renameField(f):label,total);
+   if(f.id){const remove=button(null,()=>void request('collection_remove',{collectionId:f.id}),'next-browser-folder-remove');remove.dataset.folderControl='remove:'+f.id;browserIconButton(remove,'close','Remove folder '+folderPath(collections,f.id),'Remove folder, keep tabs');heading.append(remove);}
+   group.append(heading,content);heading.title='Drag to move. Ctrl+Enter: indent. Ctrl+Shift+Enter: outdent.';
+   if(f.id){heading.draggable=!blocked();heading.addEventListener('dragstart',e=>{if(e.target.closest('input,select,textarea')){e.preventDefault();e.stopPropagation();return;}if(blocked()){e.preventDefault();return;}e.stopPropagation();e.dataTransfer.setData('application/x-blackice-folder',f.id);e.dataTransfer.effectAllowed='move';});heading.addEventListener('keydown',e=>void outlineKey(e,f.id,null));}
    dropTarget(heading,f.id);dropTarget(group,f.id);
    for(const child of f.children)content.append(branch(child));for(const tab of f.tabs){const row=tabRow(tab);if(row)content.append(row);}
    return group;

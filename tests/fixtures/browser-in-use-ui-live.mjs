@@ -14,7 +14,7 @@ app.whenReady().then(async()=>{
    if(req.url==='/action'){let body='';for await(const c of req)body+=c;const args=JSON.parse(body);calls.push(args);await browser.perform(args,{source:'user'});res.setHeader('Content-Type','application/json');res.end(JSON.stringify(driver.status()));return;}
    if(req.url==='/core/folder-tree.mjs'){res.setHeader('Content-Type','text/javascript');res.end(await fs.readFile(path.join(root,'public/next/core/folder-tree.mjs')));return;}
    if(req.url==='/browser.css'){res.setHeader('Content-Type','text/css');res.end(await fs.readFile(path.join(root,'public/next/browser.css')));return;}
-   if(req.url==='/usage.mjs'){res.setHeader('Content-Type','text/javascript');res.end(await fs.readFile(path.join(root,'public/next/workspaces/browser-usage-ui.mjs')));return;}
+   if(req.url==='/usage.mjs'||req.url==='/browser-usage-ui.mjs'){res.setHeader('Content-Type','text/javascript');res.end(await fs.readFile(path.join(root,'public/next/workspaces/browser-usage-ui.mjs')));return;}
    if(req.url==='/bridge.mjs'){res.setHeader('Content-Type','text/javascript');res.end(await fs.readFile(path.join(root,'public/next/workspaces/browser-folders.mjs')));return;}
    if(req.url==='/shell'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><link rel="stylesheet" href="/browser.css"><style>body{background:#10141b;color:#eee;font:14px sans-serif}button,input,select{background:#252d39;color:#eee;border:1px solid #687484;padding:8px}.next-browser-tab-group{display:flex}.selected{outline:2px solid #8ad}</style><div id="usage"></div><div class="next-browser-navigation"><div class="next-browser-tabs" id="tabs"></div></div><p id="notice"></p><script type="module">'+
    "import{createBrowserFolders}from'/bridge.mjs';import{browserUsageMarkup,createBrowserUsageControls}from'/usage.mjs';let state={tabs:[]},selected=null;const strip=document.querySelector('#tabs');const api=async(_p,_m,args)=>{const r=await fetch('/action',{method:'POST',body:JSON.stringify(args)});if(!r.ok)throw Error(await r.text());return r.json();};document.querySelector('#usage').innerHTML=browserUsageMarkup();const usage=createBrowserUsageControls({mount:document,api,getTab:()=>state.tabs.find(t=>t.tabId===selected),onMoveStatus:async()=>refresh(),notice:m=>document.querySelector('#notice').textContent=m});const folders=createBrowserFolders({mount:document,getTabs:()=>state.tabs,getSelected:()=>selected,isBusy:()=>false,api,refresh,notice:m=>document.querySelector('#notice').textContent=m});async function refresh(){state=await(await fetch('/status')).json();selected=state.tabs.some(t=>t.tabId===selected)?selected:state.tabs[0]?.tabId;strip.replaceChildren();for(const t of state.tabs){const row=document.createElement('div');row.className='next-browser-tab-group';const b=document.createElement('button');b.dataset.tabId=t.tabId;b.textContent=t.title||t.url;b.onclick=()=>{selected=t.tabId;api('', '',{action:'tab_select',browser:'relay',tabId:t.tabId}).then(refresh)};const close=document.createElement('button');close.textContent='Close';close.dataset.closeTab=t.tabId;close.onclick=()=>api('','',{action:'close',browser:'relay',tabId:t.tabId}).then(refresh);row.append(b,close);strip.append(row);}folders.update(state);folders.groupTabs(strip);usage.render();}window.fixture={refresh,get state(){return state}};await refresh();"+
@@ -68,13 +68,16 @@ app.whenReady().then(async()=>{
 
   await idle();await js("(()=>{const transfer=new DataTransfer();document.querySelector('[data-collection-id="+JSON.stringify(child)+"] > .next-browser-folder-heading').dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));document.querySelector('.next-browser-folder-toolbar').dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:transfer}));})()");
   await until(()=>driver.status().collections.find(f=>f.id===child).parentId===null);
-  await idle();await js("document.querySelector('[data-collection-id="+JSON.stringify(child)+"] > .next-browser-folder-heading').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,bubbles:true}))");
+  const actionSelector='[data-folder-control='+JSON.stringify('edit:'+child)+']';
+  await idle();await js("document.querySelector('[data-collection-id="+JSON.stringify(parent)+"] > .next-browser-folder-heading > .next-browser-folder-toggle').click()");
+  await js("document.querySelector("+JSON.stringify(actionSelector)+").focus();document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,bubbles:true}))");
   await until(()=>driver.status().collections.find(f=>f.id===child).parentId===parent);
-  await idle();await js("document.querySelector('[data-collection-id="+JSON.stringify(child)+"] > .next-browser-folder-heading').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,shiftKey:true,bubbles:true}))");
+  await idle();assert.equal(await js('document.activeElement.dataset.folderControl'),'edit:'+child);
+  await js("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,shiftKey:true,bubbles:true}))");
   await until(()=>driver.status().collections.find(f=>f.id===child).parentId===null);
   await idle();await js("(()=>{const transfer=new DataTransfer();document.querySelector('[data-collection-id="+JSON.stringify(child)+"] > .next-browser-folder-heading').dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));document.querySelector('[data-collection-id="+JSON.stringify(parent)+"] > .next-browser-folder-heading').dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:transfer}));})()");
   await until(()=>driver.status().collections.find(f=>f.id===child).parentId===parent);
-  report.checks.push('Actual folder subtree drag and Ctrl Enter indent/Ctrl Shift Enter outdent persist via host');
+  report.checks.push('Actual subtree drag and consecutive focused Ctrl Enter/Shift outdent persist, even into collapsed parent');
   assert.deepEqual(driver.status().tabs.map(({tabId,owner,folderId})=>({tabId,owner,folderId})),original);
   assert.equal(await js("document.querySelectorAll('[data-tab-id]').length"),2);
   assert.equal(await js("document.querySelectorAll('.next-browser-folders').length"),0);
@@ -84,22 +87,26 @@ app.whenReady().then(async()=>{
   report.checks.push('One intrinsic tabstrip, no duplicate folder panel; local collapse survives host refresh; ownership unchanged');
   await idle();await js("document.querySelector('[data-collection-id="+JSON.stringify(child)+"] .next-browser-folder-toggle').parentElement.querySelector('.next-browser-folder-menu').click();document.querySelector('.next-browser-folder-rename').value='Targets';document.querySelector('.next-browser-folder-rename').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))");
   await until(()=>driver.status().collections.some(f=>f.id===child&&f.name==='Targets'));
-  await idle();await js("document.querySelector('[data-collection-id="+JSON.stringify(child)+"] .next-browser-folder-toggle').parentElement.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true}));[...document.querySelectorAll('.next-browser-folder-editor button')].find(n=>n.textContent==='Remove folder, keep tabs').click()");
+  const removeSelector='[data-folder-control='+JSON.stringify('remove:'+child)+']';
+  await idle();assert.equal(await js("!!document.querySelector("+JSON.stringify(removeSelector+' svg')+")"),true);
+  assert.equal(await js("!!document.querySelector('.next-browser-folder-toggle svg')&&!!document.querySelector('.next-browser-folder-icon svg')"),true);
+  assert.equal(await js("document.querySelector('[data-collection-id=\"\"] .next-browser-folder-remove')===null"),true);
+  await js("document.querySelector("+JSON.stringify(removeSelector)+").click()");
   await until(()=>!driver.status().collections.some(f=>f.id===child));assert.equal(driver.status().tabs.find(t=>t.tabId===first.tabId).collectionId,parent);
   await until(()=>js("!!document.querySelector('[data-tab-id="+JSON.stringify(first.tabId)+"]')"));
   await idle();await js("document.querySelector('[data-tab-id="+JSON.stringify(first.tabId)+"]').click()");
   await until(()=>driver.status().activeTab===first.tabId);
   await idle();await js("document.querySelector('[data-close-tab="+JSON.stringify(second.tabId)+"]').click()");
   await until(()=>driver.status().tabs.length===1);assert.equal(driver.status().tabs[0].tabId,first.tabId);
-  report.checks.push('Rename/remove keeps real tabs; app preserves native select/close handlers');
+  report.checks.push('SVG inline remove and label rename preserve real tabs, native select and close handlers');
   await idle();await js('window.fixture.refresh()');await new Promise(r=>setTimeout(r,100));await fs.writeFile(path.join(out,'tabstrip.png'),(await shell.webContents.capturePage({x:0,y:0,width:1000,height:150})).toPNG());
   await js("document.querySelector('#next-browser-in-use').click()");
   await until(()=>driver.status().tabs.find(t=>t.tabId===first.tabId)?.inUse===true);
   const marked=await browser.closeTabs();assert.deepEqual(marked.skippedInUseIds,[first.tabId]);assert.equal(driver.status().tabs.length,1);
-  await until(()=>js("document.querySelector('#next-browser-in-use').textContent==='Release in-use mark'"));
+  await until(()=>js("document.querySelector('#next-browser-in-use').getAttribute('aria-label')==='Release in-use mark'"));
   await js("document.querySelector('#next-browser-in-use').click()");
   await until(()=>driver.status().tabs.find(t=>t.tabId===first.tabId)?.inUse===false);
-  await until(()=>js("document.querySelector('#next-browser-in-use').textContent==='Mark in use'"));
+  await until(()=>js("document.querySelector('#next-browser-in-use').getAttribute('aria-label')==='Mark in use'"));
   await js("document.querySelector('#next-browser-in-use').click()");
   await until(()=>driver.status().tabs.find(t=>t.tabId===first.tabId)?.inUse===true);
   report.checks.push('Production in-use UI marks/releases actual tab; close-all retains marked tab');

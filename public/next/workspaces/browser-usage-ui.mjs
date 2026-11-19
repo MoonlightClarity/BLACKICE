@@ -1,5 +1,6 @@
 const browserIconPaths={
  back:'M15 5 8 12l7 7',forward:'m9 5 7 7-7 7',reload:'M20 7v5h-5 M19 12a7 7 0 1 0-2 5',
+ folderOutline:'M3 7h6l2-3h10v16H3z',caretRight:'m9 6 6 6-6 6',caretDown:'m6 9 6 6 6-6',
  go:'M4 12h16m-6-6 6 6-6 6',plus:'M12 5v14M5 12h14',close:'m6 6 12 12M18 6 6 18',
  key:'M15 7a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM11 13l-7 7H2v-3l7-7',
  tools:'M4 6h16M4 12h16M4 18h16M8 3v6m8 0v6m-6 0v6',
@@ -13,10 +14,13 @@ const browserIconPaths={
  camera:'M3 7h5l2-3h4l2 3h5v14H3ZM16 13a4 4 0 1 0-8 0 4 4 0 0 0 8 0'
 };
 /** Fixed local SVG paths only. Labels stay on the control, never inside SVG markup. */
+export function browserIconMarkup(icon){
+ const path=browserIconPaths[icon];if(!path)throw Error('Unknown browser icon');
+ return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="'+path+'"></path></svg>';
+}
 export function browserIconButton(button,icon,label,tooltip=label){
  if(!button)return;
- const path=browserIconPaths[icon];if(!path)throw Error('Unknown browser icon');
- if(button.dataset.browserIcon!==icon){button.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="'+path+'"></path></svg>';button.dataset.browserIcon=icon;}
+ if(button.dataset.browserIcon!==icon){button.innerHTML=browserIconMarkup(icon);button.dataset.browserIcon=icon;}
  button.classList.add('next-browser-icon-button');button.setAttribute('aria-label',label);button.title=tooltip;
 }
 /** Folders organize all tabs. An explicit in-use mark is independent of task ownership. */

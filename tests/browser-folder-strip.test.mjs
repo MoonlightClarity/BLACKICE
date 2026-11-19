@@ -19,10 +19,12 @@ test('explicit move uses observed tab and existing host action; busy and destroy
  f.setBusy(true);await f.click('.next-browser-folder-add');assert.equal(f.$('.next-browser-folder-editor'),null);
  f.setBusy(false);f.folders.destroy();await f.click('.next-browser-folder-add');assert.equal(f.calls.length,1);
 });
-test('folder edits exclude descendants, preserve tabs, and never transfer ownership',async t=>{
- const f=fixture(t);await f.$('[data-collection-id="p"] .next-browser-folder-heading').dispatch('contextmenu');const select=f.$('.next-browser-folder-editor select');assert.equal(select.children.length,1);
- const remove=[...f.$('.next-browser-folder-editor').querySelectorAll('button')].find(n=>n.textContent==='Remove folder, keep tabs');await remove.dispatch('click');
- assert.deepEqual(f.calls,[{browser:'relay',action:'collection_remove',collectionId:'p'}]);assert.equal(f.data.tabs.length,2);
+test('SVG folder controls remove only the chosen folder through the existing keep-tabs action',async t=>{
+ const f=fixture(t),remove=f.$('[data-folder-control="remove:c"]');
+ assert.equal(remove.getAttribute('aria-label'),'Remove folder Projects / Research');assert.equal(remove.title,'Remove folder, keep tabs');
+ assert.ok(remove.querySelector('svg'));assert.ok(f.$('[data-folder-control="toggle:c"] svg'));assert.ok(f.$('[data-collection-id="c"] .next-browser-folder-icon svg'));
+ assert.equal(f.$('[data-collection-id=""] .next-browser-folder-remove'),null);
+ await remove.dispatch('click');assert.deepEqual(f.calls,[{browser:'relay',action:'collection_remove',collectionId:'c'}]);assert.equal(f.data.tabs.length,2);assert.equal(f.$('.next-browser-folder-editor'),null);
 });
 
 
@@ -62,7 +64,7 @@ test('leaving hides the folder editor and explicit resume preserves its unsaved 
 
 test('folder name opens rename while its disclosure alone changes expansion',async t=>{
  const f=fixture(t);const toggle=f.$('[data-folder-control="toggle:p"]');
- assert.equal(toggle.getAttribute('aria-label'),'Collapse Projects');assert.equal(toggle.textContent,'\u25be');
+ assert.equal(toggle.getAttribute('aria-label'),'Collapse Projects');assert.equal(toggle.dataset.browserIcon,'caretDown');assert.equal(toggle.getAttribute('aria-expanded'),'true');
  await f.click('[data-folder-control="edit:p"]');
  assert.equal(f.$('.next-browser-folder-rename').value,'Projects');
  assert.equal(f.$('[data-collection-id="p"] .next-browser-folder-children').hidden,false);
