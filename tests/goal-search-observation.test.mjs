@@ -173,13 +173,13 @@ test('a material objective change clears coverage and a superseded turn cannot r
 test('real attached workspace tool follows its empty first page and finds a file outside cwd',async t=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'goal-workspace-fixture-'));
  t.after(()=>fs.rm(root,{recursive:true,force:true}));
- const cwd=path.join(root,'workspace'), searchRoot=path.join(root,'outside');
- await fs.mkdir(cwd);await fs.mkdir(searchRoot);
+ const cwd=path.join(root,'workspace'), searchRoot=path.join(root,'outside'), explicitCwd=path.join(root,'other-base');
+ await fs.mkdir(cwd);await fs.mkdir(searchRoot);await fs.mkdir(explicitCwd);
  const target=path.join(searchRoot,'fixture-resume.txt');await fs.writeFile(target,'fixture');
  const query='fixture-resume', f=fixture();
  const real=(call,run)=>createWorkspaceToolHandler({cwd,runId:run.id,fileSearchScope:'fixture:root'})(call);
  let first, second;
- await f.turn({name:'relay_find_files',arguments:{query,path:searchRoot,timeoutMs:100}},async(call,run)=>{
+ await f.turn({name:'relay_find_files',arguments:{query,path:searchRoot,cwd:explicitCwd,timeoutMs:100}},async(call,run)=>{
   const now=Date.now, open=fs.opendir;let offset=0;
   Date.now=()=>now()+offset;
   fs.opendir=async(...args)=>{const dir=await open(...args);if(args[0]===searchRoot)offset=500;return dir;};
@@ -189,9 +189,9 @@ test('real attached workspace tool follows its empty first page and finds a file
  assert.deepEqual(first.matches,[]);assert.equal(first.searchComplete,false);assert.ok(first.cursor);
  assert.equal(f.goals.raw('root').lastProgressBasis,'unverified');
  await f.goals.dispatch('root');
- assert.ok(f.dispatched[0].message.includes(JSON.stringify({query,cursor:first.cursor})));
+ assert.ok(f.dispatched[0].message.includes(JSON.stringify({query,cursor:first.cursor,cwd:explicitCwd})));
  assert.doesNotMatch(f.dispatched[0].message,/execute a DIFFERENT feasible action/);
- await f.turn({name:'relay_find_files',arguments:{query,cursor:first.cursor,timeoutMs:10000}},async(call,run)=>{
+ await f.turn({name:'relay_find_files',arguments:{...f.goals.raw('root').lastSettlementAssessment.searchContinuation,timeoutMs:10000}},async(call,run)=>{
   const result=await real(call,run);assert.equal(result.success,true);second=JSON.parse(result.contentItems[0].text);return result;
  });
  assert.equal(second.matches[0].path,target);
