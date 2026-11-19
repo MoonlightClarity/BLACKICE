@@ -1,8 +1,8 @@
 # Directory in Chat
 
-**Directory Diagnostics** is an opt-in, local view of evidence retained for a selected Chat turn. It records which sources the host prepared, whether the adapter showed turn activity, which tools were attached or returned results, and the saved terminal state. A prepared source is not proof that the model used it. Prior contents of a resumed provider session are not visible from this receipt. When old events were never captured, pruned, or not retained in an archive, the view does not claim that nothing happened.
+**Directory** is an opt-in action outline for the current task. It stores pending actions, dependencies, focus and actual host receipts. Planning can propose or refine that same outline. Human edits and provider actions use the same revision, so an unseen edit cannot turn a stale effect into work on a newly selected action.
 
-Directory Diagnostics stays with its own task, including later turns in that task; an independent task starts without it. It does not supply context, add a model call, restore the retired execution loop, or override Past Chats. Personal Context is a separate skill for deciding when historical information is relevant and when to verify against current evidence.
+**Turn diagnostics** is a separate local view of retained turn evidence. Diagnostic capture records which sources the host prepared and what activity it observed. A prepared source is not proof that a model used it; a partial trace is not proof that nothing happened. Diagnostics does not supply context, add a model call, or override Past Chats. Personal Context is a separate skill for deciding when historical information is relevant.
 
 ## Historical execution design (not current behavior)
 
