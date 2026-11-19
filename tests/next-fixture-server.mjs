@@ -72,7 +72,7 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
       execution:{activeCount:1}},
     conversations:[summary,...catalog],runs,visualPlan,jobs:[],deployments:[],attachments:[],browserActions:[],
     taskHistoryStates:{},taskLifecycleMutations:[],workflowDeletes:[],
-    runtimeSettings:{defaultEffort:'medium',defaultServiceTier:'default',verbosity:'balanced',
+    runtimeSettings:{defaultEffort:'medium',defaultServiceTier:'default',
       providerIdleTimeoutMs:300000,runTimeoutMs:null,subagentsEnabled:false,maxSubagents:3},
     executionSettings:{maxConcurrentRuns:null},
     providers:[{id:'codex',displayName:'Codex',connected:true}],

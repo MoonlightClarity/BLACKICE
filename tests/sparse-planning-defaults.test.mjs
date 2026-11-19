@@ -11,7 +11,7 @@ import {RuntimeSettingsStore} from '../lib/runtime-settings.mjs';
 const lightweightDefault=policy=>PLANNING_ONTOLOGY_MODULES.filter(m=>!['subagents','time_management'].includes(m.id)).every(m=>policy.modules[m.id]===false)&&policy.modules.time_management===true;
 test('unconfigured Chat has no Directory or automatic module policy while legacy normalization remains deterministic',()=>{
  const options=normalizeChatOptions(),policy=normalizePlanningOntology();
- assert.deepEqual(options,{model:'default',effort:'default',serviceTier:'default',verbosity:'auto',planningMode:'off',planningExecutionMode:'automatic'});
+ assert.deepEqual(options,{model:'default',effort:'default',serviceTier:'default',planningMode:'off',planningExecutionMode:'automatic'});
  assert.ok(lightweightDefault(policy));assert.equal(modularCompletionEnabled(policy),false);
 });
 test('Chat ignores saved module and Directory choices without rewriting historical values',()=>{
@@ -19,7 +19,7 @@ test('Chat ignores saved module and Directory choices without rewriting historic
  assert.equal(modularCompletionEnabled(selected),true);
  for(const directoryMode of ['on','off','auto']){
   const options=normalizeChatOptions({planningOntology:selected,directoryMode,model:'fixture',effort:'high',serviceTier:'fast'});
-  assert.deepEqual(options,{model:'fixture',effort:'high',serviceTier:'fast',verbosity:'auto',planningMode:'off',planningExecutionMode:'automatic'});
+  assert.deepEqual(options,{model:'fixture',effort:'high',serviceTier:'fast',planningMode:'off',planningExecutionMode:'automatic'});
  }
  assert.equal(JSON.stringify(selected),before);
 });

@@ -36,7 +36,7 @@ for (const [id, key] of Object.entries(keys)) {
 }
 const runtime = new CodexRuntime({ isolatedHistory: true, cwd, runTimeoutMs: 180_000, requestTimeoutMs: 30_000 });
 const settings = await new RuntimeSettingsStore({ dataDir }).init();
-await settings.update({ subagentsEnabled: true, maxSubagents: 2, runTimeoutMs: 180_000, verbosity: 'concise' });
+await settings.update({ subagentsEnabled: true, maxSubagents: 2, runTimeoutMs: 180_000 });
 const engine = new HarnessEngine({ runtime, dataDir, defaultCwd: cwd });
 engine.runtimeSettings = settings;
 await engine.init();

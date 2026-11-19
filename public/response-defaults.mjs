@@ -2,13 +2,13 @@ import {REASONING_LEVELS,reasoningChoices,reasoningLabel} from './reasoning-mode
 import {serviceTierSupport} from './service-tier-model.mjs';
 const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const clone=value=>structuredClone(value);
-export function responseDefaults(settings={}){return{defaultEffort:['default',...REASONING_LEVELS].includes(settings.defaultEffort)?settings.defaultEffort:'default',defaultServiceTier:settings.defaultServiceTier==='fast'?'fast':'default',defaultContext:clone(settings.defaultContext||{preset:'model',windowTokens:null,autoCompact:true}),verbosity:['concise','balanced','detailed'].includes(settings.verbosity)?settings.verbosity:'balanced'};}
+export function responseDefaults(settings={}){return{defaultEffort:['default',...REASONING_LEVELS].includes(settings.defaultEffort)?settings.defaultEffort:'default',defaultServiceTier:settings.defaultServiceTier==='fast'?'fast':'default',defaultContext:clone(settings.defaultContext||{preset:'model',windowTokens:null,autoCompact:true})};}
 export function renderResponseDefaults(status={},state={}) {
  const values={...responseDefaults(status.runtimeSettings),...(state.draft||{})};
  const context=values.defaultContext||{},busy=state.loading||state.saving,disabled=busy?' disabled':'',fast=serviceTierSupport(status,'default','fast');
  const window=context.preset==='900k'?'900k':context.preset==='custom'?Number(context.windowTokens||0).toLocaleString()+' tokens':'Model default';
  return `<details class="configure-disclosure response-defaults" data-configure-section="response-defaults"${state.open?' open':''}>
-   <summary>Agent preferences<span>${escape(values.verbosity)}</span></summary>
+   <summary>Agent preferences</summary>
    <form id="configure-response-defaults">
      <p class="response-pref-intro">Set how BLACKICE works by default. You can still give different instructions in any conversation.</p>
      <div class="response-default-grid">
@@ -18,9 +18,6 @@ export function renderResponseDefaults(status={},state={}) {
        <label for="configure-default-service-tier">Fast mode
          <select id="configure-default-service-tier" data-response-default="defaultServiceTier" aria-describedby="configure-service-tier-note"${disabled}><option value="default"${values.defaultServiceTier==='default'?' selected':''}>Standard</option><option value="fast"${values.defaultServiceTier==='fast'?' selected':''}${fast.available?'':' disabled'}>Fast${fast.available?'':' · unavailable for this model'}</option></select>
          <small id="configure-service-tier-note">New chats only. Reasoning stays unchanged.${fast.available?'':` ${escape(fast.error)}`}</small>
-       </label>
-       <label for="configure-verbosity">Response length
-         <select id="configure-verbosity" data-response-default="verbosity"${disabled}>${[['concise','Concise'],['balanced','Balanced'],['detailed','Detailed']].map(([value,label])=>`<option value="${value}"${values.verbosity===value?' selected':''}>${label}</option>`).join('')}</select>
        </label>
      </div>
      <details class="response-context-advanced"><summary>Advanced context capacity <span>${escape(window)}</span></summary>
@@ -45,7 +42,6 @@ export function createResponseDefaults({getSettings,api,onChange=()=>{},onSaved=
  function input(target){const key=target?.dataset?.responseDefault;if(!key)return false;if(closed||state.loading||state.saving)return true;const draft=ensure();state.receipt='';state.error='';
   if(key==='defaultEffort'){if(!['default',...REASONING_LEVELS].includes(target.value)){state.error='Choose a valid reasoning level.';changed();return true;}draft.defaultEffort=target.value;keys.add('defaultEffort');}
   else if(key==='defaultServiceTier'){if(!['default','fast'].includes(target.value)){state.error='Choose Standard or Fast mode.';changed();return true;}draft.defaultServiceTier=target.value;keys.add('defaultServiceTier');}
-  else if(key==='verbosity'){if(!['concise','balanced','detailed'].includes(target.value)){state.error='Choose a verbosity level.';changed();return true;}draft.verbosity=target.value;keys.add('verbosity');}
   else if(['preset','windowTokens','autoCompact'].includes(key)){const context=draft.defaultContext;if(key==='preset'){if(!['model','900k','custom'].includes(target.value))return true;context.preset=target.value;context.windowTokens=target.value==='model'?null:target.value==='900k'?900000:context.windowTokens||900000;contextKeys.add('preset');contextKeys.add('windowTokens');}else if(key==='windowTokens'){context.windowTokens=target.value;contextKeys.add('windowTokens');contextKeys.add('preset');}else{context.autoCompact=Boolean(target.checked);contextKeys.add('autoCompact');}keys.add('defaultContext');}else return false;
   revision++;state.dirty=true;changed();return true;
  }

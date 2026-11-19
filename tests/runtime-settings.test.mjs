@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { RuntimeSettingsStore,validateRuntimeSettings } from '../lib/runtime-settings.mjs';
 import {normalizePlanningOntology} from '../public/planning-module-policy.mjs';
-const defaults = { codexHistory:'codex', runTimeoutMs:null, providerIdleTimeoutMs:300000, defaultEffort:'default', defaultServiceTier:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, verbosity:'balanced', subagentsEnabled:true, maxSubagents:3, connectedGmail:false, executionGuardrails:false, planningOntology:normalizePlanningOntology(), hiddenModelProviders:[] };
+const defaults = { codexHistory:'codex', runTimeoutMs:null, providerIdleTimeoutMs:300000, defaultEffort:'default', defaultServiceTier:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, subagentsEnabled:true, maxSubagents:3, connectedGmail:false, executionGuardrails:false, planningOntology:normalizePlanningOntology(), hiddenModelProviders:[] };
 const prefs = codexHistory => ({ ...defaults, codexHistory });
 
 async function settingsStore(t,options={}){
@@ -61,8 +61,8 @@ test('Fast defaults persist independently from reasoning and reject invalid upda
 test('serialized compatibility saves publish each durable preference value and invalid updates cannot poison the queue',async t=>{
   const{store}=await settingsStore(t),events=[];store.on('updated',value=>events.push(value));
   await assert.rejects(store.update({codexHistory:'relay',unexpected:true}),{code:'RUNTIME_SETTINGS_INVALID'});
-  const values=await Promise.all([store.update({...prefs('codex'),verbosity:'concise'}),store.update({...prefs('relay'),verbosity:'detailed'}),store.update(prefs('codex'))]);
-  assert.deepEqual(values,[{...prefs('codex'),verbosity:'concise'},{...prefs('codex'),verbosity:'detailed'},prefs('codex')]);assert.deepEqual(events,values);assert.deepEqual(store.get(),prefs('codex'));assert.deepEqual(JSON.parse(await fs.readFile(store.file,'utf8')),prefs('codex'));
+  const values=await Promise.all([store.update({...prefs('codex'),providerIdleTimeoutMs:61000}),store.update({...prefs('relay'),providerIdleTimeoutMs:62000}),store.update(prefs('codex'))]);
+  assert.deepEqual(values,[{...prefs('codex'),providerIdleTimeoutMs:61000},{...prefs('codex'),providerIdleTimeoutMs:62000},prefs('codex')]);assert.deepEqual(events,values);assert.deepEqual(store.get(),prefs('codex'));assert.deepEqual(JSON.parse(await fs.readFile(store.file,'utf8')),prefs('codex'));
 });
 
 test('a failed atomic replacement keeps prior preferences and file bytes, cleans staging and permits a later save',async t=>{
@@ -140,14 +140,14 @@ test('retired subagent preferences load as defaults while explicit internal cont
   assert.equal(restored.get().subagentsEnabled,true);
   assert.equal(restored.get().maxSubagents,3);
   assert.equal(await fs.readFile(store.file,'utf8'),original,'startup does not rewrite historical preferences');
-  await restored.update({verbosity:'detailed'});
-  assert.deepEqual(JSON.parse(await fs.readFile(store.file,'utf8')),{...defaults,verbosity:'detailed'});
-  const updated=await Promise.all([restored.update({subagentsEnabled:false}),restored.update({verbosity:'concise'}),restored.update({maxSubagents:4})]);
+  await restored.update({runTimeoutMs:64000});
+  assert.deepEqual(JSON.parse(await fs.readFile(store.file,'utf8')),{...defaults,runTimeoutMs:64000});
+  const updated=await Promise.all([restored.update({subagentsEnabled:false}),restored.update({maxSubagents:4})]);
   assert.equal(updated.at(-1).maxSubagents,4);
-  assert.deepEqual({subagentsEnabled:restored.get().subagentsEnabled,verbosity:restored.get().verbosity,maxSubagents:restored.get().maxSubagents},{subagentsEnabled:false,verbosity:'concise',maxSubagents:4});
+  assert.deepEqual({subagentsEnabled:restored.get().subagentsEnabled,maxSubagents:restored.get().maxSubagents},{subagentsEnabled:false,maxSubagents:4});
   assert.deepEqual(validateRuntimeSettings({subagentsEnabled:false,maxSubagents:1}),{subagentsEnabled:false,maxSubagents:1},'runtime capability controls still validate independently');
   const restarted=await new RuntimeSettingsStore({dataDir}).init();t.after(()=>restarted.close());
-  assert.deepEqual(restarted.get(),{...defaults,verbosity:'concise'});
+  assert.deepEqual(restarted.get(),{...defaults,runTimeoutMs:64000});
   for(const patch of [{subagentsEnabled:'true'},{subagentsEnabled:null},{verbosity:'verbose'},{verbosity:0},{maxSubagents:0},{maxSubagents:9},{maxSubagents:'4'},{maxSubagents:2.5}]){
     const prior=restored.get();await assert.rejects(restored.update(patch),{code:'RUNTIME_SETTINGS_INVALID'});assert.deepEqual(restored.get(),prior);
   }

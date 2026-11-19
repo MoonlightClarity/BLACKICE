@@ -377,7 +377,7 @@ test('Stop compression stays scoped to the original operation and a cancel ackno
 });
 
 test('saved default context round-trips only on explicit runtime Save and keeps unrelated preferences',async t=>{
-  const dom=planningDOM(t),status=info(),calls=[],runtime={defaultEffort:'high',defaultServiceTier:'default',verbosity:'balanced',providerIdleTimeoutMs:300000,runTimeoutMs:null,maxSubagents:3,subagentsEnabled:false,connectedGmail:true,executionGuardrails:false,defaultContext:{preset:'900k',autoCompact:false,headroomTokens:2048}};
+  const dom=planningDOM(t),status=info(),calls=[],runtime={defaultEffort:'high',defaultServiceTier:'default',providerIdleTimeoutMs:300000,runTimeoutMs:null,maxSubagents:3,subagentsEnabled:false,connectedGmail:true,executionGuardrails:false,defaultContext:{preset:'900k',autoCompact:false,headroomTokens:2048}};
   const api=async(route,method='GET',body)=>{calls.push({route,method,body});if(route==='/api/status')return{...status,runtimeSettings:structuredClone(runtime)};if(route==='/api/runtime/settings'){if(method==='POST')Object.assign(runtime,structuredClone(body));return structuredClone(runtime);}if(route==='/api/execution/settings')return{maxConcurrentRuns:null};throw Error('Unexpected default-context fixture route');};
   const workspace=createSettingsWorkspace({mount:dom.mount,api,getStatus:()=>status,events:{subscribe:()=>()=>{}}});t.after(()=>workspace.destroy());workspace.enter();
   await until(()=>dom.$('#next-runtime-context-preset').value==='900k');
@@ -391,7 +391,7 @@ test('saved default context round-trips only on explicit runtime Save and keeps 
   assert.deepEqual(writes[0].body.defaultContext,{preset:'extended',windowTokens:null,autoCompact:false,headroomTokens:2048});
   assert.equal(writes[0].body.connectedGmail,true);
   for(const key of ['defaultEffort','defaultServiceTier','verbosity'])assert.equal(Object.hasOwn(writes[0].body,key),false,'Config omits response choice '+key);
-  assert.equal(runtime.defaultEffort,'high');assert.equal(runtime.defaultServiceTier,'default');assert.equal(runtime.verbosity,'balanced');
+  assert.equal(runtime.defaultEffort,'high');assert.equal(runtime.defaultServiceTier,'default');assert.equal(Object.hasOwn(runtime,'verbosity'),false);
   assert.equal(runtime.maxSubagents,3);assert.equal(runtime.subagentsEnabled,false);
   assert.deepEqual(runtime.defaultContext,{preset:'extended',windowTokens:null,autoCompact:false,headroomTokens:2048});
   workspace.leave();workspace.enter();await tick();await tick();assert.equal(preset.value,'extended');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSubagentToolHandler, SUBAGENT_TOOL, verbosityInstruction } from '../lib/subagents.mjs';
+import { createSubagentToolHandler, SUBAGENT_TOOL } from '../lib/subagents.mjs';
 
 const delegate = tasks => ({ name: SUBAGENT_TOOL.name, arguments: { tasks: tasks.map(id => ({ id, prompt: 'Work only on independent part ' + id })) } });
 const receipt = value => JSON.parse(value.contentItems[0].text);
@@ -13,12 +13,12 @@ test('subagents run bounded parallel work with inherited model, workspace, ephem
     active--;
     return {output:'Completed assigned part: '+options.prompt.match(/YOUR ASSIGNED TASK:\n(.*)/)?.[1]};
   }};
-  const handler=createSubagentToolHandler({runtime,cwd:'C:\\work',model:'codex-model',effort:'high',serviceTier:'fast',maxParallel:2,runInput:'Original request',verbosity:'detailed',onEvent:event=>events.push(event)});
+  const handler=createSubagentToolHandler({runtime,cwd:'C:\\work',model:'codex-model',effort:'high',serviceTier:'fast',maxParallel:2,runInput:'Original request',onEvent:event=>events.push(event)});
   const result=receipt(await handler(delegate(['one','two','three','four','five'])));
   assert.equal(result.completed,5);assert.equal(result.maxParallel,2);assert.equal(result.allCompleted,true);
   assert.equal(peak,2);assert.equal(calls.length,5);
   assert.ok(calls.every(call=>call.cwd==='C:\\work' && call.model==='codex-model' && call.effort==='high' && call.serviceTier==='fast' && call.codexHistory==='relay'));
-  assert.ok(calls.every(call=>call.prompt.includes('Original request') && call.prompt.includes('thorough')));
+  assert.ok(calls.every(call=>call.prompt.includes('Original request') && !call.prompt.includes('RESPONSE VERBOSITY DEFAULT')));
   assert.ok(events.filter(event=>event.status==='completed').length===5);
   assert.ok(result.results.every(item=>item.status==='completed'&&item.output.includes(item.id)));
 });
@@ -63,14 +63,11 @@ test('cancellation reaches children and queued work is never reported as complet
   assert.equal(result.allCompleted,false);
 });
 
-test('no recursive tool is supplied to children, and verbosity is a default rather than an override', async () => {
+test('no recursive tool is supplied to children', async () => {
   let childTools=[];
   const handler=createSubagentToolHandler({runtime:{runAgent:async options=>{childTools=options.dynamicTools;return {output:'done'};}},cwd:'C:\\work',createTools:()=>({tools:[{name:'relay_workspace'}],onToolCall:()=>({})})});
   assert.equal(receipt(await handler(delegate(['a','b']))).completed,2);
   assert.deepEqual(childTools.map(tool=>tool.name),['relay_workspace']);
-  assert.match(verbosityInstruction('concise'),/brief/);
-  assert.match(verbosityInstruction('detailed'),/thorough/);
-  assert.match(verbosityInstruction('balanced'),/specific instruction in the current user request takes precedence/);
 });
 
 test('child execution receipts retain measured usage and distinguish failed tool calls from successful ones', async () => {

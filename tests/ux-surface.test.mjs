@@ -26,13 +26,13 @@ test('everyday context controls are automatic and advanced capacity remains opti
  assert.match(context,/Automatically|managed automatically|Continuity is managed automatically/i);
  assert.ok(!context.includes('data-context-option="autoCompact"'));
  assert.match(context,/Advanced context capacity/);
- const settings=renderResponseDefaults({runtimeSettings:{defaultEffort:'default',defaultContext:{preset:'model',autoCompact:true},verbosity:'balanced',subagentsEnabled:true,maxSubagents:3}},{});
+ const settings=renderResponseDefaults({runtimeSettings:{defaultEffort:'default',defaultContext:{preset:'model',autoCompact:true},subagentsEnabled:true,maxSubagents:3}},{});
  assert.match(settings,/Agent preferences/);
  assert.match(settings,/Advanced context capacity/);
  assert.ok(!settings.includes('data-response-default="autoCompact"'));
  assert.match(settings,/routine context compaction automatically/);
  assert.doesNotMatch(settings,/Parallel workers|subagents|parallel agents/i);
- assert.match(settings,/Response length/);
+ assert.doesNotMatch(settings,/Response length/);
 });
 
 test('new identity markup is limited to presentation and keeps durable Relay identifiers',async()=>{

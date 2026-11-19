@@ -10,7 +10,7 @@ const status=()=>({connected:true,authenticated:true,defaultModelSelection:'fixt
   {id:'fixture::model',displayName:'Fixture',available:true},{id:'native-model',displayName:'Native',available:true}],execution:{activeCount:0}});
 async function fixture(t,override){
   const dom=planningDOM(t),calls=[],info=status();
-  const runtime={defaultEffort:'medium',defaultServiceTier:'default',verbosity:'balanced',providerIdleTimeoutMs:300000,runTimeoutMs:null,subagentsEnabled:false,maxSubagents:3};
+  const runtime={defaultEffort:'medium',defaultServiceTier:'default',providerIdleTimeoutMs:300000,runTimeoutMs:null,subagentsEnabled:false,maxSubagents:3};
   const api=async(route,method='GET',body)=>{
     calls.push({route,method,body});const custom=override?.({route,method,body,runtime,info});
     if(custom!==undefined)return custom;

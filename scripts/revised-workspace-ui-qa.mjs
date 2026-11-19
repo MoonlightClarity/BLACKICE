@@ -844,7 +844,7 @@ async function interfaceJourney({ api, app, runtime, cdp, report, unavailableRun
   await click('#workspace-modes [data-mode="configure"]'); await waitVisible('[data-configure-section="response-defaults"] > summary');
   if (!await evaluate(() => document.querySelector('[data-configure-section="response-defaults"]').open)) await click('[data-configure-section="response-defaults"] > summary');
   await waitVisible('#configure-default-effort');
-  await sampleDropdowns('settings', ['#configure-default-effort', '#configure-verbosity', '#configure-max-subagents', '#configure-default-context']);
+  await sampleDropdowns('settings', ['#configure-default-effort', '#configure-max-subagents', '#configure-default-context']);
   await click('#workspace-modes [data-mode="view"]'); await waitVisible('#mission-task'); assert.ok(await preserved());
 
   await menu('models-connections'); await waitVisible('#connection-default-model');

@@ -37,7 +37,7 @@ test('current control tools advertise and persist Extended through runtime_set/g
   const described = await invoke({ action: 'describe' });
   assert.equal(described.success, true);
   assert.ok(described.value.tool.inputSchema.properties.runtime.properties.defaultContext.properties.preset.enum.includes('extended'));
-  assert.equal(CONTROL_SCHEMA_VERSION,13);
+  assert.equal(CONTROL_SCHEMA_VERSION,14);
   const saved = await invoke({ action: 'runtime_set', runtime: { defaultContext: { preset: 'extended', autoCompact: true } } });
   assert.equal(saved.success, true); assert.deepEqual(saved.value.defaultContext, { preset: 'extended', windowTokens: null, autoCompact: true });
   assert.deepEqual((await invoke({ action: 'runtime_get' })).value.defaultContext, saved.value.defaultContext);

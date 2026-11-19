@@ -47,14 +47,14 @@ test('visibility survives restart and independent partial preference updates wit
 
 test('invalid visibility updates preserve saved preferences and the next valid hide or restore still saves', async t => {
   const { settings } = await fixture(t);
-  await settings.update({ hiddenModelProviders: ['codex'], verbosity: 'detailed' });
+  await settings.update({ hiddenModelProviders: ['codex'] });
   const before = await fs.readFile(settings.file, 'utf8');
   for (const hiddenModelProviders of [null, ['valid', 'api::model'], { codex: true }]) {
     await assert.rejects(settings.update({ hiddenModelProviders }), { code: 'RUNTIME_SETTINGS_INVALID' });
     assert.equal(await fs.readFile(settings.file, 'utf8'), before);
   }
   await settings.update({ hiddenModelProviders: ['saved_api'] });
-  assert.equal(settings.get().verbosity, 'detailed'); assert.deepEqual(settings.get().hiddenModelProviders, ['saved_api']);
+  assert.deepEqual(settings.get().hiddenModelProviders, ['saved_api']);
 });
 
 test('legacy preferences show every provider without rewriting the saved file at startup', async t => {

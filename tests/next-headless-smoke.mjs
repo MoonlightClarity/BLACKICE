@@ -672,10 +672,11 @@ try {
   await evaluate('document.querySelector(".next-tab[data-space=settings]").click(); true');
   await until(()=>evaluate('Boolean(document.querySelector("#next-settings-model"))'),'Settings workspace');
   counts.settings=true;
-  await until(()=>evaluate('Boolean(document.querySelector("#next-runtime-effort option[value=high]"))'),'Runtime preference choices');
-  await evaluate('document.querySelector("#next-runtime-verbosity").value="detailed";document.querySelector("#next-runtime-settings-form").requestSubmit();true');
+  await until(()=>evaluate('Boolean(document.querySelector("#next-runtime-idle"))'),'Runtime task limits');
+  assert.equal(await evaluate('document.querySelector("#next-runtime-verbosity")===null'),true);
+  await evaluate('document.querySelector("#next-runtime-idle").value="7";document.querySelector("#next-runtime-settings-form").requestSubmit();true');
   await until(()=>fixture.state.settingsMutations.some(item=>item.path==='/api/runtime/settings'),'Runtime preferences saved');
-  assert.equal(fixture.state.runtimeSettings.verbosity,'detailed');
+  assert.equal(fixture.state.runtimeSettings.providerIdleTimeoutMs,420000);
   assert.equal(fixture.state.settingsMutations.filter(item=>item.path==='/api/runtime/settings').length,1);
   assert.equal(fixture.state.settingsMutations.filter(item=>item.path==='/api/execution/settings').length,0);
   assert.equal(await evaluate('document.querySelector("#next-execution-limit")===null && document.querySelector("#next-execution-legacy")===null'),true);

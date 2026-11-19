@@ -44,7 +44,7 @@ try {
   const status = await runtime.start(); receipt.runtime = { connected: status.connected, authenticated: status.authenticated, version: status.version, defaultModel: status.defaultModel };
   check('authenticatedRuntime', status.connected && status.authenticated); check('requestedModelAvailable', status.models.some(item => (item.model || item.id) === model));
   app = await createHarnessServer({ port: 0, dataDir, defaultCwd: cwd, runtime, desktop: new NoDesktop(), autoAttachDesktop: false, maxConcurrentRuns: 1 });
-   await app.runtimeSettings.update({ subagentsEnabled: false, defaultEffort: 'low', runTimeoutMs: 180000, verbosity: 'concise' });
+   await app.runtimeSettings.update({ subagentsEnabled: false, defaultEffort: 'low', runTimeoutMs: 180000 });
   url = await app.listen(); const home = await fetch(url); cookie = home.headers.get('set-cookie').split(';', 1)[0]; await home.arrayBuffer();
   if (!previousReceipt) {
   const definition = {

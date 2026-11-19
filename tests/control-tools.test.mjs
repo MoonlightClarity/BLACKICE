@@ -171,7 +171,7 @@ test('agents read persistent history and legacy preference input cannot change a
   const context=await fixture(t,async options=>{
     assert.equal(options.codexHistory,'codex');
     assert.equal((await call(options,{action:'catalog'})).runtimeSettings.codexHistory,'codex');
-    assert.deepEqual(await call(options,{action:'runtime_get'}),{codexHistory:'codex',runTimeoutMs:null,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},verbosity:'balanced',subagentsEnabled:true,maxSubagents:3,connectedGmail:false,executionGuardrails:false,planningOntology:DEFAULT_PLANNING_ONTOLOGY,hiddenModelProviders:[]});
+    assert.deepEqual(await call(options,{action:'runtime_get'}),{codexHistory:'codex',runTimeoutMs:null,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},subagentsEnabled:true,maxSubagents:3,connectedGmail:false,executionGuardrails:false,planningOntology:DEFAULT_PLANNING_ONTOLOGY,hiddenModelProviders:[]});
     await call(options,{action:'runtime_set',runtime:{codexHistory:'invalid'}},false);
     chosen=await call(options,{action:'runtime_set',runtime:{codexHistory:'relay'}});
     assert.equal(chosen.codexHistory,'codex');
@@ -206,7 +206,7 @@ test('agents patch user-selected durations through the real tool without changin
 
 test('parallel agent runtime patches merge independently and cancellation cannot change the saved preferences',async t=>{
   const {app,cwd}=await fixture(t),make=signal=>createControlToolHandler({engine:app.engine,validateWorkflow,run:{id:'duration-control',cwd},nodeId:'agent',signal}),a=make(new AbortController().signal),b=make(new AbortController().signal);
-  const results=await Promise.all([a({name:'relay_control',arguments:{action:'runtime_set',runtime:{runTimeoutMs:60000}}}),b({name:'relay_control',arguments:{action:'runtime_set',runtime:{codexHistory:'codex'}}})]);assert.ok(results.every(item=>item.success));assert.deepEqual(app.runtimeSettings.get(),{codexHistory:'codex',runTimeoutMs:60000,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},verbosity:'balanced',subagentsEnabled:true,maxSubagents:3,connectedGmail:false,executionGuardrails:false,planningOntology:DEFAULT_PLANNING_ONTOLOGY,hiddenModelProviders:[]});
+  const results=await Promise.all([a({name:'relay_control',arguments:{action:'runtime_set',runtime:{runTimeoutMs:60000}}}),b({name:'relay_control',arguments:{action:'runtime_set',runtime:{codexHistory:'codex'}}})]);assert.ok(results.every(item=>item.success));assert.deepEqual(app.runtimeSettings.get(),{codexHistory:'codex',runTimeoutMs:60000,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},subagentsEnabled:true,maxSubagents:3,connectedGmail:false,executionGuardrails:false,planningOntology:DEFAULT_PLANNING_ONTOLOGY,hiddenModelProviders:[]});
   const cancelled=new AbortController();cancelled.abort();assert.equal((await make(cancelled.signal)({name:'relay_control',arguments:{action:'runtime_set',runtime:{runTimeoutMs:null}}})).success,false);assert.equal(app.runtimeSettings.get().runTimeoutMs,60000);
 });
 
@@ -220,14 +220,14 @@ test('agents can save future reasoning and 900k defaults without changing the ac
   const started=context.app.engine.startRun({workflow:graph('default-control-chat'),input:{task:'Set future default reasoning and context.',cwd:context.cwd}}),done=await context.settled(started.id);assert.equal(done.status,'completed',done.error);assert.equal(done.runtimeSettings.defaultEffort,'default');assert.equal(context.app.runtimeSettings.get().defaultEffort,'ultra');assert.equal(context.app.runtimeSettings.get().defaultContext.windowTokens,900000);
 });
 
-test('agents can configure and inspect optional delegation and verbosity without changing the admitted turn',async t=>{
+test('agents can configure and inspect optional delegation without changing the admitted turn',async t=>{
  const context=await fixture(t,async options=>{
   const schema=options.dynamicTools.find(tool=>tool.name==='relay_control').inputSchema.properties.runtime.properties;
-  assert.deepEqual(schema.verbosity.enum,['concise','balanced','detailed']);
+  assert.equal(Object.hasOwn(schema,'verbosity'),false);
   assert.equal(schema.maxSubagents.maximum,8);
   assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_delegate'),false);
-  const saved=await call(options,{action:'runtime_set',runtime:{subagentsEnabled:true,maxSubagents:4,verbosity:'detailed'}});
-  assert.equal(saved.subagentsEnabled,true);assert.equal(saved.maxSubagents,4);assert.equal(saved.verbosity,'detailed');
+  const saved=await call(options,{action:'runtime_set',runtime:{subagentsEnabled:true,maxSubagents:4}});
+  assert.equal(saved.subagentsEnabled,true);assert.equal(saved.maxSubagents,4);
   assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_delegate'),false,'tools for active turns are immutable');
   return{output:'Preferences saved',threadId:'delegation-settings'};
  });
@@ -236,5 +236,5 @@ test('agents can configure and inspect optional delegation and verbosity without
  assert.equal(done.status,'completed',done.error);
  assert.equal(done.runtimeSettings.subagentsEnabled,false);
  const settings=context.app.runtimeSettings.get();
- assert.equal(settings.subagentsEnabled,true);assert.equal(settings.maxSubagents,4);assert.equal(settings.verbosity,'detailed');
+ assert.equal(settings.subagentsEnabled,true);assert.equal(settings.maxSubagents,4);
 });

@@ -129,7 +129,7 @@ export async function runAdvocacyCase({ runtime, root, item, planningMode = 'ont
   const browser = createFormBrowser(item), connections = fixtureConnections(), calls = [];
   const tasks = await new TaskStateStore({ dataDir }).init();
   const settings = await new RuntimeSettingsStore({ dataDir }).init();
-  await settings.update({ subagentsEnabled: false, runTimeoutMs, verbosity: 'concise' });
+  await settings.update({ subagentsEnabled: false, runTimeoutMs });
   let app, engine;
   if (fullPlanning) {
     // The caller owns this runtime across cases. Use the real app's service

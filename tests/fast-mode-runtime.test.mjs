@@ -104,7 +104,7 @@ test('the browser can load the Fast capability helper from the actual server', a
 });
 
 test('Chat Mode response defaults reach actual dispatch and explicit reasoning stays authoritative',async t=>{
- const f=await fixture(t),engine=await f.open();await f.settings.update({defaultEffort:'max',verbosity:'concise',providerIdleTimeoutMs:120000,runTimeoutMs:240000});
- const graph=workflow();delete graph.nodes[1].effort;const run=await f.settle(engine,engine.startRun({workflow:graph,input:'Report the fixture result.',planningMode:'off'}).id);assert.equal(run.status,'completed');const call=f.runtime.calls.at(-1);assert.equal(call.effort,'max');assert.equal(call.providerIdleTimeoutMs,120000);assert.equal(call.timeoutMs,240000);assert.match(call.prompt,/Be brief and direct/);
- await f.settings.update({defaultEffort:'default',verbosity:'detailed'});const explicit=await f.settle(engine,engine.startRun({workflow:workflow(),input:'Explicit model choice.',planningMode:'off'}).id);assert.equal(explicit.status,'completed');assert.equal(f.runtime.calls.at(-1).effort,'max');assert.match(f.runtime.calls.at(-1).prompt,/well-organized, thorough response/);
+ const f=await fixture(t),engine=await f.open();await f.settings.update({defaultEffort:'max',providerIdleTimeoutMs:120000,runTimeoutMs:240000});
+ const graph=workflow();delete graph.nodes[1].effort;const run=await f.settle(engine,engine.startRun({workflow:graph,input:'Report the fixture result.',planningMode:'off'}).id);assert.equal(run.status,'completed');const call=f.runtime.calls.at(-1);assert.equal(call.effort,'max');assert.equal(call.providerIdleTimeoutMs,120000);assert.equal(call.timeoutMs,240000);assert.doesNotMatch(call.prompt,/RESPONSE VERBOSITY DEFAULT|ANSWER DETAIL/);
+ await f.settings.update({defaultEffort:'default'});const explicit=await f.settle(engine,engine.startRun({workflow:workflow(),input:'Explicit model choice.',planningMode:'off'}).id);assert.equal(explicit.status,'completed');assert.equal(f.runtime.calls.at(-1).effort,'max');assert.doesNotMatch(f.runtime.calls.at(-1).prompt,/RESPONSE VERBOSITY DEFAULT|ANSWER DETAIL/);
 });

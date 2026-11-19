@@ -80,7 +80,7 @@ export async function createOutcomeApp({ setup, modules, root }) {
   const app = await modules.createHarnessServer({ runtime: setup.runtime, port: 0, dataDir: path.join(root, 'harness-profile'),
     defaultCwd: path.join(root, 'cases'), remoteAccess: false, maxConcurrentRuns: 1, autoAttachDesktop: false });
   try {
-    await app.runtimeSettings.update({ subagentsEnabled: false, runTimeoutMs: FREE_EVALUATION_BUDGETS.runTimeoutMs, verbosity: 'concise' });
+    await app.runtimeSettings.update({ subagentsEnabled: false, runTimeoutMs: FREE_EVALUATION_BUDGETS.runTimeoutMs });
 
     const services = planningServiceEvidence(app);
     if (!services.taskViabilityAttached || !services.responseCycleAttached || !services.planningRuntimeAttached || !services.planningStoreAttached || services.serverListening) throw Error('Production Planning services must be attached without listening.');

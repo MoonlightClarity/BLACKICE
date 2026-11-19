@@ -39,6 +39,23 @@ test('current native session without tool support continues without catalog reje
  const run=engine.startRun({workflow:graph,input:'Answer in text'});await engine.executions.get(run.id);const first=engine.getRun(run.id);assert.equal(first.status,'completed',first.error);assert.equal((runtime.calls[0].dynamicTools||[]).length,0);
  const next=engine.continueRun(run.id,{nodeId:'a',message:'Continue in text'});await engine.executions.get(next.id);assert.equal(engine.getRun(next.id).status,'completed',engine.getRun(next.id).error);assert.equal(runtime.calls.length,2);
 });
+test('the retired answer-detail control schema refreshes in the same saved native conversation',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'blackice-retired-answer-detail-catalog-'));const runtime=new Runtime();const engine=await new HarnessEngine({runtime,dataDir:root,defaultCwd:root}).init();
+ t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});
+ const run=engine.startRun({workflow:graph,input:'Check local files'});await engine.executions.get(run.id);
+ const earlier=engine.runs.get(run.id);assert.equal(earlier.status,'completed',earlier.error);
+ // Native blackice control schemas are fixed at provider thread creation.
+ // Reproduce the exact pre-removal catalog stamp without using a live provider.
+ earlier.nodes.a.controlSchemaVersion=13;
+ earlier.workflow.nodes.find(node=>node.id==='a').verbosity=10;
+ const next=engine.continueRun(run.id,{nodeId:'a',message:'Continue current task'});
+ await engine.executions.get(next.id);const done=engine.getRun(next.id);
+ assert.equal(done.status,'completed',done.error);
+ assert.equal(done.taskId,earlier.taskId);
+ assert.equal(done.modelHandoff.reason,'retired-tool-catalog');
+ assert.equal(runtime.calls.at(-1).threadId,undefined);
+ assert.equal(Object.hasOwn(runtime.calls.at(-1).dynamicTools.find(tool=>tool.name==='relay_control').inputSchema.properties.runtime.properties,'verbosity'),false);
+});
 test('current failed native turn retries with its current schema and original task',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'blackice-current-retry-'));const runtime=new Runtime();runtime.runAgent=async function(options){this.calls.push(options);options.onEvent?.({type:'thread',threadId:'retry-thread'});if(this.calls.length===1)throw Error('Fixture provider interruption');return {output:'Recovered',threadId:'retry-thread'};};const engine=await new HarnessEngine({runtime,dataDir:root,defaultCwd:root}).init();
  t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});

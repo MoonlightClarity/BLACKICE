@@ -40,7 +40,7 @@ test('guarded Relay chats really delegate with bounded child tools and observabl
         assert.equal(options.cwd,cwd);
         assert.equal(options.codexHistory,'relay');
         assert.equal(options.effort,'high');
-        assert.ok(options.prompt.includes('thorough'));
+        assert.doesNotMatch(options.prompt,/RESPONSE VERBOSITY DEFAULT|ANSWER DETAIL/);
         assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
         assert.ok(!options.dynamicTools.some(tool=>['relay_delegate','relay_control','relay_desktop','relay_task'].includes(tool.name)));
         assert.ok(!options.dynamicTools.some(tool=>['relay_email','relay_browser','relay_credentials'].includes(tool.name)), 'Unconfigured external-effect tools are not advertised to the child');
@@ -65,7 +65,7 @@ test('guarded Relay chats really delegate with bounded child tools and observabl
   assert.equal(disabled.nodes.agent.output,'No delegation configured.');
   assert.equal(calls.length,1);
   assert.ok(!calls[0].dynamicTools.some(tool=>tool.name==='relay_delegate'));
-  await prefs.update({subagentsEnabled:true,maxSubagents:2,verbosity:'detailed',defaultEffort:'high',executionGuardrails:true});
+  await prefs.update({subagentsEnabled:true,maxSubagents:2,defaultEffort:'high',executionGuardrails:true});
   const enabled=await finish(engine,engine.startRun({workflow:taskGraph(),input:'Evaluate a change with delegation.',planningMode:'off'}).id);
   assert.equal(enabled.status,'completed',enabled.error);
   assert.match(enabled.nodes.agent.output,/Worker finished/);

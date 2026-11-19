@@ -184,11 +184,11 @@ for(const mode of ['off','advisory'])for(const available of [false,true])test(`c
  const initial=f.engine.startRun({workflow,input:'Inspect available controls.',planningMode:mode});await f.engine.executions.get(initial.id);
  const saved=f.engine.getRun(initial.id);assert.equal(saved.status,'completed',JSON.stringify(saved));
  const canonical=tool=>Boolean(tool.inputSchema.properties.cycle);
- assert.equal(canonical(observed),false);assert.equal(saved.nodes.agent.controlSchemaVersion,13);
+ assert.equal(canonical(observed),false);assert.equal(saved.nodes.agent.controlSchemaVersion,14);
  // An existing native provider session keeps its admitted schema even if the
  // host's service availability changes between turns.
  f.engine.responseCycle=available?null:{forRun:async()=>({skipped:true})};
  const next=f.engine.continueRun(saved.id,{nodeId:'agent',message:'Continue with the saved native catalog.'});await f.engine.executions.get(next.id);
  assert.equal(f.engine.getRun(next.id).status,'completed',JSON.stringify(f.engine.getRun(next.id)));
- assert.equal(canonical(observed),false);assert.equal(f.engine.getRun(next.id).nodes.agent.controlSchemaVersion,13);
+ assert.equal(canonical(observed),false);assert.equal(f.engine.getRun(next.id).nodes.agent.controlSchemaVersion,14);
 });

@@ -75,7 +75,7 @@ export async function runPlanAcceptance(options) {
     runtime = new CodexRuntime({ isolatedHistory: true, cwd, runTimeoutMs: options.timeoutMs, requestTimeoutMs: 20000, approvalTimeoutMs: 15000 });
     tasks = await new TaskStateStore({ dataDir }).init();
     methods = await new MethodStore({ dataDir, projects: { definition() { throw Error('This acceptance does not create projects.'); }, create() { throw Error('This acceptance does not create projects.'); } } }).init();
-    settings = await new RuntimeSettingsStore({ dataDir }).init(); await settings.update({ subagentsEnabled: false, runTimeoutMs: options.timeoutMs, verbosity: 'concise' });
+    settings = await new RuntimeSettingsStore({ dataDir }).init(); await settings.update({ subagentsEnabled: false, runTimeoutMs: options.timeoutMs });
     engine = new HarnessEngine({ runtime, tasks, methods, dataDir, defaultCwd: cwd }); engine.runtimeSettings = settings; engine.methods = methods; await engine.init();
     const nativeRun = runtime.runAgent.bind(runtime);
     runtime.runAgent = async options => {

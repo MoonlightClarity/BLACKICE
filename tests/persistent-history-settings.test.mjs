@@ -41,8 +41,8 @@ test('loading legacy relay preferences normalizes only in memory and read APIs l
 
 test('an explicit unrelated save persists the canonical native policy without resetting selected provider or context preferences',async t=>{
   const f=await fixture(t),before=f.store.get();
-  const saved=await f.store.update({verbosity:'concise'});
-  assert.deepEqual(saved,{...before,verbosity:'concise'});assert.equal(saved.codexHistory,'codex');
+  const saved=await f.store.update({providerIdleTimeoutMs:60000});
+  assert.deepEqual(saved,{...before,providerIdleTimeoutMs:60000});assert.equal(saved.codexHistory,'codex');
   assert.deepEqual(JSON.parse(await readFile(f.preferences,'utf8')),saved);assert.deepEqual(await readFile(f.providers),f.providerBytes);
   const restored=await new RuntimeSettingsStore({dataDir:f.directory}).init();t.after(()=>restored.close());assert.deepEqual(restored.get(),saved);
   assert.deepEqual(f.events,[saved]);
