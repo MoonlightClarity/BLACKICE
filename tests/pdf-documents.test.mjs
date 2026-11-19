@@ -1,4 +1,9 @@
 import test from 'node:test';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { DirectExecutionAPI } from '../lib/direct-execution-api.mjs';
+import { createWorkspaceToolHandler } from '../lib/workspace-tools.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { deflateSync, inflateSync } from 'node:zlib';
@@ -172,4 +177,82 @@ test('PDF queue is bounded, queued cancellation is independent, and active abort
   await once(workers[0], 'online');
   activeController.abort(); await firstRejected; await engine.close(); assert.equal(workers[0].threadId, -1); assert.equal(engine.status().active, 0);
   await assert.rejects(engine.inspect(valid), { code: 'PDF_CLOSED' });
+});
+
+test('relay_workspace directly reads an absolute local PDF with page and character continuation, no OCR claim or writes', async t => {
+  const dir = await fs.mkdtemp(path.join(tmpdir(), 'blackice-pdf-read-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const cwd = path.join(dir, 'workspace'), local = path.join(dir, 'Synthetic report.PDF');
+  await fs.mkdir(cwd);
+  await fs.writeFile(local, valid);
+  const workspace = createWorkspaceToolHandler({ cwd });
+  const read = async (args = {}) => {
+    const result = await workspace({ name: 'relay_workspace', arguments: { action: 'read', path: local, ...args } });
+    assert.ok(result.contentItems[0].text.length <= 40000);
+    return [result.success, JSON.parse(result.contentItems[0].text)];
+  };
+  const [ok, first] = await read({ pageCount: 1, charCount: 5 });
+  assert.equal(ok, true);
+  assert.equal(first.path, local);
+  assert.equal(first.format, 'pdf');
+  assert.equal(first.sha256, createHash('sha256').update(valid).digest('hex'));
+  assert.equal(first.pages[0].text, 'First');
+  assert.deepEqual([first.nextPage, first.nextChar, first.truncated], [1, 5, true]);
+  const [, second] = await read({ startPage: first.nextPage, startChar: first.nextChar, pageCount: 1 });
+  assert.match(second.pages[0].text, /page: Alpha/);
+  assert.deepEqual([second.nextPage, second.nextChar], [2, 0]);
+  const [, last] = await read({ startPage: second.nextPage });
+  assert.match(last.pages[0].text, /Compressed second page/);
+  assert.equal(last.pages[1].text, '');
+  assert.equal(last.pages[1].textAvailable, false);
+  assert.match(last.pages[1].hint, /OCR is not included/);
+  assert.equal(last.truncated, false);
+  assert.equal(last.nextPage, null);
+  assert.equal((await read({ startLine: 1 }))[0], false);
+  assert.equal((await read({ startPage: 4 }))[1].code, 'PDF_INVALID_ARGUMENT');
+  assert.equal((await read({ charCount: 5001 }))[0], false);
+  assert.equal((await read({ path: cwd }))[0], false);
+  assert.equal((await read({ path: path.join(dir, 'absent.pdf') }))[1].code, 'ENOENT');
+  assert.deepEqual(await fs.readdir(dir), ['Synthetic report.PDF', 'workspace']);
+  assert.deepEqual(await fs.readFile(local), valid);
+  const corrupt = path.join(dir, 'corrupt.pdf'), large = path.join(dir, 'large.pdf');
+  await fs.writeFile(corrupt, 'Not a PDF');
+  await fs.writeFile(large, Buffer.alloc(0));
+  await fs.truncate(large, PDF_LIMITS.inputBytes + 1);
+  assert.equal((await read({ path: corrupt }))[1].code, 'PDF_INVALID');
+  assert.equal((await read({ path: large }))[1].code, 'WORKSPACE_DOCUMENT_LIMIT');
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(workspace({ name: 'relay_workspace', arguments: { action: 'read', path: local } }, { signal: controller.signal }), { name: 'AbortError' });
+});
+
+test('direct connector advertises and accepts PDF page and character continuations', async t => {
+  const dir = await fs.mkdtemp(path.join(tmpdir(), 'blackice-direct-pdf-read-'));
+  const cwd = path.join(dir, 'workspace');
+  await fs.mkdir(cwd);
+  const api = new DirectExecutionAPI({ dataDir: path.join(dir, 'profile'), allowedRoot: cwd });
+  t.after(async () => { await api.close(); await fs.rm(dir, { recursive: true, force: true }); });
+  await api.init();
+  const local = path.join(cwd, 'connector.pdf');
+  await fs.writeFile(local, valid);
+  const client = { id: 'synthetic-pdf-grant', label: 'Fixture', kind: 'chatgpt', scopes: ['read', 'files:read'] };
+  const read = api.tools(client).find(tool => tool.name === 'blackice_workspace_read');
+  for (const key of ['startPage', 'pageCount', 'startChar', 'charCount']) assert.equal(read.inputSchema.properties[key].type, 'integer');
+  const finish = async (requestId, args) => {
+    const job = await api.call(read.name, { requestId, action: 'read', path: local, ...args }, client);
+    const deadline = Date.now() + 7000;
+    while (Date.now() < deadline) {
+      const state = await api.getJob(job.jobId, client);
+      if (state.settled) {
+        assert.equal(state.status, 'succeeded');
+        return JSON.parse(state.result.text.text);
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.fail('Direct workspace PDF job did not settle');
+  };
+  const first = await finish('first-pdf-page', { pageCount: 1, charCount: 5 });
+  assert.equal(first.pages[0].text, 'First');
+  const next = await finish('next-pdf-character', { startPage: first.nextPage, startChar: first.nextChar });
+  assert.match(next.pages[0].text, /page: Alpha/);
 });

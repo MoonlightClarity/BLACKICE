@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { createWorkspaceToolHandler } from '../lib/workspace-tools.mjs';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -126,4 +127,48 @@ test('unsupported and visual-only documents remain explicit recovery inputs, not
   assert.equal(item.kind,'file');assert.match(item.processing.code,/OFFICE_DOCUMENT_UNREADABLE/);
   await assert.rejects(TaskViability.prototype.sources.call({attachments:store,identity:null},
     {input:'Check resume.',workflow:{nodes:[],edges:[]},attachmentIds:[item.id]}),/could not be read or verified|supported reader/i);
+});
+
+test('relay_find_files discovered DOCX reads directly by path, paginates extracted lines and preserves the source', async t => {
+  const dir = await fs.mkdtemp(path.join(tmpdir(), 'blackice-local-docx-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const cwd = path.join(dir, 'workspace'), sourceDir = path.join(dir, 'external', 'Nested Documents');
+  await fs.mkdir(cwd);
+  await fs.mkdir(sourceDir, { recursive: true });
+  const file = path.join(sourceDir, 'Synthetic candidate.DOCX'), bytes = word();
+  await fs.writeFile(file, bytes);
+  const workspace = createWorkspaceToolHandler({ cwd });
+  async function invoke(name, args) {
+    const result = await workspace({ name, arguments: args });
+    return { ...JSON.parse(result.contentItems[0].text), success: result.success };
+  }
+  const found = await invoke('relay_find_files', { query: 'Synthetic candidate', path: path.join(dir, 'external') });
+  assert.equal(found.success, true);
+  const target = found.matches[0].path;
+  assert.equal(target, file);
+  const read = (path, options) => invoke('relay_workspace', { action: 'read', path, ...options });
+  const first = await read(target, { lineCount: 1 });
+  assert.equal(first.success, true);
+  assert.equal(first.path, file);
+  assert.equal(first.format, 'docx');
+  assert.equal(first.sha256, digest(bytes));
+  assert.match(first.content, /^1: Research & due diligence/);
+  assert.equal(first.truncated, true);
+  assert.equal(first.nextStartLine, 2);
+  const rest = await read(target, { startLine: first.nextStartLine });
+  assert.match(rest.content, /Fully remote/);
+  assert.match(rest.content, /Contact header/);
+  assert.equal(rest.truncated, false);
+  assert.equal(rest.nextStartLine, null);
+  assert.equal((await read(target, { startPage: 1 })).success, false);
+  assert.deepEqual(await fs.readdir(sourceDir), ['Synthetic candidate.DOCX']);
+  assert.deepEqual(await fs.readFile(file), bytes);
+  const invalid = path.join(sourceDir, 'invalid.docx'), blank = path.join(sourceDir, 'blank.docx');
+  await fs.writeFile(invalid, 'Not a DOCX');
+  await fs.writeFile(blank, zip({'[Content_Types].xml':types,'word/document.xml':'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body/></w:document>'}));
+  assert.equal((await read(invalid)).code, 'OFFICE_DOCUMENT_INVALID');
+  assert.equal((await read(blank)).code, 'OFFICE_DOCUMENT_UNREADABLE');
+  const call = { name: 'relay_workspace', arguments: { action: 'read', path: target } };
+  const { evidence } = await normalizeHostOperationResult(await workspace(call), { call, descriptor: await workspace.describeOperation(call) });
+  assert.ok(!evidence.some(row => row.kind === 'source-coverage'), 'extracted DOCX lines are not raw-file coverage');
 });
