@@ -1,28 +1,29 @@
 ---
-name: simplest-complete-path
-description: Avoid overthinking across tasks by choosing the simplest route that delivers the requested outcome, then doing and checking the work.
+name: critical-path
+description: Find the dependency that controls delivery and take the most direct next action that advances it.
 ---
 
-# Simplest Complete Path
+# Critical Path
 
-Use this when deliberation, process, or competing approaches threaten to become more elaborate than the task warrants. It applies to research, writing, operations, and software. It is advisory for the current task, not an always-on mode or a reason to lower the user's standard.
+Use when a task has dependencies, competing next actions, or a tempting detour. This is advisory for the current task, not a required planning ceremony. It applies to research, writing, operations, and software.
 
-## Decide, then act
+**What Makes Done** identifies the outcome and evidence. **Task Decomposition** exposes useful steps and dependencies. **Critical Path** decides where to act now and what can wait. You do not need to run all three methods.
 
-1. **Name the outcome and the real constraints.** Keep the deliverable and the user's actual requirements. Separate what would change the decision from incidental detail. When both the goal and the route are clear, start there without manufacturing alternatives.
-2. **Use the most direct route that can finish.** Reuse the relevant source, artifact, tool, or existing workflow if it fits. If a routine reversible choice is open, make a reasonable default and proceed. Add a tool, dependency, research branch, or approval question only when it solves a real gap.
-3. **When uncertain, identify the smallest informative check.** For each serious explanation, ask what you would observe if it were correct. Check the first boundary where the explanations differ. A plausible explanation is not a diagnosis; an inconclusive check can justify going deeper.
-4. **End analysis when another comparison would not change the next action.** Take that action. If it fails, use the result to choose the next route, not to restart open-ended deliberation. Do not end the task just because you have decided what to do.
-5. **Verify what makes the result usable.** Keep checks that catch a meaningful error, protect data, or substantiate a claimed effect. Skip ceremony, duplicate checks, and polishing the user didn't ask for. If a simpler approach has a limit that affects the user, say what it is and when it matters.
+## Find and advance the critical path
 
-Simpler means fewer moving parts and fewer avoidable decisions, not less care. Sometimes a fuller investigation or a more robust implementation is the simplest complete route because a quick patch would leave the problem in place. The user's current direction still governs scope and method.
+1. **Start at the result.** Walk backward from delivery: what must be true immediately before the result can be delivered? What prevents that from being true now? Separate real prerequisites from useful extras and later-stage work. If the path is obvious, start without writing a plan. Leave the final chat reply off a tool-action outline: reporting the result is not another dependency. Keep requested file delivery or external communication on the path.
+2. **Pick the action that unlocks progress.** If skipping or delaying a step would not change whether or when you can deliver, it is not on the critical path. Of the steps you can take now, choose one that removes a real blocker, unlocks downstream work, or delivers the result directly. Don't pick a step merely because it is easy or familiar.
+3. **Probe only uncertainty that changes the route.** Use the smallest informative check to distinguish the live options. Use the service, record, artifact, or tool already in place if it works. Stop deliberating when another comparison would not change the next action, then take it. If a real prerequisite is blocked, advance an independent deliverable or try a route that bypasses that dependency. Don't call a missing link a blocker if the source is easy to locate.
+4. **Recompute after meaningful changes.** A new user direction, a failed dependency, an observed effect, or a deadline can move the critical path. Preserve finished work and update only what changed. Do not rerun unchanged checks. Keep necessary verification, and don't repeat an action whose external result is unknown.
+
+Simplicity means fewer unnecessary dependencies and decisions, not lower quality, less output, or a reason to stop at partial progress. If a quick patch leaves the actual blocker in place, a fuller repair is the more direct route.
 
 ## Worked examples
 
-- **Research a known role.** The role and employer are known, but the saved notes omit the link. Check the employer's careers site for that exact posting before broadening the search. If it has closed, find a current eligible alternative rather than reconstructing every prior tab.
-- **Draft a short update.** The recipient, decision, and next date are supplied. Write the update in the requested voice instead of asking for a tone matrix or offering four versions. If the user asked only for a draft, don't send it.
-- **Reconcile two spreadsheets.** Match on the existing stable ID; inspect a few representative matches and report genuine exceptions. Don't design a fuzzy-matching system unless missing or unstable IDs make it necessary.
-- **Diagnose a desktop failure.** A click didn't arrive. Check whether the driver dispatched input before debating window architecture. A rejected stale reference points to page observation; a dispatched click landing elsewhere justifies inspecting coordinate translation. Use the observation to decide, then test the fix on the same path.
-- **Prepare an application.** The request is to apply and an eligible posting accepts a standard resume. Prepare the appropriate resume and finish the authorized submission, then verify the employer's response. Dropping the submission is not simplification; spending an hour researching an ordinary employer before submission may be. Defer interview preparation until there's an interview or the user asks for it.
+- **Find and use the resume.** A filename search says no matches on the first page but returns a cursor. Follow the cursor and then read the file. Looking for job titles without the evidence, or stopping to report an empty first page, does not resolve the dependency.
+- **Apply to jobs.** A current posting, suitability against the user's real constraints, needed materials, and confirmed submission are on the path. Deep employer research is generally not: research if you get an interview (including a screen), unless a specific fact is needed to decide whether or how to apply now. An employer response gives the application practical value, but it comes after applying and is not part of application completion. If one form genuinely cannot proceed, continue other eligible applications.
+- **Draft a short update.** The recipient, decision, and next date are supplied. Draft it now. Another tone comparison cannot change the next action. If the request was draft-only, sending is not on the path.
+- **Reconcile two spreadsheets.** Match on the available stable ID and inspect representative matches. Use fuzzy matching only for records whose missing or unstable IDs make it necessary. A handful of ambiguous rows need not delay the reliable matches.
+- **Diagnose a desktop failure.** A click didn't arrive. Check whether input was dispatched before debating window architecture. Rejection before dispatch calls for examining ref freshness; a dispatched click landing elsewhere justifies testing coordinate translation. Make the check, act on the evidence, and verify in the failing flow.
 
-Inspired by the design principle in [Ponytail](https://github.com/DietrichGebert/ponytail/blob/main/skills/ponytail/SKILL.md). This is an original BLACKICE skill: no plug-in, hooks, session modes, or instructions to change response length.
+Inspired by the design principle in [Ponytail](https://github.com/DietrichGebert/ponytail/blob/main/skills/ponytail/SKILL.md). This is an original BLACKICE skill with no plug-in, hooks, or session modes.

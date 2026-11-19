@@ -410,8 +410,8 @@
     },
     {
       "id": "library-simplest-complete-path",
-      "title": "Simplest Complete Path",
-      "description": "Avoid overthinking across tasks: use the simplest route that fully delivers the requested result and verify what matters.",
+      "title": "Critical Path",
+      "description": "Find the dependency that controls delivery, advance it now, and skip work that will not change the route.",
       "tags": [
         "methods",
         "proactivity",
@@ -426,7 +426,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "blackice-simplest-complete-path-v1"
+        "revision": "blackice-critical-path-v2"
       },
       "bodyFile": "simplest-complete-path.md"
     }

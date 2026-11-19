@@ -10,7 +10,7 @@ Use this method when the user asks you to accomplish something and there is a me
 ## Work backward from the outcome
 
 1. Name the end result in the user's terms. "Find" means usable findings, "draft" means a usable draft, and "send" means delivery or a known send result. A number sets scope; a cutoff tells you when work stops, not what was accomplished.
-2. Decide what observation would support the claim. Match it to the outcome: a file opens and contains what was requested; a recipient's service accepts the send; a record reflects the requested change. Tool success is not automatically evidence for the larger task. Verify only what changes whether the result is usable.
+2. Decide what observation would support the claim. Match it to the outcome: a file opens and contains what was requested; a recipient's service accepts the send; a record reflects the requested change. Tool success is not automatically evidence for the larger task. Verify only what changes whether the result is usable. Do not make the final chat reply a separate Directory action; report verified work directly. A requested artifact or external send is different: it is still work to perform and verify.
 3. Compare what you can support now with that end result. A starting point, rough work, or subset can be valuable, but it is still progress. A plan, an exhausted turn, and a final message are not evidence that the task is done.
 
 ## Act on the gap

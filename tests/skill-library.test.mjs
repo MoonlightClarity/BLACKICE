@@ -98,6 +98,7 @@ test('the default first-party pack is selectable by real format and task queries
   ['web accessibility','library-accessibility-spot-check'],
   ['story with a chart','library-chart-storytelling'],
   ['definition of done','library-what-makes-done'],
+  ['critical path','library-simplest-complete-path'],
   ['simplest solution','library-simplest-complete-path'],
   ['stop overthinking','library-simplest-complete-path'],
   ['browser regression','library-focused-regression'],
