@@ -2,7 +2,7 @@ const TREE_ICONS={"folder":"M3 7h7l2 2h9v11H3z M3 7V4h6l2 3","folderPlus":"M3 7h
 const treeSvg=name=>'<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true" focusable="false"><path d="'+TREE_ICONS[name]+'"/></svg>';
 import { bindChatSvgPreviews } from './svg-previews.mjs';
 import { text, formatDate } from '../core/dom.mjs';
-import { runText, displayChatRequest, messagesOfRun, chatResponseState, windowedRuns, windowedMessages, CHAT_MESSAGE_BATCH, rootId, lastRunId, running, CHAT_INDEX_BATCH, conversationIndexWindow, conversationGoalStatus } from './model.mjs';
+import { runText, displayChatRequest, messagesOfRun, chatResponseState, windowedRuns, windowedMessages, CHAT_MESSAGE_BATCH, rootId, lastRunId, running, CHAT_INDEX_BATCH, conversationIndexWindow, conversationGoalStatus, projectSkillLoadReceipts } from './model.mjs';
 import { CHAT_ANSWER_DETAIL_LEVELS, chatOptionChoices } from './options-model.mjs';
 import { createRegisteredArtifactResolver } from '../../conversation-model.mjs';
 import { chatToolFailure } from './tool-failure.mjs';
@@ -394,7 +394,8 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     const {shown:messages,hidden:olderMessages}=windowedMessages(
       allMessages,messageLimits?.get(run.id)??CHAT_MESSAGE_BATCH);
     const failure=chatRunError(run),toolFailure=run.toolFailure??chatToolFailure(run);
-    const signature=[run,run.status,run.settled,run.output,failure?.message,failure?.code,toolFailure?.label,toolFailure?.detail,request,run.retryOf,earlier&&displayChatRequest(earlier),
+    const skillLoads=projectSkillLoadReceipts(run.skillLoadReceipts);
+    const signature=[run,...skillLoads.flatMap(receipt=>[receipt.skillId,receipt.title]),run.status,run.settled,run.output,failure?.message,failure?.code,toolFailure?.label,toolFailure?.detail,request,run.retryOf,earlier&&displayChatRequest(earlier),
       run===shown.at(-1),run.taskState,run.taskState?.revision,run.planningActivity,run.workflow,markdown,
       delivery.missing,delivery.pausedAfterPlan,delivery.needsFollowup,delivery.errors.join('\n'),
       messageLimits?.get(run.id),allMessages.length,...(run.attachmentIds||[]).flatMap(id=>[id,getAttachment?.(id)?.name]),
@@ -431,6 +432,13 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
         }
       }
     }
+    if(skillLoads.length){
+      const receipts=text(section,'','div');
+      if(running(run))receipts.setAttribute('role','status');
+      for(const receipt of skillLoads)
+        text(receipts,'Skill loaded: '+receipt.title,'div','next-chat-activity next-chat-skill-loaded');
+    }
+
     if(olderMessages>0){
       const more=text(section,'Show earlier messages ('+olderMessages+')','button','next-older next-message-more');
       more.type='button';more.dataset.messageRun=run.id;

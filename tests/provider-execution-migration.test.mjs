@@ -16,6 +16,7 @@ const body = result => JSON.parse(result.contentItems.find(item => item.type ===
 const call = (name, args) => ({ name, arguments: args, callId: randomUUID() });
 const originalInput = 'Inspect input.txt, prepare the requested local artifact once, and preserve the original task until its result is verified.';
 const workflow = model => ({ id: 'catalog-migration', name: 'Catalog migration',
+  planning: { shared: true, coordinatorNodeId: 'agent' },
   nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', model, effort: 'high', sandbox: 'danger-full-access', prompt: 'Complete the supplied request.' }, { id: 'output', type: 'output' }],
   edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }], settings: { maxParallel: 1 } });
 

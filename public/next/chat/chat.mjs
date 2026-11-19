@@ -4,7 +4,7 @@ import { createChatFrame, paintIndex, paintIntroduction, paintHistory, paintMode
 import { createConversationFolderUI, placeNewConversation } from './folders.mjs';
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
 import { enableProviderForModel } from '../../provider-availability.mjs';
-import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate, chatHeaderStatus, projectConversationGoal } from './model.mjs';
+import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate, applyChatSkillLoadEvent, mergeChatSkillLoadReceipts, chatHeaderStatus, projectConversationGoal } from './model.mjs';
 import { submitChat, replyState } from './send.mjs';
 import {createGoalControls,parseGoalCommand} from './goals.mjs';
 import { createConversationReader } from './reader-client.mjs';
@@ -404,6 +404,14 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     state.loading=false;
     state.selected={...state.selected,goal:projectConversationGoal(family.goal),...(family.state?{state:family.state}:{}),...(family.title?{title:family.title,rootTitle:family.title}:{})};
     const runs=conversationRuns(family);
+    // The snapshot can have been requested just before a live receipt arrived.
+    if(refresh){
+      const liveById=new Map(state.runs.map(run=>[run.id,run.skillLoadReceipts]));
+      for(const run of runs){
+        const live=liveById.get(run.id);
+        if(live?.length)run.skillLoadReceipts=mergeChatSkillLoadReceipts(live,run.skillLoadReceipts);
+      }
+    }
     state.messageLimits=messageLimitsAfterRefresh(state.runs,runs,state.messageLimits);
     state.runs=runs;state.lastLoadedAt=Date.now();
     if(refresh)void goalControls.refresh();
@@ -552,6 +560,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(!event.runId || !state.runs.some(run=>run.id===event.runId))return;
     const data=event.data || {};
     const currentRun=state.runs.find(run=>run.id===event.runId);
+    if(applyChatSkillLoadEvent(currentRun,event)){render({preserve:true});return;}
     if(event.type==='agent.event'&&data.type==='thread'&&concreteChatModel(data.model)){
       const node=currentRun.nodes?.[event.nodeId];if(node)node.resolvedModel=data.model;
       refreshChoices();
@@ -624,7 +633,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         const i=state.runs.findIndex(run=>run.id===event.runId);
         if(i>=0) {
           const old=state.runs[i];state.runs[i]=mergeChatRunUpdate(old,updated);
-          if(updated.status==='failed')render({preserve:true});
+          if(updated.status==='failed'||(state.runs[i].skillLoadReceipts?.length||0)>(old.skillLoadReceipts?.length||0))render({preserve:true});
           refreshChoices();
           if(!running(updated)&&running(old)) {
             clearTimeout(settleTimer);

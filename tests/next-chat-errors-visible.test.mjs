@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { projectFamily } from '../public/next/chat/reader-model.mjs';
-import { mergeChatRunUpdate } from '../public/next/chat/model.mjs';
+import { mergeChatRunUpdate,applyChatSkillLoadEvent } from '../public/next/chat/model.mjs';
 import { chatRunError, paintHistory } from '../public/next/chat/render.mjs';
 
 // A small DOM fixture exercises the same plain-text chat renderer used by the app.
@@ -167,3 +167,70 @@ test('recovery efficiency tag is visible while steering and removed on terminal 
  const projected=projectFamily({runs:[run]}).runs[0];assert.equal(projected.outcomeRecoveryByNode.agent,'recovering');
  const timeline=fakeTimeline();paintHistory({timeline},[projected]);assert.equal(descendants(timeline,n=>n.className==='next-chat-efficiency-warning').length,1);
  });
+
+const loadedSkill=(skillId='library-pdf-evidence',title='Read a PDF for evidence')=>({type:'skill_loaded',skillId,title});
+const skillNotices=timeline=>descendants(timeline,node=>node.className==='next-chat-activity next-chat-skill-loaded');
+
+test('a live skill read adds one inline receipt per skill, not an assistant message',()=>{
+  const run=savedRun('live-skill',{status:'running',settled:false,nodes:{agent:{status:'running'}}});
+  const timeline=fakeTimeline();
+  const event=data=>({type:'agent.event',runId:run.id,nodeId:'agent',data});
+  paintHistory({timeline},[run]);
+  assert.deepEqual(skillNotices(timeline),[]);
+  for(const data of [
+    {type:'tool.result',tool:'relay_skills',action:'search',success:true,title:'Search hit'},
+    {type:'tool.result',tool:'relay_skills',action:'read',success:false,title:'Failed load'},
+    {type:'skill_loaded',skillId:'missing-title'},
+    loadedSkill('malformed id','Should not appear'),
+  ])assert.equal(applyChatSkillLoadEvent(run,event(data)),false);
+  assert.equal(applyChatSkillLoadEvent(run,{...event(loadedSkill()),runId:'separate-turn'}),false);
+  assert.equal(applyChatSkillLoadEvent(run,event(loadedSkill())),true);
+  assert.equal(applyChatSkillLoadEvent(run,event(loadedSkill())),false);
+  assert.equal(applyChatSkillLoadEvent(run,event(loadedSkill('library-word-review','Review Word'))),true);
+  // A status update that arrived without receipts cannot discard live evidence.
+  const updated=mergeChatRunUpdate(run,{id:run.id,status:'running'});
+  const snapshot=mergeChatRunUpdate(updated,{id:run.id,skillLoadReceipts:[loadedSkill('library-doc','Compare documents'),loadedSkill()]});
+  const stale=mergeChatRunUpdate(snapshot,{id:run.id,skillLoadReceipts:[loadedSkill()]});
+  paintHistory({timeline},[stale]);
+  const notices=skillNotices(timeline);
+  assert.deepEqual(notices.map(row=>row.textContent),['Skill loaded: Read a PDF for evidence','Skill loaded: Review Word','Skill loaded: Compare documents']);
+  assert.equal(notices[0].parentElement.attributes.role,'status');
+  assert.equal(descendants(timeline,node=>node.dataset.role==='assistant').length,0);
+});
+
+test('the reopened Chat timeline renders only projected skill receipt titles in their own turns',()=>{
+  const unrelated=savedRun('no-skill');
+  const secret='body-must-not-leave-receipt';
+  const first=loadedSkill('example-skill','<em>Example skill</em>');
+  const source=savedRun('saved-skill',{taskId:unrelated.taskId,status:'completed',output:'Final response',
+    skillLoadReceipts:[{...first,body:secret},first,{type:'tool.result',skillId:'search',title:'Search hit'}]});
+  const reopened=projectFamily({runs:[unrelated,source]});
+  assert.equal(JSON.stringify(reopened).includes(secret),false);
+  assert.deepEqual(reopened.runs.find(run=>run.id===source.id).skillLoadReceipts,[first]);
+  const timeline=fakeTimeline();
+  paintHistory({timeline},reopened.runs);
+  const [notice]=skillNotices(timeline);
+  assert.equal(skillNotices(timeline).length,1);
+  assert.equal(notice.textContent,'Skill loaded: <em>Example skill</em>');
+  assert.equal(notice.innerHTML,'');
+  assert.equal(notice.parentElement.parentElement.dataset.runId,source.id);
+  assert.equal(notice.parentElement.attributes.role,undefined);
+});
+
+test('a saved skill title is bounded without leaving half of a surrogate pair',()=>{
+  const title='x'.repeat(199)+'\u{1F50E}'+'extra';
+  const projected=projectFamily({runs:[savedRun('long-title',{skillLoadReceipts:[loadedSkill('skill-1',title)]})]}).runs[0];
+  assert.equal(projected.skillLoadReceipts[0].title,'x'.repeat(199));
+});
+
+test('live and stored skill receipts retain the first 32 without evicting displayed evidence',()=>{
+  const run=savedRun('many-skills',{status:'running',settled:false});
+  for(let i=1;i<=33;i++){
+    const added=applyChatSkillLoadEvent(run,{type:'agent.event',runId:run.id,data:loadedSkill('skill-'+i,'Title '+i)});
+    assert.equal(added,i<=32);
+  }
+  const projected=projectFamily({runs:[run]}).runs[0];
+  assert.equal(projected.skillLoadReceipts.length,32);
+  assert.equal(projected.skillLoadReceipts[0].skillId,'skill-1');
+  assert.equal(projected.skillLoadReceipts.at(-1).skillId,'skill-32');
+});

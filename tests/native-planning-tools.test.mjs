@@ -20,7 +20,7 @@ async function fixture(t,execute){
  const engine=await new HarnessEngine({runtime:new Runtime(),dataDir:dir,defaultCwd:path.join(dir,'work'),nativePlanningTools:provider}).init();
  engine.runtimeSettings={get:()=>({executionGuardrails:false,subagentsEnabled:true,maxSubagents:2})};
  t.after(async()=>{await engine.close();await store.close();await rm(dir,{recursive:true,force:true});});
- return {store,engine,provider,events,async run(){const r=engine.startRun({workflow:graph(),input:'Develop this conversation graph.',planningMode:'off'});await engine.executions.get(r.id);const done=engine.getRun(r.id);assert.equal(done.status,'completed',JSON.stringify(done));return done;}};
+ return {store,engine,provider,events,async run(){const r=engine.startRun({workflow:graph(),input:'/plan Develop this conversation graph.',planningMode:'off'});await engine.executions.get(r.id);const done=engine.getRun(r.id);assert.equal(done.status,'completed',JSON.stringify(done));return done;}};
 }
 test('native coordinator dispatch uses shared graph with honest provenance and UI reverse edits',async t=>{
  let f,seq=0;
@@ -82,7 +82,7 @@ test('secondary workflow agents cannot call native Planning coordinator tools',a
  else {assert.ok(!o.dynamicTools.some(v=>v.name.startsWith('relay_planning_')));const denied=await o.onToolCall({name:'relay_planning_read',arguments:{requestId:'deny',action:'list'}});assert.equal(denied.success,false);}
  return {output:'Independent node complete.'};});
  const workflow=graph();workflow.nodes.splice(2,0,{id:'worker',type:'agent',model:'test-model',prompt:'Analyze a delegated branch.'});workflow.edges=[{source:'input',target:'agent'},{source:'agent',target:'worker'},{source:'worker',target:'output'}];
- const r=f.engine.startRun({workflow,input:'Develop a graph with an independent branch.',planningMode:'off'});await f.engine.executions.get(r.id);assert.equal(f.engine.getRun(r.id).status,'completed');assert.equal(calls,2);
+ const r=f.engine.startRun({workflow,input:'/plan Develop a graph with an independent branch.',planningMode:'off'});await f.engine.executions.get(r.id);assert.equal(f.engine.getRun(r.id).status,'completed');assert.equal(calls,2);
 });
 test('optional analytical module adapter receives trusted native context and cannot cross conversations',async t=>{
  const f=await fixture(t,async()=>({output:'unused'}));await f.store.create({id:'own-module',conversationId:'own-task',title:'Own',objective:'Own work'});
@@ -171,7 +171,7 @@ test('read-only native coordinator can inspect every graph view while all mutati
  const execute=f.engine.execute.bind(f.engine);
  f.engine.execute=(run,controller)=>{run.workflow.nodes.find(node=>node.id==='agent').sandbox='read-only';return execute(run,controller);};
  const workflow=graph();
- const run=f.engine.startRun({workflow,input:'Inspect the shared graph read-only.',planningMode:'off'});
+ const run=f.engine.startRun({workflow,input:'/plan Inspect the shared graph read-only.',planningMode:'off'});
  await f.engine.executions.get(run.id);assert.equal(f.engine.getRun(run.id).status,'completed',JSON.stringify(f.engine.getRun(run.id)));
  assert.equal(observed,true);
 });

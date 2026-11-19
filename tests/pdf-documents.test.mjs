@@ -256,3 +256,16 @@ test('direct connector advertises and accepts PDF page and character continuatio
   const next = await finish('next-pdf-character', { startPage: first.nextPage, startChar: first.nextChar });
   assert.match(next.pages[0].text, /page: Alpha/);
 });
+
+test('attachment PDF character ranges explicitly retain one-page behavior while ordinary reads span pages', async t => {
+  const {AttachmentStore,createAttachmentToolHandler}=await import('../lib/attachments.mjs');
+  const dataDir=await fs.mkdtemp(path.join(tmpdir(),'attachment-pdf-range-'));
+  const store=await new AttachmentStore({dataDir}).init();
+  t.after(async()=>{await store.close();await fs.rm(dataDir,{recursive:true,force:true});});
+  const entry=await store.importBytes({name:'two-pages.pdf',bytes:pdf([{text:'First page'},{text:'Second page'}])});
+  const handler=createAttachmentToolHandler({store,attachmentIds:[entry.id]});
+  const read=async args=>{const r=await handler({name:'relay_files',arguments:{action:'read',attachmentId:entry.id,...args}});assert.equal(r.success,true);return JSON.parse(r.contentItems[0].text);};
+  const ordinary=await read({startPage:1,pageCount:2});assert.equal(ordinary.pages.length,2);
+  const ranged=await read({startPage:1,pageCount:2,startChar:0,charCount:200});assert.equal(ranged.pages.length,1);assert.equal(ranged.pages[0].text,'First page');assert.equal(ranged.nextPage,2);
+  const next=await read({startPage:ranged.nextPage,charCount:200});assert.equal(next.pages[0].text,'Second page');assert.equal(next.nextPage,null);
+});

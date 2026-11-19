@@ -8,6 +8,7 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {scoreDocument} from './fixtures/document-skill-acceptance.mjs';
+import {zip} from './fixtures/office-zip.mjs';
 
 function syntheticPdf(marker) {
   const stream = 'BT /F1 12 Tf 40 740 Td (' + marker + ') Tj ET\n';
@@ -27,9 +28,16 @@ function syntheticPdf(marker) {
     'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
 }
 
-for (const rejected of [false,true]) test(rejected
+function syntheticDocx(marker) {
+  return zip({
+    '[Content_Types].xml': '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+    'word/document.xml': '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>' + marker + '</w:t></w:r></w:p></w:body></w:document>',
+  });
+}
+
+for (const {format, rejected} of [{format:'pdf',rejected:false},{format:'pdf',rejected:true},{format:'docx',rejected:false}]) test(rejected
   ? 'scripted Chat can distinguish a found file from an unreadable PDF and report the real blocker'
-  : 'scripted Chat runs real nested filename search and direct PDF read, then uses returned text', {timeout:15000}, async t => {
+  : 'scripted Chat runs real nested filename search and direct ' + format.toUpperCase() + ' read, then uses returned text', {timeout:15000}, async t => {
   const dir = await fs.mkdtemp(path.join(tmpdir(), 'blackice-chat-find-read-'));
   let engine;
   t.after(async () => {
@@ -38,9 +46,9 @@ for (const rejected of [false,true]) test(rejected
   });
   const cwd = path.join(dir, 'workspace'), searchRoot = path.join(dir,'outside'), nested = path.join(searchRoot,'nested');
   await fs.mkdir(cwd); await fs.mkdir(nested,{recursive:true});
-  const target = path.join(nested,'Synthetic analyst resume.pdf');
+  const target = path.join(nested,'Synthetic analyst resume.' + format);
   const marker = 'Marker-' + randomUUID();
-  const bytes = rejected ? Buffer.from('invalid synthetic PDF\n') : syntheticPdf(marker);
+  const bytes = rejected ? Buffer.from('invalid synthetic PDF\n') : format === 'docx' ? syntheticDocx(marker) : syntheticPdf(marker);
   await fs.writeFile(target,bytes);
   const events = [];
 
@@ -64,7 +72,8 @@ for (const rejected of [false,true]) test(rejected
         return {output:'File found but not read. '+error+' Export a fresh PDF or supply a DOCX.',threadId:'synthetic-chat-document-thread'};
       }
       const page = JSON.parse(read.contentItems[0].text);
-      const text = page.pages?.[0]?.text;
+      assert.equal(page.format,format);
+      const text = format === 'docx' ? page.content : page.pages?.[0]?.text;
       events.push({op:'workspace.read',success:read.success,target:matches[0],text});
       return {output:text || '',threadId:'synthetic-chat-document-thread'};
     }
