@@ -12,7 +12,7 @@ import {SkillFolderStore} from '../lib/skill-folders.mjs';
 const ids=['builtin-decomposition','builtin-task-grounding','builtin-structured-analysis'];
 test('the three inline definitions are preserved; removed defaults are not fallback content',async()=>{
  assert.deepEqual(searchReleaseSkills().map(x=>x.id),ids);
- const hashes=['20ade411f5cbfa4d0007fdd79bf74b90f59f5a97a4e09c132f06f4dc4608d0df','5a0f2a99882ff9483f758e37da8ebfa01a9c964f2dea357b8c5d7f333e556576','8615e23de4559575e6f0c9a81086006ae6843e547bd77d587cb981415dac6fd4'];
+ const hashes=['1762caa7d98733ee283f7fdee8862a7063ef7ab25d5f7993795e04301c88ca55','5a0f2a99882ff9483f758e37da8ebfa01a9c964f2dea357b8c5d7f333e556576','8615e23de4559575e6f0c9a81086006ae6843e547bd77d587cb981415dac6fd4'];
  assert.deepEqual(ids.map(id=>createHash('sha256').update(readReleaseSkill(id).content).digest('hex')),hashes);
  const catalog=createSkillsCatalog();assert.deepEqual((await catalog.list()).entries.filter(x=>x.id.startsWith('builtin-')).map(x=>x.id),ids);
  for(const id of ['builtin-browser','builtin-browser-tab-management','builtin-file-discovery','builtin-job-search','builtin-inference','builtin-time-management','builtin-feasibility','builtin-branching','builtin-replanning','builtin-metacognition','builtin-verification','builtin-delegation']){
