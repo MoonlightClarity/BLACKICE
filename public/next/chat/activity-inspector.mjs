@@ -38,7 +38,7 @@ export function createActivityInspector({frame,getRunId,api,events,onTurnReceipt
   }catch(error){if(active(id,token)){status.textContent=error.code==='ACTIVITY_CHANGED'?'Activity changed while paging. Refresh to search the latest records.':'Could not load activity: '+error.message;}}
  }
  controls.addEventListener('submit',event=>{event.preventDefault();void load();});view.addEventListener('change',()=>{search.value='';void load();});
- dialog.addEventListener('close',()=>{reset();runId=null;});dialog.addEventListener('cancel',()=>{reset();runId=null;});
+ dialog.addEventListener('close',()=>{if(!dialog.open){reset();runId=null;}});dialog.addEventListener('cancel',()=>{reset();runId=null;});
  const unsubscribe=events?.subscribe?.(event=>{if(!dialog.open||event.runId!==runId||view.value==='internal'||timer)return;if(!['message','steer','tool.result','planning.reassessment'].includes(event.data?.type))return;const inspecting=()=>paged||search.value.trim()||rows.querySelector('details[open]');if(inspecting()){status.textContent='New activity available. Refresh when ready; current results are preserved.';return;}timer=setTimeout(()=>{timer=null;if(inspecting()){status.textContent='New activity available. Refresh when ready; current results are preserved.';return;}void load();},600);timer?.unref?.();});
  async function open(){reset();runId=getRunId?.();if(!runId)return;view.value='updates';search.value='';scope.textContent='';if(!dialog.open){if(typeof dialog.showModal==='function')dialog.showModal();else dialog.open=true;}await load();}
  return {open,refresh(id){launch.hidden=!id;if(dialog.open&&id!==runId){dialog.close();reset();runId=null;}},destroy(){destroyed=true;reset();unsubscribe?.();launch.remove();dialog.remove();style.remove();}};

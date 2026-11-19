@@ -51,6 +51,6 @@ export function createDirectoryInspector({frame,api,getRuns,showLauncher=true,on
   }catch(error){if(valid())status.textContent=error.message||'Could not export the trace.';}
  }
  copyTrace.addEventListener('click',()=>void exportMachine('copy'));downloadTrace.addEventListener('click',()=>void exportMachine('download'));
- launch.addEventListener('click',()=>void open());close.addEventListener('click',()=>dialog.close());dialog.addEventListener('close',reset);dialog.addEventListener('cancel',reset);turn.addEventListener('change',()=>{machine.hidden=true;exportController?.abort();void load();});refresh.addEventListener('click',()=>void load());more.addEventListener('click',()=>void load(true));
+ launch.addEventListener('click',()=>void open());close.addEventListener('click',()=>dialog.close());dialog.addEventListener('close',()=>{if(!dialog.open)reset();});dialog.addEventListener('cancel',reset);turn.addEventListener('change',()=>{machine.hidden=true;exportController?.abort();void load();});refresh.addEventListener('click',()=>void load());more.addEventListener('click',()=>void load(true));
  return{open,refresh(id){launch.hidden=!id;if(!id&&dialog.open){dialog.close();reset();return;}if(dialog.open){const current=options();if(!current.some(r=>r.id===turn.value)){dialog.close();reset();}}},destroy(){destroyed=true;reset();launch.remove();dialog.remove();}};
 }

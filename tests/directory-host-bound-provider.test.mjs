@@ -21,5 +21,17 @@ for(const mode of ['off','on','maximal'])test('real compatible adapter completes
  runtime=new ProviderRuntime({codex:new Native(),dataDir:root,modelLimitResolver:{enrich:async(_c,m)=>m}});await runtime.store.init();await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl:'http://127.0.0.1:'+server.address().port+'/v1',models:[{id:'fixture',contextWindowTokens:65536,maxOutputTokens:4096}]},{preserveDefault:true});const actual=runtime.runAgent.bind(runtime);runtime.runAgent=o=>actual({...o,onToolResultDelivered:e=>{delivered.push({name:e.call.name,id:e.call.callId});return o.onToolResultDelivered?.(e);}});
  engine=await new HarnessEngine({runtime,dataDir:path.join(root,'engine'),defaultCwd:root}).init();const graph={name:'Wire',nodes:[{id:'i',type:'input'},{id:'a',type:'agent',name:'Agent',model:'fixture::fixture',prompt:'Inspect fixture'},{id:'o',type:'output'}],edges:[{source:'i',target:'a'},{source:'a',target:'o'}],settings:{maxParallel:1,planningMode:'off'}};
  const started=engine.startRun({workflow:graph,input:{task:'Inspect local fixture',directoryActions:'on',chatPlanning:'on',directoryDiagnostics:mode}});await engine.executions.get(started.id);const run=engine.getRun(started.id),state=(await engine.actionDirectories.get(started.id,'fixture')).read();assert.equal(run.status,'completed',run.error);assert.equal(prep,1);assert.equal(state.actions[0].state,'observed');assert.equal(state.actionRevision,3);assert.equal(state.receipts.length,5);assert(delivered.some(x=>x.name==='relay_directory_action'));assert.equal(new Set(delivered.filter(x=>x.name==='relay_workspace').map(x=>x.id)).size,5);
- if(mode==='maximal'){const trace=projectTurnMachineTrace(engine.runs.get(started.id));const phases=trace.entries.filter(e=>e.kind==='directory.snapshot');assert(phases.some(e=>e.metadata.phase==='bound'&&e.metadata.actionRevision===1));assert(phases.some(e=>e.metadata.phase==='delivered'&&e.metadata.snapshotRevision>=9));assert(trace.entries.some(e=>e.kind==='directory.mutation'&&e.metadata.operation==='focus'&&e.metadata.revisionPresent===false&&e.metadata.reason==='host-snapshot-binding'&&e.metadata.resultActionRevision===2));}
+ if(mode==='maximal'){
+  const trace=projectTurnMachineTrace(engine.runs.get(started.id));const phases=trace.entries.filter(e=>e.kind==='directory.snapshot');
+  assert(phases.some(e=>e.metadata.phase==='bound'&&e.metadata.actionRevision===1));
+  assert(phases.some(e=>e.metadata.phase==='delivered'&&e.metadata.snapshotRevision>=9));
+  assert(trace.entries.some(e=>e.kind==='directory.mutation'&&e.metadata.operation==='focus'&&e.metadata.revisionPresent===false&&e.metadata.reason==='host-snapshot-binding'&&e.metadata.resultActionRevision===2));
+  const gates=trace.entries.filter(e=>e.kind==='directory.effect');
+  assert(gates.some(e=>e.metadata.phase==='gate'&&e.metadata.callClass==='observation'&&e.metadata.decision==='allow'&&e.metadata.gateActionRevision===1));
+  const reserved=gates.find(e=>e.metadata.phase==='reserved'&&e.receiptRef);
+  assert(reserved);
+  assert(gates.some(e=>e.receiptRef===reserved.receiptRef&&e.metadata.phase==='dispatch'&&e.sequence>reserved.sequence));
+  assert(gates.some(e=>e.receiptRef===reserved.receiptRef&&e.metadata.phase==='returned'&&e.sequence>reserved.sequence));
+  assert(trace.entries.some(e=>e.kind==='directory.final'&&e.metadata.phase==='after-provider'&&e.metadata.ready===true&&e.metadata.reason==='ready'));
+ }
 });

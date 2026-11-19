@@ -5,7 +5,7 @@ const [root,out]=process.argv.slice(2);
 fs.mkdirSync(out,{recursive:true});
 app.setPath('userData',path.join(out,'profile'));
 app.disableHardwareAcceleration();
-let win,server;
+let win,server,failed=false;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const run=script=>win.webContents.executeJavaScript(script,true);
 const until=async(label,read)=>{
@@ -81,6 +81,7 @@ class Runtime extends EventEmitter {
  assert.equal((await row()).observation.claim,'User redirect from renderer');
  await click('Close',dialog);
  await click('Action outline');
+ await run(`document.querySelector(${JSON.stringify(dialog)}).dispatchEvent(new Event('close'))`);
  await until('reopened outline shows persisted block',async()=>String(await text(dialog)).includes('blocked · App-authored independent follow-up'));
  for(const width of [1200,390]){
   win.setContentSize(width,650);await sleep(150);
@@ -108,7 +109,7 @@ class Runtime extends EventEmitter {
  fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({
   passed:true,synthetic:true,checks:['Three independent actual controls and admitted modes','Offline host Planning phase, public activity and Directory main tool kept separate','Actual Action outline opens','Add/focus/block persisted as human','Reopen retains saved state','1200/390 outline fit','Turn receipts independent'],
  },null,2));
-})().catch(error=>{fs.writeFileSync(path.join(out,'error.txt'),error.stack);process.exitCode=1;}).finally(async()=>{
- win?.destroy();if(server)await server.close();app.exit(process.exitCode||0);
+})().catch(error=>{fs.writeFileSync(path.join(out,'error.txt'),error.stack);failed=true;}).finally(async()=>{
+ win?.destroy();if(server)await server.close();app.exit(failed?1:0);
 });
 setTimeout(()=>app.exit(2),45000).unref();

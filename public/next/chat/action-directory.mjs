@@ -18,6 +18,8 @@ export function createActionDirectory({frame,api,getRuns}){
  async function edit(change,accepted){if(!state||busy)return;const token=epoch,revision=state.revision;busy=true;add.disabled=true;try{const result=await api(url(),'POST',{...change,revision});if(token!==epoch||!dialog.open)return;state=result.state;accepted?.();paint();}catch(error){if(token===epoch)status.textContent=error.message+' Your draft is unchanged. Refresh before retrying.';}finally{busy=false;add.disabled=false;}}
  async function open(){const run=getRuns()?.at(-1);if(!run)return;selected=run;state=null;const draft=drafts.get(run.taskId||run.id);input.value=draft?.objective||'';deps.value=draft?.dependencies||'';if(dialog.showModal)dialog.showModal();else dialog.open=true;await load();}
  function reset(){saveDraft();epoch++;controller?.abort();state=null;selected=null;tree.replaceChildren();}
- dialog.addEventListener('close',reset);dialog.addEventListener('cancel',reset);
+ // Chromium queues close events. A close from the prior opening must not
+ // abort the new selection or clear its outline after a quick reopen.
+ dialog.addEventListener('close',()=>{if(!dialog.open)reset();});dialog.addEventListener('cancel',reset);
  return{open,refresh(id){launch.hidden=!id;if(dialog.open&&selected?.id!==id){dialog.close();reset();}},destroy(){reset();launch.remove();dialog.remove();}};
 }
