@@ -287,6 +287,55 @@
         "revision": "1"
       },
       "bodyFile": "source-map.md"
+    },
+    {
+      "id": "library-concept-diagram",
+      "title": "Draw a concept diagram",
+      "description": "Explain a process, relationship, or system with a labeled static SVG and a short text equivalent.",
+      "tags": [
+        "diagram",
+        "svg",
+        "visualization",
+        "flowchart"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "concept-diagram.md"
+    },
+    {
+      "id": "library-accessibility-spot-check",
+      "title": "Spot-check web accessibility",
+      "description": "Check a page or short flow for keyboard, focus, and labeling barriers with observed evidence.",
+      "tags": [
+        "accessibility",
+        "keyboard",
+        "focus",
+        "forms",
+        "reflow"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "accessibility-spot-check.md"
+    },
+    {
+      "id": "library-chart-storytelling",
+      "title": "Tell a story with a chart",
+      "description": "Turn supplied data into a clear static chart, source note, and explanation of what the evidence shows.",
+      "tags": [
+        "charts",
+        "data-story",
+        "visualization",
+        "reporting"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "chart-storytelling.md"
     }
   ]
 }
