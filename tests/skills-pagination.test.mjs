@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import {createSkillsWorkspace} from '../public/next/workspaces/skills.mjs';
 import {planningDOM} from './fixture-planning-dom.mjs';
 const until=async p=>{for(let i=0;i<100;i++){if(p())return;await new Promise(r=>setTimeout(r,10));}throw Error('UI did not settle');};
-async function fixture(t,{count=25,folders=[],assignments={}}={}){
+async function fixture(t,{count=25,folders=[],assignments={},rejectFolderWrite=false}={}){
  const dom=planningDOM(t),calls=[],items=Array.from({length:count},(_,i)=>({id:'builtin-fixture-'+i,title:'Skill '+i,revision:1,userEditable:true,source:'bundled'}));let trash=[];
  const api=async(route,method='GET',body)=>{
- calls.push({route,method,body});if(route==='/api/skills/folders')return {revision:0,folders,assignments};
+ calls.push({route,method,body});if(route==='/api/skills/folders'){
+  if(method==='POST'&&rejectFolderWrite)throw Error('Folder is not empty.');
+  return {revision:0,folders,assignments};
+ }
  const url=new URL(route,'http://test');
  if(url.pathname==='/api/skills'){const rows=url.searchParams.get('source')==='deleted'?trash:items;return {entries:rows.filter(x=>x.title.toLowerCase().includes((url.searchParams.get('query')||'').toLowerCase()))};}
  const id=decodeURIComponent(url.pathname.split('/')[3]),item=items.find(x=>x.id===id);
@@ -35,4 +38,31 @@ test('folder disclosure collapses nested content and preserves child page withou
  await f.click(arrow);assert.ok(f.$('[data-skill-id="builtin-fixture-11"]'));
  assert.ok(f.calls.every(x=>x.method==='GET'));
  await f.click('[data-folder-name="folder-a"]');assert.ok(f.$('[data-folder-rename]'));
+});
+test('collapsing a matching branch survives refresh and returning to Skills',async t=>{
+ const f=await fixture(t,{count:3,folders:[{id:'parent',name:'Methods',parentId:null},{id:'child',name:'Review',parentId:'parent'}],assignments:{'builtin-fixture-1':'child'}});
+ const parent='[data-folder-toggle="parent"]',child='[data-folder-toggle="child"]',skill='[data-skill-id="builtin-fixture-1"]';
+ await f.input('#skills-query','Skill 1');await until(()=>f.$(skill));
+ await f.click(child);assert.equal(f.$(child).getAttribute('aria-expanded'),'false');assert.equal(f.$(skill),null);
+ await f.click('#skills-refresh');await until(()=>f.$('#skills-status').textContent==='1 skills.');
+ assert.equal(f.$(child).getAttribute('aria-expanded'),'false');assert.equal(f.$(skill),null);
+ f.workspace.leave();f.workspace.enter();await until(()=>f.$('#skills-status').textContent==='1 skills.');
+ assert.equal(f.$(child).getAttribute('aria-expanded'),'false');
+ await f.click(parent);assert.equal(f.$(child),null);
+ await f.click(parent);assert.equal(f.$(child).getAttribute('aria-expanded'),'false');
+ await f.click(child);assert.ok(f.$(skill));
+ await f.input('#skills-query','');await until(()=>f.$('#skills-status').textContent==='3 skills.');
+ assert.equal(f.$(parent).getAttribute('aria-expanded'),'false','Search disclosure does not modify the unfiltered outline.');
+ assert.ok(f.calls.every(x=>x.method==='GET'));
+});
+test('a failed folder edit does not disable local disclosure',async t=>{
+ const f=await fixture(t,{count:2,folders:[{id:'parent',name:'Methods',parentId:null}],assignments:{'builtin-fixture-1':'parent'},rejectFolderWrite:true});
+ const arrow='[data-folder-toggle="parent"]',skill='[data-skill-id="builtin-fixture-1"]';
+ await f.click(arrow);assert.ok(f.$(skill));
+ await f.click('.skills-folder-remove');await until(()=>f.$('#skills-status').textContent.includes('Refresh before another folder edit'));
+ assert.equal(f.$('.skills-folder-remove').disabled,true);
+ assert.equal(f.$(arrow).disabled,false);
+ await f.click(arrow);assert.equal(f.$(arrow).getAttribute('aria-expanded'),'false');assert.equal(f.$(skill),null);
+ await f.click(arrow);assert.ok(f.$(skill));
+ assert.equal(f.calls.filter(x=>x.method==='POST').length,1);
 });
