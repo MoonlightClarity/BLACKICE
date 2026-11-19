@@ -1,6 +1,12 @@
-# Directory execution and context
+# Directory in Chat
 
-> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+**Directory Diagnostics** is an opt-in, local view of evidence retained for a selected Chat turn. It records which sources the host prepared, whether the adapter showed turn activity, which tools were attached or returned results, and the saved terminal state. A prepared source is not proof that the model used it. Prior contents of a resumed provider session are not visible from this receipt. When old events were never captured, pruned, or not retained in an archive, the view does not claim that nothing happened.
+
+Directory Diagnostics stays with its own task, including later turns in that task; an independent task starts without it. It does not supply context, add a model call, restore the retired execution loop, or override Past Chats. Personal Context is a separate skill for deciding when historical information is relevant and when to verify against current evidence.
+
+## Historical execution design (not current behavior)
+
+> **Status: Historical engineering reference.** The execution runner below was retired. It is not activated by Directory Diagnostics. See the [documentation map](README.md).
 
 Directory has two conversation settings: **On** and **Off**. On uses Directory for the next response without requiring a command prefix. Off uses ordinary Chat. The choice applies to subsequent work, and remains independent from the Subagents setting.
 

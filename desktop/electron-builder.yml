@@ -41,6 +41,7 @@ files:
   - '!desktop/build-icon.mjs'
   - CHAT-MODE.md
   - RELEASE-NOTES-2.40.8.md
+  - RELEASE-NOTES-2.40.9.md
   - RELEASE-NOTES-2.40.7.md
   - RELEASE-NOTES-2.40.6.md
   - RELEASE-NOTES-2.31.0.md
