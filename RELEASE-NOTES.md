@@ -1,9 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.14 candidate source, not an installation or publication receipt.** Package version is **2.40.14**. Start with the [2.40.14 notes](RELEASE-NOTES-2.40.14.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.15 candidate source, not an installation or publication receipt.** Package version is **2.40.15**. Start with the [2.40.15 notes](RELEASE-NOTES-2.40.15.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
 
+- [2.40.15](RELEASE-NOTES-2.40.15.md) - Intent Inference and source-first fresh work
 - [2.40.14](RELEASE-NOTES-2.40.14.md) - cite successful same-turn reads without repeating them
 - [2.40.13](RELEASE-NOTES-2.40.13.md) - blocked Directory dependencies and a separate Receipts route
 - [2.40.12](RELEASE-NOTES-2.40.12.md) - independent Directory outline revisions and three receipt depths

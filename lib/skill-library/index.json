@@ -358,6 +358,33 @@
         "revision": "1"
       },
       "bodyFile": "personal-context.md"
+    },
+    {
+      "id": "library-intent-inference",
+      "title": "Intent Inference",
+      "aliases": [
+        "intent inference",
+        "what did they mean",
+        "time-only deadline",
+        "until 6 AM",
+        "by tomorrow morning",
+        "ambiguous request",
+        "infer the deadline",
+        "draft or send"
+      ],
+      "description": "Resolve ambiguous references, date and deadline intent, fresh requests versus resumed work, and the next useful action without inventing permission or task scope.",
+      "tags": [
+        "methods",
+        "intent",
+        "ambiguity",
+        "deadlines",
+        "scope"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "intent-inference.md"
     }
   ]
 }

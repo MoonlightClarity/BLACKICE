@@ -44,6 +44,7 @@ const publicPlanningModules=Object.freeze({
  'builtin-decomposition':['Task decomposition','pending-actions'],
  'builtin-task-grounding':['Calibrated Depth and Action','grounded-choice'],
  'builtin-structured-analysis':['Structured Analytic Techniques','revised-choice'],
+ 'builtin-intent-inference':['Intent Inference','intent-advice'],
 });
 const planningPhaseNames=Object.freeze({
  started:'Started',completed:'Plan recorded',failed:'Did not complete',
@@ -62,7 +63,7 @@ export function projectPlanningModuleReceipts(run,values=run?.planningModuleRece
   const prior=accepted.get(value.moduleId);
   if(prior&&prior.phase!=='started')continue;
   accepted.set(value.moduleId,{type:'planning.module',runId:run.id,taskId:run.taskId||run.id,nodeId:value.nodeId,
-   moduleId:value.moduleId,artifact,title,phase:value.phase,label:planningPhaseNames[value.phase]});
+   moduleId:value.moduleId,artifact,title,phase:value.phase,label:value.moduleId==='builtin-intent-inference'&&value.phase==='completed'?'Interpretation ready':planningPhaseNames[value.phase]});
  }
  return [...accepted.values()];
 }

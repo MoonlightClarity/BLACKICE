@@ -27,8 +27,8 @@ function fixture({mode='on',invoke,commit,assertAdmission,signal}={}) {
     }});
   return {pass,events,invocations,writes};
 }
-test('ordered registry contains exactly the three built-in modules; disabled mode cannot run',async()=>{
-  assert.deepEqual(CHAT_PLANNING_MODULES.map(row=>row.id),['builtin-decomposition','builtin-task-grounding','builtin-structured-analysis']);
+test('ordered registry contains the four explicit built-in modules; disabled mode cannot run',async()=>{
+  assert.deepEqual(CHAT_PLANNING_MODULES.map(row=>row.id),['builtin-decomposition','builtin-task-grounding','builtin-structured-analysis','builtin-intent-inference']);
   const f=fixture({mode:'off'});
   await assert.rejects(f.pass.run(decomposition),{code:'PLANNING_MODE_OFF'});
   assert.equal(f.invocations.length,0);

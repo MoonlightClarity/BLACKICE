@@ -25,7 +25,7 @@ const plan={
   actions:[{id:'inspect_a',objective:'Inspect route A',dependsOn:[]}],
 };
 const catalog = [
-  'builtin-decomposition','builtin-task-grounding','builtin-structured-analysis',
+  'builtin-decomposition','builtin-task-grounding','builtin-structured-analysis','builtin-intent-inference',
 ];
 test('explicit Chat Planning reaches a real compatible provider and advances the one Directory, unlike ordinary Off', {timeout:20000},async t=>{
   const root=await realpath(tmpdir()), dir=await mkdtemp(path.join(root,'blackice-planning-provider-'));
