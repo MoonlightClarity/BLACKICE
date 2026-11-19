@@ -7,7 +7,7 @@ import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
  */
 export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', planningMode, planningExecutionMode = 'automatic', cwd = '', attachmentIds=[], context, goal, pastChats, directoryDiagnostics, directoryActions, chatPlanning }) {
   for(const value of [directoryActions,chatPlanning])if(value!==undefined&&!['on','off'].includes(value))throw Error('Choose Directory and Planning On or Off.');
-  if(directoryDiagnostics!==undefined&&!['on','off'].includes(directoryDiagnostics))throw Error('Choose Directory diagnostics Off or On.');
+  if(directoryDiagnostics!==undefined&&!['on','off','maximal'].includes(directoryDiagnostics))throw Error('Choose Basic, Detailed, or Maximal receipts.');
   if(pastChats!==undefined&&pastChats!=='on'&&pastChats!=='off')throw Error('Choose Past Chats Off or On.');
   const chosenPlanningMode = 'off';
   const latest=replyTarget(runs);
