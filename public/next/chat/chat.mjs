@@ -1,3 +1,4 @@
+import {createActionDirectory} from './action-directory.mjs';
 import {createDirectoryInspector} from './directory-inspector.mjs';
 import {createActivityInspector} from './activity-inspector.mjs';
 import {createVisualWorkspace} from './visuals.mjs';
@@ -65,6 +66,10 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   };
   let runtimeStatus=getStatus?.()||{};
   const root = () => rootId(state.selected) || 'new';
+  const actionDrafts=new Map(),planningDrafts=new Map();
+  const actionOutline=createActionDirectory({frame:view.shell,api,getRuns:()=>state.runs});
+  const selectedActions=()=>actionDrafts.get(root())??state.runs.at(-1)?.directoryActions??'off';
+  const selectedPlanning=()=>planningDrafts.get(root())??state.runs.at(-1)?.chatPlanning??'off';
   const directoryDrafts=new Map();
   const directoryInspector=createDirectoryInspector({frame:view.shell,api,getRuns:()=>state.runs});
   const selectedDirectory=()=>directoryDrafts.get(root())??state.runs.at(-1)?.directoryDiagnostics??'off';
@@ -135,6 +140,9 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     activityInspector.refresh(state.selected?state.runs.at(-1)?.id:null);
     const item=state.selected,bucket=selectedBucket(),latest=state.runs.at(-1),busy=state.pending||state.managing||contextControls.isCompacting()||goalControls?.isBusy();
     directoryInspector.refresh(state.selected?state.runs.at(-1)?.id:null);
+    actionOutline.refresh(state.selected?state.runs.at(-1)?.id:null);
+    view.directoryActions.value=selectedActions();view.chatPlanning.value=selectedPlanning();
+    view.directoryActions.disabled=view.chatPlanning.disabled=Boolean(busy||state.loading||bucket!=='active'||state.runs.some(running));
     view.directoryDiagnostics.value=selectedDirectory();
     view.directoryDiagnostics.disabled=Boolean(busy||state.loading||bucket!=='active'||state.runs.some(running));
     view.pastChats.value=selectedPastChats();
@@ -604,7 +612,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       const context=active?undefined:contextControls.read();
       const submittedContextRevision=contextControls.revision;
       const result=await submitChat({api,runs:current,task,model:previous&&!submittedModel.explicit?undefined:options.model,
-        effort:options.effort,serviceTier:options.serviceTier,context,goal,pastChats:active?undefined:selectedPastChats(),directoryDiagnostics:active?undefined:selectedDirectory(),
+        effort:options.effort,serviceTier:options.serviceTier,context,goal,pastChats:active?undefined:selectedPastChats(),directoryDiagnostics:active?undefined:selectedDirectory(),directoryActions:active?undefined:selectedActions(),chatPlanning:active?undefined:selectedPlanning(),
         planningMode:options.planningMode,planningExecutionMode:options.planningExecutionMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
         cwd:(()=>{try{return localStorage.getItem('blackice.next.cwd')||status?.cwd||'';}catch{return status?.cwd||'';}})()});
       const unchanged=consumeDraft&&state.inputOwner===submittedOwner&&state.inputRevision===submittedRevision;
@@ -615,7 +623,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         hint(result.receipt.delivery==='rejected'?'Direction saved; live delivery was rejected.':result.receipt.delivery==='uncertain'?'Direction saved; live delivery is uncertain.':(result.receipt.queued===true||result.receipt.delivery==='queued')?'Direction queued.':'Direction delivered.');
       } else if(result.run?.id) {
         modelSelections.consume(submittedModel);
-        pastChatsDrafts.delete(submittedContextOwner);directoryDrafts.delete(submittedContextOwner);
+        pastChatsDrafts.delete(submittedContextOwner);directoryDrafts.delete(submittedContextOwner);actionDrafts.delete(submittedContextOwner);planningDrafts.delete(submittedContextOwner);
         const run=result.run;
         if(context!==undefined)contextControls.commit(submittedContextOwner,context,submittedContextRevision);
         const item=previous ? {...previous,runId:run.id,latestRunId:run.id}
@@ -803,6 +811,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     state.bucket=view.bucket.value;state.list=[];state.indexLimit=CHAT_INDEX_BATCH;
       state.generation++;showNew({focus:false});void loadList();
   });
+  view.directoryActions.addEventListener('change',()=>{if(!view.directoryActions.disabled)actionDrafts.set(root(),view.directoryActions.value);});
+  view.chatPlanning.addEventListener('change',()=>{if(!view.chatPlanning.disabled)planningDrafts.set(root(),view.chatPlanning.value);});
   view.directoryDiagnostics.addEventListener('change',()=>{if(!view.directoryDiagnostics.disabled)directoryDrafts.set(root(),view.directoryDiagnostics.value);});
   view.pastChats.addEventListener('change',()=>{if(!view.pastChats.disabled)pastChatsDrafts.set(root(),view.pastChats.value);});
   view.form.addEventListener('submit',event=>{event.preventDefault();void send();});
@@ -851,7 +861,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
 
       goalControls.close();
       modelPicker.close({restoreFocus:false});
-      state.active=false;directoryInspector.refresh(null);folderUI.stop();state.generation++;state.listRead++;state.unsubscribe?.();state.unsubscribe=null;
+      state.active=false;directoryInspector.refresh(null);actionOutline.refresh(null);folderUI.stop();state.generation++;state.listRead++;state.unsubscribe?.();state.unsubscribe=null;
       listRequested=false;listInitialize=null;listController?.abort();
       closeTaskMenu();closeTrash();if(view.renameDialog.open){view.renameDialog.close();if(!state.managing)renameTarget=null;}
       state.dataController?.abort();state.loading=false;artifacts.cancel();visuals.cancel();
@@ -863,6 +873,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     updateStatus(status) {if(status&&typeof status==='object'&&!Array.isArray(status)){runtimeStatus=status;if(root()==='new')restoreExecution('new');refreshChoices(status);updateHead();}},
     openConversationId(id){if(!id)return;const item=state.list.find(row=>rootId(row)===id||lastRunId(row)===id)||{id,runId:id,title:'Conversation'};void open(item);},
     getState() {return {active:state.active,selected:root(),runCount:state.runs.length,listing:state.list.length,selectionCount:state.selection.size,managing:state.managing};},
-    destroy(){this.leave();state.destroyed=true;folderUI.destroy();goalControls.destroy();contextControls.destroy();activityInspector.destroy();directoryInspector.destroy();modelPicker.destroy();reader.close();artifacts.destroy();visuals.destroy();attachmentsUI.destroy();mount.innerHTML='';}
+    destroy(){this.leave();state.destroyed=true;folderUI.destroy();goalControls.destroy();contextControls.destroy();activityInspector.destroy();directoryInspector.destroy();actionOutline.destroy();modelPicker.destroy();reader.close();artifacts.destroy();visuals.destroy();attachmentsUI.destroy();mount.innerHTML='';}
   };
 }

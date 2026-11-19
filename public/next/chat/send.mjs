@@ -5,7 +5,8 @@ import {assertExecutablePlanningMode} from '../../response-cycle-model.mjs';
 /** Send once; the existing server executes and persists the real run.
  * Failures preserve unsent drafts, and no mutation is silently replayed.
  */
-export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', planningMode, planningExecutionMode = 'automatic', cwd = '', attachmentIds=[], context, goal, pastChats, directoryDiagnostics }) {
+export async function submitChat({ api, runs, task, model, effort = 'default', serviceTier = 'default', planningMode, planningExecutionMode = 'automatic', cwd = '', attachmentIds=[], context, goal, pastChats, directoryDiagnostics, directoryActions, chatPlanning }) {
+  for(const value of [directoryActions,chatPlanning])if(value!==undefined&&!['on','off'].includes(value))throw Error('Choose Directory and Planning On or Off.');
   if(directoryDiagnostics!==undefined&&!['on','off'].includes(directoryDiagnostics))throw Error('Choose Directory diagnostics Off or On.');
   if(pastChats!==undefined&&pastChats!=='on'&&pastChats!=='off')throw Error('Choose Past Chats Off or On.');
   const chosenPlanningMode = 'off';
@@ -25,7 +26,7 @@ export async function submitChat({ api, runs, task, model, effort = 'default', s
   if (latest.run && latest.nodeId && canContinueRun(latest.run)) {
     const requestId=stableId('chat');
     const result=await api('/api/runs/' + encodeURIComponent(latest.run.id) + '/continue','POST',
-      { nodeId:latest.nodeId,message:content,...(model&&model!=='default'?{model}:{}),effort,serviceTier,planningMode:chosenPlanningMode,planningExecutionMode,attachmentIds,requestId,...(pastChats!==undefined?{pastChats}:{}),...(directoryDiagnostics!==undefined?{directoryDiagnostics}:{}),...(context!==undefined?{context:structuredClone(context)}:{}) });
+      { nodeId:latest.nodeId,message:content,...(model&&model!=='default'?{model}:{}),effort,serviceTier,planningMode:chosenPlanningMode,planningExecutionMode,attachmentIds,requestId,...(pastChats!==undefined?{pastChats}:{}),...(directoryDiagnostics!==undefined?{directoryDiagnostics}:{}),...(directoryActions!==undefined?{directoryActions}:{}),...(chatPlanning!==undefined?{chatPlanning}:{}),...(context!==undefined?{context:structuredClone(context)}:{}) });
     return { mode:'continued',run:result?.run||result,requestId };
   }
   if (latest.run) throw Error(latest.run.settled === false ? 'This response is still settling. Wait for it to finish before sending again.' : 'This conversation has no stopped agent to continue. Use Retry or start a new conversation.');
@@ -41,7 +42,7 @@ export async function submitChat({ api, runs, task, model, effort = 'default', s
   }
   const saved=await api('/api/workflows','POST',workflow);
   const result=await api('/api/runs','POST',{ workflow:saved?.workflow||saved,
-    input:{task:content,cwd,directoryDiagnostics:directoryDiagnostics??'off',pastChats:pastChats??'off',...(goal?{goal:structuredClone(goal)}:{}),planningMode:chosenPlanningMode,planningExecutionMode,attachmentIds},requestId });
+    input:{task:content,cwd,directoryActions:directoryActions??'off',chatPlanning:chatPlanning??'off',directoryDiagnostics:directoryDiagnostics??'off',pastChats:pastChats??'off',...(goal?{goal:structuredClone(goal)}:{}),planningMode:chosenPlanningMode,planningExecutionMode,attachmentIds},requestId });
   return { mode:'started',run:result?.run||result,requestId };
 }
 export function replyState(runs) {
