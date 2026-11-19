@@ -17,6 +17,10 @@ async function main() {
   const { ElectronBrowserDriver } = await import(pathToFileURL(path.resolve(__dirname, '../../desktop/browser-driver.mjs')));
   server = http.createServer((req, res) => {
     res.setHeader('content-type', 'text/html');
+    if (req.url.startsWith('/spa-bootstrap')) {
+      res.end('<button>Temporary control</button><script>addEventListener("load",()=>setTimeout(()=>{history.replaceState({}, "", "/spa-ready");document.querySelector("button").textContent="Ready control"},130))</script>');
+      return;
+    }
     res.end(req.url.startsWith('/frame')
       ? '<button>Frame button</button>'
       : '<button onclick="window.clickCount++">Main button</button><iframe src="/frame-a"></iframe><script>window.clickCount=0</script>');
@@ -66,6 +70,15 @@ async function main() {
   await wc.executeJavaScript("document.querySelector('button').remove()");
   await reject(removed, 'control-changed');
   assert.equal(await wc.executeJavaScript('window.clickCount'), 0);
+  const expectReady = value => {
+    assert.equal(new URL(value.url).pathname, '/spa-ready');
+    const names = value.frames.flatMap(frame => frame.elements).map(element => element.name);
+    assert.ok(names.includes('Ready control'));
+    assert.ok(!names.includes('Temporary control'));
+  };
+  expectReady(await driver.perform({ action: 'navigate', tabId: tab.id, url: base + '/spa-bootstrap' }));
+  expectReady(await driver.perform({ action: 'open', url: base + '/spa-bootstrap' }));
+  report.checks.push('open and navigate publish controls only after synthetic SPA commits');
   report.ok = true;
 }
 let finished = false;

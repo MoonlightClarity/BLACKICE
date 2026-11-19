@@ -32,6 +32,8 @@ const DEFAULT_FOLDER = 'folder_user';
 // Refs stay bound to the observed DOM node for the current document. Retain a
 // bounded recent set so separate filtered reads can be used together.
 const MAX_OBSERVED_REFS = 800;
+const TOP_NAVIGATION_QUIET_MS = 300;
+const TOP_NAVIGATION_MAX_MS = 1500;
 const savedPageURL = value => /^(?:https?|file|about|chrome|data|blob):/.test(value || '');
 const blankPageURL = value => /^about:blank(?:[?#]|$)/.test(value || '');
 const externalProtocol = value => !['http:', 'https:', 'file:', 'about:', 'chrome:', 'data:', 'blob:', 'javascript:'].includes(new URL(value).protocol);
@@ -1964,6 +1966,56 @@ export class ElectronBrowserDriver extends EventEmitter {
     });
     cancel(signal);
   }
+  // A committed route can immediately redirect or be superseded by an SPA route.
+  // Observe only top-level navigation; background requests and frames cannot
+  // restart the quiet window. The hard cap never waits for network idle.
+  waitForTopNavigationQuiet(tab, signal, { quietMs = TOP_NAVIGATION_QUIET_MS, maxMs = TOP_NAVIGATION_MAX_MS } = {}) {
+    cancel(signal);
+    const wc = tab.window.webContents;
+    return new Promise((resolve, reject) => {
+      let quietTimer, capTimer, finished = false;
+      const reset = () => {
+        clearTimeout(quietTimer);
+        quietTimer = undefined;
+        if (!wc.isLoadingMainFrame()) quietTimer = setTimeout(() => {
+          quietTimer = undefined;
+          if (!wc.isLoadingMainFrame()) done(true);
+        }, quietMs);
+      };
+      const started = (event, _url, _inPlace, main) => { if ((main ?? event?.isMainFrame) === true) reset(); };
+      const committed = (_event, _url, _code, _text, main) => { if (main === true) reset(); };
+      const inPage = (_event, _url, main) => { if (main === true) reset(); };
+      const finishedFrame = (_event, main) => { if (main === true) reset(); };
+      const failedLoad = (_event, _code, _text, _url, main) => { if (main === true) reset(); };
+      const interrupted = () => done(false);
+      const abort = () => done(false, true);
+      const listeners = {
+        'did-start-navigation': started, 'did-frame-navigate': committed,
+        'did-navigate-in-page': inPage, 'did-frame-finish-load': finishedFrame,
+        'did-fail-load': failedLoad, 'did-stop-loading': () => {
+          if (!quietTimer && !wc.isLoadingMainFrame()) reset();
+        },
+        'render-process-gone': interrupted, destroyed: interrupted,
+      };
+      const done = (stable, aborted = false) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(quietTimer); clearTimeout(capTimer);
+        for (const [event, listener] of Object.entries(listeners)) wc.removeListener(event, listener);
+        signal?.removeEventListener('abort', abort);
+        if (aborted) {
+          try { cancel(signal); } catch (cause) { reject(cause); return; }
+        }
+        resolve(stable);
+      };
+      for (const [event, listener] of Object.entries(listeners)) wc.on(event, listener);
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) { abort(); return; }
+      if (wc.isDestroyed()) { interrupted(); return; }
+      capTimer = setTimeout(interrupted, maxMs);
+      reset();
+    });
+  }
   watchNavigation(tab, signal) {
     const wc = tab.window.webContents; let started = false, wake, timer;
     const listener = () => { started = true; wake?.(); };
@@ -2339,8 +2391,32 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (tab.loadError) throw navigationFailure(tab);
     if (suppressResultSnapshot === true) return { tabId: tab.id, documentId: inputDocumentId(tab), actionDispatched: true, protectedContent: true };
-    const result = await this.snapshot(tab, args.query, signal, { readContext: args.action === 'read' });
+    const quietRequired = ['open', 'navigate'].includes(args.action) && !tab.providerKeyProtected
+      && !tab.authenticationChallenge && !tab.pendingInteraction && !blankPageURL(this.tabURL(tab));
+    const navigationUnsettled = () => ({
+      tabId: tab.id, documentId: inputDocumentId(tab), url: this.tabURL(tab), title: this.tabTitle(tab), frames: [],
+      actionDispatched: true, navigationUnsettled: true,
+      hint: 'The top-level page was still changing after navigation. Take a snapshot before choosing a control; do not repeat the navigation.',
+    });
+    const wc = quietRequired ? tab.window.webContents : null;
+    let result, observedMainRevision;
+    if (quietRequired && !await this.waitForTopNavigationQuiet(tab, signal)) {
+      if (tab.rendererFailure) throw rendererFailure(tab, true);
+      if (tab.loadError) throw navigationFailure(tab);
+      result = tab.pendingInteraction ? this.interactionReceipt(tab, { frames: [], actionDispatched: true }) : navigationUnsettled();
+    } else {
+      if (tab.loadError) throw navigationFailure(tab);
+      observedMainRevision = tab.mainRevision;
+      try { result = await this.snapshot(tab, args.query, signal, { readContext: args.action === 'read' }); }
+      catch (cause) {
+        if (!quietRequired || cause?.code !== 'BROWSER_SNAPSHOT_DOCUMENT_CHANGED') throw cause;
+        result = navigationUnsettled();
+      }
+    }
     if (['open', 'navigate', 'reload', 'back', 'forward'].includes(args.action)) { this.persist(); await this.savedStatus(); }
+    if (quietRequired && !result.navigationUnsettled && !result.pendingInteraction
+      && (wc.isDestroyed() || wc.isLoadingMainFrame() || result.url !== this.tabURL(tab)
+        || observedMainRevision !== tab.mainRevision)) result = navigationUnsettled();
     return { ...result, ...(receipt ? { receipt } : {}), tabs: this.status().tabs };
     } finally { navigation?.dispose(); await releaseInputFocus?.(); }
     } catch (reason) {
