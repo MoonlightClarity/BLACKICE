@@ -241,3 +241,21 @@ for(const fault of ['corrupt','missing'])test('healthy saved identity survives l
  await assert.rejects(run(call),{code:'OPERATIONAL_RESULT_UNAVAILABLE'});assert.equal(f.counts().dispatched,1);
  assert.equal((await run({...call,callId:'new-after-degradation'})).success,true);assert.equal(f.counts().dispatched,2);
 });
+
+test('browser stale-reference preflight settles Directory without replaying; a fresh explicit call can proceed',async t=>{
+ const f=await fixture(t);const {TaskActionDirectory}=await import('../lib/task-action-directory.mjs');
+ const ledger=new TaskActionDirectory({taskId:'task-A',objective:'Inspect local fixture'});
+ await ledger.edit({action:'plan',revision:0,actions:[{id:'inspect',objective:'Inspect a synthetic source',dependsOn:[]}]});
+ await ledger.edit({action:'focus',id:'inspect',revision:1});
+ const describe=f.raw.describeOperation;
+ f.raw.describeOperation=async call=>{if(call.arguments.ref==='old')throw Object.assign(Error('Take a fresh snapshot and choose an element ref.'),{code:'BROWSER_REF_STALE'});return describe(call);};
+ const handle=f.guard().wrap(f.raw),scope={runId:'run-task-A',nodeId:'agent'};
+ const stale={...args('click','stale'),descriptor:descriptor('synthetic')};stale.arguments.ref='old';
+ for(let i=0;i<2;i++)await assert.rejects(ledger.execute(stale,handle,scope),{code:'BROWSER_REF_STALE',actionDispatched:false});
+ assert.equal(f.counts().dispatched,0);
+ assert.deepEqual(ledger.finalStatus().unknown,[]);
+ assert(ledger.read().receipts.every(r=>r.state==='returned'&&r.success===false&&r.actionDispatched===false));
+ const fresh={...args('click','fresh'),descriptor:descriptor('synthetic')};fresh.arguments.ref='new';
+ const next=await ledger.execute(fresh,handle,scope);
+ assert.equal(next.result.success,true);assert.equal(f.counts().dispatched,1);
+});

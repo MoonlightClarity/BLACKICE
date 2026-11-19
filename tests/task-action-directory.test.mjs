@@ -80,3 +80,11 @@ test('plan replaces only pending work and can depend on omitted recorded steps',
  await assert.rejects(ledger.edit({action:'plan',actions:[{id:'find',objective:'Rewritten history',dependsOn:[]}],revision:after.revision}),{code:'DIRECTORY_RECORDED_ACTION'});
  assert.deepEqual(ledger.read(),after);
 });
+
+test('stale code or input-only flags are not whole-action proof and cannot clear uncertainty',async()=>{
+ const ledger=create();await plan(ledger);await focus(ledger);
+ await assert.rejects(ledger.execute({name:'relay_browser'},async()=>{throw Object.assign(Error('Unclear browser outcome after interaction'),{code:'BROWSER_REF_STALE',inputDispatched:false});},{runId:'run',nodeId:'agent'}),{code:'BROWSER_REF_STALE'});
+ assert.equal(ledger.read().receipts[0].actionDispatched,undefined);
+ assert.deepEqual(ledger.finalStatus().unknown,['receipt-1']);
+ await assert.rejects(ledger.execute({name:'relay_browser'},async()=>assert.fail('must not dispatch'),{runId:'run',nodeId:'agent'}),{code:'DIRECTORY_UNKNOWN'});
+});
