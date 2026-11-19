@@ -128,3 +128,42 @@ test('Directory reports closed work separately from unready dependencies and res
   ['DIRECTORY_OBSERVATION','observed',0,1],['DIRECTORY_ACTION_CLOSED','observed',0,1],['DIRECTORY_NOT_READY','pending',1,1]
  ]);
 });
+
+test('one extra Directory continuation after a verified milestone, but not for opening a source alone',async t=>{
+ let scenarios=0;
+ const{engine,root}=await setup(t,async o=>{
+  const scenario=++scenarios;
+  let i=0;
+  const call=async(name,args)=>{
+   const result=await o.onToolCall({name,arguments:args,callId:'continuation-'+(++i)});
+   assert.equal(result.success,true,JSON.stringify(result));
+   return result;
+  };
+  const dir=async args=>JSON.parse((await call('relay_directory_action',args)).contentItems[0].text);
+  const review=()=>o.onBeforeFinal({signal:o.signal});
+  await dir({action:'plan',actions:[{id:'profile',objective:'Locate the supplied fixture profile',dependsOn:[]},{id:'posting',objective:'Inspect the fixture posting',dependsOn:['profile']}]});
+  await dir({action:'focus',id:'profile'});
+  await call('relay_workspace',{action:'list',path:root});
+  const first=await review();assert.equal(first.continue,true);
+  if(scenario===3){
+   await call('relay_workspace',{action:'list',path:root});
+   await assert.rejects(review(),{code:'DIRECTORY_ACTION_UNFINISHED'});throw Object.assign(Error('no actual completion'),{code:'DIRECTORY_ACTION_UNFINISHED'});
+  }
+  let snapshot=await dir({action:'read'});
+  await dir({action:'observe',id:'profile',claim:'Located the fixture profile; discovery step resolved',receipts:[snapshot.receipts.at(-1).id]});
+  await dir({action:'focus',id:'posting'});
+  await call('relay_workspace',{action:'list',path:root});
+  const next=await review();assert.equal(next.continue,true);assert.match(next.prompt,/Inspect the fixture posting/);assert.match(next.prompt,/opening a source is not inspecting it/);assert.match(next.prompt,/Never repeat a confirmed or unknown effect/);
+  if(scenario===2){
+   await assert.rejects(review(),{code:'DIRECTORY_ACTION_UNFINISHED'});throw Object.assign(Error('no further progress'),{code:'DIRECTORY_ACTION_UNFINISHED'});
+  }
+  snapshot=await dir({action:'read'});
+  await dir({action:'observe',id:'posting',claim:'Recorded evidence for the current fixture step',receipts:[snapshot.receipts.at(-1).id]});
+  assert.equal(await review(),undefined);
+  return{output:'Completed from fixture evidence'};
+ });
+ for(const expected of ['completed','failed','failed']){
+  const run=engine.startRun({workflow:graph,input:{task:'Verify a local fixture handoff',directoryActions:'on'}});
+  await engine.executions.get(run.id);assert.equal(engine.getRun(run.id).status,expected,engine.getRun(run.id).error);
+ }
+});
