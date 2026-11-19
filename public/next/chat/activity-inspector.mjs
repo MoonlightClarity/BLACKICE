@@ -1,13 +1,15 @@
 /** Read-only human view. Categories are projections of existing records, not a
  * new action model. Internal outputs are never requested until selected. */
 let sequence=0;
-export function createActivityInspector({frame,getRunId,api,events}){
+export function createActivityInspector({frame,getRunId,api,events,onTurnReceipts}){
  const doc=frame.ownerDocument,make=(tag,cls,value='')=>{const e=doc.createElement(tag);if(cls)e.className=cls;if(value)e.textContent=value;return e;};
  const button=(cls,value,fn)=>{const e=make('button',cls,value);e.setAttribute('type','button');e.addEventListener('click',fn);return e;};
- const dialog=make('dialog','next-activity-inspector'),head=make('header','next-activity-head'),title=make('h2','','Activity');title.id='activity-title-'+(++sequence);dialog.setAttribute('aria-labelledby',title.id);
- const launch=button('next-activity-open','Activity',()=>open());launch.hidden=true;launch.title='Search updates, tool calls and saved internal outputs';
+ const dialog=make('dialog','next-activity-inspector'),head=make('header','next-activity-head'),title=make('h2','','Receipts');title.id='activity-title-'+(++sequence);dialog.setAttribute('aria-labelledby',title.id);
+ const launch=button('next-activity-open','Receipts',()=>open());launch.hidden=true;launch.title='Inspect updates, tool calls and saved outputs';
  const actions=frame.querySelector('.next-chat-head-actions')||frame.querySelector('.pb-header-actions')||frame.querySelector('.pc-header-actions');actions?.insertBefore(launch,actions.querySelector('#next-chat-stop'));
- const close=button('next-activity-close','Close',()=>dialog.close());head.append(title,close);
+ const close=button('next-activity-close','Close',()=>dialog.close());head.append(title);
+ if(typeof onTurnReceipts==='function')head.append(button('next-activity-turn-receipts','Turn receipts',()=>{dialog.close();void onTurnReceipts();}));
+ head.append(close);
  const controls=make('form','next-activity-controls'),search=make('input','next-activity-search');search.setAttribute('type','search');search.setAttribute('aria-label','Search selected activity');search.placeholder='Search selected activity';search.maxLength=200;
  const view=make('select','next-activity-view');view.setAttribute('aria-label','Activity category');for(const [value,label] of [['updates','Updates'],['tools','Tool calls'],['internal','Internal outputs']]){const option=make('option','',label);option.value=value;view.append(option);}view.value='updates';
  const submit=make('button','','Search');submit.setAttribute('type','submit');const refreshButton=button('next-activity-refresh','Refresh',()=>load());controls.append(view,search,submit,refreshButton);

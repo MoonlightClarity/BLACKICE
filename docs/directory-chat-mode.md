@@ -2,7 +2,7 @@
 
 **Directory** is an opt-in action outline for the current task. It stores pending actions, dependencies, focus and actual host receipts. Planning can propose or refine that same outline. Human edits and provider actions use the same revision, so an unseen edit cannot turn a stale effect into work on a newly selected action.
 
-**Turn diagnostics** is a separate local view of retained turn evidence. Diagnostic capture records which sources the host prepared and what activity it observed. A prepared source is not proof that a model used it; a partial trace is not proof that nothing happened. Diagnostics does not supply context, add a model call, or override Past Chats. Personal Context is a separate skill for deciding when historical information is relevant.
+**Turn receipts** is a separate local view of retained turn evidence. Receipt capture records which sources the host prepared and what activity it observed. A prepared source is not proof that a model used it; a partial trace is not proof that nothing happened. Receipts do not supply context, add a model call, or override Search other chats. Personal Context is a separate skill for deciding when historical information is relevant.
 
 ## Historical execution design (not current behavior)
 

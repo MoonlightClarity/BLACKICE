@@ -48,7 +48,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     isBusy:()=>state.managing||state.pending,isActive:()=>state.active&&!state.destroyed,
     onChanged:()=>indexPaint(),onRefresh:()=>{if(state.active)void loadList();},onError:()=>{}});
   let goalControls=null;
-  const activityInspector=createActivityInspector({frame:view.shell,api,events,getRunId:()=>state.runs.at(-1)?.id||null});
   let newFolderId=(()=>{try{return localStorage.getItem('blackice.next.newChatFolder')||null;}catch{return null;}})();
   let newPlanningExecutionMode=state.options.planningExecutionMode;
   const executionNotice=mount.ownerDocument.createElement('section');
@@ -71,7 +70,8 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   const selectedActions=()=>actionDrafts.get(root())??state.runs.at(-1)?.directoryActions??'off';
   const selectedPlanning=()=>planningDrafts.get(root())??state.runs.at(-1)?.chatPlanning??'off';
   const directoryDrafts=new Map();
-  const directoryInspector=createDirectoryInspector({frame:view.shell,api,getRuns:()=>state.runs});
+  const directoryInspector=createDirectoryInspector({frame:view.shell,api,getRuns:()=>state.runs,showLauncher:false,onBack:()=>activityInspector.open()});
+  const activityInspector=createActivityInspector({frame:view.shell,api,events,getRunId:()=>state.runs.at(-1)?.id||null,onTurnReceipts:()=>directoryInspector.open()});
   const selectedDirectory=()=>directoryDrafts.get(root())??state.runs.at(-1)?.directoryDiagnostics??'off';
   const pastChatsDrafts=new Map();
   const selectedPastChats=()=>pastChatsDrafts.get(root())??state.runs.at(-1)?.pastChats??(state.selected?'on':'off');

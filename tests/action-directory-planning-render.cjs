@@ -86,13 +86,17 @@ class Runtime extends EventEmitter {
   fs.writeFileSync(path.join(out,'action-directory-'+width+'.png'),(await win.webContents.capturePage()).toPNG());
  }
  await click('Close',dialog);
- await click('Turn diagnostics');
- await until('diagnostics opens separately',()=>run('!!document.querySelector(\'dialog[aria-label="Turn diagnostics"][open]\')'));
+ await click('Receipts');
+ await until('receipts is the single header entry',()=>run('!!document.querySelector(".next-activity-inspector[open]") && ![...document.querySelectorAll(".next-chat-head-actions button")].some(b=>["Activity","Turn receipts"].includes(b.textContent.trim()))'));
+ await click('Turn receipts','.next-activity-inspector[open]');
+ await until('receipts open separately',()=>run('!!document.querySelector(\'dialog[aria-label="Turn receipts"][open]\')'));
  assert.equal(await run('!!document.querySelector(\'dialog[aria-label="Action Directory"][open]\')'),false);
- const diagnosticText=await text('dialog[aria-label="Turn diagnostics"][open]');
+ const diagnosticText=await text('dialog[aria-label="Turn receipts"][open]');
  assert.doesNotMatch(diagnosticText,/App-authored independent follow-up|User redirect from renderer/);
+ await click('Back to Receipts','dialog[aria-label="Turn receipts"][open]');
+ await until('back restores Receipts',()=>run('!!document.querySelector(".next-activity-inspector[open]") && !document.querySelector(\'dialog[aria-label="Turn receipts"][open]\')'));
  fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({
-  passed:true,synthetic:true,checks:['Three independent actual controls and admitted modes','Offline host Planning phase, public activity and Directory main tool kept separate','Actual Action outline opens','Add/focus/block persisted as human','Reopen retains saved state','1200/390 outline fit','Turn diagnostics independent'],
+  passed:true,synthetic:true,checks:['Three independent actual controls and admitted modes','Offline host Planning phase, public activity and Directory main tool kept separate','Actual Action outline opens','Add/focus/block persisted as human','Reopen retains saved state','1200/390 outline fit','Turn receipts independent'],
  },null,2));
 })().catch(error=>{fs.writeFileSync(path.join(out,'error.txt'),error.stack);process.exitCode=1;}).finally(async()=>{
  win?.destroy();if(server)await server.close();app.exit(process.exitCode||0);
