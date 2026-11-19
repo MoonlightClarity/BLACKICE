@@ -9,11 +9,11 @@ import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
 const id='builtin-task-grounding';
 const hash=x=>createHash('sha256').update(x).digest('hex');
-test('approved skill ships exact full attachment and fresh effective model read',async t=>{
+test('approved skill ships the exact bundled revision and gives the model a fresh effective read',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'approved-skill-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const catalog=createSkillsCatalog({dataDir:root}),base=readReleaseSkill(id),entry=await catalog.detail({id});
- assert.equal(base.title,'Calibrated Depth and Action');assert.equal(Buffer.byteLength(base.content),54940);
- assert.equal(hash(base.content),'5a0f2a99882ff9483f758e37da8ebfa01a9c964f2dea357b8c5d7f333e556576');
+ assert.equal(base.title,'Calibrated Depth and Action');assert.equal(Buffer.byteLength(base.content),57487);
+ assert.equal(hash(base.content),'95ebf981ca62798b1580426aa8c9fee6e57f6e5ccd214459bffd67001fdea13c');
  assert.ok(base.content.startsWith('name: calibrated-depth-and-action\ndescription: '));
  assert.equal(entry.content,base.content);assert.equal(entry.source,'bundled');
  const handler=createRetrievalToolHandler({cwd:root,dataDir:root});

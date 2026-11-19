@@ -36,5 +36,5 @@ test('adding SAT does not overwrite existing human skills; SAT edits and deletio
  await reopened.delete({id,value:{expectedRevision:2}});
  await assert.rejects(reopened.detail({id}),{status:404});
  assert.equal((await reopened.detail({id:prior.id})).content,'# Human skill\\nKeep exactly.');
- assert.equal(createHash('sha256').update(readReleaseSkill('builtin-task-grounding').content).digest('hex'),'5a0f2a99882ff9483f758e37da8ebfa01a9c964f2dea357b8c5d7f333e556576');
+ assert.equal(createHash('sha256').update(readReleaseSkill('builtin-task-grounding').content).digest('hex'),'95ebf981ca62798b1580426aa8c9fee6e57f6e5ccd214459bffd67001fdea13c');
 });
