@@ -48,3 +48,14 @@ export function replyState(runs) {
   return { ...target, working:Boolean(target.active),
     canSend:!target.run || target.active || Boolean(target.nodeId && canContinueRun(target.run)) };
 }
+
+/** Start only from the separate new-task composer; never pass old runs, a
+ * provider thread, Goal, current Chat options or existing attachments. */
+export async function submitFreshChatTask({api,sourceTaskId,task,requestId=stableId('chat'),cwd}){
+  if(typeof sourceTaskId!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(sourceTaskId)||typeof task!=='string'||!task.trim())throw Error('Choose a saved task and enter the new task.');
+  const result=await api('/api/conversations/'+encodeURIComponent(sourceTaskId)+'/fresh-task','POST',
+    {task:task.trim(),requestId,...(cwd?{cwd}:{})});
+  if(!result?.run?.id||result.run.id!==result.run.taskId||result.run.id===sourceTaskId||result.run.parentRunId||result.run.chatDisplayGroupId!==result.groupId)
+    throw Error('The new task receipt could not be verified. Reopen Tasks and retry with the same request.');
+  return result;
+}

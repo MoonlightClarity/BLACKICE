@@ -57,6 +57,7 @@ import { TaskInbox } from './lib/inbox.mjs';
 import { RuntimeSettingsStore } from './lib/runtime-settings.mjs';
 import { handleIdleInterruptionsHttp } from './lib/idle-interruptions-http.mjs';
 import { createMissionWorkflow } from './public/mission-model.mjs';
+import { freshChatTaskRequest } from './lib/chat-fresh-tasks.mjs';
 import {LiveEditJournal} from './lib/live-edits.mjs';
 import { createSignedBrowserIntegration } from './lib/signed-browser.mjs';
 import { chromeBrowserStatus, registerChromeBrowser } from './lib/chrome-browser.mjs';
@@ -680,6 +681,24 @@ export async function createHarnessServer(options = {}) {
           catch(error){tabCleanup={closed:0,closedTabIds:[],failedTabs:[],error:error.message};}
         }
         return json(res,200,{...saved,...(tabCleanup?{tabCleanup}:{}),conversations:conversations.list(state)});
+      }
+      const freshChatMatch=pathname.match(/^\/api\/conversations\/([a-zA-Z0-9_-]+)\/(display-group|fresh-task)$/);
+      if(freshChatMatch){
+        const [,sourceId,action]=freshChatMatch;
+        if(action==='display-group'&&req.method==='GET')return json(res,200,await conversations.displayGroup(sourceId));
+        if(action==='fresh-task'&&req.method==='POST'){
+          const request=freshChatTaskRequest(await body(req,256*1024),{defaultCwd});
+          const grouping=await conversations.displayGroup(sourceId);
+          if(grouping.state!=='active')return json(res,409,{error:'Restore this task before starting a fresh task in its Chat.',code:'FRESH_CHAT_TASK_SOURCE_INACTIVE'});
+          await recoverClientRequest(request);
+          conversations.assertRunAdmission({id:grouping.selectedTaskId,taskId:grouping.selectedTaskId});
+          const run=engine.startRun(request,{chatDisplayGroupId:grouping.groupId,sourceTaskId:grouping.selectedTaskId});
+          // The display identity is committed in the same run row, not a
+          // second mutable mapping that might disappear between retries.
+          await conversations.chain;
+          return json(res,201,{run,groupId:grouping.groupId});
+        }
+        return json(res,405,{error:'Use the supported Chat task method.'});
       }
       const conversationMatch=pathname.match(/^\/api\/conversations\/([a-zA-Z0-9_-]+)$/);
       if(conversationMatch&&req.method==='GET')return json(res,200,await conversations.family(conversationMatch[1]));

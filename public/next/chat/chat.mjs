@@ -5,11 +5,11 @@ import { createConversationFolderUI, placeNewConversation } from './folders.mjs'
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
 import { enableProviderForModel } from '../../provider-availability.mjs';
 import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, running, planningProgressForRun, CHAT_INDEX_BATCH, CHAT_MESSAGE_BATCH, messageLimitsAfterRefresh, conversationBucket, conversationActionState, conversationManagementTarget, resolveConversationSelection, mergeChatRunUpdate, applyChatSkillLoadEvent, mergeChatSkillLoadReceipts, chatHeaderStatus, projectConversationGoal } from './model.mjs';
-import { submitChat, replyState } from './send.mjs';
+import { submitChat, submitFreshChatTask, replyState } from './send.mjs';
 import {createGoalControls,parseGoalCommand} from './goals.mjs';
 import { createConversationReader } from './reader-client.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
-import { escapeHTML } from '../core/dom.mjs';
+import { escapeHTML, stableId } from '../core/dom.mjs';
 import { normalizeChatOptions, validateChatOptions, savedChatExecutionMode } from './options-model.mjs';
 import { createConversationModelSelection, concreteChatModel } from './model.mjs';
 import { createArtifactViewer } from './artifacts.mjs';
@@ -136,6 +136,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     executionNotice.hidden=Boolean(item)||root()!=='new'||bucket!=='active'||state.options.planningExecutionMode!=='plan_only';
     enableAutomatic.disabled=busy||state.loading||state.attachmentsPending;
     view.title.textContent=item?.rootTitle||item?.title||(newFolderId?'New chat in '+(folderUI.folderNames().get(newFolderId)||'removed folder'):'New conversation · Unfiled');
+    const taskScoped=paintTaskControls(item,bucket,busy);
     view.closeChat.hidden=!item;view.closeChat.disabled=busy;view.closeChat.title='Close this view without deleting history or stopping work';
     const planningProgress=planningProgressForRun(latest);
     view.subtitle.textContent=(item&&bucket!=='active'?(bucket==='deleted'?'In Trash':bucket==='archived'?'Archived':'History state unavailable')+' · ':'')+chatHeaderStatus(latest,goalControls?.getGoal()||item?.goal);
@@ -146,10 +147,11 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     // Opening the saved graph is read-only and remains available during work.
     view.openPlan.disabled=!cycle?.requestId;
     view.archive.hidden=!item;
-    view.archive.textContent=bucket==='active'?'Archive':'Restore';
+    view.archive.textContent=(bucket==='active'?'Archive':'Restore')+(taskScoped?' task':'');
     view.archive.disabled=busy||!conversationBucket(bucket);
     view.rename.hidden=!item||bucket==='deleted';
     view.rename.disabled=busy;
+    view.trash.textContent=taskScoped?'Trash task':'Move to Trash';
     view.trash.hidden=!item||bucket==='deleted';view.trash.disabled=busy||state.runs.some(running)||running(item)||!conversationBucket(bucket);
     view.trash.title=state.runs.some(running)||running(item)?'Stop this chat before moving it to Trash.':'';
     view.exports.hidden=!item;
@@ -380,6 +382,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   async function open(item,{refresh=false}={}) {
     if (!state.active||state.managing||(state.pending&&!refresh)) return;
     const id=rootId(item);
+    if(!refresh)closeTaskMenu();
     state.generation++;
     state.dataController?.abort();
     const controller=new AbortController();state.dataController=controller;state.loading=true;
@@ -432,8 +435,117 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     try { localStorage.setItem('blackice.next.selected',id); } catch {}
     if(!state.markdown) void loadMarkdown();
   }
+  let taskGroup=null,taskMenuRead=0;
+  const taskAttempts=new Map();
+  const taskKey=id=>'blackice.next.freshTask.'+id;
+  const taskIdValid=id=>typeof id==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(id);
+  function readTaskAttempt(id){
+    if(taskAttempts.has(id))return taskAttempts.get(id);
+    try {
+      const value=JSON.parse(localStorage.getItem(taskKey(id))||'null');
+      if(value&&typeof value.task==='string'&&value.task.length<=50000&&typeof value.cwd==='string'&&taskIdValid(value.requestId)&&value.requestId.startsWith('chat_'))
+        return value;
+    } catch {}
+    return null;
+  }
+  function saveTaskAttempt(id,value){
+    if(value)taskAttempts.set(id,value);else taskAttempts.delete(id);
+    try { if(value)localStorage.setItem(taskKey(id),JSON.stringify(value));else localStorage.removeItem(taskKey(id)); } catch {}
+  }
+  function paintTaskControls(item,bucket,busy){
+    view.taskMenu.hidden=!item;
+    view.taskMenu.disabled=Boolean(busy||state.loading||!conversationBucket(bucket));
+    const grouped=item&&(item.chatDisplayGroupId||taskGroup?.taskIds?.includes(root())&&taskGroup.taskIds.length>1||
+      state.list.some(row=>row.chatDisplayGroupId===root()));
+    if(grouped)view.title.textContent='Task: '+view.title.textContent;
+    view.taskMenu.title='Switch tasks in this chat or start a new one without carrying over earlier work';
+    view.goalCard.setAttribute('aria-label',grouped?'Persistent Goal for the selected task':'Persistent Goal Mode');
+    return Boolean(grouped);
+  }
+  function closeTaskMenu(){
+    taskMenuRead++;
+    if(view.taskDialog.open)view.taskDialog.close();
+  }
+  async function openTaskMenu(){
+    if(view.taskMenu.disabled||view.taskDialog.open||!state.selected)return;
+    const source=root(),token=++taskMenuRead,bucket=selectedBucket();
+    const pending=readTaskAttempt(source);
+    view.taskError.hidden=true;view.taskForm.hidden=true;view.taskStart.disabled=true;
+    view.taskList.replaceChildren();view.taskInput.value=pending?.task||'';
+    view.taskStatus.textContent='Loading tasks.';
+    view.taskScope.textContent='Tasks are separate. Messages, Goals, and archive actions apply to the selected task.';
+    view.taskDialog.showModal();
+    try{
+      const group=await api('/api/conversations/'+encodeURIComponent(source)+'/display-group');
+      if(state.destroyed||!state.active||root()!==source||selectedBucket()!==bucket||taskMenuRead!==token||!view.taskDialog.open)return;
+      if(group?.selectedTaskId!==source||!taskIdValid(group.groupId)||group.state!==bucket||
+        !Array.isArray(group.taskIds)||!group.taskIds.includes(source)||!group.taskIds.every(taskIdValid))
+        throw Error('Task membership changed. Reopen the task before switching.');
+      taskGroup=group;
+      const doc=view.taskList.ownerDocument;
+      for(const [index,id] of group.taskIds.entries()){
+        const item=state.list.find(row=>rootId(row)===id)||{id,taskId:id,runId:id,state:bucket,title:'Task '+(index+1)};
+        const row=doc.createElement('li'),pick=doc.createElement('button');
+        pick.type='button';pick.dataset.taskId=id;
+        pick.textContent=(item.rootTitle||item.title)+(id===source?' (current)':'');
+        if(id===source)pick.setAttribute('aria-current','true');
+        pick.addEventListener('click',()=>{
+          if(state.pending||state.managing||root()!==source||taskMenuRead!==token)return;
+          closeTaskMenu();
+          if(id!==source)void open(item);
+        });
+        row.append(pick);view.taskList.append(row);
+      }
+      view.taskStatus.textContent=bucket==='active'?
+        'Only active tasks are shown. Use Archive or Trash to see retired tasks.':
+        'Only tasks in this view are shown. Restore this task before starting another.';
+      view.taskForm.hidden=bucket!=='active';view.taskStart.disabled=bucket!=='active';
+      updateHead();
+    }catch(error){
+      if(state.destroyed||taskMenuRead!==token||!view.taskDialog.open)return;
+      view.taskStatus.textContent='';view.taskError.textContent=String(error?.message||error);view.taskError.hidden=false;
+    }
+  }
+  view.taskMenu.addEventListener('click',()=>void openTaskMenu());
+  view.taskCancel.addEventListener('click',()=>{if(!state.pending)closeTaskMenu();});
+  view.taskDialog.addEventListener('cancel',event=>{if(state.pending)event.preventDefault();else taskMenuRead++;});
+  view.taskForm.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const source=root(),task=view.taskInput.value.trim(),prior=readTaskAttempt(source),token=taskMenuRead;
+    if(!task||view.taskForm.hidden||!view.taskDialog.open||state.pending||state.managing||
+      taskGroup?.selectedTaskId!==source||selectedBucket()!=='active')return;
+    let cwd='';
+    try { cwd=localStorage.getItem('blackice.next.cwd')||''; } catch {}
+    const attempt=prior?.task===task?prior:{task,cwd,requestId:stableId('chat')};
+    saveTaskAttempt(source,attempt);
+    state.pending=true;view.taskStart.disabled=true;view.taskCancel.disabled=true;view.taskInput.readOnly=true;view.taskError.hidden=true;
+    updateHead();
+    try{
+      const result=await submitFreshChatTask({api,sourceTaskId:source,...attempt});
+      saveTaskAttempt(source,null);
+      if(state.destroyed||!state.active||root()!==source||taskMenuRead!==token)return;
+      const run=result.run;
+      taskGroup={...taskGroup,selectedTaskId:run.taskId,taskIds:[...new Set([...taskGroup.taskIds,run.taskId])]};
+      const item={id:run.taskId,taskId:run.taskId,runId:run.id,chatDisplayGroupId:result.groupId,
+        title:task,state:'active',updatedAt:run.updatedAt||run.createdAt,status:run.status};
+      state.list=summaries([item,...state.list.filter(row=>rootId(row)!==run.taskId)]);
+      closeTaskMenu();
+      state.pending=false;
+      await open(item);
+      if(!state.broken)hint('New task started. Previous tasks and Goals are unchanged.');
+      void loadList();
+    }catch(error){
+      if(!state.destroyed&&taskMenuRead===token&&view.taskDialog.open){
+        view.taskError.textContent=String(error?.message||error)+' Retry unchanged to recover the same request.';view.taskError.hidden=false;
+      }
+    }finally{
+      state.pending=false;
+      if(!state.destroyed){view.taskStart.disabled=view.taskForm.hidden;view.taskCancel.disabled=false;view.taskInput.readOnly=false;updateHead();}
+    }
+  });
   function showNew({focus=true}={}) {
     if(state.managing)return;
+    closeTaskMenu();
     state.generation++;state.dataController?.abort();state.loading=false;
     clearTimeout(state.liveTimer);state.liveTimer=null;state.stream.length=0;
     state.selected=null;state.runs=[];state.count=12;state.messageLimits.clear();
@@ -733,7 +845,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       modelPicker.close({restoreFocus:false});
       state.active=false;folderUI.stop();state.generation++;state.listRead++;state.unsubscribe?.();state.unsubscribe=null;
       listRequested=false;listInitialize=null;listController?.abort();
-      closeTrash();if(view.renameDialog.open){view.renameDialog.close();if(!state.managing)renameTarget=null;}
+      closeTaskMenu();closeTrash();if(view.renameDialog.open){view.renameDialog.close();if(!state.managing)renameTarget=null;}
       state.dataController?.abort();state.loading=false;artifacts.cancel();visuals.cancel();
       clearTimeout(state.listTimer);clearTimeout(state.liveTimer);clearTimeout(settleTimer);
       clearTimeout(searchTimer);searchTimer=null;
