@@ -11,15 +11,15 @@ export function createActionDirectory({frame,api,getRuns}){
  const isFailed=r=>r.success===false||r.threw===true;
  function paint(){
   const expanded=new Set([...tree.querySelectorAll('details')].filter(row=>row.open).map(row=>row.dataset.actionId));
-  tree.replaceChildren();objective.textContent=state.objective;status.textContent='Revision '+state.revision+' Â· Receipts record attempts, not proof of completion.';
-  const appendAttempt=(parent,r)=>{const label=r.state==='unknown'?(r.threw?'Error; outcome unknown':'Outcome unknown'):isFailed(r)?(r.actionDispatched===false?'Failed before dispatch':'Failed'):'Returned';const receipt=make('li',[label,r.tool,r.code,r.id].filter(Boolean).join(' Â· '));if(isFailed(r)||r.state==='unknown')receipt.dataset.warning='true';parent.append(receipt);};
+  tree.replaceChildren();objective.textContent=state.objective;status.textContent='Revision '+state.revision+' \u00b7 Receipts record attempts, not proof of completion.';
+  const appendAttempt=(parent,r)=>{const label=r.state==='unknown'?(r.threw?'Error; outcome unknown':'Outcome unknown'):isFailed(r)?(r.actionDispatched===false?'Failed before dispatch':'Failed'):'Returned';const receipt=make('li',[label,r.tool,r.code,r.id].filter(Boolean).join(' \u00b7 '));if(isFailed(r)||r.state==='unknown')receipt.dataset.warning='true';parent.append(receipt);};
   for(const action of state.actions){
    const dependencyBlock=state.dependencyBlocked?.find(item=>item.id===action.id),evidence=state.receipts.filter(r=>r.actionId===action.id||r.linkedByActionId===action.id);
    const row=make('details'),title=make('summary'),body=make('div'),tools=make('div'),note=make('input'),attempts=make('ul');
    row.className='action-outline-row';row.dataset.actionId=action.id;row.open=expanded.has(action.id)||action.id===state.focus;
    title.append(make('strong',action.objective));const stateLabel=make('small',dependencyBlock?'Waiting on blocked action':action.state==='observed'?'Recorded':action.state==='active'?'Current':action.state==='blocked'?'Blocked':'Pending');stateLabel.className='action-outline-chip';title.append(stateLabel);
    const failed=evidence.filter(r=>r.state!=='unknown'&&isFailed(r)).length,unknown=evidence.filter(r=>r.state==='unknown').length;
-   if(failed||unknown){const warning=make('small',[failed&&failed+' failed',unknown&&unknown+' unresolved'].filter(Boolean).join(' Â· '));warning.className='action-outline-chip';warning.dataset.warning='true';title.append(warning);}
+   if(failed||unknown){const warning=make('small',[failed&&failed+' failed',unknown&&unknown+' unresolved'].filter(Boolean).join(' \u00b7 '));warning.className='action-outline-chip';warning.dataset.warning='true';title.append(warning);}
    body.className='action-outline-detail';body.append(make('p','Action ID: '+action.id),make('p','Depends on: '+(action.dependsOn.join(', ')||'none')));
    if(dependencyBlock)body.append(make('p','Blocked by: '+dependencyBlock.blockedBy.join(', ')));
    if(action.observation)body.append(make('p',action.observation.authority+': '+action.observation.claim));
@@ -34,7 +34,7 @@ export function createActionDirectory({frame,api,getRuns}){
  }
  async function load(){if(!selected||!dialog.open)return;const token=++epoch;controller?.abort();controller=new AbortController();try{const result=await api(url(),'GET',undefined,{signal:controller.signal});if(token!==epoch||!dialog.open)return;if(result.taskId!==(selected.taskId||selected.id)||result.runId!==selected.id)throw Error('Directory task scope changed.');state=result.state;paint();}catch(error){if(token===epoch)status.textContent=error.message;}}
  async function edit(change,accepted){if(!state||busy)return;const token=epoch,revision=state.revision;busy=true;add.disabled=true;try{const result=await api(url(),'POST',{...change,revision});if(token!==epoch||!dialog.open)return;state=result.state;accepted?.();paint();}catch(error){if(token===epoch)status.textContent=error.message+' Your draft is unchanged. Refresh before retrying.';}finally{busy=false;add.disabled=false;}}
- async function open(){const run=getRuns()?.at(-1);if(!run)return;selected=run;state=null;objective.textContent='';status.textContent='Loading actionsâ€¦';const draft=drafts.get(run.taskId||run.id);input.value=draft?.objective||'';deps.value=draft?.dependencies||'';if(dialog.showModal)dialog.showModal();else dialog.open=true;await load();}
+ async function open(){const run=getRuns()?.at(-1);if(!run)return;selected=run;state=null;objective.textContent='';status.textContent='Loading actions...';const draft=drafts.get(run.taskId||run.id);input.value=draft?.objective||'';deps.value=draft?.dependencies||'';if(dialog.showModal)dialog.showModal();else dialog.open=true;await load();}
  function reset(){saveDraft();epoch++;controller?.abort();state=null;selected=null;tree.replaceChildren();}
  // Chromium queues close events. A close from the prior opening must not
  // abort the new selection or clear its outline after a quick reopen.
