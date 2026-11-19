@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: 2.40.15 candidate source index.** Package version is **2.40.15**, not an installed or published artifact. See [2.40.15 source notes](../RELEASE-NOTES-2.40.15.md) and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
+> **Status: 2.40.16 candidate source index.** Package version is **2.40.16**, not an installed or published artifact. See [2.40.16 source notes](../RELEASE-NOTES-2.40.16.md) and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
@@ -14,7 +14,7 @@ Start with the [project README](../README.md). A named document's date, original
 | Remote access and connection scope | [Remote access](../REMOTE-ACCESS.md) |
 | Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md), [stopped-task tab adoption](stopped-task-tab-adoption.md) |
 | Keep work moving within a conversation | [Goal mode](GOAL-MODE.md) |
-| Current architecture and verification limits | [2.40.15 candidate scope](../RELEASE-NOTES-2.40.15.md) |
+| Current architecture and verification limits | [2.40.16 candidate scope](../RELEASE-NOTES-2.40.16.md) |
 | Organize work | Conversation folders, nested Skills and Browser folders, Cronjobs and [Goal mode](GOAL-MODE.md). No automatic Swarm dispatch. |
 | Build or publish a Windows release | [Signing and release](../SIGNING-AND-RELEASE.md) and [third-party notices](../THIRD-PARTY-NOTICES.md) |
 

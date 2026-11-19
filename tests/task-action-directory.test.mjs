@@ -68,3 +68,15 @@ test('successful same-turn unassigned reads can be explicitly linked once withou
  await assert.rejects(observe('next',[returned.receiptId]),{code:'DIRECTORY_EVIDENCE'});
  assert.equal(ledger.read().actions[1].state,'active');
 });
+
+test('plan replaces only pending work and can depend on omitted recorded steps',async()=>{
+ const ledger=create();await plan(ledger);await focus(ledger);
+ const receipt=await ledger.execute({name:'relay_find_files'},async()=>({success:true}),{runId:'run',nodeId:'agent'});
+ await ledger.edit({action:'observe',id:'find',claim:'Input found',receipts:[receipt.receiptId],revision:ledger.read().revision});
+ const before=ledger.read();
+ const after=await ledger.edit({action:'plan',actions:[{id:'search',objective:'Search actual postings',dependsOn:['find']}],revision:before.revision});
+ assert.deepEqual(after.actions[0],before.actions[0]);assert.deepEqual(after.receipts,before.receipts);
+ assert.deepEqual(after.actions.map(a=>a.id),['find','search']);assert.deepEqual(after.ready,['search']);assert.equal(ledger.finalStatus().ready,false);
+ await assert.rejects(ledger.edit({action:'plan',actions:[{id:'find',objective:'Rewritten history',dependsOn:[]}],revision:after.revision}),{code:'DIRECTORY_RECORDED_ACTION'});
+ assert.deepEqual(ledger.read(),after);
+});

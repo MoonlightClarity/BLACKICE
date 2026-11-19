@@ -67,3 +67,31 @@ test('focus-after-read live trace replay advances without repeating the successf
   if(mode==='maximal')assert(engine.runs.get(run.id).turnMachineTrace.head.some(e=>e.kind==='directory.mutation'&&e.metadata.linkedReadCount===1));
  }
 });
+
+test('one completed discovery step cannot turn a rejected extension into a successful final',async t=>{
+ const{engine}=await setup(t,async o=>{
+  let index=0;
+  const dir=(action,args={})=>o.onToolCall({name:'relay_directory_action',callId:'append-'+ ++index,arguments:{action,...args}});
+  const first={id:'find_profile',objective:'Find application materials',dependsOn:[]};
+  const after={id:'find_jobs',objective:'Check a local synthetic posting',dependsOn:['find_profile']};
+  assert.equal((await dir('plan',{actions:[first]})).success,true);
+  assert.equal((await dir('focus',{id:first.id})).success,true);
+  const read=await o.onToolCall({name:'relay_workspace',callId:'profile-list',arguments:{action:'list',path:'.'}});
+  const [id]=read.contentItems.at(-1).text.match(/receipt-[0-9]+/);
+  assert.equal((await dir('observe',{id:first.id,claim:'Located material',receipts:[id]})).success,true);
+  const rejected=await dir('plan',{actions:[{...first,objective:'Rewrite attempted step'},after]});
+  assert.equal(rejected.code,'DIRECTORY_RECORDED_ACTION');
+  const repair=await o.onBeforeFinal({signal:o.signal});assert.equal(repair.continue,true);assert.match(repair.prompt,/existing outline is partial/);
+  const add=await dir('plan',{actions:[after]});assert.equal(add.success,true,JSON.stringify(add));
+  const state=JSON.parse(add.contentItems[0].text);assert.deepEqual(state.ready,[after.id]);assert.equal(state.actions[0].objective,first.objective);
+  assert.equal((await dir('focus',{id:after.id})).success,true);
+  const job=await o.onToolCall({name:'relay_workspace',callId:'posting-list',arguments:{action:'list',path:'.'}});
+  const [evidence]=job.contentItems.at(-1).text.match(/receipt-[0-9]+/);
+  assert.equal((await dir('observe',{id:after.id,claim:'Checked the synthetic source',receipts:[evidence]})).success,true);
+  assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);
+  return{output:'Checked a fixture; no external effect.'};
+ });
+ const run=engine.startRun({workflow:graph,input:{task:'Find material and check a source',directoryActions:'on',directoryDiagnostics:'maximal'}});
+ await engine.executions.get(run.id);
+ const result=engine.getRun(run.id);assert.equal(result.status,'completed',result.error);assert.match(result.output,/Checked a fixture/);
+});
