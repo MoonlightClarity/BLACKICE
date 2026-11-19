@@ -102,3 +102,27 @@ test('the default first-party pack is selectable by real format and task queries
  assert.match(body,/paragraphs/);
  assert.ok(!(await call({action:'search',query:'paragraphs'})).entries.some(row=>row.id==='library-word-review'));
 });
+test('natural requests and concise keywords rank the intended default skill first',async()=>{
+ const handler=createRetrievalToolHandler({cwd:process.cwd()});
+ const search=async query=>decode(await handler({name:'relay_skills',arguments:{action:'search',query}}));
+ for(const [id,short,long] of [
+  ['pdf-evidence','pdf','Could you pull the work history and dates out of this résumé PDF and flag anything you cannot read?'],
+  ['spreadsheet-inspection','cached formulas','Tell me whether you can see the cached formulas in this workbook without recalculating any cells.'],
+  ['accessibility-spot-check','keyboard navigation','Try the checkout with keyboard-only input and let me know where a customer might get stuck.'],
+  ['concept-diagram','data flow','Sketch how data flows between these services so I can understand the systems before our meeting.'],
+  ['chart-storytelling','trend chart','Make a simple trend chart showing how school enrollment changed year to year and note any gaps.'],
+  ['code-review','code review','Please review the production code for meaningful correctness risks before we ship the patch.'],
+  ['data-reconciliation','contact lists','Find anyone who appears twice across these contact lists even if their names are written slightly differently.'],
+  ['document-comparison','draft versions','Show what meaningfully changed between the two draft versions and tell me if any commitments were added.'],
+ ]){
+  for (const query of [short,long]) {
+   const page=await search(query);
+   assert.equal(page.entries[0]?.id,'library-'+id,query);
+   assert.ok(page.entries.every(row=>!('content' in row)&&!('bodyFile' in row)&&!('aliases' in row)));
+  }
+ }
+ for(const query of ['soil salinity limits for heirloom tomatoes','repaint a rusted bicycle frame with enamel','pdfish','lexicalgibberish-only','Could you please do it?']){
+  assert.equal((await search(query)).totalMatches,0,query);
+ }
+ assert.ok(!(await search('paragraphs')).entries.some(row=>row.id==='library-word-review'));
+});

@@ -18,6 +18,7 @@
     },
     {
       "id": "library-word-review",
+      "aliases": ["word document", "word draft"],
       "title": "Review a Word document",
       "description": "Review a Word draft and give located comments or a revised text version without implying formatting was preserved.",
       "tags": [
@@ -34,6 +35,7 @@
     },
     {
       "id": "library-document-comparison",
+      "aliases": ["draft versions", "document versions", "compare drafts", "changes between drafts", "versions of the draft"],
       "title": "Compare document versions",
       "description": "Compare available versions by meaning and surface material changes with locations in both sources.",
       "tags": [
@@ -64,6 +66,7 @@
     },
     {
       "id": "library-spreadsheet-inspection",
+      "aliases": ["cached formulas", "formula values", "workbook formulas", "cached values", "spreadsheet data"],
       "title": "Inspect spreadsheet data",
       "description": "Profile supplied table data and reconcile totals; use workbook features only when the reader exposes them.",
       "tags": [
@@ -110,6 +113,7 @@
     },
     {
       "id": "library-data-reconciliation",
+      "aliases": ["contact lists", "duplicate records", "compare lists", "reconcile lists"],
       "title": "Reconcile two lists",
       "description": "Match two tables or exports and report missing, duplicate, and ambiguous records without silently dropping rows.",
       "tags": [
@@ -260,6 +264,7 @@
     },
     {
       "id": "library-code-review",
+      "aliases": ["code review", "review code", "review production code", "review source code"],
       "title": "Review a code change",
       "description": "Find behavior regressions and missing verification in a local patch with actionable findings.",
       "tags": [
@@ -290,6 +295,7 @@
     },
     {
       "id": "library-concept-diagram",
+      "aliases": ["data flow", "system diagram", "architecture diagram", "systems diagram"],
       "title": "Draw a concept diagram",
       "description": "Explain a process, relationship, or system with a labeled static SVG and a short text equivalent.",
       "tags": [
@@ -306,6 +312,7 @@
     },
     {
       "id": "library-accessibility-spot-check",
+      "aliases": ["keyboard-only", "keyboard navigation", "keyboard accessibility", "tab order", "keyboard operability"],
       "title": "Spot-check web accessibility",
       "description": "Check a page or short flow for keyboard, focus, and labeling barriers with observed evidence.",
       "tags": [
@@ -323,6 +330,7 @@
     },
     {
       "id": "library-chart-storytelling",
+      "aliases": ["trend chart", "line chart", "bar chart", "time series", "trend over time"],
       "title": "Tell a story with a chart",
       "description": "Turn supplied data into a clear static chart, source note, and explanation of what the evidence shows.",
       "tags": [
