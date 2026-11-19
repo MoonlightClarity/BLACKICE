@@ -6,4 +6,4 @@ In **Config → Local Models**, BLACKICE shows and prepares the default `models`
 
 **Discover folder models** asks the actual router for its catalog. It may start or replace BLACKICE's idle router, but not interrupt a model with an active lease. Independently managed llama.cpp, Ollama and LM Studio retain their own storage. Catalog detection does not prove model inference or GPU acceleration.
 
-This candidate does not include the action-oriented Directory or three-module Planning rebuild.
+The diagnostic capture selector now says **Diagnostics**. Turning it on does not change how the model runs. This candidate does not include the action-oriented Directory or three-module Planning rebuild.

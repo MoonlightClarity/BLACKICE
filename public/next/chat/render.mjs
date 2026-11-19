@@ -60,7 +60,7 @@ export function createChatFrame(mount) {
     '<div class="next-chat-options"><div class="next-chat-model"><span>Model</span><select id="next-chat-model" aria-label="Model"><option value="default">Default</option></select></div>',
     '<label>Reasoning <select id="next-chat-effort"><option value="default">Model default</option></select></label>',
     '<label>Speed <select id="next-chat-tier"><option value="default">Standard</option></select></label>',
-    '<label title="Record diagnostic provenance for the next response. Does not change model behavior.">Directory <select id="next-chat-directory-diagnostics" aria-label="Directory diagnostics for the next response"><option value="off">Off</option><option value="on">On</option></select></label>',
+    '<label title="Record diagnostic provenance for the next response. Does not change model behavior.">Diagnostics <select id="next-chat-directory-diagnostics" aria-label="Directory diagnostics for the next response"><option value="off">Off</option><option value="on">On</option></select></label>',
     '<label title="On allows searching other chats. Off applies to future BLACKICE chat lookups, not this conversation or local files. Saves when you send.">Past chats <select id="next-chat-past-chats" aria-label="Past chats for the next response"><option value="off">Off</option><option value="on">On demand</option></select></label>',
     '<input id="next-chat-execution-mode" type="hidden" value="automatic">',
     '<button id="next-chat-goal-toggle" class="next-chat-goal-toggle" type="button" role="switch" aria-checked="false">Goal: Off</button><span class="next-chat-spacer"></span><button class="next-primary" type="submit" id="next-chat-send">Send</button></div>',
