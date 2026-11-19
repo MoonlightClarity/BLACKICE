@@ -191,12 +191,18 @@ test('appended Planning annotations cannot hide a real structured tool failure o
 });
 
 test('run snapshots adopt independent execution sequence without overwriting equal/newer human plan fields', () => {
+  // Construct the receiver without opening the persistence worker.
+  const engine = new HarnessEngine({dataDir: tmpdir()});
   const run = { id: 'run-one', taskId: 'task-one', taskState: { taskId: 'task-one', revision: 3, goal: 'Latest human goal', steps: [action()], executionObservations: { total: 1, updatedAt: '2026-10-23T00:00:00.000Z' } } };
-  assert.equal(HarnessEngine.prototype.adoptTaskState(run, { taskId: 'task-one', revision: 3, goal: 'Must not replace human goal', steps: [], executionObservations: { total: 2, updatedAt: '2026-10-23T00:00:01.000Z' } }), true);
+  assert.equal(engine.adoptTaskState(run, { taskId: 'task-one', revision: 3, goal: 'Must not replace human goal', steps: [], executionObservations: { total: 2, updatedAt: '2026-10-23T00:00:01.000Z' } }), true);
   assert.equal(run.taskState.goal, 'Latest human goal'); assert.equal(run.taskState.steps.length, 1); assert.equal(run.taskState.executionObservations.total, 2);
-  assert.equal(HarnessEngine.prototype.adoptTaskState(run, { taskId: 'task-one', revision: 3, executionObservations: { total: 1 } }), false);
-  assert.equal(HarnessEngine.prototype.adoptTaskState(run, { taskId: 'task-one', revision: 4, goal: 'New saved human goal', steps: [], executionObservations: { total: 1 } }), true);
+  const firstDirtyRevision = engine.dirtyRuns.get(run.id);
+  assert.ok(Number.isSafeInteger(firstDirtyRevision));
+  assert.equal(engine.adoptTaskState(run, { taskId: 'task-one', revision: 3, executionObservations: { total: 1 } }), false);
+  assert.equal(engine.dirtyRuns.get(run.id), firstDirtyRevision);
+  assert.equal(engine.adoptTaskState(run, { taskId: 'task-one', revision: 4, goal: 'New saved human goal', steps: [], executionObservations: { total: 1 } }), true);
   assert.equal(run.taskState.goal, 'New saved human goal'); assert.equal(run.taskState.executionObservations.total, 2);
+  assert.ok(engine.dirtyRuns.get(run.id) > firstDirtyRevision);
 });
 
 test('interruption preserves a large human plan within the current limit and uses only a small journal reference', async t => {
