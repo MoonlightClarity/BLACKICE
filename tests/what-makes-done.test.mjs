@@ -34,7 +34,7 @@ test('receipt-backed discovery advances to delivery; a confirmation is a separat
 
 test('Critical Path distinguishes the action that unlocks delivery from a tempting detour',async()=>{
  const {content}=await readBundledSkill('library-simplest-complete-path');
- for(const expected of [/research, writing, operations, and software/,/smallest informative check/,/another comparison would not change the next action/,/not on the critical path/,/research if you get an interview/,/continue other eligible applications/,/necessary verification/])assert.match(content,expected);
+ for(const expected of [/research, writing, operations, and software/,/smallest informative check/,/another comparison would not change the next action/,/not on the critical path/,/research if you get an interview/,/continue other eligible applications/,/Keep the prerequisite open when an option fails/,/Find a usable dataset/,/necessary verification/])assert.match(content,expected);
  assert.doesNotMatch(content,/token (?:budget|conservation|saving)|(?:save|conserve|reduce) tokens/i);
 });
 
