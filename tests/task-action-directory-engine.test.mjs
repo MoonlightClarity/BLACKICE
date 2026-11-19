@@ -95,3 +95,36 @@ test('one completed discovery step cannot turn a rejected extension into a succe
  await engine.executions.get(run.id);
  const result=engine.getRun(run.id);assert.equal(result.status,'completed',result.error);assert.match(result.output,/Checked a fixture/);
 });
+
+test('Directory reports closed work separately from unready dependencies and resumes at a ready action',async t=>{
+ const {engine}=await setup(t,async o=>{
+  let i=0;
+  const dir=(action,args={})=>o.onToolCall({name:'relay_directory_action',callId:'focus-recovery-'+ ++i,arguments:{action,...args}});
+  const read=()=>o.onToolCall({name:'relay_workspace',callId:'evidence-'+ ++i,arguments:{action:'list',path:'.'}});
+  const receipt=async()=>{const r=await read();assert.equal(r.success,true);return r.contentItems.at(-1).text.match(/receipt-\d+/)[0];};
+  assert.equal((await dir('plan',{actions:[{id:'find_input',objective:'Locate the fixture',dependsOn:[]},{id:'find_source',objective:'Inspect the next source',dependsOn:['find_input']},{id:'do_work',objective:'Use the next source',dependsOn:['find_source']}]})).success,true);
+  assert.equal((await dir('focus',{id:'find_input'})).success,true);
+  const first=await receipt();
+  assert.equal((await dir('observe',{id:'find_input',claim:'Located input',receipts:[first]})).success,true);
+  const unassigned=await receipt();
+  const repeat=await dir('observe',{id:'find_input',claim:'Repeated observation',receipts:[unassigned]});
+  assert.equal(repeat.code,'DIRECTORY_OBSERVATION');assert.match(repeat.contentItems[0].text,/already observed.*Ready next actions: find_source/);
+  const closed=await dir('focus',{id:'find_input'});
+  assert.equal(closed.code,'DIRECTORY_ACTION_CLOSED');assert.match(closed.contentItems[0].text,/already observed.*Ready next actions: find_source/);
+  const waiting=await dir('focus',{id:'do_work'});
+  assert.equal(waiting.code,'DIRECTORY_NOT_READY');assert.match(waiting.contentItems[0].text,/waiting on find_source.*Ready next actions: find_source/);
+  assert.equal((await dir('focus',{id:'find_source'})).success,true);
+  assert.equal((await dir('observe',{id:'find_source',claim:'Inspected source',receipts:[await receipt()]})).success,true);
+  assert.equal((await dir('focus',{id:'do_work'})).success,true);
+  assert.equal((await dir('observe',{id:'do_work',claim:'Checked input',receipts:[await receipt()]})).success,true);
+  assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);
+  return {output:'Completed fixture'};
+ });
+ const run=engine.startRun({workflow:graph,input:{task:'Reproduce failed focus, then continue',directoryActions:'on',directoryDiagnostics:'maximal'}});
+ await engine.executions.get(run.id);
+ const result=engine.getRun(run.id);assert.equal(result.status,'completed',result.error);
+ const outcomes=engine.runs.get(run.id).turnMachineTrace.head.filter(e=>e.kind==='directory.mutation'&&e.metadata.phase==='rejected').map(e=>e.metadata);
+ assert.deepEqual(outcomes.map(x=>[x.code,x.actionState,x.unmetDependencyCount,x.readyActionCount]),[
+  ['DIRECTORY_OBSERVATION','observed',0,1],['DIRECTORY_ACTION_CLOSED','observed',0,1],['DIRECTORY_NOT_READY','pending',1,1]
+ ]);
+});
