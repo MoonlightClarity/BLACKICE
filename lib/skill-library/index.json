@@ -1,4 +1,290 @@
 {
   "version": 1,
-  "entries": []
+  "entries": [
+    {
+      "id": "library-pdf-evidence",
+      "title": "Read a PDF for evidence",
+      "description": "Extract cited claims, tables, or page findings from PDFs and flag scanned, unreadable, or unverified pages.",
+      "tags": [
+        "documents",
+        "pdf",
+        "extraction"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "pdf-evidence.md"
+    },
+    {
+      "id": "library-word-review",
+      "title": "Review a Word document",
+      "description": "Review a Word draft and give located comments or a revised text version without implying formatting was preserved.",
+      "tags": [
+        "documents",
+        "word",
+        "editing"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "word-review.md"
+    },
+    {
+      "id": "library-document-comparison",
+      "title": "Compare document versions",
+      "description": "Compare available versions by meaning and surface material changes with locations in both sources.",
+      "tags": [
+        "documents",
+        "comparison",
+        "revisions"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "document-comparison.md"
+    },
+    {
+      "id": "library-document-action-items",
+      "title": "Extract actions from documents",
+      "description": "Turn minutes, briefs, or documents into traceable tasks, decisions, deadlines, and unresolved questions.",
+      "tags": [
+        "documents",
+        "meeting",
+        "action-items"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "document-action-items.md"
+    },
+    {
+      "id": "library-spreadsheet-inspection",
+      "title": "Inspect spreadsheet data",
+      "description": "Profile supplied table data and reconcile totals; use workbook features only when the reader exposes them.",
+      "tags": [
+        "data",
+        "spreadsheet",
+        "audit"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "spreadsheet-inspection.md"
+    },
+    {
+      "id": "library-csv-cleanup",
+      "title": "Clean and reconcile CSV data",
+      "description": "Clean tabular text with reversible transformations, a change summary, and reconciliation checks.",
+      "tags": [
+        "data",
+        "csv",
+        "cleanup"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "csv-cleanup.md"
+    },
+    {
+      "id": "library-table-calculations",
+      "title": "Calculate from tables",
+      "description": "Answer a quantitative question from supplied tables with explicit units, denominators, and checks.",
+      "tags": [
+        "data",
+        "analysis",
+        "calculation"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "table-calculations.md"
+    },
+    {
+      "id": "library-data-reconciliation",
+      "title": "Reconcile two lists",
+      "description": "Match two tables or exports and report missing, duplicate, and ambiguous records without silently dropping rows.",
+      "tags": [
+        "data",
+        "reconciliation",
+        "tables"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "data-reconciliation.md"
+    },
+    {
+      "id": "library-public-source-brief",
+      "title": "Research a public question",
+      "description": "Answer a research question with primary sources, dates, coverage, and explicit gaps.",
+      "tags": [
+        "research",
+        "web",
+        "citations"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "public-source-brief.md"
+    },
+    {
+      "id": "library-web-page-summary",
+      "title": "Summarize a web page",
+      "description": "Extract the concrete takeaways from a specified page without confusing navigation text, snippets, or prior editions with its contents.",
+      "tags": [
+        "web",
+        "summary",
+        "extraction"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "web-page-summary.md"
+    },
+    {
+      "id": "library-compare-options-brief",
+      "title": "Compare practical options",
+      "description": "Create a useful shortlist using evidence, user priorities, and consequential tradeoffs.",
+      "tags": [
+        "research",
+        "comparison",
+        "decision"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "compare-options-brief.md"
+    },
+    {
+      "id": "library-evidence-brief",
+      "title": "Write an evidence brief",
+      "description": "Turn scattered source material into a short brief with findings, evidence strength, and next decision.",
+      "tags": [
+        "research",
+        "brief",
+        "writing"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "evidence-brief.md"
+    },
+    {
+      "id": "library-audience-draft",
+      "title": "Draft for a specific audience",
+      "description": "Write a useful message or short document for its intended reader without sending it.",
+      "tags": [
+        "writing",
+        "drafting",
+        "communication"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "audience-draft.md"
+    },
+    {
+      "id": "library-edit-for-clarity",
+      "title": "Edit prose for clarity",
+      "description": "Improve structure, readability, or concision while preserving the author’s meaning and meaningful qualifications.",
+      "tags": [
+        "writing",
+        "revision",
+        "editing"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "edit-for-clarity.md"
+    },
+    {
+      "id": "library-project-handoff",
+      "title": "Prepare a project handoff",
+      "description": "Summarize verified state, current blockers, and the next executable step for someone taking over.",
+      "tags": [
+        "writing",
+        "handoff",
+        "project"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "project-handoff.md"
+    },
+    {
+      "id": "library-software-debugging",
+      "title": "Diagnose a software bug",
+      "description": "Find where a software behavior first diverges using a focused reproduction and evidence.",
+      "tags": [
+        "coding",
+        "debugging",
+        "diagnosis"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "software-debugging.md"
+    },
+    {
+      "id": "library-focused-regression",
+      "title": "Verify a code change",
+      "description": "Choose focused regression checks and distinguish verified behavior from untested paths.",
+      "tags": [
+        "coding",
+        "testing",
+        "verification"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "focused-regression.md"
+    },
+    {
+      "id": "library-code-review",
+      "title": "Review a code change",
+      "description": "Find behavior regressions and missing verification in a local patch with actionable findings.",
+      "tags": [
+        "coding",
+        "review",
+        "quality"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "code-review.md"
+    },
+    {
+      "id": "library-source-map",
+      "title": "Map an unfamiliar code path",
+      "description": "Trace an input through handlers, state, and output in an unfamiliar repository.",
+      "tags": [
+        "coding",
+        "repository",
+        "architecture"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "source-map.md"
+    }
+  ]
 }
