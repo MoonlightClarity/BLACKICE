@@ -126,3 +126,23 @@ test('natural requests and concise keywords rank the intended default skill firs
  }
  assert.ok(!(await search('paragraphs')).entries.some(row=>row.id==='library-word-review'));
 });
+test('domain aliases handle intervening words without awarding unrelated word fragments',async()=>{
+ const handler=createRetrievalToolHandler({cwd:process.cwd()});
+ const search=async query=>decode(await handler({name:'relay_skills',arguments:{action:'search',query}}));
+ for(const [query,id] of [
+  ['Add margin suggestions after reading my Word policy file and prioritize the important ones.','word-review'],
+  ['Could you press the Tab key and watch where focus travels on this registration page?','accessibility-spot-check'],
+  ['Use a line graph to compare weekly dispatch counts and call out the two largest drops.','chart-storytelling'],
+  ['Please review this small scheduling diff, especially its effect on local time at month-end.','code-review'],
+  ['Find mismatched family names in these two volunteer rosters and flag uncertain matches.','data-reconciliation'],
+  ['The app sometimes freezes after changing monitors; trace what happens before it stops drawing.','software-debugging'],
+  ['Write a concise dev handover so someone else can pick up the unresolved login problem without rechecking everything.','project-handoff'],
+ ]){
+  assert.equal((await search(query)).entries[0]?.id,'library-'+id,query);
+ }
+ for (const query of [
+  'Label household breaker switches and refrigerate leftover noodles.',
+  'Ask the band to review yesterday while I schedule a dentist and photograph fabric swatches beside the patch.',
+  'Use tabkey stickers to color-make a wordfile-themed birthday card.',
+ ]) assert.equal((await search(query)).totalMatches,0,query);
+});

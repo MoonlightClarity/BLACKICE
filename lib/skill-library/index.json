@@ -18,7 +18,7 @@
     },
     {
       "id": "library-word-review",
-      "aliases": ["word document", "word draft"],
+      "aliases": ["word document", "word draft", "word file", "word comments"],
       "title": "Review a Word document",
       "description": "Review a Word draft and give located comments or a revised text version without implying formatting was preserved.",
       "tags": [
@@ -113,7 +113,7 @@
     },
     {
       "id": "library-data-reconciliation",
-      "aliases": ["contact lists", "duplicate records", "compare lists", "reconcile lists"],
+      "aliases": ["contact lists", "duplicate records", "compare lists", "reconcile lists", "two rosters", "roster discrepancies", "match rosters", "roster conflicts"],
       "title": "Reconcile two lists",
       "description": "Match two tables or exports and report missing, duplicate, and ambiguous records without silently dropping rows.",
       "tags": [
@@ -219,6 +219,7 @@
     },
     {
       "id": "library-project-handoff",
+      "aliases": ["project handover", "write handover", "prepare handover", "bug handoff", "handover notes", "handover reproduction", "handover steps"],
       "title": "Prepare a project handoff",
       "description": "Summarize verified state, current blockers, and the next executable step for someone taking over.",
       "tags": [
@@ -234,6 +235,7 @@
     },
     {
       "id": "library-software-debugging",
+      "aliases": ["app freezes", "app hangs", "desktop freezes", "intermittent freezes", "reproduce bug", "diagnose hang", "desktop unresponsive"],
       "title": "Diagnose a software bug",
       "description": "Find where a software behavior first diverges using a focused reproduction and evidence.",
       "tags": [
@@ -264,7 +266,7 @@
     },
     {
       "id": "library-code-review",
-      "aliases": ["code review", "review code", "review production code", "review source code"],
+      "aliases": ["code review", "review code", "review production code", "review source code", "review patch", "review diff", "check patch", "review pull request"],
       "title": "Review a code change",
       "description": "Find behavior regressions and missing verification in a local patch with actionable findings.",
       "tags": [
@@ -312,7 +314,7 @@
     },
     {
       "id": "library-accessibility-spot-check",
-      "aliases": ["keyboard-only", "keyboard navigation", "keyboard accessibility", "tab order", "keyboard operability"],
+      "aliases": ["keyboard-only", "keyboard navigation", "keyboard accessibility", "tab order", "keyboard operability", "tab key", "shift tab"],
       "title": "Spot-check web accessibility",
       "description": "Check a page or short flow for keyboard, focus, and labeling barriers with observed evidence.",
       "tags": [
@@ -330,7 +332,7 @@
     },
     {
       "id": "library-chart-storytelling",
-      "aliases": ["trend chart", "line chart", "bar chart", "time series", "trend over time"],
+      "aliases": ["trend chart", "line chart", "bar chart", "time series", "trend over time", "line graph", "plot trend", "graph over time"],
       "title": "Tell a story with a chart",
       "description": "Turn supplied data into a clear static chart, source note, and explanation of what the evidence shows.",
       "tags": [
