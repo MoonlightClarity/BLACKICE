@@ -66,7 +66,7 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   assert.equal(off.status,'completed',off.error);
   assert.equal(requests.length,1);
   assert.equal(requests[0].prep,false);
-  assert.doesNotMatch(requests[0].allText,/WHAT MAKES DONE|CRITICAL PATH/);
+  assert.doesNotMatch(requests[0].allText,/WHAT MAKES DONE|CRITICAL PATH|LONG-TERM JUDGMENT/);
   assert.equal(off.planningModuleReceipts,undefined);
   const on=await done(await start('Check the startup route',{chatPlanning:'on'}));
   assert.equal(on.status,'completed',on.error);
@@ -78,6 +78,8 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   assert.match(requests[2].allText,/WHAT MAKES DONE[\s\S]*include the step that delivers the requested result/);
   assert.match(requests[1].allText,/CRITICAL PATH[\s\S]*unmet prerequisite controlling the outcome/);
   assert.match(requests[2].allText,/CRITICAL PATH[\s\S]*Do not cut requested work or necessary verification/);
+  assert.match(requests[1].allText,/LONG-TERM JUDGMENT \(advisory\)[\s\S]*exact undo path/);
+  assert.match(requests[2].allText,/LONG-TERM JUDGMENT \(advisory\)[\s\S]*Irreversibility calls for proportionate verification, not passivity/);
   assert.deepEqual(on.planningModuleReceipts.map(row=>[row.moduleId,row.phase]),[[catalog[0],'started'],[catalog[0],'completed']]);
   const ledger=await engine.actionDirectories.get(on.taskId||on.id,on.input);
   assert.equal(ledger.read().revision,1);

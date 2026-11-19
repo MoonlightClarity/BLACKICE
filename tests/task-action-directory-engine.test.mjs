@@ -167,3 +167,40 @@ test('one extra Directory continuation after a verified milestone, but not for o
   await engine.executions.get(run.id);assert.equal(engine.getRun(run.id).status,expected,engine.getRun(run.id).error);
  }
 });
+test('later observed milestones keep the workflow moving without accepting final prose as evidence',async t=>{
+ const {engine,root}=await setup(t,async o=>{
+  const names=['Locate applicant profile','Read source qualifications','Locate role posting','Check requirements','Prepare fields','Verify the intended target','Submit the test application','Read the confirmation'];
+  const actions=names.map((objective,i)=>({id:'step_'+i,objective,dependsOn:i?['step_'+(i-1)]:[]}));
+  let sequence=0;
+  const call=async(name,args)=>{
+   const result=await o.onToolCall({name,arguments:args,callId:'milestone-'+(++sequence)});
+   assert.equal(result.success,true,JSON.stringify(result));
+   return result;
+  };
+  const dir=async args=>JSON.parse((await call('relay_directory_action',args)).contentItems[0].text);
+  const review=()=>o.onBeforeFinal({output:'This final answer is not evidence.',signal:o.signal});
+  await dir({action:'plan',actions});
+  assert.equal((await review()).continue,true);
+  for(let i=0;i<actions.length;i++){
+   const {id}=actions[i];
+   await dir({action:'focus',id});
+   await call('relay_workspace',{action:'list',path:root});
+   const state=await dir({action:'read'});
+   const receipt=state.receipts.at(-1);
+   await dir({action:'observe',id,claim:'Completed scripted fixture milestone '+id,receipts:[receipt.id]});
+   if(i<actions.length-1){
+    const next=await review();
+    assert.equal(next.continue,true);
+    assert.match(next.prompt,/Never repeat a confirmed or unknown effect/);
+   }
+  }
+  assert.equal(await review(),undefined);
+  return {output:'Completed all eight scripted fixture milestones'};
+ });
+ const run=engine.startRun({workflow:graph,input:{task:'Complete the staged fixture workflow',directoryActions:'on'}});
+ await engine.executions.get(run.id);
+ const result=engine.getRun(run.id);
+ assert.equal(result.status,'completed',result.error);
+ const ledger=await engine.actionDirectories.get(run.id,'Fixture workflow');
+ assert.equal(ledger.read().actions.filter(a=>a.state==='observed').length,8);
+});

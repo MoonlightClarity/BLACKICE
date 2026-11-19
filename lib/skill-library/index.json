@@ -429,6 +429,28 @@
         "revision": "blackice-critical-path-v2"
       },
       "bodyFile": "simplest-complete-path.md"
+    },
+    {
+      "id": "library-long-term-judgment",
+      "title": "Long-Term Judgment",
+      "description": "Calibrate effort to real reliance, act under uncertainty with a clear undo path, and make complexity earn its place.",
+      "tags": [
+        "methods",
+        "judgment",
+        "reversibility",
+        "tradeoffs"
+      ],
+      "aliases": [
+        "long-term judgment",
+        "reversible next step",
+        "rollback plan",
+        "weigh long-term consequences"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "blackice-long-term-judgment-v1"
+      },
+      "bodyFile": "long-term-judgment.md"
     }
   ]
 }

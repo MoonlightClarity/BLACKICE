@@ -99,6 +99,8 @@ test('the default first-party pack is selectable by real format and task queries
   ['story with a chart','library-chart-storytelling'],
   ['definition of done','library-what-makes-done'],
   ['critical path','library-simplest-complete-path'],
+  ['long-term judgment','library-long-term-judgment'],
+  ['reversible next step','library-long-term-judgment'],
   ['simplest solution','library-simplest-complete-path'],
   ['stop overthinking','library-simplest-complete-path'],
   ['browser regression','library-focused-regression'],

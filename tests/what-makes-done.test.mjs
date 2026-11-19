@@ -37,3 +37,8 @@ test('Critical Path distinguishes the action that unlocks delivery from a tempti
  for(const expected of [/research, writing, operations, and software/,/smallest informative check/,/another comparison would not change the next action/,/not on the critical path/,/research if you get an interview/,/continue other eligible applications/,/necessary verification/])assert.match(content,expected);
  assert.doesNotMatch(content,/token (?:budget|conservation|saving)|(?:save|conserve|reduce) tokens/i);
 });
+
+test('Long-Term Judgment teaches action under uncertainty without making reversibility a gate',async()=>{
+ const {content}=await readBundledSkill('library-long-term-judgment');
+ for(const expected of [/Calibrate effort to reliance/,/trusted implementer/,/exactly how to restore it/,/Reversibility is a reason to act sooner, not a condition for acting/,/If a step is irreversible, stay proactive/,/If the action is authorized and the evidence is good enough for the stakes, carry it out/,/do not silently retire, hide, or narrow/,/Two illustrations/])assert.match(content,expected);
+});
