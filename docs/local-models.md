@@ -51,3 +51,26 @@ BLACKICE reads `GET /models` (router) or `GET /v1/models` (single process), send
 The adapter is covered by controlled HTTP and UI fixtures, including single-server mode, router lifecycle, and per-slot context metadata. A live llama.cpp model, GPU performance, and end-to-end agent tool use are not yet verified. Sleeping processes are shown as sleeping rather than resident in memory; inference can wake them.
 
 Candidate bundled-runtime implementation and verification: [Bundled llama.cpp](BUNDLED-LLAMA.md). This is not an installed-release claim.
+
+### Read-only prerequisite check
+
+From a source checkout on Windows x64, run:
+
+```powershell
+node scripts/inspect-local-model-prerequisites.mjs '<installed-or-built-llama.cpp-directory>' [local-llama-port]
+```
+
+The default server port is 8080. This command validates the bundled runtime and
+runs its existing device enumeration. Independently, it uses BLACKICE's normal
+llama.cpp catalog client to detect available model IDs on the specified local
+server. It reports counts rather than model names, and does not start a server,
+load weights, submit a prompt, download anything, or change profile settings.
+
+The JSON separates an empty catalog from an unavailable catalog, and a failed
+Vulkan probe from a successful probe with no devices. Stage durations are for
+triage, not performance benchmarks. Exit 0 means both prerequisite checks
+detected something; exit 1 means at least one did not. An available CPU runtime
+can still work even if the GPU prerequisite is not met. Neither a catalog entry
+nor GPU enumeration proves inference or GPU offload. Those are marked
+`not_tested`. Use the separate isolated runtime fixture for inference/runtime
+lifecycle tests.
