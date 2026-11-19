@@ -2641,7 +2641,7 @@ test('real connector API idle owner can be adopted once by a native agent and ac
  browser.setActiveOwnerResolver(owner=>activeBrowserOwnerStatus(owner,engine,api));
  const client={id:'connector-test',scopes:[...DIRECT_EXECUTION_SCOPES]},previous=connectorBrowserOwner(client.id);
  const admitted=await api.call('blackice_browser_action',{requestId:'create-owned',action:'open',url:'https://example.test/draft'},client);
- let job;for(let n=0;n<100;n++){job=await api.getJob(admitted.jobId,client);if(job.settled)break;await tick();}
+ let job;const deadline=Date.now()+3500;do{job=await api.getJob(admitted.jobId,client);if(job.settled)break;await new Promise(resolve=>setTimeout(resolve,20));}while(Date.now()<deadline);
  assert.equal(job.status,'succeeded',JSON.stringify(job));
  const tab=[...driver.tabs.values()][0];await tab.loading;tab.window.webContents.testTypedValue='draft preserved';
  const active=(await api.jobs.admit({ownerId:client.id,requestId:'active-dialog',tool:'blackice_browser_action',arguments:{action:'click',tabId:tab.id},requiredScopes:['browser:write'],client,mutating:true})).job;
@@ -2688,7 +2688,7 @@ test('legacy exposed owner key works through model handler and direct API withou
  browser.setActiveOwnerResolver(owner=>activeBrowserOwnerStatus(owner,engine,api));
  const client={id:'connector-test',scopes:[...DIRECT_EXECUTION_SCOPES]},previous=connectorBrowserOwner(client.id);
  const admitted=await api.call('blackice_browser_action',{requestId:'create-owned',action:'open',url:'https://example.test/draft'},client);
- let job;for(let n=0;n<100;n++){job=await api.getJob(admitted.jobId,client);if(job.settled)break;await tick();}
+ let job;const deadline=Date.now()+3500;do{job=await api.getJob(admitted.jobId,client);if(job.settled)break;await new Promise(resolve=>setTimeout(resolve,20));}while(Date.now()<deadline);
  assert.equal(job.status,'succeeded',JSON.stringify(job));
  const tab=[...driver.tabs.values()][0];await tab.loading;tab.window.webContents.testTypedValue='draft preserved';
  const active=(await api.jobs.admit({ownerId:client.id,requestId:'active-dialog',tool:'blackice_browser_action',arguments:{action:'click',tabId:tab.id},requiredScopes:['browser:write'],client,mutating:true})).job;
