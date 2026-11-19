@@ -66,16 +66,17 @@ export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, onDi
  if(pending||picking||refreshing||revision===null||!alive||!active)return;
  const token=generation,draft=Object.fromEntries(definitions.map(([key])=>[key,controls[key].value]));
  const settings={...structuredClone(baseline),modelsDirectory:controls.modelsDirectory.value.trim()};pending=true;sync();
- try{const snapshot=await api('/api/local-models/config','POST',{expectedRevision:revision,settings});if(valid(token)){const latest=Object.fromEntries(definitions.map(([key])=>[key,controls[key].value])),latestPaths=paths.value,latestOverrides=overrides.value;draw(snapshot);for(const [key]of definitions)if(key!=='modelsDirectory'||latest[key]!==draft[key])controls[key].value=latest[key];paths.value=latestPaths;overrides.value=latestOverrides;feedback.textContent='Models folder saved. No model was moved or loaded.';}}
+ try{const snapshot=await api('/api/local-models/config','POST',{expectedRevision:revision,settings});if(valid(token)){const latest=Object.fromEntries(definitions.map(([key])=>[key,controls[key].value])),latestPaths=paths.value,latestOverrides=overrides.value;draw(snapshot);for(const [key]of definitions)if(key!=='modelsDirectory'||latest[key]!==draft[key])controls[key].value=latest[key];paths.value=latestPaths;overrides.value=latestOverrides;feedback.textContent=pendingRestart?'Models folder saved. '+restartHint:'Models folder saved. No model was moved or loaded.';}}
  catch(error){if(valid(token))feedback.textContent=error.message||'Could not save models folder.';}
  finally{pending=false;if(alive)sync();}
  });
  const directoryStatus=make('p','','next-help');directoryStatus.id='next-local-directory-status';directoryStatus.setAttribute('role','status');
  const discoverModels=button('Discover folder models');discoverModels.id='next-local-directory-discover';
  const directoryCommands=make('div','','next-row');directoryCommands.append(saveDirectory,discoverModels);
- directory.append(directoryStatus,directoryCommands,make('p','Discovery starts or restarts the idle BLACKICE llama.cpp router. Does not move, download or load models. Ollama and LM Studio keep their own storage.','next-help'));
+ directory.append(directoryStatus,directoryCommands,make('p','Discovery may restart the idle BLACKICE llama.cpp router and unload cached models. It does not move, download or load models. Ollama and LM Studio keep their own storage.','next-help'));
  quick.append(status,label('Model file',file),label('Model name',name),row,feedback,section);mount.append(quick);
  let alive=true,active=false,pending=false,picking=false,refreshing=false,generation=0,revision=null,recommended=null,baseline=null,pendingRestart=false,discoveryDirectory=null;
+ const restartHint='Saved settings take effect the next time the idle router starts or restarts. Active work is not interrupted.';
  const valid=token=>alive&&active&&token===generation;
  const sync=()=>{start.disabled=pending||picking||refreshing||revision===null||!file.value.trim()||!name.value.trim();browse.disabled=pending||picking||refreshing;reload.disabled=pending||picking||refreshing;save.disabled=pending||picking||refreshing||revision===null;saveDirectory.disabled=save.disabled;discoverModels.disabled=save.disabled||!discoveryDirectory?.available||controls.modelsDirectory.value.trim()!==(baseline?.modelsDirectory||'');reset.disabled=pending||picking||refreshing;file.disabled=pending;name.disabled=pending;};
  controls.modelsDirectory.addEventListener('input',sync);
@@ -100,13 +101,13 @@ export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, onDi
   discoveryDirectory=snapshot.modelDirectory||null;
   controls.modelsDirectory.placeholder=snapshot.defaultModelsDirectory||'';
   directoryStatus.textContent=discoveryDirectory
-   ? (discoveryDirectory.usingDefault?'Default models folder: ':'Active models folder: ')+discoveryDirectory.path+(discoveryDirectory.error?' ('+discoveryDirectory.error+')':'')
+   ? (discoveryDirectory.usingDefault?'Default models folder: ':'Configured models folder: ')+discoveryDirectory.path+(discoveryDirectory.error?' ('+discoveryDirectory.error+')':'')
    : 'Models folder unavailable.';
   const r=snapshot.runtime;
   status.textContent=r?(r.source==='bundled'?'Included llama.cpp runtime':r.source==='custom'?'Custom llama.cpp runtime':'Runtime unavailable')+(r.version?' · '+r.version:'')+(r.backend?' · '+r.backend:'')+(r.message?' — '+r.message:''):'Runtime status unavailable. Existing launch settings are preserved.';
   const args=snapshot.launchArgs||[];
   preview.textContent=args.length?'Effective next-launch arguments:\nllama-server '+args.join(' ')+'\nModel-specific settings are generated in a separate INI file.':'No launch preview is available.';
-  feedback.textContent=snapshot.process?.pendingRestart?'Saved settings are pending. Loading a model applies them when the owned server is idle; active work is not interrupted.':snapshot.process?.owned?'BLACKICE-owned server running. Saving does not restart it.':'Ready to configure a local model.';
+  feedback.textContent=snapshot.process?.pendingRestart?restartHint:snapshot.process?.owned?'BLACKICE-owned server running. Saving does not restart it.':'Ready to configure a local model.';
   sync();
  }
  function read(){

@@ -88,6 +88,24 @@ test('the effective default folder stays visible; discovery is explicit and neve
  assert.equal(f.changed,0);
 });
 
+test('saving a folder retains the next-launch notice when an owned router still has the previous revision',async t=>{
+ const original='C:\\Profile\\data\\models', next='C:\\GGUF';
+ const f=fixture(t,{hook:c=>{
+  if(!c.route.endsWith('/config'))return;
+  const save=c.method==='POST';
+  return {revision:save?2:1,settings:save?c.body.settings:DEFAULT_LLAMA_CPP_SETTINGS,recommended:DEFAULT_LLAMA_CPP_SETTINGS,
+   defaultModelsDirectory:original,modelDirectory:{path:save?next:original,available:true,usingDefault:!save},
+   process:{owned:true,pendingRestart:save}};
+ }});
+ await f.enter();
+ await f.input('#next-llama-default-modelsDirectory',next);
+ await f.click('#next-local-directory-save');
+ assert.equal(f.$('#next-local-directory-status').textContent,'Configured models folder: '+next);
+ assert.match(f.$('#next-llama-default-feedback').textContent,/Models folder saved.*next time the idle router starts or restarts.*Active work is not interrupted/);
+ assert.match(f.$('#next-llama-default-modelsDirectory').closest('#next-local-model-directory').textContent,/unload cached models/);
+ assert.deepEqual(f.writes().map(c=>c.route),['/api/local-models/config']);
+});
+
 test('late picker after leaving never changes model selection',async t=>{
  const g=gate(),f=fixture(t,{pickFiles:()=>g.promise});await f.enter();
  const pending=f.click('#next-llama-model-browse');await tick();f.panel.leave();g.resolve(['C:\\Models\\late.gguf']);await pending;
@@ -183,7 +201,7 @@ test('model discovery encodes search and prepares an editable-context prompt wit
  assert.match(f.mount.textContent,/cannot be loaded by simply renaming/);
  assert.equal(f.calls.length,before);assert.equal(f.writes().length,0);
 });
-test('dedicated local directory saves only location with CAS, preserves advanced drafts and never loads',async t=>{const f=fixture(t);await f.enter();await f.input('#next-llama-default-modelsDirectory','C:\\Models\\chosen');await f.input('#next-llama-default-modelsMax','7');await f.click('#next-local-directory-save');assert.equal(f.writes().length,1);assert.equal(f.writes()[0].route,'/api/local-models/config');assert.equal(f.writes()[0].body.expectedRevision,2);assert.equal(f.writes()[0].body.settings.modelsDirectory,'C:\\Models\\chosen');assert.equal(f.writes()[0].body.settings.modelsMax,DEFAULT_LLAMA_CPP_SETTINGS.modelsMax);assert.equal(f.$('#next-llama-default-modelsMax').value,'7');assert.match(f.$('#next-llama-default-modelsDirectory').closest('#next-local-model-directory').textContent,/Does not move/);});
+test('dedicated local directory saves only location with CAS, preserves advanced drafts and never loads',async t=>{const f=fixture(t);await f.enter();await f.input('#next-llama-default-modelsDirectory','C:\\Models\\chosen');await f.input('#next-llama-default-modelsMax','7');await f.click('#next-local-directory-save');assert.equal(f.writes().length,1);assert.equal(f.writes()[0].route,'/api/local-models/config');assert.equal(f.writes()[0].body.expectedRevision,2);assert.equal(f.writes()[0].body.settings.modelsDirectory,'C:\\Models\\chosen');assert.equal(f.writes()[0].body.settings.modelsMax,DEFAULT_LLAMA_CPP_SETTINGS.modelsMax);assert.equal(f.$('#next-llama-default-modelsMax').value,'7');assert.match(f.$('#next-llama-default-modelsDirectory').closest('#next-local-model-directory').textContent,/does not move/i);});
 
 test('models-directory save preserves newer typing and never retries an uncertain write',async t=>{const g=gate();const f=fixture(t,{hook:c=>c.method==='POST'?g.promise:undefined});await f.enter();await f.input('#next-llama-default-modelsDirectory','C:\\Models\\first');const pending=f.click('#next-local-directory-save');await tick();await f.input('#next-llama-default-modelsDirectory','C:\\Models\\newer');await f.click('#next-local-directory-save');assert.equal(f.writes().length,1);g.resolve({revision:3,settings:{...DEFAULT_LLAMA_CPP_SETTINGS,modelsDirectory:'C:\\Models\\first'}});await pending;assert.equal(f.$('#next-llama-default-modelsDirectory').value,'C:\\Models\\newer');assert.equal(f.writes().length,1);});
 
