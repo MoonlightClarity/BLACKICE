@@ -471,3 +471,39 @@ test('host persistence flush is serialized with page work and rejects an unconfi
   failSave = true; await assert.rejects(browser.flushPersistence(), { code: 'BROWSER_SAVE_FAILED' });
   assert.equal(browser.status().available, true);
 });
+
+test('stale reference recovery reads current controls once without retrying input', async () => {
+  const calls = [], tabId = 'one';
+  const browser = {
+    status: () => ({ available: true, contained: true, tabs: [{ tabId }], activeTab: tabId }),
+    perform: async (args, options) => {
+      calls.push([args.action, args.tabId]);
+      if (args.action === 'click') throw Object.assign(Error('The page changed.'), {code:'BROWSER_REF_STALE',actionDispatched:false});
+      assert.equal(args.action,'snapshot');assert.ok(options.signal);
+      return {tabId,documentId:'new-document',frames:[{elements:[{ref:'fresh-control',name:'Read posting'}]}]};
+    },
+  };
+  const result=await createBrowserToolHandler({browser})({name:'relay_browser',arguments:{action:'click',tabId,ref:'stale-control'}});
+  assert.equal(result.success,false);
+  assert.equal(result.actionDispatched,false);
+  const {recovery}=JSON.parse(result.contentItems[0].text);
+  assert.equal(recovery.observation.documentId,'new-document');
+  assert.equal(recovery.observation.frames[0].elements[0].ref,'fresh-control');
+  assert.deepEqual(calls,[['click',tabId],['snapshot',tabId]]);
+});
+
+test('automatic browser refresh never follows an ambiguous failure or uses a page that changed owner', async () => {
+  for (const scenario of ['unknown','other-task','suspended']) {
+    const owner={taskId:'current-task',nodeId:'agent',runId:'run'};
+    const other={taskId:'other-task',nodeId:'agent',runId:'other-run'};
+    const calls=[];let changed=false;
+    const browser={
+      status:()=>({available:true,contained:true,tabs:[{tabId:'one',owner:changed&&scenario==='other-task'?other:owner,suspended:changed&&scenario==='suspended'}]}),
+      perform:async args=>{calls.push(args.action);changed=true;throw Object.assign(Error('Stale'),{code:'BROWSER_REF_STALE',...(scenario==='unknown'?{}:{actionDispatched:false})});},
+    };
+    const result=await createBrowserToolHandler({browser,owner})({name:'relay_browser',arguments:{action:'click',tabId:'one',ref:'old'}});
+    assert.equal(result.code,'BROWSER_REF_STALE');
+    assert.equal(JSON.parse(result.contentItems[0].text).recovery.observation,undefined);
+    assert.deepEqual(calls,['click']);
+  }
+});
