@@ -25,6 +25,11 @@ class Runtime extends EventEmitter{
         summary:'Observed the synthetic stage.',evidence:'Fixture observer returned a concrete intermediate result.',nextAction:'Check the next synthetic stage.'}});
       assert.equal(progress.success,true,JSON.stringify(progress));
     }
+    if(o.prompt.includes('FRESH_HTTP_REQUEST')&&!o.prompt.includes('RELAY CONTINUITY')){
+      const history=o.dynamicTools.find(tool=>tool.name==='relay_history');
+      assert.deepEqual(history.inputSchema.properties.action.enum,['previous_turn_diagnostics']);
+      await assert.rejects(o.onToolCall({name:'relay_history',arguments:{action:'previous_turn_diagnostics'}}),{status:404});
+    }
     return {output:call.goal?'OLD_ASSISTANT_HTTP_RECEIPT':'Fresh fixture result.',threadId:call.threadId||'fixture-thread-'+this.calls.length};
   }
 }
@@ -83,7 +88,7 @@ test('authenticated fresh task API durably groups display but does not continue 
   assert.equal(fresh.taskId,freshId);assert.equal(fresh.chatDisplayGroupId,oldId);
   for(const key of ['parentRunId','continuedFrom','modelHandoff','priorUserRequests','goal','goalDispatch'])assert.equal(fresh[key],undefined,key);
   assert.equal(runtime.calls[1].threadId,undefined);
-  assert.ok(!runtime.calls[1].tools.includes('relay_goal')&&!runtime.calls[1].tools.includes('relay_history'));
+  assert.ok(!runtime.calls[1].tools.includes('relay_goal'));
   assert.match(runtime.calls[1].prompt,/FRESH_HTTP_REQUEST/);assert.doesNotMatch(runtime.calls[1].prompt+'\n'+runtime.calls[1].instructions,/OLD_HUMAN|OLD_GOAL|OLD_ASSISTANT|RELAY CONTINUITY/);
   assert.equal((await app.tasks.get(freshId)).goal,'FRESH_HTTP_REQUEST');
   assert.equal((await app.tasks.get(oldId)).goal,'OLD_HUMAN_HTTP_REQUEST');
