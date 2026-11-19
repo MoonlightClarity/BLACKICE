@@ -4,6 +4,10 @@
 
 **Turn receipts** is a separate local view of retained turn evidence. Receipt capture records which sources the host prepared and what activity it observed. A prepared source is not proof that a model used it; a partial trace is not proof that nothing happened. Receipts do not supply context, add a model call, or override Search other chats. Personal Context is a separate skill for deciding when historical information is relevant.
 
+Choose **Receipt depth** when sending a turn. **Basic** preserves the usual tool activity and outcomes. **Detailed** adds context and outline decisions. **Maximal** adds a machine-readable JSON export with ordered host events, correlation references, and explicit coverage and omission counts. It retains up to 12,288 envelopes across the start and end of the turn. It does not contain raw prompts, private reasoning, or tool payloads. All three depths use the same execution and edit checks.
+
+Directory separates changes to the user's action outline from changes to its tool receipt journal. The app binds model actions to the outline it issued, so read-only receipts do not force the model to refresh and echo revision numbers. An actual outline edit still requires refreshing before stale work can proceed.
+
 ## Historical execution design (not current behavior)
 
 > **Status: Historical engineering reference.** The execution runner below was retired. It is not activated by Directory Diagnostics. See the [documentation map](README.md).

@@ -100,6 +100,9 @@ class Runtime extends EventEmitter {
  const trace=await run(`fetch(${JSON.stringify('/api/conversations/'+done.id+'/directory?taskId='+done.id+'&view=machine')}).then(r=>r.json())`);
  assert.equal(trace.audience,'machine');assert(trace.entries.some(e=>e.kind==='directory.snapshot'&&e.metadata.phase==='delivered'));
  assert.doesNotMatch(JSON.stringify(trace),/Synthetic starter sighted/);
+ await run('Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async value=>{window.fixtureTrace=JSON.parse(value);}}})');
+ await click('Copy trace JSON','dialog[aria-label="Turn receipts"][open]');
+ await until('JSON copy uses selected Maximal run',()=>run(`window.fixtureTrace?.runId===${JSON.stringify(done.id)} && window.fixtureTrace?.entries.length>0`));
  await click('Back to Receipts','dialog[aria-label="Turn receipts"][open]');
  await until('back restores Receipts',()=>run('!!document.querySelector(".next-activity-inspector[open]") && !document.querySelector(\'dialog[aria-label="Turn receipts"][open]\')'));
  fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({
