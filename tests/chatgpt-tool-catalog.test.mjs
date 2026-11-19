@@ -35,8 +35,8 @@ test('the configured catalog retains 34 tools with reviewed authentication, cano
     desktopRestartTool({ restart: { request: unavailable }, getJob: unavailable }),
     ...createDirectBrowserCredentialTools({ vault: {}, browser: {}, reauthorize: unavailable }),
   ] });
-  // Pin the reviewed .100 contract and reconstruct historical contracts below.
-  const catalog = createChatGPTToolCatalog({ providers: [execution, new ChatGPTPlanningAPI({})], version: '2.39.100' });
+  // Pin the current reviewed contract and reconstruct historical contracts below.
+  const catalog = createChatGPTToolCatalog({ providers: [execution, new ChatGPTPlanningAPI({})], version: '2.40.8' });
   assert.deepEqual(catalog.tools().map(tool => tool.name), [
     'blackice_direct_status', 'blackice_list_jobs', 'blackice_get_job', 'blackice_cancel_job',
     'blackice_workspace_read', 'blackice_workspace_write', 'blackice_run_command', 'blackice_browser_read',
@@ -48,9 +48,9 @@ test('the configured catalog retains 34 tools with reviewed authentication, cano
   ]);
   assert.deepEqual(catalog.status(), {
     // A complete reviewed current contract, not an inferred version or reused old SHA.
-    sha256: 'eb2f9b5653affa2756c6afb350d587f6c6566d1b65c70af59b5ebac9c04bde91',
+    sha256: '347c0b72f3824ee213937e1f6b2dc06b22ceea05a5b05f3fbbb67b9d483f8dfe',
     toolCount: 34,
-    serverVersion: '2.39.100',
+    serverVersion: '2.40.8',
   });
   const sha=tools=>createHash('sha256').update(JSON.stringify(tools)).digest('hex');
   const currentTools=catalog.tools();
@@ -68,7 +68,17 @@ test('the configured catalog retains 34 tools with reviewed authentication, cano
   assert.equal(currentAction.inputSchema.properties.action.enum.filter(action=>action==='tab_mark').length,1);
   assert.deepEqual(currentAction.inputSchema.properties.inUse,{type:'boolean',description:'For tab_mark: protect an owned tab (true), or release your own mark (false). No ownership transfer; human marks remain protected.'});
   assert.deepEqual(catalog.get('blackice_browser_action').requiredScopes,['read','browser:write']);
-  const beforeWide=structuredClone(currentTools),wide=beforeWide.find(tool=>tool.name==='blackice_workspace_read');
+  const beforeDocuments=structuredClone(currentTools);
+  const documentTool=beforeDocuments.find(tool=>tool.name==='blackice_workspace_read');
+  const fields=['startPage','pageCount','startChar','charCount','sheet','startRow','rowCount','startColumn','columnCount'];
+  for (const field of fields) {
+    assert.equal(documentTool.inputSchema.properties[field]?.type,field==='sheet'?'string':'integer',field);
+    delete documentTool.inputSchema.properties[field];
+  }
+  assert.match(documentTool.description,/read supports local DOCX, PDF and XLSX directly, no conversion required/);
+  documentTool.description=documentTool.description.replace(' read supports local DOCX, PDF and XLSX directly, no conversion required.','');
+  assert.equal(sha(beforeDocuments),'eb2f9b5653affa2756c6afb350d587f6c6566d1b65c70af59b5ebac9c04bde91');
+  const beforeWide=structuredClone(beforeDocuments),wide=beforeWide.find(tool=>tool.name==='blackice_workspace_read');
   assert.equal(wide.inputSchema.properties.roots.maxItems,64);
   assert.match(wide.description,/computer-wide filesystem roots/);
   assert.deepEqual(catalog.get('blackice_workspace_read').requiredScopes,['read','files:read']);
