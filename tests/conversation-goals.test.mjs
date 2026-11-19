@@ -579,3 +579,80 @@ test('uncertain effect remains blocked after an unrelated read turn while a dist
     assert.equal(dispatchedAfterResolution,1);
   } finally { await reopenedGoals.close(); await reopened.close(); }
 });
+
+test('ordinary same-chat request does not inherit an enabled Goal, and the actual successor uses only bound Goal evidence', async t => {
+  const entered=deferred(), release=deferred();
+  const {engine,goals,runtime,conversations}=await fixture(t,async (options,n)=>{
+    if(n===1){
+      assert.match(options.prompt,/current human request explicitly starts the bound Goal/);
+      assert.equal((await report(options,'progress',{nextAction:'Verify the bound fixture output.'})).result.success,true);
+    } else if(n===2){
+      assert.match(options.prompt,/HOST TURN AUTHORITY[\s\S]*No Goal is admitted for this turn/);
+      assert.match(options.prompt,/Explain why the previous attempt stalled/);
+      assert.doesNotMatch(options.developerInstructions,/PERSISTENT CONVERSATION GOAL/);
+      assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_goal'),false);
+      entered.resolve(options);
+      await release.promise;
+      options.signal.throwIfAborted();
+      return {...output(n),output:'Ordinary diagnosis, not Goal progress.'};
+    } else {
+      assert.match(options.prompt,/CURRENT GOAL DISPATCH[\s\S]*Verify the bound fixture output/);
+      assert.doesNotMatch([...engine.runs.values()].at(-1).input,/Ordinary diagnosis/);
+      assert.match(options.developerInstructions,/PERSISTENT CONVERSATION GOAL/);
+      assert.equal((await report(options,'complete')).result.success,true);
+    }
+    return output(n);
+  },{goals:{continuationDelayMs:60_000}});
+  t.after(()=>release.resolve());
+  const first=engine.startRun({workflow:graph(),input:{task:'Verify the bound fixture output.',goal:{objective:'Verify the bound fixture output.'}}});
+  await waitFor(async()=>goals.raw(first.id)?.lastSettledRunId===first.id);
+  const diagnostic=engine.continueRun(first.id,{nodeId:'agent',message:'Explain why the previous attempt stalled.'},{historyRuns:(await conversations.family(first.id)).runs});
+  await entered.promise;
+  const before=await goals.get(first.id);
+  assert.equal(before.running,false);
+  assert.equal(before.currentRunId,first.id);
+  assert.equal(before.turns,1);
+  assert.equal(engine.getRun(diagnostic.id).goal,undefined);
+  engine.notify('agent.event',engine.runs.get(diagnostic.id),'agent',{type:'steer',accepted:true,text:'Give a very brief diagnosis.'});
+  assert.equal(await goals.enqueue(first.id,()=>goals.dispatch(first.id)),null);
+  assert.equal(goals.raw(first.id).generation,before.generation);
+  release.resolve();
+  await waitFor(()=>engine.getRun(diagnostic.id).settled);
+  const successor=await goals.enqueue(first.id,()=>goals.dispatch(first.id));
+  assert.ok(successor);
+  await waitFor(()=>goals.raw(first.id).status==='completed');
+  assert.equal(runtime.calls.length,3);
+  assert.equal(engine.getRun(successor.id).taskId,first.id);
+  assert.equal(engine.getRun(successor.id).goalDispatch.conversationId,first.id);
+  assert.equal(engine.getRun(successor.id).parentRunId,diagnostic.id);
+  assert.equal(goals.raw(first.id).turns,2);
+  assert.equal(goals.raw(first.id).completionEvidence.runId,successor.id);
+});
+
+test('expiry of a saved Goal does not abort an unbound same-chat question', async t=>{
+  const entered=deferred(), release=deferred();
+  let now=Date.parse('2030-05-01T10:00:00.000Z');
+  const {engine,goals,conversations}=await fixture(t,async(options,n)=>{
+    if(n===1) assert.equal((await report(options,'progress')).result.success,true);
+    if(n>1){
+      assert.match(options.prompt,/No Goal is admitted for this turn/);
+      assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_goal'),false);
+    }
+    if(n===2){ entered.resolve(options); await release.promise; options.signal.throwIfAborted(); }
+    return output(n);
+  },{goals:{continuationDelayMs:60_000,now:()=>now}});
+  t.after(()=>release.resolve());
+  const first=engine.startRun({workflow:graph(),input:{task:'Complete the original task.',goal:{objective:'Complete the original task.',deadlineAt:'2030-05-01T11:00:00.000Z'}}});
+  await waitFor(()=>goals.raw(first.id)?.lastSettledRunId===first.id);
+  const question=engine.continueRun(first.id,{nodeId:'agent',message:'How does this control work?'},{historyRuns:(await conversations.family(first.id)).runs});
+  const options=await entered.promise;
+  now=Date.parse('2030-05-01T11:00:01.000Z');
+  assert.equal(await goals.enqueue(first.id,()=>goals.expireIfDue(first.id)),true);
+  assert.equal(options.signal.aborted,false);
+  assert.equal(goals.raw(first.id).status,'paused');
+  assert.equal(goals.raw(first.id).currentRunId,first.id);
+  assert.doesNotThrow(()=>goals.assertProviderAdmission(engine.runs.get(question.id),{signal:options.signal}));
+  release.resolve();
+  await waitFor(()=>engine.getRun(question.id).settled);
+  assert.equal(engine.getRun(question.id).status,'completed');
+});
