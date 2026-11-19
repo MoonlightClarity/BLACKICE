@@ -204,3 +204,43 @@ test('later observed milestones keep the workflow moving without accepting final
  const ledger=await engine.actionDirectories.get(run.id,'Fixture workflow');
  assert.equal(ledger.read().actions.filter(a=>a.state==='observed').length,8);
 });
+
+test('a finished source read gets one bounded Directory reconciliation turn, without completion by prose',async t=>{
+ let scenario=0;
+ const {engine,root}=await setup(t,async o=>{
+  const current=++scenario;
+  let sequence=0;
+  const call=(name,args)=>o.onToolCall({name,arguments:args,callId:'reconcile-'+(++sequence)});
+  const dir=async args=>{
+   const response=await call('relay_directory_action',args);
+   assert.equal(response.success,true,JSON.stringify(response));
+   return JSON.parse(response.contentItems[0].text);
+  };
+  const review=()=>o.onBeforeFinal({output:'I inspected the posting.',signal:o.signal});
+  await dir({action:'plan',actions:[{id:'posting',objective:'Inspect a source before deciding',dependsOn:[]}]});
+  await dir({action:'focus',id:'posting'});
+  assert.equal((await review()).continue,true);
+  assert.equal((await call('relay_workspace',{action:'read',path:path.join(root,'posting.txt')})).success,true);
+  const next=await review();
+  assert.equal(next.continue,true);
+  assert.match(next.prompt,/receipt-1/);
+  assert.match(next.prompt,/do not reopen or reread/i);
+  const state=await dir({action:'read'});
+  assert.equal(state.actions[0].state,'active','A successful read is not an observed milestone.');
+  if(current===1){
+   await dir({action:'observe',id:'posting',claim:'Read the source and determined the first condition.',receipts:['receipt-1']});
+   assert.equal(await review(),undefined);
+   return {output:'Read and recorded the source.'};
+  }
+  assert.equal((await call('relay_workspace',{action:'read',path:path.join(root,'posting.txt')})).success,true);
+  await assert.rejects(review(),{code:'DIRECTORY_ACTION_UNFINISHED'});
+  throw Object.assign(Error('No recorded disposition'),{code:'DIRECTORY_ACTION_UNFINISHED'});
+ });
+ const {writeFile}=await import('node:fs/promises');
+ await writeFile(path.join(root,'posting.txt'),'Fixture data for a source check.');
+ for(const expected of ['completed','failed']){
+  const run=engine.startRun({workflow:graph,input:{task:'Inspect a source',directoryActions:'on'}});
+  await engine.executions.get(run.id);
+  assert.equal(engine.getRun(run.id).status,expected,engine.getRun(run.id).error);
+ }
+});
