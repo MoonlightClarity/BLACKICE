@@ -2,6 +2,27 @@
   "version": 1,
   "entries": [
     {
+      "id": "library-browser-navigation",
+      "title": "Browser Navigation and Continuity",
+      "description": "Open the requested page, follow redirects and tabs, recover stale page controls, and resume browser work from observed evidence.",
+      "tags": [
+        "browser",
+        "navigation",
+        "continuity"
+      ],
+      "aliases": [
+        "browser navigation",
+        "browser continuity",
+        "resume browser task",
+        "stale browser tab"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "blackice-browser-navigation-v1"
+      },
+      "bodyFile": "browser-navigation.md"
+    },
+    {
       "id": "library-pdf-evidence",
       "title": "Read a PDF for evidence",
       "description": "Extract cited claims, tables, or page findings from PDFs and flag scanned, unreadable, or unverified pages.",

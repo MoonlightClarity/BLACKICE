@@ -9,10 +9,17 @@ import {HarnessEngine} from '../lib/engine.mjs';
 import {IdentityStore} from '../lib/identity.mjs';
 import {ACTION_DIRECTORY_INSTRUCTIONS,ACTION_DIRECTORY_TOOL} from '../lib/task-action-directory.mjs';
 import {ProviderRuntime} from '../lib/providers.mjs';
-import {wantsJobSearchSkill,wantsIntentInferenceSkill} from '../lib/chat-intent-inference.mjs';
+import {wantsJobSearchSkill,wantsIntentInferenceSkill,wantsBrowserNavigationSkill} from '../lib/chat-intent-inference.mjs';
 import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 import {submitChat} from '../public/next/chat/send.mjs';
 
+test('browser continuity applies to current navigation or a bare continuation of the same task',()=>{
+ const browse='Open the vendor portal.';
+ for(const task of [browse,'Visit https://example.test','Continue in the same browser tab.','Apply to one job for me: Circana.','Read the Browser Navigation and Continuity skill.']) assert.equal(wantsBrowserNavigationSkill(task),true,task);
+ for(const task of ['Explain browser navigation.', '> Open the vendor portal.', 'Summarize the document instead.','Continue.']) assert.equal(wantsBrowserNavigationSkill(task),false,task);
+ assert.equal(wantsBrowserNavigationSkill('Continue.',{previousTask:browse}),true);
+ assert.equal(wantsBrowserNavigationSkill('Summarize the document instead.',{previousTask:browse}),false);
+});
 const id='library-job-search';
 const example='Find three current U.S. remote intelligence roles posted within the last week. Do not apply.';
 const heading='JOB SEARCH (advisory execution method; not permission)';
@@ -124,7 +131,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  await runtime.store.init();
  await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl:'http://127.0.0.1:'+server.address().port+'/v1',models:[{id:'fixture',contextWindowTokens:65536,maxOutputTokens:4096}]},{preserveDefault:true});
  identity=await new IdentityStore({dataDir}).init();
- engine=await new HarnessEngine({runtime,dataDir,defaultCwd:dir,identity}).init();
+ engine=await new HarnessEngine({runtime,dataDir,defaultCwd:dir,identity,browser:{status:()=>({available:true,contained:true,tabs:[]}),perform:()=>assert.fail('No real browser action is part of this test')}}).init();
  const api=async(route,_method,body)=>route==='/api/workflows'?body:engine.startRun(body);
  const invoke=async task=>{
   const start=await submitChat({api,runs:[],task,model:'fixture::fixture',cwd:dir,chatPlanning:'off',directoryActions:'off'});
@@ -138,7 +145,11 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  const alignmentHeading='ANTI-OVERALIGNMENT (advisory execution method; not permission)';
  const antiCompletion='library-anti-completion-bias';
  const completionReceipt=(source,sourceRevision)=>({type:'skill_context_submitted',skillId:antiCompletion,title:'Anti-Completion Bias',source,sourceRevision});
+ const browserSkill='library-browser-navigation';
  const job=await invoke(example);
+ assert.ok(job.prompt.includes('An empty tab list means there is no tab to reuse'));
+ assert.ok(job.prompt.includes('the link opened a new tab'));
+ assert.ok(job.receipts.some(r=>r.skillId===browserSkill&&r.sourceRevision==='blackice-browser-navigation-v1'));
  assert.equal(job.prompt.split('ANTI-COMPLETION BIAS (bundled execution method)').length,2);
  assert.ok(job.prompt.includes('finish the other half before mentioning the first'));
  assert.deepEqual(job.receipts.filter(r=>r.skillId===antiCompletion),[completionReceipt('bundled','blackice-anti-completion-bias-v2')]);
@@ -154,6 +165,8 @@ test('actual Compatible main-turn transport submits the job skill selectively an
 
  await catalog.save({id:antiCompletion,value:{expectedRevision:1,content:'# Anti-Completion Bias\nUse the owner-defined next-action instruction.'}});
  const ordinary=await invoke('Write a short explanation of how job search works.');
+ assert.ok(!ordinary.prompt.includes('BROWSER NAVIGATION AND CONTINUITY ('));
+ assert.ok(ordinary.receipts.every(r=>r.skillId!==browserSkill));
  assert.ok(ordinary.prompt.includes('Use the owner-defined next-action instruction.'));
  assert.ok(!ordinary.prompt.includes('finish the other half before mentioning the first'));
  assert.deepEqual(ordinary.receipts.filter(r=>r.skillId===antiCompletion),[completionReceipt('user',2)]);

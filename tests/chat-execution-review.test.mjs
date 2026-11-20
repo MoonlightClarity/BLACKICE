@@ -47,3 +47,26 @@ test('no evidence, unsuccessful/unknown effects, steering and blockers never ret
   assert.equal(review.beforeFinal({output:partial,signal:AbortSignal.abort()}),null);
   const ended=setup(action,()=>false);ended.observe(good);assert.equal(ended.beforeFinal({output:partial}),null);
 });
+
+test('empty browser inventory does not justify an unfinished final, even in a compound sentence',()=>{
+  const request='Apply to one job for me: Circana Senior Product Manager, AI Evaluation & Quality. Use the employer site for this posting only. Submit the ordinary application and verify the result.';
+  const answer='I couldn\u2019t complete the application in this turn. The contained browser is available, but I did not reach the Circana posting or submit an application, so there is no submission result to verify.';
+  const tabs={...good,action:'tabs'};
+  const ready=()=>{
+    const review=setup(request);
+    review.started({callId:'fresh',name:'relay_browser',arguments:{action:'tabs'}});
+    review.observe(tabs);
+    return review;
+  };
+  const review=ready();
+  assert.equal(review.beforeFinal({output:answer}).continue,true);
+  assert.equal(review.beforeFinal({output:answer}),null);
+  assert.equal(ready().beforeFinal({output:'I did not reach the Circana posting or submit an application.'}).continue,true);
+  for(const reason of ['The site requires you to sign in.','Required approval is missing.','The deadline expired.','I could not complete the application because the browser is unavailable.']){
+    assert.equal(ready().beforeFinal({output:answer+' '+reason}),null,reason);
+  }
+  assert.equal(ready().beforeFinal({output:'I did not reach the Circana posting. I can submit later.'}),null);
+  const uncertain=ready();
+  uncertain.started({callId:'maybe',name:'relay_browser',arguments:{action:'click'}});
+  assert.equal(uncertain.beforeFinal({output:answer}),null);
+});
