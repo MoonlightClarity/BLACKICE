@@ -42,7 +42,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
     const bounds=panel.getBoundingClientRect();panel.style.left=`${Math.max(margin,Math.min(anchor.left,width-bounds.width-margin))}px`;panel.style.top=`${Math.max(margin,above>below?anchor.top-bounds.height-gap:Math.min(anchor.bottom+gap,height-bounds.height-margin))}px`;
   }
   function refreshTrigger(){
-    const choice=models.find(model=>model.id===selected),provider=choice&&!choice.alias?modelProvider(choice,providerOptions()):null;
+    const choice=models.find(model=>model.id===selected),provider=choice&&!choice.alias&&!choice.historical?modelProvider(choice,providerOptions()):null;
     title.textContent=nameOf(choice)||selected||'Choose a model';
     subtitle.textContent=provider?.label||'';
     trigger.disabled=select.disabled;trigger.setAttribute('aria-label',`${label}: ${title.textContent}${subtitle.textContent?'. '+subtitle.textContent:''}. Choose model`);

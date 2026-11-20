@@ -2832,3 +2832,54 @@ test('human popup attachment survives redirect during viewport setup without dis
   assert.equal(f.window.protocol.some(c=>c.method.startsWith('Input.')),false);
  });
 });
+
+test('stale click waits for an in-flight route and returns the destination without replay', async t => {
+  const f = await observedSelectFixture(t, ['Original']);
+  const wc = f.tab.window.webContents;
+  const browser = new BrowserWorkspace({ driver: f.driver }); t.after(() => browser.close());
+  const handler = createBrowserToolHandler({ browser });
+  const call = args => handler({ name: 'relay_browser', arguments: { tabId: f.tab.id, ...args } });
+  const initial = JSON.parse((await call({ action: 'snapshot' })).contentItems[0].text);
+
+  f.driver.retireAllReferences(f.tab);
+  let loading = true, settleCalls = 0;
+  wc.isLoadingMainFrame = () => loading;
+  const quiet = f.driver.waitForTopNavigationQuiet.bind(f.driver);
+  f.driver.waitForTopNavigationQuiet = (tab, signal) => {
+    settleCalls++;
+    const ready = quiet(tab, signal, { quietMs: 10, maxMs: 500 });
+    setImmediate(() => {
+      f.controls[0].getAttribute = key => key === 'aria-label' ? 'Destination ready' : null;
+      loading = false;
+      wc.emit('did-frame-finish-load', {}, true);
+    });
+    return ready;
+  };
+  f.driver.pointerInput = () => assert.fail('A stale click must not dispatch or replay');
+  const result = await call({ action: 'click', ref: initial.frames[0].elements[0].ref });
+  const failed = JSON.parse(result.contentItems[0].text);
+  assert.equal(result.success, false);
+  assert.equal(result.actionDispatched, false);
+  assert.equal(settleCalls, 1);
+  assert.equal(failed.recovery.observation.frames[0].elements[0].name, 'Destination ready');
+});
+
+test('an unsettled recovery read does not publish actionable browser refs', async t => {
+  const f = await observedSelectFixture(t, ['Original']);
+  const browser = new BrowserWorkspace({ driver: f.driver }); t.after(() => browser.close());
+  const handler = createBrowserToolHandler({ browser });
+  const call = args => handler({ name: 'relay_browser', arguments: { tabId: f.tab.id, ...args } });
+  const initial = JSON.parse((await call({ action: 'snapshot' })).contentItems[0].text);
+  f.driver.retireAllReferences(f.tab);
+  f.tab.window.webContents.isLoadingMainFrame = () => true;
+  const quiet = f.driver.waitForTopNavigationQuiet.bind(f.driver);
+  f.driver.waitForTopNavigationQuiet = (tab, signal) => quiet(tab, signal, { quietMs: 10, maxMs: 20 });
+  f.driver.snapshot = () => assert.fail('No snapshot on an unsettled page');
+  f.driver.pointerInput = () => assert.fail('A stale click must not dispatch or replay');
+  const result = await call({ action: 'click', ref: initial.frames[0].elements[0].ref });
+  const failed = JSON.parse(result.contentItems[0].text);
+  assert.equal(result.actionDispatched, false);
+  assert.equal(failed.recovery.navigationUnsettled, true);
+  assert.equal(failed.recovery.observation, undefined);
+  assert.equal(failed.recovery.nextCall.action, 'snapshot');
+});

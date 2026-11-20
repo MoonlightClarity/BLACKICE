@@ -41,7 +41,6 @@ import { createDirectProviderSetupTools } from './lib/provider-setup-tools.mjs';
 import { providerSetupHTTP, providerPreviewHTTP } from './lib/provider-setup-http.mjs';
 import { LocalModelManager } from './lib/local-model-manager.mjs';
 import { localModelHTTP } from './lib/local-model-http.mjs';
-import { searchAPIProviderDirectory } from './lib/provider-directory.mjs';
 import { connectorBrowserOwner } from './lib/connector-browser-owner.mjs';
 import { browserConversationStatus, browserConversationTransfer, resolveBrowserConversationOwner } from './lib/browser-conversations.mjs';
 import { createDirectPlanningExecutionTools } from './lib/direct-planning-execution-tools.mjs';
@@ -1119,16 +1118,6 @@ export async function createHarnessServer(options = {}) {
         });
         return json(res, result.status, result.body);
       }
-      if (pathname === '/api/provider-directory' && req.method === 'GET') {
-        const query = new URL(req.url, `http://${host}`).searchParams;
-        try {
-          return json(res, 200, await searchAPIProviderDirectory({
-            query: query.get('query') || query.get('q') || '', auth: query.get('auth') || 'any', source: query.get('source') || 'all',
-            offset: Number(query.get('offset') || 0), limit: Number(query.get('limit') || 30),
-            freeModelsOnly: query.get('freeModelsOnly') === 'true', refresh: query.get('refresh') === 'true',
-          }));
-        } catch (cause) { return json(res, cause.status || 400, { error: cause.message, code: cause.code || 'API_DIRECTORY_ERROR' }); }
-      }
       if (pathname === '/api/providers/preview') {
         const controller = new AbortController();
         const abort = () => controller.abort(Object.assign(new Error('Provider connection check cancelled.'), { code: 'ABORT_ERR', name: 'AbortError' }));
@@ -1435,7 +1424,7 @@ export async function createHarnessServer(options = {}) {
         'browser.css','skills.css','workspaces/skills.mjs','core/folder-tree.mjs',
         'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-passwords.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-mcp-apps.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-passwords.css','settings-identity.css','settings-providers.css',
-        'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/llama-launch-settings.mjs','workspaces/settings-providers.mjs','workspaces/native-write-recovery.mjs','workspaces/settings-provider-directory.mjs'];
+        'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/llama-launch-settings.mjs','workspaces/settings-providers.mjs','workspaces/native-write-recovery.mjs'];
       for (const file of nextFiles) files['/next/' + file] = 'next/' + file;
       files['/next'] = 'next/index.html'; files['/next/'] = 'next/index.html';
       files['/native-apps-ui.mjs'] = 'native-apps-ui.mjs';

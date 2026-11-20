@@ -12,9 +12,9 @@ const hash=x=>createHash('sha256').update(x).digest('hex');
 test('approved skill ships the exact bundled revision and gives the model a fresh effective read',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'approved-skill-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const catalog=createSkillsCatalog({dataDir:root}),base=readReleaseSkill(id),entry=await catalog.detail({id});
- assert.equal(base.title,'Calibrated Depth and Action');assert.equal(Buffer.byteLength(base.content),57487);
- assert.equal(hash(base.content),'95ebf981ca62798b1580426aa8c9fee6e57f6e5ccd214459bffd67001fdea13c');
- assert.ok(base.content.startsWith('name: calibrated-depth-and-action\ndescription: '));
+ assert.equal(base.title,'Anti-Overalignment');
+ assert.equal(hash(base.content),'54b3c2849f75c26922acb3582bd4a8b87070322b4cf89434ac3604dca1b01c2f');
+ assert.ok(base.content.startsWith('# Anti-Overalignment\n'));
  assert.equal(entry.content,base.content);assert.equal(entry.source,'bundled');
  const handler=createRetrievalToolHandler({cwd:root,dataDir:root});
  const result=JSON.parse((await handler({name:'relay_skills',arguments:{action:'read',id}})).contentItems[0].text);

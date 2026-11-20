@@ -1,6 +1,6 @@
 # Config coherence verification
 
-Config separates General, Behavior & profile, Models, Passwords, Storage & Data, Troubleshooting, and App connections. Models separates accounts, local models, the catalog, and API setup. Operational task limits and access remain collapsed in General. Destructive and security warnings remain where needed.
+Config separates General, Behavior & profile, Models, Passwords, Storage & Data, Troubleshooting, and App connections. Models separates accounts, local models, and API setup. Model discovery belongs to the specific connection being configured. Operational task limits and access remain collapsed in General. Destructive and security warnings remain where needed.
 
 Response choices belong to Chat, not Config. Chat keeps model, reasoning and speed choices. Answer detail has been removed; describe the desired depth directly in the request. New and continued replies do not receive a hidden detail default. Config saves omit Chat response controls.
 

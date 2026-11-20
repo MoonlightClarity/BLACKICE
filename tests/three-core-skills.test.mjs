@@ -13,8 +13,8 @@ import {CHAT_PLANNING_MODULES} from '../lib/chat-planning-pass.mjs';
 const ids=['builtin-decomposition','builtin-task-grounding','builtin-structured-analysis'];
 test('the three revised inline definitions are preserved; removed defaults are not fallback content',async()=>{
  assert.deepEqual(searchReleaseSkills().map(x=>x.id),ids);
- // Pin the actual approved critical-path and completion revisions as well as unchanged grounding.
- const hashes=['0e45b660d8efd57ea0c327234a675fd814c792fa9923017c7c9ad557152487d2','95ebf981ca62798b1580426aa8c9fee6e57f6e5ccd214459bffd67001fdea13c','22b3d21f67512eefcc4032cf546e7e0485f1020568228ecc03851e896b82224b'];
+ // Pin the actual approved critical-path and completion revisions as well as the scoped anti-overalignment skill.
+ const hashes=['0e45b660d8efd57ea0c327234a675fd814c792fa9923017c7c9ad557152487d2','54b3c2849f75c26922acb3582bd4a8b87070322b4cf89434ac3604dca1b01c2f','22b3d21f67512eefcc4032cf546e7e0485f1020568228ecc03851e896b82224b'];
  assert.deepEqual(ids.map(id=>createHash('sha256').update(readReleaseSkill(id).content).digest('hex')),hashes);
  const catalog=createSkillsCatalog();assert.deepEqual((await catalog.list()).entries.filter(x=>x.id.startsWith('builtin-')).map(x=>x.id),ids);
  for(const id of ['builtin-browser','builtin-browser-tab-management','builtin-file-discovery','builtin-job-search','builtin-inference','builtin-time-management','builtin-feasibility','builtin-branching','builtin-replanning','builtin-metacognition','builtin-verification','builtin-delegation']){
@@ -75,8 +75,9 @@ test('explicit folder mutation removes orphan placements only, preserving actual
 
 test('over-alignment calibration connects three reward incentives to the delivered scope',()=>{
  const {content}=readReleaseSkill('builtin-task-grounding');
- for(const pattern of [/Categorical compression/,/Asymmetric review/,/An occasional bottom score/,/4 - 3p/,/A downside is not a blocker/,/does not establish that the live job-site workflow works/])assert.match(content,pattern);
+ for(const pattern of [/Categorical compression/,/Asymmetric review/,/An occasional bottom score/,/4 - 3p/,/Do not treat a downside as a blocker/,/Find where the restriction came from/])assert.match(content,pattern);
  const brief=CHAT_PLANNING_MODULES.find(module=>module.id==='builtin-task-grounding').brief;
  assert.match(brief,/A downside is not a blocker/);
- assert.match(brief,/a substitute is evidence only for the narrower question/);
+ assert.match(brief,/an observed tool limit rather than an assumption/);
+ assert.doesNotMatch(content,/under-alignment|underalignment/i);
 });

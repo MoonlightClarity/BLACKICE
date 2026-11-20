@@ -3,7 +3,6 @@ import {PROVIDER_PRESETS,getProviderPreset,isOpenRouterProvider,modelLimitDetail
 import {createProviderModelSelection,providerHeadersForSave,codexModelAccessLabel,codexModelSourceLabel} from '../../connection-models.mjs';
 import {MODEL_SORTS,groupModels,modelIsFree} from '../../model-browser.mjs';
 import {providerCredentialsReady,enableProviderConnection} from '../../provider-availability.mjs';
-import {createProviderDirectoryUI} from './settings-provider-directory.mjs';
 
 const PAGE=80,LIST_PAGE=40,SEARCH_DELAY=180,NEW_DRAFT='__new_provider_draft__';
 const compactTokens=value=>new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(value);
@@ -39,7 +38,6 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
   mount.innerHTML=`<section id="next-provider-root" class="next-providers" aria-label="Model connections">
     <header class="next-provider-heading"><div><h2>API connections</h2><p class="next-help">Add a supported or custom compatible API. Check the connection, select models, then save.</p></div><div class="next-row"><button type="button" id="next-provider-refresh">Refresh connections</button><button type="button" id="next-provider-new">Connect another endpoint</button></div></header>
     <div class="next-row" aria-label="Quick API setup"><button type="button" id="next-provider-openrouter">Set up OpenRouter</button><button type="button" id="next-provider-mistral">Set up Mistral API</button></div>
-    <div id="next-provider-directory-root"></div>
     <p id="next-provider-info" role="status" aria-live="polite"></p>
     <div class="next-provider-layout"><aside aria-label="Saved API connections"><label class="next-label">Find a connection<input id="next-provider-filter" class="next-field" type="search" maxlength="100"></label><ul id="next-provider-list" class="next-provider-list"></ul><button type="button" id="next-provider-more" hidden>Show more connections</button><details id="next-provider-hidden" class="next-provider-hidden" hidden><summary>Hidden providers <span id="next-provider-hidden-count"></span></summary><p class="next-help">Restore to model menus. Saved connections and running chats stay intact.</p><ul id="next-provider-hidden-list" class="next-provider-list"></ul></details></aside>
     <section id="next-provider-editor" class="next-card" aria-label="Connection editor"><p id="next-provider-empty" class="next-help">Choose a connection or add one.</p>
@@ -63,7 +61,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     <details id="next-provider-codex" class="next-card next-provider-codex"><summary>Codex model IDs and checks</summary><button type="button" id="next-provider-codex-hide">Hide Codex from model menus</button><p class="next-help">Add an exact native Codex model ID, including one absent from the catalog. Codex decides whether it can serve each request.</p><div class="next-provider-inline"><label class="next-label">Exact Codex model ID<input id="next-provider-codex-id" class="next-field" maxlength="400" spellcheck="false" autocomplete="off"></label><button type="button" id="next-provider-codex-add">Add model ID</button><button type="button" id="next-provider-codex-check">Try model</button></div><p class="next-help">Try model sends one short text request and may use your account’s quota. It has a 45-second deadline. Its result describes that request and account.</p><div class="next-provider-inline"><label class="next-label">Find Codex models<input id="next-provider-codex-filter" class="next-field" type="search" maxlength="200"></label><button type="button" id="next-provider-codex-read">Refresh model list and limits</button></div><p id="next-provider-codex-status" class="next-help" role="status" aria-live="polite">Refresh the model list to retrieve native model limits and check status.</p><p id="next-provider-codex-error" role="alert"></p><ul id="next-provider-codex-list" class="next-provider-list"></ul><button type="button" id="next-provider-codex-more" hidden>Show more models</button></details>
   </section>`;
   const $=id=>mount.querySelector('#next-provider-'+id);
-  const f=Object.fromEntries(['root','refresh','new','openrouter','mistral','directory-root','setup-links','support','legacy','replacement','info','filter','list','more','hidden','hidden-count','hidden-list','manage-models','limits-refresh','hide','connection-details','selected-expand','selected-collapse','catalog-panel','catalog-sort','catalog-min-context','catalog-free','catalog-tools','catalog-vision','catalog-expand','catalog-collapse','catalog-clear','editor','empty','form','title','stale','preset','protocol','name','id','base-url','models-path','chat-path','key','key-note','clear-key','header-note','headers','clear-headers','max-tokens','max-steps','capacities','enabled','models','model-count','manual-model','add-model','catalog-search','catalog-load','catalog','catalog-prev','catalog-next','catalog-page','receipt','error','save','test','discard','delete','codex','codex-hide','codex-id','codex-add','codex-check','codex-filter','codex-read','codex-status','codex-error','codex-list','codex-more'].map(id=>[id,$(id)]));
+  const f=Object.fromEntries(['root','refresh','new','openrouter','mistral','setup-links','support','legacy','replacement','info','filter','list','more','hidden','hidden-count','hidden-list','manage-models','limits-refresh','hide','connection-details','selected-expand','selected-collapse','catalog-panel','catalog-sort','catalog-min-context','catalog-free','catalog-tools','catalog-vision','catalog-expand','catalog-collapse','catalog-clear','editor','empty','form','title','stale','preset','protocol','name','id','base-url','models-path','chat-path','key','key-note','clear-key','header-note','headers','clear-headers','max-tokens','max-steps','capacities','enabled','models','model-count','manual-model','add-model','catalog-search','catalog-load','catalog','catalog-prev','catalog-next','catalog-page','receipt','error','save','test','discard','delete','codex','codex-hide','codex-id','codex-add','codex-check','codex-filter','codex-read','codex-status','codex-error','codex-list','codex-more'].map(id=>[id,$(id)]));
   const drafts=new Map();
 
   let runtimeSettings=copy(getRuntimeSettings()||{});
@@ -160,26 +158,6 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
       draft.baseline=JSON.stringify(settings(draft));drafts.set(key,draft);
     }
     selected=key;paintList();paintEditor();f.key.focus();
-  }
-  function chooseDirectoryProvider(entry){
-    if(!active||destroyed||busy||!entry)return;
-    if(entry.supported===true&&typeof entry.preset==='string'){startPreset(entry.preset);return;}
-    if(entry.compatibility!=='index-reported-compatible'||entry.protocol!=='compatible'||!entry.baseUrl)return;
-    let target;try{target=new URL(entry.baseUrl);}catch{return;}
-    if(!['https:','http:'].includes(target.protocol)||target.username||target.password)return;
-    const saved=providers.find(provider=>provider.type==='compatible'&&provider.baseUrl===entry.baseUrl);
-    if(saved){openSetup(saved);return;}
-    cancelCatalog();
-    const key=NEW_DRAFT+':external:'+entry.providerId;
-    if(!drafts.has(key)){
-      const draft=makeDraft();
-      Object.assign(draft,{id:newId(),name:String(entry.name||'Model API').slice(0,100),preset:'compatible',
-        type:'compatible',baseUrl:entry.baseUrl,modelsPath:'',chatPath:'',freeOnly:false,toolsOnly:false,
-        connectionDetailsOpen:true,
-        receipt:'External index only: compatible protocol is reported, not verified. Enter credentials, load live models, check the connection, then save if it works.'});
-      draft.baseline=JSON.stringify(settings(draft));drafts.set(key,draft);
-    }
-    selected=key;paintList();paintEditor();f['connection-details'].open=true;f.key.focus();
   }
   async function enableConnection(id){
     if(!active||destroyed||busy)return;const provider=providers.find(item=>item.id===id);if(!provider)return;
@@ -503,12 +481,11 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     if(Array.isArray(latest)){listSequence++;listAbort?.abort();listAbort=null;listBusy=false;applyProviders(latest);}
     else if(!listBusy)void load();
   };
-  const providerDirectory=createProviderDirectoryUI({mount:f['directory-root'],api,onChoose:chooseDirectoryProvider});
   return {
     setCodexActive(value){nativeActive=value===true;if(!codexActive())pauseCodex();else paintCodex();},
     updateRuntimeSettings(value){if(destroyed||!value||typeof value!=='object')return;runtimeSettings=copy(value);if(active)paintList();},
-    enter(){if(destroyed||active)return;runtimeSettings=copy(getRuntimeSettings()||runtimeSettings);active=true;unsubscribe=events?.subscribe?.(onEvent)||null;paintList();paintEditor();paintCodex();providerDirectory.enter();if(!loaded||stale)void load();},
-    leave(){providerDirectory.leave();active=false;unsubscribe?.();unsubscribe=null;stale=true;listSequence++;listAbort?.abort();listAbort=null;listBusy=false;cancelCatalog();if(!nativeActive)pauseCodex();},
-    destroy(){nativeActive=false;this.leave();providerDirectory.destroy();destroyed=true;for(const draft of drafts.values()){draft.key='';draft.headers='';}drafts.clear();f.key.value='';f.headers.value='';mount.replaceChildren();},
+    enter(){if(destroyed||active)return;runtimeSettings=copy(getRuntimeSettings()||runtimeSettings);active=true;unsubscribe=events?.subscribe?.(onEvent)||null;paintList();paintEditor();paintCodex();if(!loaded||stale)void load();},
+    leave(){active=false;unsubscribe?.();unsubscribe=null;stale=true;listSequence++;listAbort?.abort();listAbort=null;listBusy=false;cancelCatalog();if(!nativeActive)pauseCodex();},
+    destroy(){nativeActive=false;this.leave();destroyed=true;for(const draft of drafts.values()){draft.key='';draft.headers='';}drafts.clear();f.key.value='';f.headers.value='';mount.replaceChildren();},
   };
 }

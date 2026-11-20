@@ -137,7 +137,7 @@ test('typed partial observation retains live search evidence without closing or 
     const read=async filename=>{
      const r=await call('relay_workspace',{action:'read',path:path.join(root,filename)});assert.equal(r.success,true);return r.contentItems.at(-1).text.match(/receipt-[0-9]+/)[0];
     };
-    await accepted('plan',{actions:[{id:'find_two',objective:'Verify two distinct sources against all required conditions',qualifying:{minQualifyingCount:2,requiredChecks:['remote_us','valid_posting']},dependsOn:[]},{id:'report',objective:'Report both qualifying sources',dependsOn:['find_two']}]});
+    await accepted('plan',{actions:[{id:'find_two',objective:'Verify two distinct sources against all required conditions',qualifying:{minQualifyingCount:2,requiredChecks:['remote_us','valid_posting']},...(scenario==='exhausted'?{searchScope:['source-one.txt','source-two.txt'].map(filename=>({tool:'relay_workspace',locator:path.join(root,filename)}))}:{}),dependsOn:[]},{id:'report',objective:'Report both qualifying sources',dependsOn:['find_two']}]});
     await accepted('focus',{id:'find_two'});
     const first=await read('source-one.txt');
     const row=(id,sourceReceipt,region='verified')=>({id,sourceReceipt,checks:[{id:'remote_us',status:region},{id:'valid_posting',status:'verified'}]});
@@ -160,10 +160,26 @@ test('typed partial observation retains live search evidence without closing or 
     assert.equal(partial.actions[0].notes[0].qualification.count,1);
     assert.equal((await dir('focus',{id:'report'})).code,'DIRECTORY_NOT_READY');
     if(scenario==='exhausted'){
-     await accepted('block',{id:'find_two',blocker:'search-limit-reached',claim:'The agreed one-source budget ended before finding a second qualifying source.',receipts:[first]});
+     const block=(receipts,claim='The initial ten-minute window elapsed.')=>dir('block',{id:'find_two',blocker:'search-limit-reached',claim,receipts});
+     assert.equal((await block([])).code,'DIRECTORY_SEARCH_SCOPE');
+     assert.equal((await block([first])).code,'DIRECTORY_SEARCH_SCOPE');
+     const missing=await call('relay_workspace',{action:'read',path:path.join(root,'missing-source.txt')});
+     assert.equal(missing.success,false);
+     const failureReceipt=(await accepted('read')).receipts.at(-1);
+     assert.equal(failureReceipt.success,false);
+     assert.equal((await block([first,failureReceipt.id])).code,'DIRECTORY_SEARCH_SCOPE');
+     const repeat=await read('source-one.txt');
+     assert.equal((await block([first,repeat])).code,'DIRECTORY_SEARCH_SCOPE','Repeated successful reads of the same source do not cover the other source.');
+     assert.equal((await accepted('read')).focus,'find_two');
+     const premature=await o.onBeforeFinal({output:'I stopped after the first source.',signal:o.signal});
+     assert.ok(premature,'The host requests continuation after the rejected stop.');
+     const second=await read('source-two.txt');
+     await accepted('observe',{...observation,outcome:'partial',receipts:[first,second],candidateRows:[row('first',first),row('second',second,'unmet')]});
+     assert.equal((await block([first,second],'Both permitted sources were checked; one of two qualified.')).success,true);
      assert.equal(await o.onBeforeFinal({output:'One qualifying source verified; the agreed search limit was reached.',signal:o.signal}),undefined);
      return{output:'One qualifying source verified; the agreed search limit was reached.'};
     }
+    assert.equal((await dir('block',{id:'find_two',blocker:'search-limit-reached',claim:'Estimated time elapsed.',receipts:[first]})).code,'DIRECTORY_SEARCH_SCOPE','A successful first read with no finite scope cannot prove exhaustion.');
     const second=await read('source-two.txt');
     const attempt=(ids,rows)=>dir('observe',{id:'find_two',outcome:'objective-met',claim:'Two qualifying current postings. Remaining: the second source is remote, but its US eligibility is not verified.',receipts:ids,candidateRows:rows});
     const prior=await accepted('read');

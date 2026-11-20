@@ -104,12 +104,17 @@ test('the default first-party pack is selectable by real format and task queries
   ['simplest solution','library-simplest-complete-path'],
   ['stop overthinking','library-simplest-complete-path'],
   ['browser regression','library-focused-regression'],
+  ['premature final answer','library-anti-completion-bias'],
+  ['anti-overalignment','builtin-task-grounding'],
+  ['verify the running system','library-verify-a-working-slice'],
+  ['add new catalog entries','library-expand-a-catalog'],
  ]){
   const result=await call({action:'search',query});
   assert.equal(result.entries[0].id,id);
   const selected=await call({action:'read',id});
-  const file=manifest.entries.find(entry=>entry.id===id).bodyFile;
-  assert.equal(selected.entry.content,await fs.readFile(new URL(file,root),'utf8'));
+  const file=manifest.entries.find(entry=>entry.id===id)?.bodyFile;
+  if (file) assert.equal(selected.entry.content,await fs.readFile(new URL(file,root),'utf8'));
+  else assert.match(selected.entry.content,/^# Anti-Overalignment/);
  }
  // This meaningful body word isn't metadata. Search must never read or discover through pack bodies.
  const body=await fs.readFile(new URL('word-review.md',root),'utf8');

@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.53 candidate source, not an installation or publication receipt.** Package version is **2.40.53**. Start with the [2.40.53 notes](RELEASE-NOTES-2.40.53.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.54 candidate source, not an installation or publication receipt.** Package version is **2.40.54**. Start with the [2.40.54 notes](RELEASE-NOTES-2.40.54.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.54](RELEASE-NOTES-2.40.54.md) - recover stale browser reads and simplify model setup
 
 - [2.40.53](RELEASE-NOTES-2.40.53.md) - make Directory completion evidence-backed without locking the first plan
 

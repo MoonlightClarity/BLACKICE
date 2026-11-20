@@ -2062,7 +2062,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       dispose: () => { clearTimeout(timer); wc.removeListener('did-start-navigation', listener); wake?.(); },
     };
   }
-  async perform(args, { signal, source = 'agent', owner: context, destinationOwner, validateUploadPath, suppressResultSnapshot = false, operationDescriptor, operationId, recoveryInput, cleanupGuard, cleanupReviewed = false, protectInUse = false } = {}) {
+  async perform(args, { signal, source = 'agent', owner: context, destinationOwner, validateUploadPath, suppressResultSnapshot = false, operationDescriptor, operationId, recoveryInput, cleanupGuard, cleanupReviewed = false, protectInUse = false, settleRecoveryRead = false } = {}) {
     cancel(signal);
     const fillText = args.action === 'fill' ? validateBrowserFillRequest(args) : undefined;
     if (args.action === 'upload') validateBrowserUploadRequest(args);
@@ -2417,7 +2417,9 @@ export class ElectronBrowserDriver extends EventEmitter {
         await bounded(new Promise(resolve => setTimeout(resolve, 120)), signal, 1000);
       } while (true);
     }
-    cancel(signal); await navigation?.wait(); await this.settle(tab, signal);
+    const quietRecovery = settleRecoveryRead && args.action === 'snapshot';
+    cancel(signal); await navigation?.wait();
+    if (!quietRecovery) await this.settle(tab, signal);
     if (tab.externalHandoff && tab.externalHandoff !== externalBefore) {
       const handoff = tab.externalHandoff; await bounded(handoff.promise, signal);
       if (handoff.status === 'failed') throw Object.assign(error(`The operating system could not open the external link: ${handoff.error}`), { actionDispatched: true });
@@ -2425,19 +2427,19 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (tab.loadError) throw navigationFailure(tab);
     if (suppressResultSnapshot === true) return { tabId: tab.id, documentId: inputDocumentId(tab), actionDispatched: true, protectedContent: true };
-    const quietRequired = ['open', 'navigate'].includes(args.action) && !tab.providerKeyProtected
+    const quietRequired = (quietRecovery || ['open', 'navigate'].includes(args.action)) && !tab.providerKeyProtected
       && !tab.authenticationChallenge && !tab.pendingInteraction && !blankPageURL(this.tabURL(tab));
     const navigationUnsettled = () => ({
       tabId: tab.id, documentId: inputDocumentId(tab), url: this.tabURL(tab), title: this.tabTitle(tab), frames: [],
-      actionDispatched: true, navigationUnsettled: true,
+      actionDispatched: !quietRecovery, navigationUnsettled: true,
       hint: 'The top-level page was still changing after navigation. Take a snapshot before choosing a control; do not repeat the navigation.',
     });
     const wc = quietRequired ? tab.window.webContents : null;
     let result, observedMainRevision;
     if (quietRequired && !await this.waitForTopNavigationQuiet(tab, signal)) {
-      if (tab.rendererFailure) throw rendererFailure(tab, true);
+      if (tab.rendererFailure) throw rendererFailure(tab, !quietRecovery);
       if (tab.loadError) throw navigationFailure(tab);
-      result = tab.pendingInteraction ? this.interactionReceipt(tab, { frames: [], actionDispatched: true }) : navigationUnsettled();
+      result = tab.pendingInteraction ? this.interactionReceipt(tab, { frames: [], actionDispatched: !quietRecovery }) : navigationUnsettled();
     } else {
       if (tab.loadError) throw navigationFailure(tab);
       observedMainRevision = tab.mainRevision;

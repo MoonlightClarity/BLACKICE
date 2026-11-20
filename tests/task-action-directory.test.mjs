@@ -152,3 +152,29 @@ test('stale code or input-only flags are not whole-action proof and cannot clear
  assert.deepEqual(ledger.finalStatus().unknown,['receipt-1']);
  await assert.rejects(ledger.execute({name:'relay_browser'},async()=>assert.fail('must not dispatch'),{runId:'run',nodeId:'agent'}),{code:'DIRECTORY_UNKNOWN'});
 });
+
+test('a stale click cannot exhaust a finite browser search',async()=>{
+ const ledger=create(),urls=['https://example.com/source-a','https://example.com/source-b'];
+ const auth={runId:'run',nodeId:'agent'};
+ const edit=(action,fields)=>ledger.handle({action,revision:ledger.read().revision,...fields},auth);
+ await edit('plan',{actions:[{id:'find',objective:'Check both sources and report the shortfall if any.',dependsOn:[],searchScope:urls.map(locator=>({tool:'relay_browser',locator}))}]});
+ await edit('focus',{id:'find'});
+ const read=(url,action='read')=>ledger.execute({name:'relay_browser',arguments:{action}},async()=>({success:true,contentItems:[{type:'inputText',text:JSON.stringify({url,documentId:'document-1',frames:[{}]})}]}),{...auth,observationOnly:true});
+ const planned=ledger.read().actions[0];
+ await assert.rejects(edit('plan',{actions:[{id:planned.id,objective:planned.objective,dependsOn:[],searchScope:planned.searchScope.slice(0,1)}]}),{code:'DIRECTORY_RECORDED_ACTION'});
+ const a=await read(urls[0],'open');
+ await assert.rejects(ledger.execute({name:'relay_browser',arguments:{action:'click'}},async()=>{
+  throw Object.assign(new Error('Take a fresh snapshot.'),{code:'BROWSER_REF_STALE',actionDispatched:false});
+ },auth),{code:'BROWSER_REF_STALE'});
+ const stale=ledger.read().receipts.at(-1);
+ assert.equal(stale.actionDispatched,false);
+ const block=receipts=>edit('block',{id:'find',blocker:'search-limit-reached',claim:'The search limit was reached.',receipts});
+ const before=ledger.read();
+ await assert.rejects(block([a.receiptId,stale.id]),{code:'DIRECTORY_SEARCH_SCOPE'});
+ assert.deepEqual(ledger.read(),before);
+ assert.equal(ledger.finalStatus().reason,'pending-actions');
+ const b=await read(urls[1]+'?utm_source=ignored','snapshot');
+ await block([a.receiptId,b.receiptId]);
+ assert.equal(ledger.finalStatus().reason,'blocked-paths');
+ assert.equal(ledger.read().actions[0].state,'blocked');
+});

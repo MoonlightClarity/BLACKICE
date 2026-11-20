@@ -671,7 +671,7 @@ export function paintModels(view,status,selected={}) {
   fill(view.model,choices.models,choices.selected.model,{retain:true});
   if(view.model) {
     const current=choices.defaultInfo;
-    const detail=current?.id?'Default resolves to '+current.id+(current.available?'':' (currently unavailable)'):'Default model has not yet been resolved.';
+    const detail=current?.connectionRemoved?'The default API connection was removed. Choose another model.':current?.id?'Default resolves to '+current.id+(current.available?'':' (currently unavailable)'):'Default model has not yet been resolved.';
     view.model.title=detail;
     view.model.setAttribute('aria-label','Model. '+detail);
   }

@@ -47,7 +47,7 @@ export function applyChatSkillLoadEvent(run,event){
 
 const publicPlanningModules=Object.freeze({
  'builtin-decomposition':['Task decomposition','pending-actions'],
- 'builtin-task-grounding':['Calibrated Depth and Action','grounded-choice'],
+ 'builtin-task-grounding':['Anti-Overalignment','grounded-choice'],
  'builtin-structured-analysis':['Structured Analytic Techniques','revised-choice'],
  'builtin-intent-inference':['Intent Inference','intent-advice'],
 });

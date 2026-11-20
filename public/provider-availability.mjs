@@ -27,3 +27,13 @@ export async function enableProviderForModel(api, status, modelId) {
   if (model?.available !== true) throw Error(model?.availabilityReason || 'This model is still unavailable. Check its connection in Settings > Models.');
   return fresh;
 }
+
+/** A missing connection is not a provider group or a selectable model. */
+export function missingApiModelConnection(status, modelId) {
+  if (!Array.isArray(status?.providers) || typeof modelId !== 'string') return false;
+  const delimiter = modelId.indexOf('::');
+  if (delimiter < 1) return false;
+  const id = modelId.slice(0, delimiter);
+  if (['codex', 'mistral-vibe', 'antigravity', 'qwen_code'].includes(id)) return false;
+  return !status.providers.some(provider => provider.id === id);
+}

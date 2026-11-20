@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {planningDOM} from './fixture-planning-dom.mjs';
 import {createGroupedModelPicker} from '../public/next/core/model-picker.mjs';
-import {chatOptionChoices} from '../public/next/chat/options-model.mjs';
+import {connectionDefaultModels} from '../public/connection-models.mjs';
+import {chatOptionChoices,validateChatOptions} from '../public/next/chat/options-model.mjs';
 import {paintModels} from '../public/next/chat/render.mjs';
 
 const providers=[{id:'zeta',name:'Zeta API'},{id:'alpha',name:'Alpha API'}];
@@ -251,4 +252,25 @@ test('native setup actions respect hidden providers and failed navigation preser
   await f.document.activeElement.dispatch('click',{},true);
   assert.match(f.panel().querySelector('[role="status"]').textContent,/Settings could not open/);
   assert.equal(f.panel().hidden,false);assert.equal(f.select.value,'alpha::free-low');assert.deepEqual(f.changes,[]);
+});
+
+test('a deleted API does not appear as a raw-ID group, default or historical model label', async t => {
+  const api='api_66f1dcbb06d7', removed=model(api+'::example'), active=model('alpha::working');
+  const f=fixture(t,{models:[removed,active],selected:removed.id,modelProviders:[...providers,{id:api,name:'Venice'}]});
+  await f.open();
+  assert.match(f.trigger().textContent,/Venice/);
+  const status={providers,models:[active],defaultModel:removed.id,defaultModelSelection:removed.id,defaultModelAvailable:false};
+  const chat=chatOptionChoices(status,{model:removed.id});
+  f.picker.update({models:chat.models,status,selected:chat.selected.model});
+  assert.match(f.trigger().textContent,/API connection removed/);
+  assert.doesNotMatch(f.trigger().textContent,new RegExp(api));
+  assert.equal(f.groups().some(group=>group.dataset.modelProvider===api),false);
+  assert.deepEqual(f.changes,[],'Removing a provider must not select another route or change the saved chat.');
+  const missing=connectionDefaultModels(status).find(item=>item.value===removed.id);
+  assert.equal(missing.disabled,true);
+  assert.doesNotMatch(missing.label,new RegExp(api));
+  assert.doesNotMatch(chat.defaultInfo.label,new RegExp(api));
+  assert.throws(()=>validateChatOptions(status,{model:'default'}),/connection was removed/);
+  assert.throws(()=>validateChatOptions(status,{model:removed.id}),/connection was removed/);
+  assert.equal(validateChatOptions(status,{model:active.id}).model,active.id);
 });

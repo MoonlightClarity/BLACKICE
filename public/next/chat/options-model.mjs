@@ -1,3 +1,4 @@
+import { missingApiModelConnection } from '../../provider-availability.mjs';
 import { reasoningChoices, reasoningSupport } from '../../reasoning-model.mjs';
 import { serviceTierSupport } from '../../service-tier-model.mjs';
 import { UNKNOWN_CHAT_MODEL } from './model.mjs';
@@ -22,6 +23,7 @@ export function savedChatExecutionMode(run,fallback='automatic'){
 export function resolvedDefaultModel(status={}) {
   const saved=typeof status.defaultModel==='string'&&status.defaultModel.trim()&&status.defaultModel!=='default'?status.defaultModel.trim():null;
   const model=saved&&(status.models||[]).find(item=>(item?.id||item?.model)===saved);
+  if(missingApiModelConnection(status,saved))return {id:null,name:'',label:'Default API connection removed',available:false,connectionRemoved:true};
   const name=model?.displayName||saved||'';
   const label=name?'Default · '+name:status.defaultModelInitializing?'Default · resolving…':'Default · not configured';
   return {id:saved,name,label,available:status.defaultModelAvailable!==false};
@@ -30,23 +32,24 @@ export function chatOptionChoices(status={},raw={}){
   const selected=normalizeChatOptions(raw);
   const defaultInfo=resolvedDefaultModel(status);
   const isRetired=id=>/^(?:antigravity|qwen_code)::/.test(id||'');
-  const models=[{id:'default',label:defaultInfo.label,disabled:false}];
+  const models=[{id:'default',label:defaultInfo.label,disabled:defaultInfo.connectionRemoved===true}];
   for(const item of status.models||[]){
     const id=item?.id||item?.model;
     // Catalogs can be cached in a mounted chat even after the runtime has
     // retired its adapters. Do not offer obsolete native CLIs as choices.
-    if(typeof id!=='string'||!id||isRetired(id)||models.some(x=>x.id===id))continue;
+    if(typeof id!=='string'||!id||isRetired(id)||missingApiModelConnection(status,id)||models.some(x=>x.id===id))continue;
     models.push({id,label:item.displayName||id,disabled:item.available===false});
   }
   if(selected.model!=='default'&&!models.some(item=>item.id===selected.model)){
-    const old=isRetired(selected.model);
+    const old=isRetired(selected.model),removed=missingApiModelConnection(status,selected.model);
     const provider=selected.model.startsWith('antigravity::')?'Antigravity':selected.model.startsWith('qwen_code::')?'Qwen Code':'';
     // A selected *historical* model is retained in the control for an exact
     // label, but is never offered as a new selectable model.
     models.push({id:selected.model,label:old
       ?provider+' · '+selected.model.split('::').slice(1).join('::')+' · retired (historical chat)'
+      :removed?'API connection removed. Choose a model.'
       :selected.model===UNKNOWN_CHAT_MODEL?'Saved model unknown · choose a model':selected.model+' · unavailable',
-      disabled:true,historical:old});
+      disabled:true,historical:old||removed});
   }
   const efforts=reasoningChoices(status,selected.model,selected.effort)
     .map(item=>({id:item.value,label:item.label,disabled:!item.available,verified:item.verified}));
@@ -59,6 +62,8 @@ export function validateChatOptions(status={},raw={}){
   assertExecutablePlanningMode(raw?.planningExecutionMode);
   const selection=normalizeChatOptions(raw);
   if(selection.model===UNKNOWN_CHAT_MODEL)throw Error('This chat has no saved model evidence. Choose a model to continue.');
+  const route=selection.model==='default'?status.defaultModel:selection.model;
+  if(missingApiModelConnection(status,route))throw Error('The API connection was removed. Choose another model.');
   if(selection.model!=='default'){
     const matching=(status.models||[]).find(m=>(m.id||m.model)===selection.model);
     if(!matching||matching.available===false)throw Error(matching?.availabilityReason||'Choose an available model.');

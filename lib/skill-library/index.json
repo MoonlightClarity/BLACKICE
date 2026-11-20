@@ -460,6 +460,71 @@
         "revision": "blackice-long-term-judgment-v1"
       },
       "bodyFile": "long-term-judgment.md"
+    },
+    {
+      "id": "library-verify-a-working-slice",
+      "title": "Verify a Working Slice",
+      "description": "Follow one representative input through the real workflow to a usable result. Pin which version is running, check handoffs, and distinguish structural checks from observed outcomes.",
+      "tags": [
+        "methods",
+        "integration",
+        "verification"
+      ],
+      "aliases": [
+        "working slice",
+        "end to end outcome",
+        "verify the running system",
+        "trace the real workflow"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "verify-a-working-slice.md"
+    },
+    {
+      "id": "library-expand-a-catalog",
+      "title": "Expand a Catalog",
+      "description": "Add distinct entries to a catalog, separate listed or selectable options from working behavior, and check shared and unique routes without assuming one entry proves the rest.",
+      "tags": [
+        "methods",
+        "catalog",
+        "integration"
+      ],
+      "aliases": [
+        "expand a catalog",
+        "add catalog entries",
+        "catalog expansion",
+        "expand a roster",
+        "verify catalog entries"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "1"
+      },
+      "bodyFile": "expand-a-catalog.md"
+    },
+    {
+      "id": "library-anti-completion-bias",
+      "title": "Anti-Completion Bias",
+      "description": "Catch a premature final answer after a plan, partial result, failed first attempt, or unverified cutoff. Take the next useful action instead of describing it.",
+      "tags": [
+        "methods",
+        "completion",
+        "continuation"
+      ],
+      "aliases": [
+        "anti completion bias",
+        "premature final answer",
+        "premature stopping",
+        "ended the turn early",
+        "overclosure after progress"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "blackice-anti-completion-bias-v1"
+      },
+      "bodyFile": "anti-completion-bias.md"
     }
   ]
 }

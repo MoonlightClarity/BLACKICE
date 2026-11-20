@@ -37,6 +37,8 @@ test('native Mistral account settings are separate from optional API keys and op
   assert.equal(f.$('#next-mistral-vibe-catalog').hidden,true);assert.deepEqual(f.writes(),[]);
   f.panel.focusProvider('mistral-vibe');assert.equal(f.document.activeElement,card);assert.equal(card.open,true);
   f.panel.leave();f.panel.enter();await settle();assert.equal(f.$('#fixture-api-draft').value,'Keep my API draft');
+  assert.deepEqual([...f.mount.querySelectorAll('[role="tab"]')].map(tab=>tab.textContent),['Accounts','Local models','Add API']);
+  assert.equal(f.$('#next-models-panel-catalog'),null);
   assert.equal(f.lifecycle.entered,0,'API panel stays inactive while browsing accounts');await f.click('#next-models-tab-api');assert.equal(f.lifecycle.entered,1);assert.equal(f.$('#next-models-panel-accounts').hidden,true);await f.click('#next-models-tab-local');assert.equal(f.lifecycle.left,1);assert.equal(f.$('#next-models-panel-api').hidden,true);await f.click('#next-models-tab-api');assert.equal(f.$('#fixture-api-draft').value,'Keep my API draft');assert.deepEqual(f.writes(),[]);
 });
 
