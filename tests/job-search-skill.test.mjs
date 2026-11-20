@@ -18,7 +18,7 @@ const heading='JOB SEARCH (advisory execution method; not permission)';
 const accepted={type:'skill_context_submitted',skillId:id,title:'Job Search',source:'bundled',sourceRevision:'3'};
 
 test('current actionable job requests select only the job skill, not the general intent skill',()=>{
- for(const input of [example,'Apply for jobs until 6 AM EST.','Job search for me. Stop at 3 jobs.','Can you shortlist remote open roles?','Please load the Job Search skill.','Search job boards for research roles.']){
+ for(const input of [example,'Apply for jobs until 6 AM EST.','Apply for the Circana Senior Product Manager, AI Evaluation & Quality position.','Apply to this job opening.','Job search for me. Stop at 3 jobs.','Can you shortlist remote open roles?','Please load the Job Search skill.','Search job boards for research roles.']){
   assert.equal(wantsJobSearchSkill(input),true,input);
   if(!input.startsWith('Apply'))assert.equal(wantsIntentInferenceSkill(input),false,input);
  }
