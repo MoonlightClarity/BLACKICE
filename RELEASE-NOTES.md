@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.38 candidate source, not an installation or publication receipt.** Package version is **2.40.38**. Start with the [2.40.38 notes](RELEASE-NOTES-2.40.38.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.39 candidate source, not an installation or publication receipt.** Package version is **2.40.39**. Start with the [2.40.39 notes](RELEASE-NOTES-2.40.39.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.39](RELEASE-NOTES-2.40.39.md) - final decision receipts, exact report totals, and live Move Tab folders
 
 - [2.40.38](RELEASE-NOTES-2.40.38.md) - simplify browser folder creation and close status
 
