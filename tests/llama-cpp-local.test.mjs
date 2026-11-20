@@ -135,3 +135,29 @@ test('sleeping router process is reusable without a duplicate load and remains u
   await manager.load({engine: 'llamacpp', model: row.id});
   assert.equal(fixture.calls.some(call => call.route === '/models/load'), false);
 });
+test('accepted llama.cpp load polls through unloaded and loading, then returns only on loaded', async () => {
+  const {loadLlamaCpp}=await import('../lib/llama-cpp-local.mjs');
+  const states=['unloaded','unloaded','loading','loaded'];
+  let clock=0,posts=0;
+  const request=async (_engine,route)=>{
+    if(route==='/props')return {role:'router'};
+    if(route==='/models')return {data:[{id:'test',status:{value:states.shift()}}]};
+    assert.equal(route,'/models/load');posts++;return {success:true};
+  };
+  const result=await loadLlamaCpp(request,{model:'test'},{now:()=>clock,wait:async ms=>{clock+=ms;}});
+  assert.equal(result.loaded,true);
+  assert.equal(clock,500);
+  assert.equal(posts,1);
+});
+test('a model already loading is not dispatched again and an unresolved load times out visibly', async () => {
+  const {loadLlamaCpp}=await import('../lib/llama-cpp-local.mjs');
+  let clock=0;
+  const request=async (_engine,route)=>{
+    if(route==='/props')return {role:'router'};
+    assert.equal(route,'/models');
+    return {data:[{id:'test',status:{value:'loading'}}]};
+  };
+  await assert.rejects(loadLlamaCpp(request,{model:'test'},{confirmationTimeoutMs:500,now:()=>clock,wait:async ms=>{clock+=ms;}}),
+    {code:'LOCAL_MODEL_LOAD_UNCONFIRMED',status:504});
+  assert.equal(clock,500);
+});
