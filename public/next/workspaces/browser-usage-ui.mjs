@@ -1,3 +1,9 @@
+/** Report the host receipt, including eligible tabs left after its bounded drain. */
+export function browserCloseAllOutcome(result,tabs){
+ const inUse=new Set([...(result.skippedInUseIds||[]),...tabs.filter(tab=>tab.inUse).map(tab=>tab.tabId)]);
+ const incomplete=Boolean(result.failedTabs?.length||result.remainingTabIds?.some(id=>!inUse.has(id)));
+ return {incomplete,message:'Closed '+result.closed+' browser tabs.'+(incomplete?' Some unused tabs remain. Review them before retrying.':inUse.size?' Tabs marked in use stayed open.':'')};
+}
 const browserIconPaths={
  back:'M15 5 8 12l7 7',forward:'m9 5 7 7-7 7',reload:'M20 7v5h-5 M19 12a7 7 0 1 0-2 5',
  folderOutline:'M3 7h6l2-3h10v16H3z',caretRight:'m9 6 6 6-6 6',caretDown:'m6 9 6 6 6-6',

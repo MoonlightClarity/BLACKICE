@@ -3,7 +3,7 @@ import { text } from '../core/dom.mjs';
 import { normalizeBrowserAddress } from '../../browser-address.mjs';
 import { browserFrame, pagePoint, browserInputGuard, wheelPixels, pendingDialog } from './browser-model.mjs';
 import { createNativeBrowserWorkspace } from './browser-native.mjs';
-import { browserUsageMarkup, createBrowserUsageControls, browserTabUsageLabel, browserIconButton } from './browser-usage-ui.mjs';
+import { browserUsageMarkup, createBrowserUsageControls, browserTabUsageLabel, browserIconButton, browserCloseAllOutcome } from './browser-usage-ui.mjs';
 
 /** Interactive, contained Chromium surface. This is a native-browser capture,
  * not a copied webpage, iframe, or a separate foreground browser window.
@@ -340,8 +340,9 @@ export function createBrowserWorkspace(options) {
       if(!currentRequest())return;
       applyStatus(data);
       for(const id of addressDrafts.keys())if(!tabs.some(tab=>tab.tabId===id))addressDrafts.delete(id);
-      if(result.failedTabs?.length)notice('Closed '+result.closed+' tabs; some could not be closed. Refresh before retrying.',true);
-      else notify?.('Closed '+result.closed+' browser tabs; in-use tabs retained.');
+      const outcome=browserCloseAllOutcome(result,tabs);
+      if(outcome.incomplete)notice(outcome.message,true);
+      else notify?.(outcome.message);
     }catch(error){if(currentRequest())notice(error.message,true);}
     finally{busy=false;if(active&&!destroyed)render();}
   }

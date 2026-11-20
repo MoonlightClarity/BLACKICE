@@ -226,6 +226,15 @@ test('fallback close all requires confirmation, retains protected tabs and never
  assert.match(prompt,/marked in use will stay open/);assert.deepEqual(f.state.tabs.map(tab=>tab.tabId),['page-b']);
  await f.click('#next-browser-close-all');await settle();assert.equal(closes,1,'Protected-only tabs do not dispatch another bulk close');
 });
+test('fallback bulk close warns about eligible leftovers even if no close operation failed',async t=>{
+ let closes=0;const f=await tabFixture(t,{hook:async(call,state)=>{
+  if(call.route!=='/api/browser/close-all')return;
+  closes++;state.tabs=state.tabs.filter(tab=>tab.tabId==='page-b');
+  return{closed:1,failedTabs:[],skippedInUseIds:[],remainingTabIds:['page-b']};
+ }});
+ window.confirm=()=>true;await f.click('#next-browser-close-all');await until(()=>f.$('#next-browser-status').textContent.includes('Some unused tabs remain'));
+ assert.equal(closes,1);assert.equal(f.$('#next-browser-status').dataset.error,'true');
+});
 test('fallback failed close all is reported without automatic replay',async t=>{
  let attempts=0;const f=await tabFixture(t,{hook:async call=>{if(call.route==='/api/browser/close-all'){attempts++;throw Error('Close receipt uncertain');}}});
  window.confirm=()=>true;await f.click('#next-browser-close-all');await until(()=>f.$('#next-browser-status').textContent.includes('receipt uncertain'));

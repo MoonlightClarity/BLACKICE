@@ -9,7 +9,7 @@ async function until(read) {
   throw Error('Native browser workspace did not settle.');
 }
 
-async function fixture(t) {
+async function fixture(t,{closeReceipt}={}) {
   const dom = planningDOM(t), win = globalThis.window, subscribers = new Set(), surfaceCalls = [];
   dom.document.defaultView = win;
   Object.assign(win, {
@@ -32,11 +32,15 @@ async function fixture(t) {
     { tabId: 'search', browser: 'relay', contained: true, visible: true, url: 'https://www.google.com/search?q=mistral', title: 'Search results' },
     { tabId: 'other', browser: 'relay', contained: true, visible: false, url: 'https://chat.mistral.ai/work', title: 'Vibe Work' },
   ], activeTab: 'search' };
-  let reads = 0;
-  const workspace = createNativeBrowserWorkspace({ mount: dom.mount, notify() {},
+  let reads = 0,closes=0;const notifications=[];
+  const workspace = createNativeBrowserWorkspace({ mount: dom.mount, notify(message) {notifications.push(message);},
     events: { subscribe(handler) { subscribers.add(handler); return () => subscribers.delete(handler); } },
     api: async (route, method = 'GET', body) => {
       if (route.startsWith('/api/browser/status')) { reads++; return structuredClone(state); }
+      if(route==='/api/browser/close-all'&&closeReceipt){
+        closes++;state.tabs=state.tabs.filter(tab=>closeReceipt.remainingTabIds.includes(tab.tabId));state.activeTab=state.tabs[0]?.tabId||null;
+        return closeReceipt;
+      }
       assert.equal(route, '/api/browser/action'); assert.equal(method, 'POST');
       const tab = state.tabs.find(value => value.tabId === body.tabId); assert.ok(tab);
       if (body.action === 'navigate') { tab.url = body.url; tab.title = 'Navigated page'; }
@@ -45,7 +49,7 @@ async function fixture(t) {
   });
   t.after(() => workspace.destroy()); workspace.enter();
   await until(() => dom.$('#next-browser-url').value === state.tabs[0].url && surfaceCalls.some(call => call.action === 'attach'));
-  return { ...dom, state, workspace,surfaceCalls,
+  return { ...dom, state, workspace,surfaceCalls,notifications,get closes(){return closes;},
     async refresh() {
       const previous = reads;
       for (const handler of subscribers) handler({ type: 'browser.status' });
@@ -54,6 +58,23 @@ async function fixture(t) {
   };
 }
 
+test('native bulk close warns about eligible leftovers even if no close operation failed',async t=>{
+ const receipt={closed:1,failedTabs:[],skippedInUseIds:[],remainingTabIds:['other']};
+ const f=await fixture(t,{closeReceipt:receipt});
+ window.confirm=()=>true;
+ await f.click('#next-browser-close-all');
+ await until(()=>f.$('#next-browser-status').textContent.includes('Some unused tabs remain'));
+ assert.equal(f.closes,1);assert.equal(f.$('#next-browser-status').dataset.error,'true');
+ assert.match(f.notifications[0],/Some unused tabs remain/);
+});
+test('native bulk close reports marked tabs staying open without an incomplete warning',async t=>{
+ const receipt={closed:1,failedTabs:[],skippedInUseIds:['other'],remainingTabIds:['other']};
+ const f=await fixture(t,{closeReceipt:receipt});
+ f.state.tabs[1].inUse=true;await f.refresh();
+ window.confirm=()=>true;await f.click('#next-browser-close-all');
+ await until(()=>f.notifications.some(message=>message.includes('Tabs marked in use stayed open')));
+ assert.equal(f.closes,1);assert.equal(f.$('#next-browser-status').dataset.error,'false');
+});
 test('native page navigation updates the URL even when shell focus remains on the address input', async t => {
   const f = await fixture(t), address = f.$('#next-browser-url');
   address.focus();

@@ -238,6 +238,23 @@ test('Close All Tabs closes personal and conversation tabs but not the reserved 
   assert.equal(repeated.data.closed, 0, 'Closing all tabs again should be an idempotent no-op');
 });
 
+test('Close All reports an eligible remainder when newly spawned pages reach its drain limit',async t=>{
+  const f=await fixture(t), driver=f.driver, original=driver.perform.bind(driver);
+  driver.tabs=driver.tabs.filter(tab=>tab.tabId!=='other');driver.tabs.find(tab=>tab.tabId==='popup').inUse=true;
+  let opened=0;
+  driver.perform=async(args,context)=>{
+    const result=await original(args,context);
+    if(args.action==='close')driver.tabs.push({tabId:'late-'+(++opened),url:'https://fixture.invalid/late',folderId:'personal',owner:null});
+    return result;
+  };
+  const result=await f.request('/api/browser/close-all',{});
+  assert.equal(result.status,200,JSON.stringify(result.data));
+  assert.equal(result.data.closed,4);
+  assert.deepEqual(result.data.failedTabs,[]);
+  assert.deepEqual(result.data.skippedInUseIds,['popup']);
+  assert.deepEqual(result.data.remainingTabIds,['popup','late-4']);
+});
+
 for (const action of ['archive', 'delete']) {
   test(action + ' closes only the archived/trashed conversation tabs, including legacy turn owners', async t => {
     const f = await fixture(t);

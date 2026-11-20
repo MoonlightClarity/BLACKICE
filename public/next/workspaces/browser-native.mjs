@@ -1,7 +1,7 @@
 import {createBrowserFolders} from './browser-folders.mjs';
 import { text } from '../core/dom.mjs';
 import { normalizeBrowserAddress } from '../../browser-address.mjs';
-import { browserUsageMarkup, createBrowserUsageControls, browserTabUsageLabel, browserIconButton } from './browser-usage-ui.mjs';
+import { browserUsageMarkup, createBrowserUsageControls, browserTabUsageLabel, browserIconButton, browserCloseAllOutcome } from './browser-usage-ui.mjs';
 
 export function nativePageBounds(rect,viewport) {
   if(!rect||!viewport||![rect.left,rect.top,rect.width,rect.height,viewport.width,viewport.height].every(Number.isFinite))return null;
@@ -479,9 +479,9 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
       if(destroyed)return;
       selected=null;pendingSelection=null;openingBlank=null;surface.hide();addressDrafts.clear();
       refreshSequence++;await refresh();
-      if(result.failedTabs?.length)
-        notice('Closed '+result.closed+' tabs, but some tabs could not be closed. Refresh and try again.',true);
-      else notify('Closed '+result.closed+' browser tabs'+(tabs.some(tab=>tab.inUse)?'; in-use tabs retained.':'.'));
+      const outcome=browserCloseAllOutcome(result,tabs);
+      if(outcome.incomplete)notice(outcome.message,true);
+      else notify(outcome.message);
     }catch(error){if(active)notice(error.message,true);}
     finally{busy=false;if(active)render();void drainNewTabs();}
   }

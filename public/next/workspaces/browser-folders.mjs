@@ -77,15 +77,18 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   form.setAttribute('aria-label',tabId?'Move tab to folder':parentId?createLabel:'New tab folder');
   const heading=el('strong',tabId?'Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab'):createLabel);form.append(heading);
   if(tabId){editorDialog=el('dialog',null,'next-chat-management-dialog next-browser-move-dialog');editorDialog.setAttribute('aria-label','Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab')+' to folder');editorDialog.append(form);editorDialog.addEventListener('cancel',event=>{event.preventDefault();if(!pending)dismiss();});}
-  const parent=el('select');parent.setAttribute('aria-label',tabId?'Folder':'Parent folder');
-  const none=el('option',tabId?'Unfiled':'Top level');none.value='';parent.append(none);
-  for(const f of collections){const o=el('option',folderPath(collections,f.id));o.value=f.id;parent.append(o);}
-  let name;if(!tabId){name=el('input');name.placeholder='Folder name';name.maxLength=200;name.required=true;name.setAttribute('aria-label','Folder name');form.append(name);}
-  parent.value=tabId?getTabs().find(t=>t.tabId===tabId)?.collectionId||'':parentId||'';form.append(parent);
+  const input=el(tabId?'select':'input');
+  if(tabId){
+   input.setAttribute('aria-label','Folder');
+   const none=el('option','Unfiled');none.value='';input.append(none);
+   for(const f of collections){const o=el('option',folderPath(collections,f.id));o.value=f.id;input.append(o);}
+   input.value=getTabs().find(t=>t.tabId===tabId)?.collectionId||'';
+  }else{input.placeholder='Folder name';input.maxLength=200;input.required=true;input.setAttribute('aria-label','Folder name');}
+  form.append(input);
   const save=button(tabId?'Move':'Save',()=>{});save.type='submit';form.append(save,button('Cancel',dismiss));
-  form.addEventListener('submit',async e=>{e.preventDefault();const action=tabId?'tab_collect':'collection_create';const args=tabId?{tabId,collectionId:parent.value||null}:{name:name.value,parentCollectionId:parent.value||null};if(await request(action,args)){if(!tabId)collapsed.delete(args.parentCollectionId);dismiss();}});
+  form.addEventListener('submit',async e=>{e.preventDefault();const action=tabId?'tab_collect':'collection_create';const args=tabId?{tabId,collectionId:input.value||null}:{name:input.value,parentCollectionId:parentId};if(await request(action,args)){if(!tabId)collapsed.delete(parentId);dismiss();}});
   form.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(!pending)dismiss();}});
-  paint();form.scrollIntoView?.({block:'nearest'});(name||parent).focus();
+  paint();form.scrollIntoView?.({block:'nearest'});input.focus();
  }
  function paint(){
   if(!host||destroyed)return;
