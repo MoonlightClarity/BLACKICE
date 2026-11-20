@@ -236,16 +236,22 @@ test('independent chats reserve capacity immediately, run together, and retain s
 test('failure and retry in one chat leave another chat running independently', async t => {
   const failure = deferred(), other = deferred(); let firstCalls = 0;
   const runtime = new FakeRuntime(async options => {
-    if (options.prompt.includes('MAY FAIL')) { options.onEvent({ type: 'thread', threadId: 'thread-failing-chat' }); if (++firstCalls === 1) return failure.promise; return { output: 'Retried independently.', threadId: 'thread-failing-chat' }; }
+    if (matchesTask(options.prompt,'MAY FAIL')) { options.onEvent({ type: 'thread', threadId: 'thread-failing-chat' }); if (++firstCalls === 1) return failure.promise; return { output: 'Retried independently.', threadId: 'thread-failing-chat' }; }
     options.onEvent({ type: 'thread', threadId: 'thread-independent-chat' }); return other.promise;
   });
   const { engine } = await harness(t, runtime, { maxConcurrentRuns: 2 });
   try {
-    const first = engine.startRun({ workflow: workflow(), input: 'MAY FAIL' }), second = engine.startRun({ workflow: workflow(), input: 'INDEPENDENT CHAT' }); await waitFor(() => runtime.calls.length === 2, 'both chats start');
+    const second = engine.startRun({ workflow: workflow(), input: 'INDEPENDENT CHAT' });
+    await waitFor(() => runtime.calls.length === 1, 'the independent chat reaches the provider first');
+    const first = engine.startRun({ workflow: workflow(), input: 'MAY FAIL' });
+    await waitFor(() => runtime.calls.length === 2, 'both chats are active before failing one');
+    const independentCall=runtime.calls.find(call=>matchesTask(call.prompt,'INDEPENDENT CHAT'));
+    assert.ok(independentCall,'the independent chat has its own runtime invocation');
     failure.reject(Object.assign(new Error('Fixture API rate limit.'), { code: 'PROVIDER_RATE_LIMIT' })); await engine.executions.get(first.id);
-    assert.equal(engine.getRun(first.id).status, 'failed'); assert.equal(engine.getRun(first.id).canRetry, true); assert.equal(engine.getRun(second.id).status, 'running'); assert.equal(runtime.calls[1].signal.aborted, false);
+    assert.equal(engine.getRun(first.id).status, 'failed'); assert.equal(engine.getRun(first.id).canRetry, true); assert.equal(engine.getRun(second.id).status, 'running'); assert.equal(independentCall.signal.aborted, false);
     const retried = engine.retryRun(first.id); await engine.executions.get(retried.id); assert.equal(engine.getRun(retried.id).nodes.agent.output, 'Retried independently.'); assert.equal(engine.getRun(second.id).status, 'running');
-    other.resolve({ output: 'Other chat complete.', threadId: 'thread-independent-chat' }); await engine.executions.get(second.id); assert.equal(engine.getRun(second.id).status, 'completed');
+    assert.equal(independentCall.signal.aborted,false);
+    other.resolve({ output: 'Other chat complete.', threadId: 'thread-independent-chat' }); await engine.executions.get(second.id); assert.equal(engine.getRun(second.id).status, 'completed'); assert.equal(engine.getRun(second.id).nodes.agent.output,'Other chat complete.');
   } finally { failure.resolve({ output: 'Fixture cleanup.' }); other.resolve({ output: 'Fixture cleanup.' }); }
 });
 
