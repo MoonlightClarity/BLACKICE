@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.59 candidate source, not an installation or publication receipt.** Package version is **2.40.59**. Start with the [2.40.59 notes](RELEASE-NOTES-2.40.59.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.60 candidate source, not an installation or publication receipt.** Package version is **2.40.60**. Start with the [2.40.60 notes](RELEASE-NOTES-2.40.60.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.60](RELEASE-NOTES-2.40.60.md) - keep troubleshooting separate from execution and recover from stale browser input
 
 - [2.40.59](RELEASE-NOTES-2.40.59.md) - honor stop and diagnosis without resuming Directory work
 
