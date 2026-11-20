@@ -19,7 +19,7 @@ for(const logging of ['off','on'])test('Planning→four parallel reads→focus�
   state=await control({action:'focus',id:'inspect',revision:'9'});assert.equal(state.focus,'inspect');
   await Promise.all(Array.from({length:2},(_,i)=>o.onToolCall({name:'relay_workspace',callId:'focused-read-'+i,arguments:{action:'list',path:root}})));
   state=await control({action:'read'});const refs=state.receipts.filter(r=>r.actionId==='inspect'&&r.state==='returned').map(r=>r.id);assert.equal(refs.length,2);
-  state=await control({action:'observe',id:'inspect',claim:'The fixture evidence was read',receipts:refs,revision:0});assert.equal(state.actions[0].state,'observed');assert(!await o.onBeforeFinal({signal:o.signal}));return{output:'Fixture evidence inspected.'};
+  state=await control({action:'observe',outcome:'objective-met',id:'inspect',claim:'The fixture evidence was read',receipts:refs,revision:0});assert.equal(state.actions[0].state,'observed');assert(!await o.onBeforeFinal({signal:o.signal}));return{output:'Fixture evidence inspected.'};
  };
  const started=engine.startRun({workflow:graph,input:{task:'Inspect fixture evidence',directoryActions:'on',chatPlanning:'on',directoryDiagnostics:logging}});await engine.executions.get(started.id);const run=engine.getRun(started.id);assert.equal(prep,1);assert.equal(run.status,'completed',run.error);assert.equal((await engine.actionDirectories.get(started.id,'fixture')).read().actions[0].state,'observed');
 });

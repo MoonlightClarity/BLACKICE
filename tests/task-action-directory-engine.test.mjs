@@ -24,7 +24,7 @@ test('a no-actions provider final tells the model to start the actual next step 
   const saved=await call('relay_workspace',{action:'write',path:path.join(root,'result.txt'),text:'Verified output'},'save-output');
   assert.equal(saved.success,true);
   const [receipt]=saved.contentItems.at(-1).text.match(/receipt-[0-9]+/);
-  assert.equal((await dir('observe',{id:'save',claim:'The output was saved.',receipts:[receipt]})).success,true);
+  assert.equal((await dir('observe',{outcome:'objective-met',id:'save',claim:'The output was saved.',receipts:[receipt]})).success,true);
   assert.equal(await o.onBeforeFinal({output:'Saved the result.',signal:o.signal}),undefined);
   return {output:'Saved the result.'};
  });
@@ -45,7 +45,7 @@ test('a closed outline with an explicitly incomplete result gets one read-only r
     const observeSource=async (id,output)=>{
      const r=await call('relay_workspace',{action:'read',path:path.join(root,id+'.txt')});assert.equal(r.success,true);
      const [receipt]=r.contentItems.at(-1).text.match(/receipt-[0-9]+/);
-     return dir({action:'observe',id,claim:output,receipts:[receipt]});
+     return dir({action:'observe',outcome:'objective-met',id,claim:output,receipts:[receipt]});
     };
     const review=output=>o.onBeforeFinal({output,signal:o.signal});
     await dir({action:'plan',actions:[{id:'first',objective:'Verify two sources',dependsOn:[]}]});
@@ -86,7 +86,62 @@ test('a closed outline with an explicitly incomplete result gets one read-only r
   });
  }
 });
-test('actual handler work drives action observation and durable same-task state without payload imports',async t=>{let state;const{engine,root}=await setup(t,async o=>{const call=async args=>{const r=await o.onToolCall({name:'relay_directory_action',arguments:args,callId:'directory'});assert.equal(r.success,true,JSON.stringify(r));return JSON.parse(r.contentItems[0].text);};state=await call({action:'read'});state=await call({action:'plan',revision:state.revision,actions:[{id:'inspect',objective:'List current directory',dependsOn:[]}]});state=await call({action:'focus',revision:state.revision,id:'inspect'});const r=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:root},callId:'list'});assert.equal(r.success,true,JSON.stringify(r));state=await call({action:'read'});assert.equal(state.receipts.length,1);state=await call({action:'observe',revision:state.revision,id:'inspect',claim:'The folder listing returned',receipts:[state.receipts[0].id]});assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);return{output:'Listed folder'};});const run=engine.startRun({workflow:graph,input:{task:'List current folder',directoryActions:'on'}});await engine.executions.get(run.id);assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);assert.equal(engine.getRun(run.id).nodes.a.directoryContext,undefined,'Action Directory works with diagnostic capture off');const store=new TaskActionDirectoryStore(root);const reopened=await store.get(run.id,'Ignored new objective');assert.equal(reopened.read().actions[0].state,'observed');const other=await store.get('separate-task','Another objective');assert.equal(other.read().actions.length,0);assert.equal(other.read().objective,'Another objective');await store.close();});
+test('typed partial observation retains live search evidence without closing or unblocking work',async t=>{
+ for(const scenario of ['fulfilled','exhausted']){
+  await t.test(scenario,async t=>{
+   const {engine,root}=await setup(t,async o=>{
+    let seq=0;const call=(name,args)=>o.onToolCall({name,arguments:args,callId:'outcome-'+(++seq)});
+    const directory=o.dynamicTools.find(tool=>tool.name==='relay_directory_action');
+    assert.deepEqual(directory.inputSchema.properties.outcome.enum,['objective-met','partial']);
+    assert.match(directory.inputSchema.properties.outcome.description,/Required for observe/);
+    const dir=async(action,args={})=>call('relay_directory_action',{action,...args});
+    const accepted=async(action,args={})=>{const r=await dir(action,args);assert.equal(r.success,true,JSON.stringify(r));return JSON.parse(r.contentItems[0].text);};
+    const read=async filename=>{
+     const r=await call('relay_workspace',{action:'read',path:path.join(root,filename)});assert.equal(r.success,true);return r.contentItems.at(-1).text.match(/receipt-[0-9]+/)[0];
+    };
+    await accepted('plan',{actions:[{id:'find_two',objective:'Verify two distinct sources against all required conditions',dependsOn:[]},{id:'report',objective:'Report both qualifying sources',dependsOn:['find_two']}]});
+    await accepted('focus',{id:'find_two'});
+    const first=await read('source-one.txt');
+    const observation={id:'find_two',claim:'One qualifying lead and one ineligible candidate; still need a second qualifying lead.',receipts:[first]};
+    const before=await accepted('read');
+    for(const outcome of [undefined,'unrecognized']){
+     const missing=await dir('observe',{...observation,...(outcome===undefined?{}:{outcome})});
+     assert.equal(missing.success,false);assert.equal(missing.code,'DIRECTORY_OUTCOME');assert.match(missing.contentItems[0].text,/This call made no changes/);
+    }
+    assert.deepEqual(await accepted('read'),before);
+    const partial=await accepted('observe',{...observation,outcome:'partial'});
+    assert.equal(partial.focus,'find_two');
+    assert.deepEqual(partial.actions.map(x=>x.state),['active','pending']);
+    assert.equal(partial.actions[0].observation,undefined);
+    assert.deepEqual(partial.actions[0].notes[0].receipts,[first]);
+    assert.deepEqual(partial.ready,[]);
+    assert.equal((await dir('focus',{id:'report'})).code,'DIRECTORY_NOT_READY');
+    if(scenario==='exhausted'){
+     await accepted('block',{id:'find_two',blocker:'search-limit-reached',claim:'The agreed one-source budget ended before finding a second qualifying source.',receipts:[first]});
+     assert.equal(await o.onBeforeFinal({output:'One qualifying source verified; the agreed search limit was reached.',signal:o.signal}),undefined);
+     return{output:'One qualifying source verified; the agreed search limit was reached.'};
+    }
+    const second=await read('source-two.txt');
+    const completed=await accepted('observe',{id:'find_two',outcome:'objective-met',claim:'Confirmed two distinct sources.',receipts:[first,second]});
+    assert.deepEqual(completed.ready,['report']);
+    await accepted('focus',{id:'report'});
+    const report=await read('source-two.txt');
+    await accepted('observe',{id:'report',outcome:'objective-met',claim:'Both qualifying sources were retained for the report.',receipts:[report]});
+    assert.equal(await o.onBeforeFinal({output:'Verified both sources.',signal:o.signal}),undefined);
+    return{output:'Verified both sources.'};
+   });
+   const {writeFile}=await import('node:fs/promises');
+   for(const filename of ['source-one.txt','source-two.txt'])await writeFile(path.join(root,filename),'Independent source evidence.');
+   const run=engine.startRun({workflow:graph,input:{task:'Find and verify two independent sources',directoryActions:'on',directoryDiagnostics:'maximal'}});
+   await engine.executions.get(run.id);
+   const done=engine.getRun(run.id);
+   assert.equal(done.status,'completed',done.error);
+   assert.equal(done.nodes.a.directoryOutcome,scenario==='exhausted'?'incomplete':undefined);
+   assert(engine.runs.get(run.id).turnMachineTrace.head.some(e=>e.kind==='directory.mutation'&&e.metadata?.observeOutcome==='partial'));
+  });
+ }
+});
+test('actual handler work drives action observation and durable same-task state without payload imports',async t=>{let state;const{engine,root}=await setup(t,async o=>{const call=async args=>{const r=await o.onToolCall({name:'relay_directory_action',arguments:args,callId:'directory'});assert.equal(r.success,true,JSON.stringify(r));return JSON.parse(r.contentItems[0].text);};state=await call({action:'read'});state=await call({action:'plan',revision:state.revision,actions:[{id:'inspect',objective:'List current directory',dependsOn:[]}]});state=await call({action:'focus',revision:state.revision,id:'inspect'});const r=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:root},callId:'list'});assert.equal(r.success,true,JSON.stringify(r));state=await call({action:'read'});assert.equal(state.receipts.length,1);state=await call({action:'observe',outcome:'objective-met',revision:state.revision,id:'inspect',claim:'The folder listing returned',receipts:[state.receipts[0].id]});assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);return{output:'Listed folder'};});const run=engine.startRun({workflow:graph,input:{task:'List current folder',directoryActions:'on'}});await engine.executions.get(run.id);assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);assert.equal(engine.getRun(run.id).nodes.a.directoryContext,undefined,'Action Directory works with diagnostic capture off');const store=new TaskActionDirectoryStore(root);const reopened=await store.get(run.id,'Ignored new objective');assert.equal(reopened.read().actions[0].state,'observed');const other=await store.get('separate-task','Another objective');assert.equal(other.read().actions.length,0);assert.equal(other.read().objective,'Another objective');await store.close();});
 test('same display group does not inherit action mode or action state',async t=>{const{engine}=await setup(t,async()=>({output:'No work'}));const first=engine.startRun({workflow:graph,input:{task:'First',directoryActions:'on'}});await engine.executions.get(first.id);const second=engine.startRun({workflow:graph,input:{task:'Second'}},{chatDisplayGroupId:first.id,sourceTaskId:first.id});await engine.executions.get(second.id);const run=engine.getRun(second.id);assert.equal(run.directoryActions,undefined);assert.equal(run.status,'completed');assert.notEqual(run.taskId||run.id,first.id);});
 test('late Directory callback after cancellation cannot mutate durable state',async t=>{let options;const{engine}=await setup(t,async o=>{options=o;return{output:'No actions'};});const run=engine.startRun({workflow:graph,input:{task:'Do work',directoryActions:'on'}});await engine.executions.get(run.id);const ledger=await engine.actionDirectories.get(run.id,'Work');const before=ledger.read();const result=await options.onToolCall({name:'relay_directory_action',arguments:{action:'plan',revision:before.revision,actions:[{id:'late',objective:'Late',dependsOn:[]}]}});assert.equal(result.success,false);assert.equal(result.code,'ABORT_ERR');assert.deepEqual(ledger.read(),before);});
 test('actual provider correction is bounded and read-only evidence remains available without focus',async t=>{const{engine}=await setup(t,async o=>{assert.equal((await o.onBeforeFinal({signal:o.signal})).continue,true);const read=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:'.'},callId:'read'});assert.equal(read.success,true);await assert.rejects(o.onBeforeFinal({signal:o.signal}),{code:'DIRECTORY_ACTION_UNFINISHED'});return{output:'Not complete'};});const run=engine.startRun({workflow:graph,input:{task:'Find jobs',directoryActions:'on'}});await engine.executions.get(run.id);assert.equal(engine.getRun(run.id).status,'failed');});
@@ -100,7 +155,7 @@ test('blocked dependency replay permits an honest final after one recovery but d
  const{engine,root}=await setup(t,async o=>{
   const call=(args,i)=>o.onToolCall({name:'relay_directory_action',arguments:args,callId:'dir-'+i});
   assert.equal((await call({action:'plan',actions:[{id:'route',objective:'Verify route',dependsOn:[]},{id:'dependent',objective:'Run only after verification',dependsOn:['route']}]},1)).success,true);
-  const outOfOrder=await call({action:'observe',id:'route',claim:'Candidate observed',receipts:[]},2);assert.equal(outOfOrder.code,'DIRECTORY_OBSERVATION');assert.match(outOfOrder.contentItems[0].text,/not focused/);
+  const outOfOrder=await call({action:'observe',outcome:'objective-met',id:'route',claim:'Candidate observed',receipts:[]},2);assert.equal(outOfOrder.code,'DIRECTORY_OBSERVATION');assert.match(outOfOrder.contentItems[0].text,/not focused/);
   assert.equal((await o.onBeforeFinal({signal:o.signal})).continue,true);
   assert.equal((await call({action:'focus',id:'route'},3)).success,true);
   assert.equal((await call({action:'block',id:'route',blocker:'prerequisite-unavailable',claim:'No source was checked.'},4)).code,'DIRECTORY_BLOCKER');
@@ -135,7 +190,7 @@ test('focus-after-read live trace replay advances without repeating the successf
   const note=read.contentItems.at(-1).text;
   assert.match(note,/cite this same-turn read/);
   const [receipt]=note.match(/receipt-[0-9]+/);
-  const obs=()=>dir('observe',{id:'find',claim:'Read the local inputs',receipts:[receipt]});
+  const obs=()=>dir('observe',{outcome:'objective-met',id:'find',claim:'Read the local inputs',receipts:[receipt]});
   assert.equal((await obs()).code,'DIRECTORY_OBSERVATION');
   const stopped=await dir('block',{id:'find',blocker:'prerequisite-unavailable',claim:'I found the input but the work is incomplete.'});
   assert.equal(stopped.code,'DIRECTORY_BLOCKER');
@@ -168,7 +223,7 @@ test('one completed discovery step cannot turn a rejected extension into a succe
   assert.equal((await dir('focus',{id:first.id})).success,true);
   const read=await o.onToolCall({name:'relay_workspace',callId:'profile-list',arguments:{action:'list',path:'.'}});
   const [id]=read.contentItems.at(-1).text.match(/receipt-[0-9]+/);
-  assert.equal((await dir('observe',{id:first.id,claim:'Located material',receipts:[id]})).success,true);
+  assert.equal((await dir('observe',{outcome:'objective-met',id:first.id,claim:'Located material',receipts:[id]})).success,true);
   const rejected=await dir('plan',{actions:[{...first,objective:'Rewrite attempted step'},after]});
   assert.equal(rejected.code,'DIRECTORY_RECORDED_ACTION');
   const repair=await o.onBeforeFinal({signal:o.signal});assert.equal(repair.continue,true);assert.match(repair.prompt,/existing outline is partial/);
@@ -177,7 +232,7 @@ test('one completed discovery step cannot turn a rejected extension into a succe
   assert.equal((await dir('focus',{id:after.id})).success,true);
   const job=await o.onToolCall({name:'relay_workspace',callId:'posting-list',arguments:{action:'list',path:'.'}});
   const [evidence]=job.contentItems.at(-1).text.match(/receipt-[0-9]+/);
-  assert.equal((await dir('observe',{id:after.id,claim:'Checked the synthetic source',receipts:[evidence]})).success,true);
+  assert.equal((await dir('observe',{outcome:'objective-met',id:after.id,claim:'Checked the synthetic source',receipts:[evidence]})).success,true);
   assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);
   return{output:'Checked a fixture; no external effect.'};
  });
@@ -195,18 +250,18 @@ test('Directory reports closed work separately from unready dependencies and res
   assert.equal((await dir('plan',{actions:[{id:'find_input',objective:'Locate the fixture',dependsOn:[]},{id:'find_source',objective:'Inspect the next source',dependsOn:['find_input']},{id:'do_work',objective:'Use the next source',dependsOn:['find_source']}]})).success,true);
   assert.equal((await dir('focus',{id:'find_input'})).success,true);
   const first=await receipt();
-  assert.equal((await dir('observe',{id:'find_input',claim:'Located input',receipts:[first]})).success,true);
+  assert.equal((await dir('observe',{outcome:'objective-met',id:'find_input',claim:'Located input',receipts:[first]})).success,true);
   const unassigned=await receipt();
-  const repeat=await dir('observe',{id:'find_input',claim:'Repeated observation',receipts:[unassigned]});
+  const repeat=await dir('observe',{outcome:'objective-met',id:'find_input',claim:'Repeated observation',receipts:[unassigned]});
   assert.equal(repeat.code,'DIRECTORY_OBSERVATION');assert.match(repeat.contentItems[0].text,/already observed.*Ready next actions: find_source/);
   const closed=await dir('focus',{id:'find_input'});
   assert.equal(closed.code,'DIRECTORY_ACTION_CLOSED');assert.match(closed.contentItems[0].text,/already observed.*Ready next actions: find_source/);
   const waiting=await dir('focus',{id:'do_work'});
   assert.equal(waiting.code,'DIRECTORY_NOT_READY');assert.match(waiting.contentItems[0].text,/waiting on find_source.*Ready next actions: find_source/);
   assert.equal((await dir('focus',{id:'find_source'})).success,true);
-  assert.equal((await dir('observe',{id:'find_source',claim:'Inspected source',receipts:[await receipt()]})).success,true);
+  assert.equal((await dir('observe',{outcome:'objective-met',id:'find_source',claim:'Inspected source',receipts:[await receipt()]})).success,true);
   assert.equal((await dir('focus',{id:'do_work'})).success,true);
-  assert.equal((await dir('observe',{id:'do_work',claim:'Checked input',receipts:[await receipt()]})).success,true);
+  assert.equal((await dir('observe',{outcome:'objective-met',id:'do_work',claim:'Checked input',receipts:[await receipt()]})).success,true);
   assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);
   return {output:'Completed fixture'};
  });
@@ -240,7 +295,7 @@ test('one extra Directory continuation after a verified milestone, but not for o
    await assert.rejects(review(),{code:'DIRECTORY_ACTION_UNFINISHED'});throw Object.assign(Error('no actual completion'),{code:'DIRECTORY_ACTION_UNFINISHED'});
   }
   let snapshot=await dir({action:'read'});
-  await dir({action:'observe',id:'profile',claim:'Located the fixture profile; discovery step resolved',receipts:[snapshot.receipts.at(-1).id]});
+  await dir({action:'observe',outcome:'objective-met',id:'profile',claim:'Located the fixture profile; discovery step resolved',receipts:[snapshot.receipts.at(-1).id]});
   await dir({action:'focus',id:'posting'});
   await call('relay_workspace',{action:'list',path:root});
   const next=await review();assert.equal(next.continue,true);assert.match(next.prompt,/Inspect the fixture posting/);assert.match(next.prompt,/opening a source is not inspecting it/);assert.match(next.prompt,/Never repeat a confirmed or unknown effect/);
@@ -248,7 +303,7 @@ test('one extra Directory continuation after a verified milestone, but not for o
    await assert.rejects(review(),{code:'DIRECTORY_ACTION_UNFINISHED'});throw Object.assign(Error('no further progress'),{code:'DIRECTORY_ACTION_UNFINISHED'});
   }
   snapshot=await dir({action:'read'});
-  await dir({action:'observe',id:'posting',claim:'Recorded evidence for the current fixture step',receipts:[snapshot.receipts.at(-1).id]});
+  await dir({action:'observe',outcome:'objective-met',id:'posting',claim:'Recorded evidence for the current fixture step',receipts:[snapshot.receipts.at(-1).id]});
   assert.equal(await review(),undefined);
   return{output:'Completed from fixture evidence'};
  });
@@ -277,7 +332,7 @@ test('later observed milestones keep the workflow moving without accepting final
    await call('relay_workspace',{action:'list',path:root});
    const state=await dir({action:'read'});
    const receipt=state.receipts.at(-1);
-   await dir({action:'observe',id,claim:'Completed scripted fixture milestone '+id,receipts:[receipt.id]});
+   await dir({action:'observe',outcome:'objective-met',id,claim:'Completed scripted fixture milestone '+id,receipts:[receipt.id]});
    if(i<actions.length-1){
     const next=await review();
     assert.equal(next.continue,true);
@@ -321,7 +376,7 @@ test('a finished source read gets one bounded Directory reconciliation turn, wit
   const state=await dir({action:'read'});
   assert.equal(state.actions[0].state,'active','A successful read is not an observed milestone.');
   if(current===1){
-   await dir({action:'observe',id:'posting',claim:'Read the source and determined the first condition.',receipts:['receipt-1']});
+   await dir({action:'observe',outcome:'objective-met',id:'posting',claim:'Read the source and determined the first condition.',receipts:['receipt-1']});
    assert.equal(await review(),undefined);
    return {output:'Read and recorded the source.'};
   }
@@ -362,11 +417,11 @@ test('an unsuitable option is recorded without closing a shared prerequisite',as
   const valid=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:root},callId:'alternate-source'});
   assert.equal(valid.success,true);
   const found=state(await dir('read')).receipts.at(-1).id;
-  assert.deepEqual(state(await dir('observe',{id:'source',claim:'A usable source was located',receipts:[found]})).ready,['use']);
+  assert.deepEqual(state(await dir('observe',{outcome:'objective-met',id:'source',claim:'A usable source was located',receipts:[found]})).ready,['use']);
   state(await dir('focus',{id:'use'}));
   await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:root},callId:'use-source'});
   const used=state(await dir('read')).receipts.at(-1).id;
-  state(await dir('observe',{id:'use',claim:'The alternative was used',receipts:[used]}));
+  state(await dir('observe',{outcome:'objective-met',id:'use',claim:'The alternative was used',receipts:[used]}));
   return{output:'Used the alternative source'};
  });
  const run=engine.startRun({workflow:graph,input:{task:'Find and use a source',directoryActions:'on'}});
@@ -395,7 +450,7 @@ test('a verified dead route gets one chance to use another allowed option before
   state(await dir('plan',{actions:[{id:'alternate',objective:'Use another route',dependsOn:[]}]}));
   state(await dir('focus',{id:'alternate'}));
   assert.equal((await call('relay_workspace',{action:'list',path:root})).success,true);
-  state(await dir('observe',{id:'alternate',claim:'The alternate source was available.',receipts:['receipt-2']}));
+  state(await dir('observe',{outcome:'objective-met',id:'alternate',claim:'The alternate source was available.',receipts:['receipt-2']}));
   assert.equal(await o.onBeforeFinal({signal:o.signal}),undefined);
   return {output:'Used the alternate source.'};
  });
@@ -452,7 +507,7 @@ test('Directory returns once for a newly delivered checked block while an indepe
      assert.deepEqual(checked.ready,['third']);
      return review();
     }
-    await dir({action:'observe',id:'alternative',claim:'Verified the alternative source',receipts:[alternative.receipts.at(-1).id]});
+    await dir({action:'observe',outcome:'objective-met',id:'alternative',claim:'Verified the alternative source',receipts:[alternative.receipts.at(-1).id]});
     assert.equal(await review(),undefined);
     return{output:'The independently verified alternative was checked.'};
    });

@@ -50,7 +50,7 @@ test('Planning Off execution gets only the accepted, effective Intent Inference 
     await directory({action:'focus',revision:d.revision,id:'inspect'},'focus');
     await call('relay_workspace',{action:'list',path:dir},'list');
     d=await directory({action:'read'},'read2');
-    await directory({action:'observe',revision:d.revision,id:'inspect',claim:'The folder listing returned',receipts:[d.receipts[0].id]},'observe');
+    await directory({action:'observe',outcome:'objective-met',revision:d.revision,id:'inspect',claim:'The folder listing returned',receipts:[d.receipts[0].id]},'observe');
     assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);
    }
    const threadId=o.threadId||'fixture-thread-'+main.length;
