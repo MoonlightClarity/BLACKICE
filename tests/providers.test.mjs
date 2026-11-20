@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProviderRuntime, ProviderStore } from '../lib/providers.mjs';
 import { HarnessEngine } from '../lib/engine.mjs';
+import { projectTurnMachineTrace } from '../lib/turn-machine-trace.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
 import { BLACKICE_HARNESS_INSTRUCTIONS } from '../lib/harness-identity.mjs';
 
@@ -1459,4 +1460,34 @@ test('ordinary Chat holds an incomplete final and makes exactly one corrective p
       else await assert.rejects(readFile(path.join(cwd,file),'utf8'),{code:'ENOENT'});
     } finally { await engine.close(); }
   });
+});
+
+test('Maximal native workspace search receipt joins the real provider tool result and does not modify its payload',async t=>{
+  const privateFile='PRIVATE_TAP_NAME.txt', privateQuery='PRIVATE_LOOKUP', privateMatch='PRIVATE_TRACE_LINE';
+  const {runtime,baseUrl,cwd,requests}=await harness(t,(_request,response,index)=>{
+    const message=index===1?{role:'assistant',tool_calls:[{id:'fixture-search-call',type:'function',function:{name:'relay_workspace',
+      arguments:JSON.stringify({action:'search',path:privateFile,query:privateQuery})}}]}:{role:'assistant',content:'The fixture has two matches.'};
+    json(response,{choices:[{message,finish_reason:index===1?'tool_calls':'stop'}]});
+  });
+  await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl,models:['local-model']});
+  await writeFile(path.join(cwd,privateFile),[1,2].map(i=>privateQuery+' '+privateMatch+' '+i).join('\n'));
+  const engine=await new HarnessEngine({runtime,dataDir:cwd,defaultCwd:cwd}).init();
+  try{
+    const task='Find the fixture matches';
+    const workflow=createMissionWorkflow({task,id:'mission_chat_search_coverage',model:'fixture::local-model',cwd,planningMode:'off'});
+    const {id}=engine.startRun({workflow,input:{task,directoryActions:'off',chatPlanning:'off',pastChats:'off',directoryDiagnostics:'maximal'}});
+    await engine.executions.get(id);
+    assert.equal(engine.getRun(id).status,'completed',engine.getRun(id).error);
+    const exported=projectTurnMachineTrace(engine.runs.get(id));
+    const coverage=exported.entries.find(row=>row.kind==='workspace.search.coverage');
+    const result=exported.entries.find(row=>row.kind==='tool.result'&&row.metadata?.action==='search');
+    assert.equal(coverage.metadata.searchScope,'explicit-file');
+    assert.equal(coverage.metadata.returnedMatches,2);
+    assert.equal(coverage.callRef,result.callRef);
+    assert.match(coverage.callRef,/^[a-f0-9]{24}$/);
+    assert.doesNotMatch(JSON.stringify(exported),/PRIVATE_|fixture-search-call/);
+    const delivered=requests[1].body.messages.find(message=>message.role==='tool').content;
+    assert.match(delivered,/PRIVATE_TRACE_LINE/);
+    assert.doesNotMatch(delivered,/returnedMatches|searchScope/);
+  }finally{await engine.close();}
 });

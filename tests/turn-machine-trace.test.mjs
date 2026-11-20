@@ -94,6 +94,7 @@ test('real conversation archive reopens the safe journal independently of retain
   const run=fixture();const first=await new ConversationArchive({dataDir:dir,engine}).init();stores.push(first);
   retainRunEvent(run,wrap({type:'tool.result',tool:'relay_workspace',success:false,code:'TOOL_UNAVAILABLE',result:'never copied into trace'}));
   retainRunEvent(run,wrap({type:'planning.module',moduleId:'builtin-decomposition',artifact:'pending-actions',phase:'completed',revision:8}));
+  retainRunEvent(run,wrap({type:'workspace.search.coverage',tool:'relay_workspace',action:'search',callId:'coverage',searchScope:'explicit-file',searchBackend:'rg',searchRoute:'rg',timedOut:true,truncated:true,matchLimit:50,output:'PRIVATE_RESULT'}));
   run.events.length=0;
   await first.capture(run);await first.close();
   const reopened=await new ConversationArchive({dataDir:dir,engine:new NoLive()}).init();stores.push(reopened);
@@ -101,11 +102,13 @@ test('real conversation archive reopens the safe journal independently of retain
   const saved=await reopened.get(run.id,{includeMachineTrace:true});
   assert.equal(saved.events.length,0);
   const trace=projectTurnMachineTrace(saved);
-  assert.equal(trace.entries.length,2);
+  assert.equal(trace.entries.length,3);
   assert.equal(trace.entries[0].metadata.code,'TOOL_UNAVAILABLE');
   assert.equal(trace.entries[1].metadata.moduleId,'builtin-decomposition');
   assert.equal(trace.entries[1].metadata.revision,8);
-  assert.doesNotMatch(JSON.stringify(trace),/never copied into trace/);
+  assert.equal(trace.entries[2].metadata.timedOut,true);
+  assert.equal(trace.entries[2].metadata.returnedMatches,undefined);
+  assert.doesNotMatch(JSON.stringify(trace),/never copied into trace|PRIVATE_RESULT/);
 });
 
 test('browser binding diagnosis survives machine export with only host comparisons and run-scoped call reference',()=>{
@@ -125,4 +128,29 @@ test('maximal machine trace reprojects only bounded renderer binding diagnostics
  assert.deepEqual(valid.metadata,{bindingReason:'control-changed',phase:'rejected',action:'fill',controlBindingCause:'identity-changed',controlBindingPhase:'fill-ready',controlNameChanged:true});
  assert.deepEqual(invalid.metadata,{bindingReason:'control-changed',action:'fill'});
  assert.doesNotMatch(JSON.stringify([valid,invalid]),/PRIVATE/);
+});
+
+test('workspace search coverage matches the same call in maximal export, safely reprojects after rehydration',()=>{
+ const run=fixture();
+ const callId='opaque-fixture-search';
+ const data={type:'workspace.search.coverage',tool:'relay_workspace',action:'search',callId,searchScope:'explicit-file',
+  searchBackend:'filesystem',searchRoute:'rg-unavailable',returnedMatches:2,scannedFiles:1,skippedFiles:0,
+  perFileByteLimit:16*1024*1024,matchLimit:50,truncated:false};
+ for(const key of ['path','query','output','matches','contentItems'])
+  Object.defineProperty(data,key,{enumerable:true,get(){assert.fail('producer payload must not be read: '+key);}});
+ recordTurnMachineEvent(run,wrap(data));
+ recordTurnMachineEvent(run,wrap({type:'tool.result',tool:'relay_workspace',action:'search',success:true,callId}));
+ const restored=JSON.parse(JSON.stringify(run));
+ Object.assign(restored.turnMachineTrace.head[0].metadata,{path:'PRIVATE_PATH',query:'PRIVATE_QUERY',returnedMatches:'PRIVATE_BAD_COUNT'});
+ const [coverage,result]=projectTurnMachineTrace(restored).entries;
+ assert.equal(coverage.kind,'workspace.search.coverage');
+ assert.equal(coverage.callRef,result.callRef);
+ assert.match(coverage.callRef,/^[0-9a-f]{24}$/);
+ assert.deepEqual(coverage.metadata,{action:'search',tool:'relay_workspace',truncated:false,searchScope:'explicit-file',
+  searchBackend:'filesystem',searchRoute:'rg-unavailable',scannedFiles:1,skippedFiles:0,
+  perFileByteLimit:16*1024*1024,matchLimit:50});
+ assert.doesNotMatch(JSON.stringify(projectTurnMachineTrace(restored)),/PRIVATE_|opaque-fixture-search/);
+ const live=projectTurnMachineTrace(run).entries[0];
+ assert.equal(live.metadata.returnedMatches,2);
+ assert.equal(live.metadata.timedOut,undefined);
 });

@@ -310,3 +310,45 @@ test('workspace search distinguishes skipped files and an explicit oversized fil
   assert.equal(parsed(response).code, 'WORKSPACE_SEARCH_FILE_TOO_LARGE');
   assert.match(parsed(response).error, /run action/);
 });
+
+test('content search coverage is opt-in, typed, and describes both bounded backends without private text', async t => {
+  const {handler,cwd,events}=await harness(t,{captureSearchCoverage:true,rgCommand:'__relay_missing_search_executable__'});
+  const sensitive='PRIVATE_SEARCH_NEEDLE', name='PRIVATE_SEARCH_FILE.tap';
+  await writeFile(path.join(cwd,name), sensitive+' one\n'+sensitive+' two\n');
+  await writeFile(path.join(cwd,'large.log'),'x'.repeat(550*1024));
+  const search=(args,id)=>handler({...call({action:'search',query:sensitive,...args}),callId:id});
+  const exact=await search({path:name},'c-file');
+  assert.equal(parsed(exact).matches.length,2);
+  const folder=await search({path:'.'},'c-folder');
+  assert.equal(parsed(folder).skippedFiles,1);
+  await search({limit:1},'c-working');
+  await search({cwd:'.',caseSensitive:true},'c-explicit-cwd');
+  const coverage=events.filter(e=>e.type==='workspace.search.coverage');
+  assert.deepEqual(coverage.map(e=>[e.callId,e.searchScope,e.returnedMatches,e.truncated]),[
+    ['c-file','explicit-file',2,false],['c-folder','explicit-folder',2,true],['c-working','working-folder',1,true],['c-explicit-cwd','explicit-working-folder',2,true]
+  ]);
+  assert.equal(coverage[0].searchBackend,'filesystem');
+  assert.equal(coverage[0].searchRoute,'rg-unavailable');
+  assert.equal(coverage[0].perFileByteLimit,16*1024*1024);
+  assert.equal(coverage[1].perFileByteLimit,512*1024);
+  assert.equal(coverage[2].matchLimit,1);
+  assert.equal(coverage[0].timedOut,undefined);
+  assert.equal(coverage[3].caseSensitive,true);
+  assert.doesNotMatch(JSON.stringify(coverage),/PRIVATE_SEARCH|query|matches":\[/i);
+
+  // The fallback handler's compiler-independent test above never requires rg.
+  // This backend fixture emits exactly the stdout shape that rg would emit.
+  const backendScript=path.join(cwd,'search-fake.cjs');
+  await writeFile(backendScript,'process.stdout.write("PRIVATE_RESULT_1\\nPRIVATE_RESULT_2\\n")');
+  const backend=await harness(t,{captureSearchCoverage:true,rgCommand:[process.execPath,backendScript]});
+  const output=await backend.handler({...call({action:'search',query:sensitive,limit:1}),callId:'c-rg'});
+  assert.equal(parsed(output).output,'PRIVATE_RESULT_1');
+  const rg=backend.events.find(e=>e.type==='workspace.search.coverage');
+  assert.deepEqual([rg.searchBackend,rg.searchRoute,rg.returnedMatches,rg.truncated,rg.timedOut],['rg','rg',1,true,false]);
+  assert.equal(rg.scannedFiles,undefined);
+  assert.doesNotMatch(JSON.stringify(rg),/PRIVATE/);
+
+  const standard=await harness(t,{rgCommand:'__relay_missing_search_executable__'});
+  await standard.handler(call({action:'search',query:sensitive}));
+  assert.equal(standard.events.some(e=>e.type==='workspace.search.coverage'),false);
+});
