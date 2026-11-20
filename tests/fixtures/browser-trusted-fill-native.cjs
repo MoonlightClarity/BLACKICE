@@ -14,7 +14,7 @@ const report = { fixtureOnly: true, liveUserBrowserAccessed: false, checks: [], 
 let driver, server;
 const markup = (frame = false) => `<!doctype html><title>Trusted fill fixture</title><style>body{padding:24px}input,textarea{display:block;margin:10px;width:260px}iframe{width:450px;height:220px}</style>
 <input aria-label="${frame ? 'Frame field' : 'Preferred Name'}" id="name" value="Initial text"><input aria-label="Address" id="address"><textarea aria-label="Notes" id="notes">Initial notes</textarea>
-<input aria-label="Email" id="email" type="email" value="old@example.test"><input aria-label="Number" id="number" type="number" value="123"><input aria-label="Read only" id="readonly" readonly value="preserve"><input aria-label="Disabled" id="disabled" disabled value="preserve">
+<input aria-label="Email" id="email" type="email" required value="old@example.test"><input aria-label="Number" id="number" type="number" value="123"><input aria-label="Read only" id="readonly" readonly value="preserve"><input aria-label="Disabled" id="disabled" disabled value="preserve">
 <input aria-label="Navigate on focus" id="navigate" value="preserve"><input aria-label="Redirect on select" id="redirect" value="preserve">
 <input aria-label="Retire after focus" id="retire" value="preserve"><button id="commit">Commit fixture</button><div aria-label="Rich text" role="textbox" contenteditable="true" id="rich">Initial rich</div>
 ${frame ? '' : '<iframe title="Cross-origin fixture" src="http://localhost:PORT/frame"></iframe>'}
@@ -40,6 +40,15 @@ async function main() {
   driver = await new ElectronBrowserDriver({ dataDir: directory, downloadDir: path.join(directory, 'downloads') }).init();
   let snapshot = await driver.perform({ action: 'open', url: `http://127.0.0.1:${server.address().port}/` });
   const tab = driver.tab(snapshot.tabId), wc = tab.window.webContents;
+  const assertFormRequirements = value => {
+    const controls = value.frames.flatMap(frame => frame.elements);
+    assert.equal(controls.find(item => item.name === 'Email')?.required, true);
+    assert.equal(controls.find(item => item.name === 'Address')?.required, false);
+    assert.equal(controls.find(item => item.name === 'Rich text')?.required, undefined);
+  };
+  check('native browser snapshot exposes only declared form requirements', () => assertFormRequirements(snapshot));
+  const formObservation = await driver.perform({ action: 'read', tabId: tab.id });
+  check('native browser read preserves declared form requirements', () => assertFormRequirements(formObservation));
   const fresh = async () => snapshot = await driver.perform({ action: 'snapshot', tabId: tab.id });
   const ref = name => { const value = snapshot.frames.flatMap(frame => frame.elements).find(item => item.name === name); assert.ok(value, `Missing synthetic ${name} target`); return value.ref; };
   const fill = async (name, text) => { await fresh(); return driver.perform({ action: 'fill', tabId: tab.id, ref: ref(name), text, expectedUrl: snapshot.url, expectedDocumentId: snapshot.documentId }); };

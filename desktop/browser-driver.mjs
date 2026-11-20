@@ -198,7 +198,11 @@ function pageSnapshot(key, prefix, query, readContext = false) {
         if (!query || `${label} ${'value' in el ? el.value : ''}`.toLowerCase().includes(query.toLowerCase())) {
           state.elements.delete(ref); state.elements.set(ref, el); state.identities.set(ref, descriptor);
           if (hiddenAncestor) visibleControlsUnderHiddenAncestor++;
-          items.push({ ref, role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...('value' in el ? { value: String(el.value).slice(0, 300) } : {}), disabled: Boolean(el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true'), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
+          // Only report browser-declared requirements, not label punctuation or inferred server rules.
+          const ariaRequired = el.getAttribute('aria-required');
+          const required = el.matches?.(':required') || ariaRequired === 'true' ? true
+            : el.matches?.(':optional') || ariaRequired === 'false' ? false : undefined;
+          items.push({ ref, role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...(required === undefined ? {} : { required }), ...('value' in el ? { value: String(el.value).slice(0, 300) } : {}), disabled: Boolean(el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true'), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
         }
       }
       for (const node of el.childNodes) if (node.nodeType === 3) {

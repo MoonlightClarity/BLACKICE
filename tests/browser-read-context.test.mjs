@@ -216,3 +216,26 @@ test('snapshot traverses hidden visibility for visible overrides but never displ
   assert.equal(f.run('no match').observationDiagnostics, undefined);
   assert.equal(f.context[f.key].elements.get(matches.elements[0].ref), subject);
 });
+
+
+test('renderer observations report native and explicit ARIA requirements, not label guesses', () => {
+  const field = (tag, name, selector, ariaRequired) => element(tag, '', {
+    attributes: { 'aria-label': name, ...(ariaRequired === undefined ? {} : { 'aria-required': ariaRequired }) },
+    matches: candidate => candidate === selector
+  });
+  const f = domFixture([
+    field('input', 'Name', ':required', 'false'),
+    field('input', 'LinkedIn URL', ':optional'),
+    field('textarea', 'Describe your experience', ':optional', 'true'),
+    field('div', 'Custom required', undefined, 'true'),
+    field('div', 'Custom optional', undefined, 'false'),
+    field('div', 'Unhandled ARIA token *', undefined, 'maybe'),
+    field('button', 'Submit *')
+  ].map(node => (node.tagName === 'DIV' ? { ...node, tabIndex: 0 } : node)));
+  const all = f.run();
+  assert.deepEqual(all.elements.map(({ name, required }) => [name, required]), [
+    ['Name', true], ['LinkedIn URL', false], ['Describe your experience', true],
+    ['Custom required', true], ['Custom optional', false], ['Unhandled ARIA token *', undefined], ['Submit *', undefined]
+  ]);
+  for (const mode of [false, true]) assert.equal(f.run('Describe your experience', mode).elements[0].required, true);
+});
