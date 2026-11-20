@@ -1,4 +1,5 @@
 import { createQuitWindowGate } from './quit-window-gate.mjs';
+import { pickLocalModelFile } from './local-model-picker.mjs';
 import { app, BrowserWindow, BaseWindow, WebContentsView, Menu, dialog, globalShortcut, ipcMain, nativeTheme, screen, shell, safeStorage, session, clipboard, crashReporter } from 'electron';
 import { spawn } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
@@ -572,6 +573,7 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
       });
       return result.canceled ? null : result.filePaths[0];
     });
+    handle('relay:pick-local-model-file', () => pickLocalModelFile(harness.runtime.localModels, options => dialog.showOpenDialog(mainWindow, options)));
     handle('relay:pick-files', async () => {
       const result = await dialog.showOpenDialog(mainWindow, {
         title: 'Attach files to your task', properties: ['openFile', 'multiSelections'], defaultPath: defaultCwd,

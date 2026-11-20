@@ -9,7 +9,6 @@
 .next-schedule-folder-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .next-schedule-folder-form>.next-row{grid-column:1/-1}
 .next-schedule-file-control{font-size:12px;margin-bottom:8px}
-.next-schedule-unfiled{min-width:0}
 @media(max-width:700px){.next-schedule-folder-form{grid-template-columns:1fr}.next-schedule-folder-children{padding-left:8px}}
 
 .next-schedule-folder-branch>summary::before,.next-schedule-folder-manager>summary::before{content:"";display:inline-block;width:16px;height:14px;margin-right:7px;vertical-align:-1px;background:currentColor;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 20'%3E%3Cpath d='M2 2h7l3 3h10v13H2z' fill='none' stroke='black' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat}
@@ -20,7 +19,7 @@
 .next-cronjobs-workspace .next-schedule-folder-list{display:block}
 .next-cronjobs-workspace .next-schedule-folder-branch{border:0;border-radius:0;padding:4px 0}
 .next-cronjobs-workspace .next-schedule-folder-children{display:block;margin-top:2px;padding-left:18px}
-.next-cronjobs-workspace .next-schedule-folder-children>.next-grid,.next-cronjobs-workspace .next-schedule-unfiled>.next-grid{display:flex;flex-direction:column;gap:0}
+.next-cronjobs-workspace .next-schedule-folder-children>.next-grid{display:flex;flex-direction:column;gap:0}
 .next-cronjob-row{min-width:0;border-bottom:1px solid var(--line);padding:0}
 .next-cronjob-summary{cursor:pointer;padding:12px 8px;overflow-wrap:anywhere}
 .next-cronjob-summary::marker{color:var(--muted)}
@@ -30,7 +29,6 @@
 .next-cronjob-body{padding:0 12px 14px 26px;min-width:0}
 .next-cronjob-body>.next-schedule-file-control{max-width:360px}
 .next-cronjob-summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.next-cronjobs-workspace .next-schedule-unfiled>h3{font-size:14px;margin:14px 4px 2px}
 @media(max-width:700px){.next-cronjobs-workspace .next-schedule-folder-children{padding-left:10px}.next-cronjob-body{padding-left:12px}.next-cronjob-summary{padding:10px 4px}}
 
 .next-cronjob-conversation{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0}
@@ -59,7 +57,6 @@
 .next-schedule-folder-create .next-schedule-folder-form{display:flex;align-items:end;flex-wrap:wrap;padding:8px;gap:8px}
 .next-schedule-folder-create .next-label{flex:1;min-width:140px;margin:0}
 .next-schedule-folder-create [role=status]:empty{display:none}
-.next-cronjobs-workspace .next-schedule-unfiled>h3{font-size:12px;font-weight:500;color:var(--muted);padding:4px 8px;margin:2px 0}
 @media(max-width:700px){.next-cronjob-summary{padding:5px 4px}.next-cronjob-name{max-width:60%}.next-cronjob-next{display:none}.next-cronjobs-workspace .next-schedule-folder-children{padding-left:14px}}
 
 .next-cronjobs-workspace .next-panel-head{margin-bottom:8px}
@@ -73,7 +70,7 @@
 .next-cronjobs-workspace .next-schedule-folder-name{max-width:calc(100% - 40px)}
 .next-cronjobs-workspace .next-schedule-folder-branch>summary .next-schedule-folder-remove{position:absolute;right:4px;top:3px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:28px;min-width:28px;height:28px;min-height:28px;margin:0;padding:0;font:18px/1 Arial,sans-serif;letter-spacing:0;color:var(--muted);background:none;border:1px solid transparent;border-radius:4px}
 .next-cronjobs-workspace .next-schedule-folder-branch>summary .next-schedule-folder-remove:hover:not(:disabled){color:var(--text);background:var(--next-button-hover-background)}
-.next-cronjobs-workspace .next-schedule-folder-branch>summary .next-schedule-folder-remove:focus-visible,.next-cronjobs-workspace .next-schedule-unfiled>h3:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.next-cronjobs-workspace .next-schedule-folder-branch>summary .next-schedule-folder-remove:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .next-cronjobs-workspace .next-schedule-folder-branch>summary .next-schedule-folder-remove:disabled{opacity:.5;cursor:default}
 
 .next-cronjobs-workspace .next-schedule-folder-branch.next-folder-selected>summary{background:var(--next-selection-background);box-shadow:inset 2px 0 var(--accent)}

@@ -672,10 +672,8 @@ export function createTasksWorkspace({mount,api,events,getStatus,notify,onNaviga
       triggerButton.addEventListener('click',()=>void checkReadiness(task,{run:true}));
       readinessButton(controls,task);
       showReadiness(card,task);
-      const removal=add(card,'details','','next-help');
-      add(removal,'summary','Remove future scheduling');
-      add(removal,'p','Stops future scheduling and cancels unstarted jobs. Running work and job history remain. A removal audit is retained; the schedule cannot be restored from this screen.');
-      const remove=add(removal,'button','Remove schedule permanently');remove.type='button';remove.disabled=busy;
+      const remove=add(controls,'button','Remove future scheduling');remove.type='button';remove.disabled=busy;
+      remove.title='Stops future scheduling and cancels unstarted jobs. Running work and job history remain.';
       remove.dataset.scheduleRemove=task.id;
       remove.addEventListener('click',()=>void execute('/api/operations/deployments/'+encodeURIComponent(task.id),'DELETE',{expectedRevision:task.revision}));
     }

@@ -784,6 +784,18 @@ test('Cronjobs renders schedules chronologically and keeps inspection actions bo
  assert.deepEqual(rows,before);assert.equal(f.calls.some(x=>x.method!=='GET'),false);
 });
 
+test('Cronjobs shows one direct removal button with the saved revision',async t=>{
+ const f=fixture(t,{hook:({path,method})=>path==='/api/operations/deployments/schedule-a'&&method==='DELETE'?{removed:true}:undefined});
+ f.component.enter();await settle();
+ const row=f.$('[data-schedule-id="schedule-a"]');row.open=true;await row.dispatch('toggle');await settle();
+ const remove=f.$('[data-schedule-remove="schedule-a"]');
+ assert.equal(remove.textContent,'Remove future scheduling');
+ assert.equal(remove.closest('details'),row);
+ assert.equal(row.querySelectorAll('[data-schedule-remove]').length,1);
+ await f.clickReady(remove);
+ assert.deepEqual(f.calls.filter(c=>c.method==='DELETE'),[{path:'/api/operations/deployments/schedule-a',method:'DELETE',payload:{expectedRevision:f.schedule.revision}}]);
+});
+
 test('Cron outline shows only this schedule saved conversations without result acknowledgement or fabricated links',async t=>{
  const f=fixture(t);f.jobs.splice(2);f.jobs[0].attempts[1].startedAt='2026-10-29T10:00:00Z';f.jobs[1].attempts[1].startedAt='2026-10-28T10:00:00Z';f.jobs.push({id:'unlinked',deploymentId:'schedule-a',status:'queued',attempts:[]},{id:'foreign',deploymentId:'other-schedule',attempts:[{runId:'foreign-run'}]});const before=structuredClone(f.jobs);
  f.component.enter();await settle();let row=f.$('[data-schedule-id="schedule-a"]');assert.equal(row.open,false);row.open=true;await row.dispatch('toggle');await settle();

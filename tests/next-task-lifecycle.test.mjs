@@ -213,7 +213,10 @@ test('schedule Remove is explicit, keeps creation drafts, preserves failures and
   f.component.enter();await settle();
   await f.click('#next-tasks-tab-schedules');await settle();
   await f.input('[name="name"]','Unfinished schedule draft');await f.input('[name="cwd"]','C:\\unsaved-folder');
-  assert.match(f.mount.textContent,/Running work and job history remain/);
+  const remove=f.$('[data-schedule-remove="schedule-a"]');
+  assert.equal(remove.textContent,'Remove future scheduling');
+  assert.equal(remove.parentElement.parentElement.tagName,'ARTICLE','The direct removal button is on the schedule card, not inside a disclosure.');
+  assert.match(remove.title,/Running work and job history remain/);
   assert.equal(f.calls.some(call=>call.method==='DELETE'),false);
   await f.click(f.$('[data-schedule-remove="schedule-a"]'));await settle();
   assert.match(f.$('#next-tasks-info').textContent,/could not be saved/);assert.equal(f.$('[name="name"]').value,'Unfinished schedule draft');

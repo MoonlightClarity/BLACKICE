@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('relayDesktop', Object.freeze({
   close: () => ipcRenderer.invoke('relay:close'),
   pickFolder: () => ipcRenderer.invoke('relay:pick-folder'),
   pickFiles: () => ipcRenderer.invoke('relay:pick-files'),
+  pickLocalModelFile: () => ipcRenderer.invoke('relay:pick-local-model-file'),
   openArtifact: reference => ipcRenderer.invoke('relay:open-artifact', reference),
   writeClipboard: text => {
     if (typeof text !== 'string' || !text.length || text.length > 4 * 1024 * 1024) return Promise.reject(new Error('Choose text within the clipboard size limit.'));

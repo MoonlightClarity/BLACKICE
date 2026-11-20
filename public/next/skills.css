@@ -43,7 +43,7 @@
 .skills-delete-confirm{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:5px}
 .skills-delete-confirm button{margin-right:8px}
 
-.skills-pagination-row{display:flex;justify-content:flex-end;padding-block:2px}
+.skills-pagination-row{display:flex;justify-content:flex-start;padding-block:2px}
 .skills-pagination{display:inline-flex;align-items:center;gap:2px;padding:1px;border:1px solid var(--line);border-radius:6px;color:var(--muted)}
 .skills-pagination>span{min-width:38px;padding-inline:3px;text-align:center;font-size:11px;font-variant-numeric:tabular-nums}
 .skills-document-line{display:flex;align-items:center;gap:4px}

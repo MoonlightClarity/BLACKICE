@@ -1,5 +1,5 @@
 /** Local GGUF setup. Viewing settings never loads a model. */
-export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, onDiscovered=()=>{}, pickFiles=globalThis.window?.relayDesktop?.pickFiles?()=>window.relayDesktop.pickFiles():null}={}) {
+export function createLlamaCppLaunchSettings({mount, api, onChanged=()=>{}, onDiscovered=()=>{}, pickFiles=globalThis.window?.relayDesktop?.pickLocalModelFile?()=>window.relayDesktop.pickLocalModelFile():null}={}) {
  const doc=mount.ownerDocument;
  const make=(tag,text='',css='')=>{const n=doc.createElement(tag);n.textContent=text;if(css)n.className=css;return n;};
  const label=(text,input)=>{const n=make('label',text,'next-label');n.append(input);return n;};

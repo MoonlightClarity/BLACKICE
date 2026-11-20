@@ -5,7 +5,7 @@
 import {createLocalModelSettings} from '/next/workspaces/settings-local-models.mjs';
 import {DEFAULT_LLAMA_CPP_SETTINGS} from '/config.mjs';
 window.calls=[];window.picked=[];window.loaded=false;
-window.relayDesktop={pickFiles:async()=>window.picked};
+window.relayDesktop={pickLocalModelFile:async()=>window.picked};
 let config={revision:0,settings:structuredClone(DEFAULT_LLAMA_CPP_SETTINGS),recommended:structuredClone(DEFAULT_LLAMA_CPP_SETTINGS),process:{},runtime:{available:true,source:'bundled',version:'v1.0.0',backend:'CPU',message:'CPU fallback: no compatible Vulkan device found.'}};
 const api=async(route,method='GET',body)=>{
  window.calls.push({route,method,body});

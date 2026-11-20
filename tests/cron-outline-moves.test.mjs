@@ -24,6 +24,23 @@ test('outline moves schedules and nested folders through CAS without changing jo
  const before=f.calls.length;await f.drag(f.folder('a'),f.folder('b'));assert.equal(f.calls.length,before,'cycle blocked without request');
  assert.ok(f.calls.every(call=>call.route==='/api/operations/folders'&&call.method==='POST'));
 });
+test('Unfiled is a collapsible immutable folder and a live drag destination',async t=>{
+ const f=await fixture(t,{compact:true}),unfiled=()=>f.list.querySelector('[data-schedule-unfiled]');
+ let root=unfiled(),heading=root.querySelector('summary');
+ assert.equal(root.tagName,'DETAILS');assert.ok(root.classList.contains('next-schedule-folder-branch'));
+ assert.equal(heading.textContent,'Unfiled');assert.notEqual(heading.draggable,true);
+ assert.equal(heading.querySelector('button'),null);assert.equal(heading.querySelector('input'),null);
+ await heading.dispatch('keydown',{key:'F2'});assert.equal(f.calls.length,0);
+ root.open=false;await root.dispatch('toggle');f.refresh();assert.equal(unfiled().open,false);
+ await f.folder('b').dispatch('keydown',{key:'ArrowDown'});assert.equal(document.activeElement,unfiled().querySelector('summary'));
+ await f.drag(f.job(),unfiled().querySelector('summary'));
+ assert.equal(f.state().assignments.job,undefined);
+ assert.equal(f.job().closest('[data-schedule-unfiled]'),unfiled());
+ assert.equal(unfiled().open,true,'a drop reveals the filed row');
+ await f.drag(f.job(),f.folder('b'));assert.equal(f.state().assignments.job,'b');
+ assert.deepEqual(f.calls.map(call=>[call.body.action,call.body.folderId]),[['assign',null],['assign','b']]);
+});
+
 test('external drops, leave and conflict cannot silently reapply a move',async t=>{
  const f=await fixture(t);await f.folder('b').dispatch('drop',{dataTransfer:{getData:()=>'{"kind":"schedule","id":"job"}'}});assert.equal(f.calls.length,0);
  await f.job().dispatch('dragstart',{dataTransfer:{setData(){}}});f.component.leave();await f.folder('b').dispatch('drop',{});assert.equal(f.calls.length,0);

@@ -71,7 +71,7 @@ const until=async s=>{for(let i=0;i<100;i++){if(await run(s))return;await sleep(
  await run('document.querySelector(".next-schedule-inline-create").scrollIntoView({block:"center"})');await sleep(250);assert.equal(await run('document.querySelector(".next-schedule-inline-create").getBoundingClientRect().height>20'),true);
  fs.writeFileSync(path.join(out,'cron-inline-child-draft.png'),(await win.webContents.capturePage()).toPNG());
  const draftTitle=await run('document.querySelector(".next-schedule-new-folder").textContent');
- await run('document.querySelector("[data-schedule-folder=work] .next-schedule-folder-name").click();document.querySelector(".next-schedule-unfiled>h3").click()');
+ await run('document.querySelector("[data-schedule-folder=work] .next-schedule-folder-name").click();document.querySelector(".next-schedule-unfiled>summary").click()');
  assert.equal(await run('document.querySelector(".next-schedule-new-folder").textContent'),draftTitle,'changing selection cannot relabel an open draft');
 
  await run('(()=>{const form=document.querySelector(".next-schedule-inline-create");form.querySelector("input").value="Nested test";form.requestSubmit();})()');

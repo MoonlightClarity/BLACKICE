@@ -3,7 +3,7 @@ import { text } from '../core/dom.mjs';
 // Folder edits affect organization only. Schedule controls remain owned by tasks.mjs.
 export function createScheduleFolders({ mount, api, notify, refresh, compact = false }) {
   let organization = { revision: 0, folders: [], assignments: {} }, pending = false, lastRevision = -1;
-  const closed = new Set();
+  const closed = new Set(), unfiledKey=Symbol('Unfiled');
   const renameDrafts = new Map();
   let fileSelects = [], folderButtons = [], activeDrag = null;
   let knownDeployments = new Set(), outlineContainer = null;
@@ -86,7 +86,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   function focusItem(item){
     const attribute=item.kind==='folder'?'scheduleFolder':'scheduleId';
     const row=[...(outlineContainer?.querySelectorAll(item.kind==='folder'?'[data-schedule-folder]':'[data-schedule-id]')||[])].find(value=>value.dataset[attribute]===item.id);
-    for(let ancestor=row?.parentElement;ancestor;ancestor=ancestor.parentElement){if(ancestor.tagName==='DETAILS'){ancestor.open=true;if(ancestor.dataset.scheduleFolder)closed.delete(ancestor.dataset.scheduleFolder);}}
+    for(let ancestor=row?.parentElement;ancestor;ancestor=ancestor.parentElement){if(ancestor.tagName==='DETAILS'){ancestor.open=true;if(ancestor.dataset.scheduleFolder)closed.delete(ancestor.dataset.scheduleFolder);else if(ancestor.dataset.scheduleUnfiled)closed.delete(unfiledKey);}}
     row?.querySelector('summary')?.focus();
   }
   async function move(item,parentId){
@@ -104,6 +104,22 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
     }
     const result=await mutate({action:'update',id:folder.id,name:folder.name,parentId:parentId||null});focusItem(item);return result;
   }
+  function outlineNavigation(event,element,canRename=false){
+    if(!compact||event.ctrlKey||event.metaKey||event.altKey)return false;
+    const row=element.parentElement;let next=null;
+    const visible=[...(outlineContainer?.querySelectorAll('summary')||[])].filter(value=>{
+      const node=value.parentElement;
+      if(!node?.dataset.scheduleFolder&&!node?.dataset.scheduleId&&!node?.dataset.scheduleUnfiled)return false;
+      for(let ancestor=node.parentElement;ancestor&&ancestor!==outlineContainer;ancestor=ancestor.parentElement)
+        if(ancestor.tagName==='DETAILS'&&!ancestor.open)return false;
+      return true;
+    });const index=visible.indexOf(element);
+    if(event.key==='ArrowDown')next=visible[index+1];else if(event.key==='ArrowUp')next=visible[index-1];else if(event.key==='Home')next=visible[0];else if(event.key==='End')next=visible.at(-1);
+    else if(event.key==='ArrowLeft'){if(row.open)row.open=false;else next=row.parentElement?.closest?.('[data-schedule-folder], [data-schedule-unfiled]')?.querySelector('summary');}
+    else if(event.key==='ArrowRight'){if(!row.open)row.open=true;else next=visible[index+1];}
+    else if(event.key==='F2'&&canRename)element.querySelector('.next-schedule-folder-name')?.click();else return false;
+    event.preventDefault();event.stopPropagation();next?.focus();return true;
+  }
   function draggable(element,item){
     element.draggable=true;
     element.addEventListener('dragstart',event=>{
@@ -115,15 +131,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
     element.addEventListener('dragend',()=>{activeDrag=null;});
     element.addEventListener('keydown',event=>{
       if(event.target!==element&&!(item.kind==='folder'&&event.target?.classList?.contains('next-schedule-folder-name')&&(event.ctrlKey||event.metaKey)&&event.key==='Enter'))return;
-      if(compact&&!event.ctrlKey&&!event.metaKey&&!event.altKey){
-        const row=element.parentElement;let next=null;
-        const visible=[...(outlineContainer?.querySelectorAll('summary')||[])].filter(value=>{if(!value.parentElement?.dataset.scheduleFolder&&!value.parentElement?.dataset.scheduleId)return false;for(let ancestor=value.parentElement?.parentElement;ancestor&&ancestor!==outlineContainer;ancestor=ancestor.parentElement)if(ancestor.tagName==='DETAILS'&&!ancestor.open)return false;return true;});const index=visible.indexOf(element);
-        if(event.key==='ArrowDown')next=visible[index+1];else if(event.key==='ArrowUp')next=visible[index-1];else if(event.key==='Home')next=visible[0];else if(event.key==='End')next=visible.at(-1);
-        else if(event.key==='ArrowLeft'){if(row.open)row.open=false;else next=row.parentElement?.closest?.('[data-schedule-folder]')?.querySelector('summary');}
-        else if(event.key==='ArrowRight'){if(!row.open)row.open=true;else next=visible[index+1];}
-        else if(event.key==='F2'&&item.kind==='folder'){event.preventDefault();element.querySelector('.next-schedule-folder-name')?.click();return;}else return;
-        event.preventDefault();event.stopPropagation();next?.focus();return;
-      }
+      if(outlineNavigation(event,element,item.kind==='folder'))return;
       if(event.target?.tagName==='INPUT'||!(event.ctrlKey||event.metaKey)||event.key!=='Enter')return;
       event.preventDefault();event.stopPropagation();
       const parentId=currentParent(item);
@@ -209,8 +217,16 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
         }
       }
       branch(null, container);paintSelection();if(compact&&manager.open)placeDraft();
-      const unfiled = add(container, 'section', '', 'next-schedule-unfiled'); const unfiledHeading=add(unfiled, 'h3', 'Unfiled');dropTarget(unfiledHeading,null);unfiledHeading.title='Drop here to move to the top level.';if(compact){unfiledHeading.tabIndex=0;unfiledHeading.setAttribute('role','button');unfiledHeading.setAttribute('aria-label','Top level; drop folders or cronjobs here');const root=()=>{selectedParent=null;paintSelection();};unfiledHeading.addEventListener('click',root);unfiledHeading.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();root();}});}
-      const cards = add(unfiled, 'div', '', 'next-grid'); targets.set('', cards);
+      const unfiled=add(container,'details','','next-schedule-folder-branch next-schedule-unfiled');
+      unfiled.dataset.scheduleUnfiled='true';unfiled.open=!closed.has(unfiledKey);
+      const unfiledHeading=add(unfiled,'summary','Unfiled');
+      unfiledHeading.title='Drop a cronjob here to unfile it, or a folder to move it to the top level.';
+      dropTarget(unfiledHeading,null);
+      unfiledHeading.addEventListener('click',()=>{selectedParent=null;paintSelection();});
+      unfiledHeading.addEventListener('keydown',event=>{if(event.target===unfiledHeading)outlineNavigation(event,unfiledHeading);});
+      unfiled.addEventListener('toggle',()=>unfiled.open?closed.delete(unfiledKey):closed.add(unfiledKey));
+      const unfiledChildren=add(unfiled,'div','','next-schedule-folder-children');
+      const cards=add(unfiledChildren,'div','','next-grid');targets.set('',cards);
       if (!deployments.some(item => !targets.has(organization.assignments?.[item.id]))) add(cards, 'p', 'No unfiled cronjobs.', 'next-help');
       return {
         target: task => targets.get(organization.assignments?.[task.id]) || cards,
