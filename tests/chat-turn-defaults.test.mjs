@@ -18,6 +18,8 @@ test('new composer uses global defaults; existing conversation choices and local
   assert.equal(chatTurnMode(key,{defaults:enabled,draft:'off'}),'off');
  }
  assert.equal(chatTurnMode('pastChats',{existing:true,defaults:{pastChats:'off'}}),'on','historical unspecified policy is unchanged');
+ assert.equal(chatTurnMode('pastChats',{existing:true,ordinary:true,defaults:{pastChats:'off'}}),'off');
+ assert.equal(chatTurnMode('pastChats',{existing:true,ordinary:true,defaults:{pastChats:'on'}}),'on');
  assert.equal(NEW_CHAT_RECEIPT_DEPTH,'maximal');
 });
 test('ordinary new Chat defaults are permanent per run, explicit choices win, and same request replays across default changes',async t=>{
@@ -60,4 +62,14 @@ test('ordinary new Chat defaults are permanent per run, explicit choices win, an
  const independent=engine.startRun({workflow:createMissionWorkflow({task:'Independent workflow',model:'fixture',cwd:root,id:'workflow-test'}),input:{task:'Independent workflow',cwd:root}});
  await engine.executions.get(independent.id);
  assert.equal(independent.pastChats,undefined,'configured Chat preferences do not reconfigure other workflow sources');
+ const continuedWorkflow=engine.continueRun(independent.id,{nodeId:'agent',message:'Continue authored workflow'});
+ await engine.executions.get(continuedWorkflow.id);
+ assert.equal(engine.getRun(continuedWorkflow.id).pastChats,undefined);
+ const workflow=createMissionWorkflow({task:'Fresh grouped task',model:'fixture',cwd:root,id:'mission_chat_fresh'});
+ const grouped=engine.startRun({workflow,input:{task:'Fresh grouped task',cwd:root,pastChats:'off'}},
+  {chatDisplayGroupId:'test-group',sourceTaskId:sent.run.taskId});
+ await engine.executions.get(grouped.id);
+ const continuedGroup=engine.continueRun(grouped.id,{nodeId:'agent',message:'Continue isolated fresh task'});
+ await engine.executions.get(continuedGroup.id);
+ assert.equal(engine.getRun(continuedGroup.id).pastChats,'off','Grouped fresh tasks retain their isolated Off choice even when new Chat defaults are On.');
 });

@@ -36,7 +36,7 @@ test('Past Chats Off denies unrelated local history/model output; On demand enab
       const body=JSON.parse(raw);
       if(!requests.has(phase))requests.set(phase,[]);
       requests.get(phase).push(body);
-      const calls=(phase==='off'||phase==='on')&&step++===0?[
+      const calls=['off','on','legacy-off','legacy-retry','legacy-on'].includes(phase)&&step++===0?[
         toolCall('relay_history',{action:'read',scope:'global',id:oldRun.id},phase+'-history'),
         toolCall('relay_history',{action:'search',scope:'global',query:titleMarker},phase+'-search'),
         toolCall('relay_agents',{action:'list',scope:'all'},phase+'-list'),
@@ -126,4 +126,49 @@ test('Past Chats Off denies unrelated local history/model output; On demand enab
   assert.equal(post.taskId,off.taskId);
   assert.deepEqual(requests.get('post')[0].tools.find(t=>t.function?.name==='relay_history').function.parameters.properties.action.enum,['previous_turn_diagnostics']);
   assert.equal(post.modelHandoff?.reason,'past-chats-scope');
+
+  const legacy=async(name,{retry=false}={})=>{
+    phase='warm';
+    const admitted=await run('Same-chat '+name+' '+continuityMarker,[],'on');
+    const prior=app.engine.runs.get(admitted.id);
+    delete prior.pastChats; // The older saved row did not record a selection.
+    if(retry){prior.status='failed';prior.nodes.agent.status='failed';}
+    return prior;
+  };
+  const assertBlockedWire=mode=>{
+    const wire=requests.get(mode);
+    assert.deepEqual(wire[0].tools.find(t=>t.function?.name==='relay_history').function.parameters.properties.action.enum,['previous_turn_diagnostics']);
+    assert.match(receipt(wire[1],mode+'-history'),/Past Chats is Off/i);
+    assert.match(receipt(wire[1],mode+'-get'),/Past Chats is Off/i);
+    assert.doesNotMatch(JSON.stringify(wire),new RegExp(oldMarker));
+    assert.match(JSON.stringify(wire[0].messages),new RegExp(continuityMarker));
+  };
+  await app.runtimeSettings.update({chatDefaults:{pastChats:'off'}});
+  const original=await legacy('continuation');
+  phase='legacy-off';
+  const next=await run('Use the saved default on continuation.',[original]);
+  assert.equal(next.pastChats,'off');assert.equal(next.modelHandoff.reason,'past-chats-scope');
+  assert.notEqual(next.nodes.agent.threadId,original.nodes.agent.threadId);assert.equal(original.pastChats,undefined);
+  assertBlockedWire('legacy-off');
+
+  const failed=await legacy('retry',{retry:true});
+  phase='legacy-retry';step=0;
+  const retried=app.engine.retryRun(failed.id,{historyRuns:[failed]});
+  await app.engine.executions.get(retried.id);
+  const retriedDone=app.engine.getRun(retried.id);
+  assert.equal(retriedDone.status,'completed',retriedDone.error);
+  assert.equal(retriedDone.pastChats,'off');assert.equal(retriedDone.nodeHandoffs.agent.reason,'past-chats-scope');
+  assert.notEqual(retriedDone.nodes.agent.threadId,failed.nodes.agent.threadId);assert.equal(failed.pastChats,undefined);
+  assertBlockedWire('legacy-retry');
+
+  await app.runtimeSettings.update({chatDefaults:{pastChats:'on'}});
+  const configuredOn=await legacy('configured on');
+  phase='legacy-on';
+  const onDefault=await run('Use the saved On default.',[configuredOn]);
+  assert.equal(onDefault.pastChats,'on');assert.equal(onDefault.nodes.agent.threadId,configuredOn.nodes.agent.threadId);
+  assert.match(receipt(requests.get('legacy-on')[1],'legacy-on-history'),new RegExp(oldMarker));
+  phase='warm';
+  assert.equal((await run('Existing Off stays Off.',[next])).pastChats,'off');
+  await app.runtimeSettings.update({chatDefaults:{pastChats:'off'}});
+  assert.equal((await run('Existing On stays On.',[onDefault])).pastChats,'on');
 });

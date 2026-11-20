@@ -10,7 +10,7 @@ import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, runnin
 import { submitChat, submitFreshChatTask, replyState } from './send.mjs';
 import {createGoalControls,parseGoalCommand} from './goals.mjs';
 import { createConversationReader } from './reader-client.mjs';
-import {chatTurnMode} from '../../chat-turn-defaults.mjs';
+import {chatTurnMode,ordinaryChatRun} from '../../chat-turn-defaults.mjs';
 import {diagnosticAlarmCopy,latestDiagnosticAlarms} from './tool-failure.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML, stableId } from '../core/dom.mjs';
@@ -69,7 +69,11 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   const root = () => rootId(state.selected) || 'new';
   const actionDrafts=new Map(),planningDrafts=new Map();
   const actionOutline=createActionDirectory({frame:view.shell,api,getRuns:()=>state.runs});
-  const selectedMode=(key,drafts)=>chatTurnMode(key,{draft:drafts.get(root()),saved:state.runs.at(-1)?.[key],defaults:runtimeStatus.runtimeSettings?.chatDefaults,existing:Boolean(state.selected)});
+  const selectedMode=(key,drafts)=>{
+    const latest=state.runs.at(-1);
+    return chatTurnMode(key,{draft:drafts.get(root()),saved:latest?.[key],defaults:runtimeStatus.runtimeSettings?.chatDefaults,
+      existing:Boolean(state.selected),ordinary:latest?.ordinaryChat??ordinaryChatRun(latest)});
+  };
   const selectedActions=()=>selectedMode('directoryActions',actionDrafts);
   const selectedPlanning=()=>selectedMode('chatPlanning',planningDrafts);
   const turnReceiptsInspector=createTurnReceiptsInspector({frame:view.shell,api,getRuns:()=>state.runs,showLauncher:false,onBack:()=>activityInspector.open()});
@@ -635,7 +639,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       const context=active?undefined:contextControls.read();
       const submittedContextRevision=contextControls.revision;
       const result=await submitChat({api,runs:current,task,model:previous&&!submittedModel.explicit?undefined:options.model,
-        effort:options.effort,serviceTier:options.serviceTier,context,goal,pastChats:active?undefined:state.selected?selectedPastChats():pastChatsDrafts.get(root()),directoryActions:active?undefined:state.selected?selectedActions():actionDrafts.get(root()),chatPlanning:active?undefined:state.selected?selectedPlanning():planningDrafts.get(root()),
+        effort:options.effort,serviceTier:options.serviceTier,context,goal,pastChats:active?undefined:pastChatsDrafts.get(submittedContextOwner),directoryActions:active?undefined:state.selected?selectedActions():actionDrafts.get(root()),chatPlanning:active?undefined:state.selected?selectedPlanning():planningDrafts.get(root()),
         planningMode:options.planningMode,planningExecutionMode:options.planningExecutionMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
         cwd:(()=>{try{return localStorage.getItem('blackice.next.cwd')||status?.cwd||'';}catch{return status?.cwd||'';}})()});
       const unchanged=consumeDraft&&state.inputOwner===submittedOwner&&state.inputRevision===submittedRevision;

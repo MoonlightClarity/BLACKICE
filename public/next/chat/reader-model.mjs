@@ -3,6 +3,7 @@ import { recordedChatModels,projectCyclePlanning,chatErrorText,projectConversati
 import { projectPlanningActivity } from './planning-timeline.mjs';
 import { chatToolFailure,projectDiagnosticAlarms } from './tool-failure.mjs';
 import { contextOptions, contextStatistics, compactionStatistics } from '../core/context-controls.mjs';
+import { ordinaryChatRun } from '../../chat-turn-defaults.mjs';
 const records = value => Array.isArray(value) ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) : [];
 // Saved run failures are user-facing diagnostics, not internal event traces.
 // Only explicitly recorded string diagnostics may cross to the chat reader.
@@ -31,7 +32,7 @@ export function projectFamily(family) {
        ...(run.autonomy?.automatic||run.autonomyDispatch?{autonomy:{automatic:true}}:{}),
       error:diagnosticText(run.error),errorCode:diagnosticCode(run.errorCode),
       ...(chatErrorText(run.error)?{error:chatErrorText(run.error)}:{}),
-      planningMode:run.planningMode,planningEnforcement:run.planningEnforcement,pastChats:run.pastChats,directoryDiagnostics:['on','maximal'].includes(run.directoryDiagnostics)?run.directoryDiagnostics:'off',directoryActions:run.directoryActions==='on'?'on':'off',chatPlanning:run.chatPlanning==='on'?'on':'off',
+      planningMode:run.planningMode,planningEnforcement:run.planningEnforcement,pastChats:run.pastChats,...(ordinaryChatRun(run)?{ordinaryChat:true}:{}),directoryDiagnostics:['on','maximal'].includes(run.directoryDiagnostics)?run.directoryDiagnostics:'off',directoryActions:run.directoryActions==='on'?'on':'off',chatPlanning:run.chatPlanning==='on'?'on':'off',
       ...(run.planningOntology?{planningOntology:run.planningOntology}:{}),
       planningExecutionMode:run.planningExecutionMode,
       ...(run.executionModes?{executionModes:run.executionModes}:{}),

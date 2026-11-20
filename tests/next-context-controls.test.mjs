@@ -442,6 +442,30 @@ test('new Chat selector reflects persisted defaults while saved Chat settings st
  assert.deepEqual(actual(),saved);
 });
 
+test('legacy ordinary Chat displays the current Past Chats default and submits only an explicit draft',async t=>{
+ const sent=[];
+ const f=await chatFixture(t,{continueResponse:({body,families})=>{
+   sent.push(body);return families.get(sent.length===1?'a':'b').runs[0];
+ }});
+ const a=f.families.get('a').runs[0],b=f.families.get('b').runs[0];
+ for(const row of [a,b])Object.assign(row.workflow,{id:'mission_chat_'+row.id,description:'A focused task started from Mission.'});
+ const status=pastChats=>({...f.status,runtimeSettings:{chatDefaults:{pastChats}}});
+ const selector=f.$('#next-chat-past-chats');
+ f.workspace.updateStatus(status('off'));await f.open('a');assert.equal(selector.value,'off');
+ f.workspace.updateStatus(status('on'));assert.equal(selector.value,'on');
+ f.workspace.updateStatus(status('off'));assert.equal(selector.value,'off');
+ await f.input('#next-chat-input','Continue without opting in');await f.$('#next-chat-form').dispatch('submit');
+ await until(()=>sent.length===1&&f.$('#next-chat-hint').textContent==='Message sent. BLACKICE is working.');
+ assert.equal(Object.hasOwn(sent[0],'pastChats'),false);
+ await f.open('b');assert.equal(selector.value,'off');
+ await f.input('#next-chat-past-chats','on');await selector.dispatch('change');
+ await f.open('a');assert.equal(selector.value,'off','A different chat does not inherit the draft.');
+ await f.open('b');assert.equal(selector.value,'on');
+ await f.input('#next-chat-input','Opt this chat in explicitly');await f.$('#next-chat-form').dispatch('submit');
+ await until(()=>sent.length===2);
+ assert.equal(sent[1].pastChats,'on');
+});
+
 test('a verified runtime diagnostic appears live, is scoped to the selected turn and can be dismissed without a tool call',async t=>{
  const f=await chatFixture(t);
  await f.open('a');
