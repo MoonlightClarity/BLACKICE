@@ -24,7 +24,9 @@ test('actual default-Off engine writes and completes without a hidden reviewer o
       const admittedPolicy = JSON.parse(policyReceipt.contentItems.find(item=>item.type==='inputText').text).activeTaskPolicy;
       assert.equal(admittedPolicy,undefined);
       assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
- assert.equal(options.onBeforeFinal,undefined);assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_task'));assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
+ assert.equal(options.onBeforeFinal,undefined);assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_task'));assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
+ const denied=await options.onToolCall({name:'relay_task',arguments:{action:'read'}});
+ assert.equal(denied.success,false);assert.equal(denied.code,'TASK_PLAN_UNAVAILABLE');
  const call={name:'relay_workspace',callId:'same-write',arguments:{action:'write',path:'result.txt',text:'verified local output'}};
  const first=await options.onToolCall(call);assert.equal(first.success,true,JSON.stringify(first));effects++;assert.deepEqual(await options.onToolCall(structuredClone(call)),first);
  return{output:'Wrote result.txt.',threadId:'defaults-thread'};});
@@ -35,7 +37,7 @@ test('actual default-Off engine writes and completes without a hidden reviewer o
 });
 test('retired explicit module choices stay inert across provider failure, restart, Retry and Continue',async t=>{
  const selected=normalizePlanningOntology({version:2,modules:Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(m=>[m.id,true]))});let calls=0;
- const f=await fixture(t,async options=>{calls++;assert.equal(options.onBeforeFinal,undefined);assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_task'));if(calls===1)throw Object.assign(Error('Observed fixture failure before effects'),{code:'FIXTURE_FAILURE'});return finishFixtureCandidate(options,{output:'Confirmed bounded synthetic task complete.',threadId:'defaults-thread'});});
+ const f=await fixture(t,async options=>{calls++;assert.equal(options.onBeforeFinal,undefined);assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_task'));if(calls===1)throw Object.assign(Error('Observed fixture failure before effects'),{code:'FIXTURE_FAILURE'});return finishFixtureCandidate(options,{output:'Confirmed bounded synthetic task complete.',threadId:'defaults-thread'});});
  const failed=await f.settle(f.engine.startRun({workflow:graph,input:'Complete bounded synthetic task.',planningOntology:selected}));assert.equal(failed.status,'failed');assert.equal(failed.errorCode,'FIXTURE_FAILURE');const frozen=JSON.stringify(failed.planningOntology);
  await f.reopen();const retried=await f.settle(f.engine.retryRun(failed.id));assert.equal(retried.status,'completed',retried.error);assert.equal(retried.planningOntology,null);
  const continued=await f.settle(f.engine.continueRun(retried.id,{nodeId:'agent',message:'Repeat the bounded check.'}));assert.equal(continued.status,'completed',continued.error);assert.equal(continued.planningOntology,null);assert.equal(JSON.stringify(f.engine.getRun(failed.id).planningOntology),frozen);assert.equal(f.engine.getRun(failed.id).status,'failed');
