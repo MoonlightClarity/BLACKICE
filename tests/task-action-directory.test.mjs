@@ -65,8 +65,39 @@ test('successful same-turn unassigned reads can be explicitly linked once withou
  assert.equal(saved.actionId,null);assert.equal(saved.linkedByActionId,'read');
  const reloaded=create({snapshot:state});assert.equal(reloaded.read().receipts.at(-1).linkedByActionId,'read');
  await ledger.edit({action:'focus',id:'next',revision:ledger.read().revision});
- await assert.rejects(observe('next',[returned.receiptId]),{code:'DIRECTORY_EVIDENCE'});
+ await assert.rejects(observe('next',[returned.receiptId]),{code:'DIRECTORY_EVIDENCE',message:/Current focus: next.*receipt-5: already used by another action.*eligible receipt IDs: none/});
  assert.equal(ledger.read().actions[1].state,'active');
+
+});
+
+test('wrong-action and absent receipt diagnostics preserve focus and allow immediate same-source recovery',async()=>{
+ const ledger=create();const context={runId:'run',nodeId:'agent',observationOnly:true};
+ await ledger.edit({action:'plan',revision:0,actions:[{id:'first',objective:'Check first source',dependsOn:[]},{id:'next',objective:'Use second source',dependsOn:['first']}]});
+ const edit=(action,id,data={})=>ledger.edit({action,id,revision:ledger.read().revision,...data},context);
+ let calls=0;
+ const read=()=>ledger.execute({name:'relay_workspace'},async()=>{calls++;return{success:true};},context);
+ await edit('focus','first');
+ const first=await read();
+ await edit('observe','first',{claim:'First checked.',receipts:[first.receiptId]});
+ await edit('focus','next');
+ const receipts=[];
+ for(let i=0;i<9;i++)receipts.push((await read()).receiptId);
+ const before=ledger.read();
+ for(const action of ['observe','block']){
+  await assert.rejects(edit(action,'next',{claim:'Use source.',blocker:'prerequisite-unavailable',receipts:[first.receiptId,'receipt-999','never-echo-this-secret','receipt-998','receipt-997','receipt-996','receipt-995']}),err=>{
+   assert.equal(err.code,action==='observe'?'DIRECTORY_EVIDENCE':'DIRECTORY_BLOCKER');
+   assert.match(err.message,/Current focus: next.*receipt-1: assigned to another action.*receipt-999: absent/);
+   assert.match(err.message,/invalid receipt ID: absent/);
+   assert.match(err.message,/1 more rejected/);
+   assert.doesNotMatch(err.message,/never-echo-this-secret|receipt-995|receipt-2/);
+   assert.match(err.message,/Recent eligible receipt IDs: receipt-3, receipt-4, receipt-5, receipt-6, receipt-7, receipt-8, receipt-9, receipt-10/);
+   return true;
+  });
+ }
+ assert.deepEqual(ledger.read(),before);
+ await edit('observe','next',{claim:'Second checked.',receipts:[receipts.at(-1)]});
+ assert.equal(calls,10,'Correcting a receipt uses an existing observation, not another tool call.');
+ assert.equal(ledger.finalStatus().ready,true);
 });
 
 test('plan replaces only pending work and can depend on omitted recorded steps',async()=>{
