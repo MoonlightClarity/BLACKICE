@@ -70,3 +70,24 @@ test('empty browser inventory does not justify an unfinished final, even in a co
   uncertain.started({callId:'maybe',name:'relay_browser',arguments:{action:'click'}});
   assert.equal(uncertain.beforeFinal({output:answer}),null);
 });
+
+test('execution review reports the actual stop predicate without including answer text',()=>{
+  const cases=[
+    [null,partial,'no-read-only-evidence'],
+    [good,'I have investigated.','no-incomplete-action-match'],
+    [good,"I haven't sent it because the required file is missing.",'blocker-wording-matched'],
+    [{...good,action:'click'},partial,'non-read-only-or-failed-tool'],
+    [good,partial,'explicit-action-left-unfinished'],
+  ];
+  for(const [event,output,reason] of cases){
+    const receipts=[];
+    const review=createChatExecutionReview({input:action,canContinue:()=>true,onDecision:receipt=>receipts.push(receipt)});
+    if(event)review.observe(event);
+    const result=review.beforeFinal({output});
+    assert.deepEqual(receipts,[{reason,reviewDecision:result?.continue?'continue':'accepted'}]);
+    if(result){
+      assert.equal(review.beforeFinal({output:partial}),null);
+      assert.deepEqual(receipts.at(-1),{reason:'continuation-already-used',reviewDecision:'accepted'});
+    }
+  }
+});

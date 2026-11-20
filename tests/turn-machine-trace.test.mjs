@@ -214,3 +214,15 @@ test('browser observations rehydrate as bounded returned evidence without unrela
  assert.deepEqual(evidence.metadata,{tool:'relay_browser',phase:'returned',action:'click',contentFrameCount:1});
  assert.doesNotMatch(JSON.stringify(evidence),/PRIVATE_|dispatch|deliver|success/);
 });
+
+test('maximal export preserves controlled continuation reasons and browser tabs, not free text',()=>{
+  const run=fixture();
+  retainRunEvent(run,wrap({type:'tool.result',tool:'relay_browser',action:'tabs',success:true,result:'Private tab title'}));
+  retainRunEvent(run,wrap({type:'chat.execution-review',reviewMode:'ordinary-chat',reviewDecision:'accepted',reason:'blocker-wording-matched',candidate:'Private draft'}));
+  retainRunEvent(run,wrap({type:'chat.execution-review',reason:'not on the allowlist'}));
+  const {entries}=projectTurnMachineTrace(run);
+  assert.equal(entries[0].metadata.action,'tabs');
+  assert.deepEqual(entries[1].metadata,{reviewMode:'ordinary-chat',reviewDecision:'accepted',reason:'blocker-wording-matched'});
+  assert.equal(entries[2].metadata?.reason,undefined);
+  assert.doesNotMatch(JSON.stringify(entries),/Private|not on the allowlist/);
+});

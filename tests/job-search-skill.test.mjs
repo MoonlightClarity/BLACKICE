@@ -133,13 +133,13 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  identity=await new IdentityStore({dataDir}).init();
  engine=await new HarnessEngine({runtime,dataDir,defaultCwd:dir,identity,browser:{status:()=>({available:true,contained:true,tabs:[]}),perform:()=>assert.fail('No real browser action is part of this test')}}).init();
  const api=async(route,_method,body)=>route==='/api/workflows'?body:engine.startRun(body);
- const invoke=async task=>{
-  const start=await submitChat({api,runs:[],task,model:'fixture::fixture',cwd:dir,chatPlanning:'off',directoryActions:'off'});
+ const invoke=async (task, directoryDiagnostics)=>{
+  const start=await submitChat({api,runs:[],task,model:'fixture::fixture',cwd:dir,chatPlanning:'off',directoryActions:'off',directoryDiagnostics});
   await engine.executions.get(start.run.id);
   const run=engine.getRun(start.run.id);
   assert.equal(run.status,'completed',run.error);
   assert.deepEqual(before.at(-1),[],'transport has not yet accepted the prompt');
-  return {prompt:JSON.stringify(prompts.at(-1)),receipts:run.skillLoadReceipts||[]};
+  return {prompt:JSON.stringify(prompts.at(-1)),receipts:run.skillLoadReceipts||[],events:run.events.map(event=>event.data)};
  };
  const alignmentId='builtin-task-grounding';
  const alignmentHeading='ANTI-OVERALIGNMENT (advisory execution method; not permission)';
@@ -186,4 +186,9 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.ok(deleted.receipts.every(r=>r.skillId!==alignmentId));
  assert.ok(!deleted.prompt.includes(heading));assert.ok(deleted.receipts.every(r=>r.skillId!==id));
  assert.equal(prompts.length,3,'no extra provider calls for skill selection');
+ const instrumented=await invoke('Apply to one job for me: Senior Product Manager.','maximal');
+ const decisions=instrumented.events.filter(event=>event.type==='chat.execution-review');
+ assert.deepEqual(decisions,[{type:'chat.execution-review',reviewMode:'ordinary-chat',reason:'no-read-only-evidence',reviewDecision:'accepted'}]);
+ const ordinaryDepth=await invoke('Apply to one job for me: Senior Product Manager.','off');
+ assert.ok(ordinaryDepth.events.every(event=>event.type!=='chat.execution-review'));
 });
