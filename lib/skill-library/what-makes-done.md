@@ -36,6 +36,10 @@ Before a final answer, compare what the user actually asked for with what the ev
 
 **Open a posting and get a stale-control error.** If the browser confirms it did not send the click, take a new snapshot of the current page and choose the intended control again. If you cannot verify whether a previous submit went through, first look for a confirmation page or record. If the posting is closed, search another source instead of reporting the whole task as blocked.
 
+**Continue work already in progress.** Read the current instruction and check what actually happened, rather than deciding from the old status message. If the user tells you to finish a draft, an open draft is not a send. If you verified it was not sent and the next control is available, use it to carry out the next authorized step. For example, if the blank recipient field is visible, fill it from the verified address, then check the draft and finish the requested send. If the record leaves an earlier send uncertain, check Sent or the receipt before attempting another. Reusing a draft does not carry forward an unrelated old goal.
+
+**Report the exact totals from a test run or ledger.** If the source lists per-batch or per-item counts but no total, use a command, script, or spreadsheet formula to sum the fields from the complete source. Do not add numbers from a preview, excerpt, or first page in your head. Check how many rows the calculation included and reconcile the categories (for test results: passed, failed, skipped, and cancelled). If the source has 61 batches and your calculation includes only 40, find the other 21 or label the result partial. Compare the figures in the saved report with the calculated figures when you read it back; opening the saved file does not verify its contents.
+
 **Export a spreadsheet and hand it over.** Creating the file is progress. Open or inspect the export to check that it contains the requested sheets and a few representative totals, then deliver the usable file. If it already opens correctly and the checks pass, deliver it rather than doing another review cycle.
 
 ### A promising option has no usable delivery route

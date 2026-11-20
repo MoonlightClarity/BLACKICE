@@ -10,7 +10,7 @@ test('What Makes Done is a discoverable advisory skill with actionable examples'
  const row=(await catalog.list({query:'definition of done'})).entries.find(x=>x.id==='library-what-makes-done');
  assert.equal(row?.title,'What Makes Done');
  const {content}=await readBundledSkill('library-what-makes-done');
- for(const pattern of [/same query and cursor/,/continue with the others/,/when the employer or application service confirms it/,/cutoff is in the future/,/representative totals/,/Do not end the turn until you are really done/,/real reason to stop/])assert.match(content,pattern);
+ for(const pattern of [/same query and cursor/,/continue with the others/,/when the employer or application service confirms it/,/cutoff is in the future/,/representative totals/,/from the complete source/,/calculation included/,/does not verify its contents/,/open draft is not a send/,/check Sent or the receipt/,/Do not end the turn until you are really done/,/real reason to stop/])assert.match(content,pattern);
  assert.match(TASK_COMPLETION_GUIDANCE,/take it now instead of returning a status-only answer/);
  assert.match(ACTION_DIRECTORY_TOOL.description,/add and take the next useful authorized step/);
 });
