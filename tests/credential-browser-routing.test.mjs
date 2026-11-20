@@ -28,6 +28,7 @@ test('attached contained browser teaches the email fallback without a dedicated 
  assert.match(guidance,/open the known webmail service in this contained browser/);
  assert.match(guidance,/Do not reject a confirmed sender only because a separate reply or resume address differs/);
  assert.match(guidance,/Check Sent for the specific recipient and subject/);
+ assert.match(guidance,/A file on disk does not have to be attached to the chat/);
  assert.match(guidance,/If Send might have worked, inspect Sent before any repeat/);
  assert.doesNotMatch(capabilityGuidance([],{planningMode:'off'}),/open the known webmail service/);
 });

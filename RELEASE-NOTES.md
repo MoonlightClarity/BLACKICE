@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.32 candidate source, not an installation or publication receipt.** Package version is **2.40.32**. Start with the [2.40.32 notes](RELEASE-NOTES-2.40.32.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.33 candidate source, not an installation or publication receipt.** Package version is **2.40.33**. Start with the [2.40.33 notes](RELEASE-NOTES-2.40.33.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.33](RELEASE-NOTES-2.40.33.md) - live failure alarms and archive Receipts cleanup
 
 - [2.40.32](RELEASE-NOTES-2.40.32.md) - find visible browser controls inside hidden wrappers
 
