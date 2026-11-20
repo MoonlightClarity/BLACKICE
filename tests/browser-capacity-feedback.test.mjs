@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { BROWSER_TOOL, BrowserWorkspace, createBrowserToolHandler } from '../lib/browser.mjs';
 
 import { capabilityGuidance } from '../lib/tool-routing.mjs';
-import { createProviderExecutionContract } from '../lib/provider-execution-contract.mjs';
+import { createProviderExecutionContract, providerExecutionContractRequiresFreshSession, validateProviderExecutionContract } from '../lib/provider-execution-contract.mjs';
 
 const owner = { taskId: 'task', runId: 'run', nodeId: 'agent' };
 const parsed = result => JSON.parse(result.contentItems[0].text);
@@ -49,12 +49,17 @@ test('open reports the shared task live budget while preserving worker-scoped pa
 
 test('fresh/recovery guidance reaches the model without replacing the saved browser catalog',()=>{
   const contract=createProviderExecutionContract({dynamicTools:[BROWSER_TOOL],planningContractVersion:14});
-  assert.equal(contract.catalogHash, '76d38f31fe6411c52f19867fb315ae9d8b66e431883a0486ff90b697792f6da6');
+  const savedCatalog=structuredClone(BROWSER_TOOL);
   assert.ok(BROWSER_TOOL.inputSchema.properties.query);
   const guidance=capabilityGuidance([BROWSER_TOOL],{planningMode:'off'});
   assert.match(guidance,/same persistent browser profile and sign-ins/);
   assert.match(guidance,/tabs with query:"stopped-task-recovery"/);
   assert.match(guidance,/before a conflicting repeat only/);
+  assert.deepEqual(BROWSER_TOOL,savedCatalog,'Out-of-band guidance must not edit the attached tool.');
+  assert.deepEqual(validateProviderExecutionContract({providerExecutionContract:contract,dynamicTools:[BROWSER_TOOL]}),contract);
+  assert.equal(providerExecutionContractRequiresFreshSession(contract,createProviderExecutionContract({dynamicTools:[BROWSER_TOOL],planningContractVersion:14})),false);
+  const edited=createProviderExecutionContract({dynamicTools:[{...savedCatalog,description:savedCatalog.description+' Explicit catalog revision.'}],planningContractVersion:14});
+  assert.equal(providerExecutionContractRequiresFreshSession(contract,edited),true,'A genuinely changed description still requires a fresh provider session.');
 });
 
 test('only an intentional tabs recovery exposes an eligible foreign identity to the model',async t=>{

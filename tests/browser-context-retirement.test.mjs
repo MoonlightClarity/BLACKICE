@@ -83,11 +83,12 @@ test('actual engine continuation ignores rehydrated receipt gates and preserves 
  };
  const credentials={status:async()=>({available:true,healthy:true})};
  class FixtureRuntime extends EventEmitter{
-  status(){return {connected:true,authenticated:true,defaultModel:'fixture::host-only',models:[{id:'fixture::host-only',supportsTools:true}]};}
+  status(){return {connected:true,authenticated:true,defaultModel:'fixture-native',models:[{id:'fixture-native',supportsTools:true}]};}
   async runAgent(options){
    const invoke=(name,args)=>options.onToolCall({name,arguments:args,callId:'call-'+(++callSequence)+'-'+name},{signal:options.signal});
    const phase=stage++;
-   if(phase===0){const state=payload(await invoke('relay_task',{action:'read'}));const saved=await invoke('relay_task',{action:'plan',expectedRevision:state.revision,contract:contract()});assert.equal(saved.success,true,JSON.stringify(saved));return {output:'Plan saved.',threadId:'native-fixture-first'};}
+   if(phase===0){const read=await invoke('relay_task',{action:'read'});assert.equal(read.success,true,JSON.stringify(read));const state=payload(read);const saved=await invoke('relay_task',{action:'plan',expectedRevision:state.revision,contract:contract()});assert.equal(saved.success,true,JSON.stringify(saved));return {output:'Plan saved.',threadId:'native-fixture-first'};}
+   assert.equal(options.threadId, phase===1?'native-fixture-first':'native-fixture-second','Continue the native provider session rather than silently opening a fresh thread.');
    assert.notEqual(options.hostOnlyTools,true);
    if(phase>=2){
      const repeat=await invoke('relay_browser',{action:'click',browser:'relay',tabId,ref:'submit',expectedUrl:f.page.url,expectedDocumentId:f.page.documentId});
@@ -107,18 +108,18 @@ test('actual engine continuation ignores rehydrated receipt gates and preserves 
   async close(){}
  }
  const provider=new FixtureRuntime(),engine=await new HarnessEngine({runtime:provider,tasks,credentials,browser:nativeBrowser,dataDir:directory,defaultCwd:f.root}).init();
- engine.runtimeSettings={get:()=>({executionGuardrails:false,subagentsEnabled:false})};
+ engine.runtimeSettings={get:()=>({executionGuardrails:false,subagentsEnabled:false,codexHistory:"codex"})};
  f.cleanup(async()=>{await engine.close();await tasks.close();});
- const workflow={id:'native-context-e2e',name:'Native context end-to-end',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture::host-only',prompt:'Follow the requested task.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}};
- const first=engine.startRun({workflow,input:'Plan the enrollment.',planningMode:'off'});await engine.executions.get(first.id);assert.equal(engine.getRun(first.id).status,'completed',engine.getRun(first.id).error);nativeTaskId=first.id;
+ const workflow={id:'native-context-e2e',name:'Native context end-to-end',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture-native',prompt:'Follow the requested task.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1}};
+ const first=engine.startRun({workflow,input:'/plan Plan the enrollment.',planningMode:'off'});await engine.executions.get(first.id);assert.equal(engine.getRun(first.id).status,'completed',engine.getRun(first.id).error);nativeTaskId=first.id;
  const handle=await shared.issueContext({ownerId,taskId:'task',expectedRevision:(await shared.read({ownerId,taskId:'task'})).revision,workItemId:'enroll',criterionId:'receipt',adapters:['relay_browser','relay_workspace'],bindingId:binding.bindingId});
  engine.nativeTaskContextBridge=new NativeTaskContextBridge({runtime:shared,tasks,isActive:id=>[...engine.runs.values()].some(run=>(run.taskId||run.id)===id&&run.settled!==true),canEnforceProtectedDispatch:()=>true});
  await engine.nativeTaskContextBridge.attach({nativeTaskId,expectedNativeRevision:(await tasks.get(nativeTaskId)).revision,taskContext:handle.taskContext,client});
- const next=engine.continueRun(first.id,{nodeId:'agent',message:'Execute the reviewed enrollment.',planningMode:'off'});await engine.executions.get(next.id);const done=engine.getRun(next.id);
+ const next=engine.continueRun(first.id,{nodeId:'agent',message:'/plan Execute the reviewed enrollment.',planningMode:'off'});await engine.executions.get(next.id);const done=engine.getRun(next.id);
  assert.equal(done.status,'completed',done.error||done.nodes.agent.error);assert.equal(f.counts().commits,1);assert.equal((await f.measure()).satisfied,false,'Ordinary native receipt is not invented contract completion');
  await shared.revokeContext({ownerId,taskContext:handle.taskContext,expectedGeneration:1});
  let helperCalls=0;engine.responseCycle={forRun:async()=>{helperCalls++;return null;}};
- const blocked=engine.continueRun(next.id,{nodeId:'agent',message:'Inspect protected work.',planningMode:'off'});await engine.executions.get(blocked.id);
+ const blocked=engine.continueRun(next.id,{nodeId:'agent',message:'/plan Inspect protected work.',planningMode:'off'});await engine.executions.get(blocked.id);
  assert.equal(engine.getRun(blocked.id).status,'completed',engine.getRun(blocked.id).error);
  assert.equal(helperCalls,0,'the removed readiness pipeline must not run');
  assert.equal(stage,3);

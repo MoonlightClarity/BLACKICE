@@ -172,7 +172,8 @@ test('unsupported saved native catalogs reject unchanged while fresh chats expos
   const original = app.engine.getRun(first.id); assert.equal(original.status, 'completed', original.error);
   const unsupported = app.engine.runs.get(first.id);
   assert.equal(unsupported.planningContractVersion, 14);
-  unsupported.planningContractVersion = 13; unsupported.nodes.agent.taskSchemaVersion = 13;
+  assert.ok(!unsupported.nodes.agent.toolNames.includes('relay_task'), 'Ordinary Chat does not request the task planner.');
+  unsupported.nodes.agent.nativeCatalogVersion = 0;
   delete unsupported.nodes.agent.providerExecutionContract;
   unsupported.nodes.agent.toolNames = original.nodes.agent.toolNames.filter(name => name !== APPLICATION_TOOL.name);
   const before = JSON.stringify(unsupported), calls = model.calls.length;
