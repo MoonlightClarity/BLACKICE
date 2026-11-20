@@ -98,11 +98,8 @@ test('real engine attaches relay_prompts and rejects unsupported saved native ca
   const internal = app.engine.runs.get(first.id);
   // Synthetic obsolete saved metadata must be rejected, not adapted.
   assert.equal(internal.planningContractVersion, 14, 'Fresh production runs still use Planning14.');
-  assert.ok(!internal.taskState?.contract, 'Do not relabel an existing canonical plan as a historical fixture.');
-  internal.planningContractVersion = 13;
-  internal.nodes.agent.taskSchemaVersion = 13;
-  delete internal.nodes.agent.providerExecutionContract;
-  internal.nodes.agent.toolNames = internal.nodes.agent.toolNames.filter(name => name !== 'relay_prompts');
+  assert.ok(!internal.nodes.agent.toolNames.includes('relay_task'),'Ordinary Chat has no Planning schema to invalidate.');
+  internal.nodes.agent.nativeCatalogVersion = 2;
   const before=structuredClone(internal),count=app.engine.runs.size;
   assert.throws(()=>app.engine.continueRun(first.id,{nodeId:'agent',message:'Continue this older catalog'}),{code:'NATIVE_CATALOG_UNSUPPORTED'});
   assert.deepEqual(internal,before);assert.equal(app.engine.runs.size,count);assert.equal(seen.length,1);

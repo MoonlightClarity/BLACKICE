@@ -21,7 +21,7 @@ const leaf = (id, status, action = 'write') => ({ id, title: `Perform ${id}`, ki
 const graph = { id: 'sequential-fixture', name: 'Sequential fixture', settings: { maxParallel: 1 },
   nodes: [{ id: 'input', type: 'input' }, { id: 'agent', type: 'agent', model: 'fixture-model', prompt: 'Perform the requested operations.' }, { id: 'output', type: 'output' }],
   edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }] };
-async function fixture(t, execute, { delegates = false } = {}) {
+async function fixture(t, execute, { delegates = false, manualPlanning = false } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-sequential-engine-')), cwd = path.join(directory, 'work'); await mkdir(cwd);
   const tasks = await new TaskStateStore({ dataDir: directory }).init(); let context;
   class Runtime extends EventEmitter {
@@ -41,7 +41,7 @@ async function fixture(t, execute, { delegates = false } = {}) {
     const deadline = Date.now() + 10000;
     while (Date.now() < deadline) { const run = engine.getRun(id); if (run.settled) return run; await new Promise(resolve => setTimeout(resolve, 5)); }
     assert.fail('The sequential fixture did not settle.');
-  }, start: planningMode => engine.startRun({ workflow: graph, input: 'Perform the local fixture operations.', planningMode }) };
+  }, start: planningMode => engine.startRun({ workflow: manualPlanning ? {...graph,planning:{shared:true,coordinatorNodeId:'agent'}} : graph, input: 'Perform the local fixture operations.', planningMode }) };
   t.after(async () => { await engine.close(); await tasks.close(); await rm(directory, { recursive: true, force: true }); });
   return context;
 }
@@ -63,8 +63,8 @@ test('ordinary engine tools are independent of optional bookkeeping while callba
     state = await context.tasks.setStep(state.taskId, 'write', { status: 'done', evidence: 'The write receipt and separate read identify the exact saved bytes.' }, { expectedRevision: state.revision, source: 'human' });
     await context.tasks.setStep(state.taskId, 'inspect', { status: 'done', evidence: 'The file read returned The actual fixture value.' }, { expectedRevision: state.revision, source: 'human' });
     return { output: 'Wrote once and separately checked the fixture value.' };
-  });
-  const run = await f.settle(f.start('on').id); assert.equal(run.status, 'completed', run.error);
+  }, {manualPlanning:true});
+  const run = await f.settle(f.start('off').id); assert.equal(run.status, 'completed', run.error);
   assert.equal(run.taskState.steps.filter(step => step.kind === 'action' && step.status === 'done').length, 2);
   assert.equal(run.nodes.agent.planning.status, 'off');
 });
@@ -89,13 +89,18 @@ test('independent calls preserve actual failures and saved dispatch evidence wit
 });
 
 test('unsupported native task schema rejects continuation before provider work', async t => {
-  const f = await fixture(t, async () => ({ output: 'Prior current task context.' }));
+  const f = await fixture(t, async options => {
+    assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_task'));
+    return {output:'Prior current task context.'};
+  }, {manualPlanning:true});
   const original = await f.settle(f.start('off').id);
   assert.equal(original.status, 'completed', original.error);
-  f.engine.runs.get(original.id).nodes.agent.taskSchemaVersion = 9;
+  const durablePlan=await f.tasks.get(original.taskId),count=f.engine.runs.size;
+  const saved=f.engine.runs.get(original.id);saved.nodes.agent.taskSchemaVersion=9;const before=structuredClone(saved);
   assert.throws(() => f.engine.continueRun(original.id, { nodeId: 'agent', message: 'Continue the same task.' }), { code: 'NATIVE_CATALOG_UNSUPPORTED' });
-  assert.equal(f.runtime.calls.length, 1);
-  assert.equal(f.engine.getRun(original.id).nodes.agent.output, 'Prior current task context.');
+  assert.equal(f.runtime.calls.length,1);assert.equal(f.engine.runs.size,count);
+  assert.deepEqual(saved,before);assert.deepEqual(await f.tasks.get(original.taskId),durablePlan);
+  assert.equal(f.engine.getRun(original.id).nodes.agent.output,'Prior current task context.');
 });
 
 test('Planning Off continuation keeps its existing native session and unrestricted operation flow', async t => {
@@ -121,14 +126,16 @@ test('retry preserves an interrupted native catalog, task identity and saved par
     assert.equal(options.threadId, 'native-fixture-1');
     assert.equal(options.onBeforeFinal, undefined);
     assert.equal((await tool(options, 'relay_workspace', { action: 'list' }, 'retry-list')).success, true);
+    assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_task'));
     return { output: 'Continued the interrupted task.' };
-  });
+  }, {manualPlanning:true});
   const original = await f.settle(f.start('off').id); assert.equal(original.status, 'failed');
   assert.equal(original.nodes.agent.output, 'An actual partial finding before interruption.');
   const accepted = f.engine.retryRun(original.id, { planningMode: 'on' });
   assert.equal(accepted.taskId, original.taskId); assert.equal(accepted.retryOf, original.id); assert.equal(accepted.nodeHandoffs, undefined);
   const retried = await f.settle(accepted.id); assert.equal(retried.status, 'completed', retried.error);
   assert.equal(retried.nodes.agent.taskSchemaVersion, 14);
+  assert.deepEqual(retried.nodes.agent.toolNames,original.nodes.agent.toolNames);
   assert.equal(f.engine.getRun(original.id).nodes.agent.output, 'An actual partial finding before interruption.');
 });
 
