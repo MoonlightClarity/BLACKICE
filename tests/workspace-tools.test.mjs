@@ -279,3 +279,34 @@ for (const explicitPath of [false, true]) test(`oversized ${explicitPath ? 'expl
   assert.equal(new Set(matches).size, 150);
   assert.equal(policyCalls, 0);
 });
+
+test('an explicitly named TAP log above both folder limits is searched, not silently skipped', async t => {
+  const { handler, cwd } = await harness(t, { rgCommand: '__relay_missing_search_executable__' });
+  await mkdir(path.join(cwd, 'dist'));
+  const file = path.join(cwd, 'dist', 'overnight.tap');
+  await writeFile(file, 'ok 123 - unrelated passing check\n'.repeat(36000) + 'not ok 456 - archive race\n');
+  const response = await handler(call({ action: 'search', path: file, query: 'archive race', limit: 1 }));
+  const found = parsed(response);
+  assert.equal(response.success, true);
+  assert.equal(found.scannedFiles, 1);
+  assert.equal(found.truncated, false);
+  assert.deepEqual(found.matches, [{path: file, line: 36001, text: 'not ok 456 - archive race'}]);
+  const absent = parsed(await handler(call({ action: 'search', path: file, query: 'not in the log' })));
+  assert.equal(absent.scannedFiles, 1);
+  assert.equal(absent.truncated, false);
+  assert.deepEqual(absent.matches, []);
+});
+
+test('workspace search distinguishes skipped files and an explicit oversized file from no matches', async t => {
+  const { handler, cwd } = await harness(t, { rgCommand: '__relay_missing_search_executable__' });
+  await writeFile(path.join(cwd, 'large.txt'), Buffer.alloc(513 * 1024, 65));
+  const folder = parsed(await handler(call({ action: 'search', query: 'missing' })));
+  assert.equal(folder.scannedFiles, 0);
+  assert.equal(folder.skippedFiles, 1);
+  assert.equal(folder.truncated, true);
+  await writeFile(path.join(cwd, 'too-large.txt'), Buffer.alloc(16 * 1024 * 1024 + 1, 65));
+  const response = await handler(call({ action: 'search', path: 'too-large.txt', query: 'missing' }));
+  assert.equal(response.success, false);
+  assert.equal(parsed(response).code, 'WORKSPACE_SEARCH_FILE_TOO_LARGE');
+  assert.match(parsed(response).error, /run action/);
+});
