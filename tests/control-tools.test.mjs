@@ -171,7 +171,7 @@ test('agents read persistent history and legacy preference input cannot change a
   const context=await fixture(t,async options=>{
     assert.equal(options.codexHistory,'codex');
     assert.equal((await call(options,{action:'catalog'})).runtimeSettings.codexHistory,'codex');
-    assert.deepEqual(await call(options,{action:'runtime_get'}),{codexHistory:'codex',runTimeoutMs:null,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},subagentsEnabled:true,maxSubagents:3,connectedGmail:false,executionGuardrails:false,planningOntology:DEFAULT_PLANNING_ONTOLOGY,hiddenModelProviders:[]});
+    assert.deepEqual(await call(options,{action:'runtime_get'}),{codexHistory:'codex',runTimeoutMs:null,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},subagentsEnabled:true,maxSubagents:3,connectedGmail:false,executionGuardrails:false,planningOntology:DEFAULT_PLANNING_ONTOLOGY,hiddenModelProviders:[],chatDefaults:{directoryActions:'off',chatPlanning:'off',pastChats:'off'}});
     await call(options,{action:'runtime_set',runtime:{codexHistory:'invalid'}},false);
     chosen=await call(options,{action:'runtime_set',runtime:{codexHistory:'relay'}});
     assert.equal(chosen.codexHistory,'codex');
@@ -206,7 +206,7 @@ test('agents patch user-selected durations through the real tool without changin
 
 test('parallel agent runtime patches merge independently and cancellation cannot change the saved preferences',async t=>{
   const {app,cwd}=await fixture(t),make=signal=>createControlToolHandler({engine:app.engine,validateWorkflow,run:{id:'duration-control',cwd},nodeId:'agent',signal}),a=make(new AbortController().signal),b=make(new AbortController().signal);
-  const results=await Promise.all([a({name:'relay_control',arguments:{action:'runtime_set',runtime:{runTimeoutMs:60000}}}),b({name:'relay_control',arguments:{action:'runtime_set',runtime:{codexHistory:'codex'}}})]);assert.ok(results.every(item=>item.success));assert.deepEqual(app.runtimeSettings.get(),{codexHistory:'codex',runTimeoutMs:60000,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},subagentsEnabled:true,maxSubagents:3,connectedGmail:false,executionGuardrails:false,planningOntology:DEFAULT_PLANNING_ONTOLOGY,hiddenModelProviders:[]});
+  const results=await Promise.all([a({name:'relay_control',arguments:{action:'runtime_set',runtime:{runTimeoutMs:60000}}}),b({name:'relay_control',arguments:{action:'runtime_set',runtime:{codexHistory:'codex'}}})]);assert.ok(results.every(item=>item.success));assert.deepEqual(app.runtimeSettings.get(),{codexHistory:'codex',runTimeoutMs:60000,providerIdleTimeoutMs:300000,defaultEffort:'default',defaultServiceTier:'default',defaultContext:{preset:'model',windowTokens:null,autoCompact:true},subagentsEnabled:true,maxSubagents:3,connectedGmail:false,executionGuardrails:false,planningOntology:DEFAULT_PLANNING_ONTOLOGY,hiddenModelProviders:[],chatDefaults:{directoryActions:'off',chatPlanning:'off',pastChats:'off'}});
   const cancelled=new AbortController();cancelled.abort();assert.equal((await make(cancelled.signal)({name:'relay_control',arguments:{action:'runtime_set',runtime:{runTimeoutMs:null}}})).success,false);assert.equal(app.runtimeSettings.get().runTimeoutMs,60000);
 });
 
