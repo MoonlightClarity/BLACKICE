@@ -178,3 +178,26 @@ test('a stale click cannot exhaust a finite browser search',async()=>{
  assert.equal(ledger.finalStatus().reason,'blocked-paths');
  assert.equal(ledger.read().actions[0].state,'blocked');
 });
+
+test('restart preserves interrupted observations without treating them as unknown effects', async()=>{
+ for(const bound of [false,true]){
+  for(const legacy of bound?[false]:[false,true]){
+   let saved;
+   const ledger=create({persist:async state=>{saved=state;}});
+   await plan(ledger);
+   if(bound)await focus(ledger);
+   await assert.rejects(ledger.execute({name:'relay_browser',arguments:{action:'snapshot'}},async()=>{throw Error('Interrupted before snapshot returned');},{runId:'run',nodeId:'agent',observationOnly:true}));
+   const snapshot=structuredClone(saved);
+   if(legacy)delete snapshot.receipts[0].observationOnly;
+   const resumed=create({snapshot});
+   assert.equal(resumed.read().receipts[0].state,'unknown');
+   assert.notEqual(resumed.finalStatus().reason,'unknown-effects');
+   assert.equal(resumed.finalStatus().ready,false,'a lost observation is not success');
+   if(!bound)await focus(resumed);
+   await assert.rejects(resumed.edit({action:'observe',id:'find',claim:'It was read',receipts:['receipt-1'],revision:resumed.read().revision}),{code:'DIRECTORY_EVIDENCE'});
+   const result=await resumed.execute({name:'relay_workspace'},async()=>({success:true}),{runId:'next',nodeId:'agent',observationOnly:true});
+   await resumed.edit({action:'observe',id:'find',claim:'Fresh observation returned',receipts:[result.receiptId],revision:resumed.read().revision});
+   assert.deepEqual(resumed.read().ready,['check']);
+  }
+ }
+});

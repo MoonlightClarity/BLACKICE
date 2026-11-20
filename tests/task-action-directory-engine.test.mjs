@@ -765,3 +765,39 @@ test('Directory surfaces a nonexistent Agents action without asking for focus',a
  await engine.executions.get(run.id);
  assert.match(engine.getRun(run.id).error,/unfinished/,'fixture intentionally neither planned nor completed an action');
 });
+
+test('a known undispatched stale click gets one further read-only recovery handback',async t=>{
+ let tab,clickAttempts=0;
+ const browser={
+   status:()=>({available:true,contained:true,tabs:tab?[tab]:[]}),
+   async perform(args,{owner}){
+     if(args.action==='open')return tab={tabId:'fixture-tab',documentId:'fixture-document',url:'https://example.test/route',owner};
+     if(args.action==='click'){clickAttempts++;throw Object.assign(Error('Stale control'),{code:'BROWSER_REF_STALE',actionDispatched:false});}
+     if(args.action==='snapshot')return {...tab,frames:[]};
+     throw Error('Unexpected browser operation');
+   },
+ };
+ const {engine}=await setup(t,async o=>{
+   let n=0;
+   const call=(name,arguments_)=>o.onToolCall({name,arguments:arguments_,callId:'restart-check-'+(++n)});
+   const dir=(action,rest={})=>call('relay_directory_action',{action,...rest});
+   const review=()=>o.onBeforeFinal({output:'The work is incomplete.',signal:o.signal});
+   assert.equal((await dir('plan',{actions:[{id:'source',objective:'Read the current source',dependsOn:[]}]})).success,true);
+   assert.equal((await dir('focus',{id:'source'})).success,true);
+   assert.equal((await review()).continue,true);
+   assert.equal((await call('relay_browser',{action:'open',browser:'relay',url:'https://example.test/route'})).success,true);
+   const failure=await call('relay_browser',{action:'click',browser:'relay',tabId:'fixture-tab',ref:'old-control',expectedDocumentId:'fixture-document',expectedUrl:'https://example.test/route'});
+   assert.equal(failure.code,'BROWSER_REF_STALE');
+   assert.equal(failure.actionDispatched,false);
+   const continuation=await review();
+   assert.equal(continuation.continue,true);
+   assert.match(continuation.prompt,/Do not replay the click.*snapshot.*fixture-tab/);
+   await assert.rejects(review(),{code:'DIRECTORY_ACTION_UNFINISHED'});
+   assert.equal(clickAttempts,1,'the host did not replay page input');
+   return {output:'Fixture only.'};
+ },browser);
+ const run=engine.startRun({workflow:graph,input:{task:'Read the fixture source.',directoryActions:'on'}});
+ await engine.executions.get(run.id);
+ assert.equal(clickAttempts,1);
+ assert.match(engine.getRun(run.id).error,/unfinished/);
+});
