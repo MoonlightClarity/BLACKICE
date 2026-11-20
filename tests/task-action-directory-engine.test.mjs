@@ -318,7 +318,7 @@ test('a verified dead route gets one chance to use another allowed option before
  assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);
 });
 test('Directory returns once for a newly delivered checked block while an independent action is ready',async t=>{
- for(const scenario of ['delivered','undelivered','projected','failed-evidence','no-independent','no-progress','exhausted']){
+ for(const scenario of ['delivered','wire-no-success-flag','wire-explicit-failure','undelivered','projected','failed-evidence','no-independent','no-progress','exhausted']){
   await t.test(scenario,async subt=>{
    const {engine,root}=await setup(subt,async o=>{
     let n=0;
@@ -326,7 +326,12 @@ test('Directory returns once for a newly delivered checked block while an indepe
      const call={name:'relay_directory_action',arguments:args,callId:'dir-block-'+(++n)};
      const result=await o.onToolCall(call);
      assert.equal(result.success,true,JSON.stringify(result));
-     if(deliver)o.onToolResultDelivered({call,result:projected?{...result,contentItems:[{type:'inputText',text:'projected'}]}:result});
+     if(deliver){
+      const delivered=projected?{...result,contentItems:[{type:'inputText',text:'projected'}]}:result;
+      if(args.action==='block'&&scenario==='wire-no-success-flag')delete delivered.success;
+      if(args.action==='block'&&scenario==='wire-explicit-failure')delivered.success=false;
+      o.onToolResultDelivered({call,result:delivered});
+     }
      return JSON.parse(result.contentItems[0].text);
     };
     const review=()=>o.onBeforeFinal({signal:o.signal});
@@ -348,7 +353,7 @@ test('Directory returns once for a newly delivered checked block while an indepe
      return{output:'The primary source blocks the dependent work.'};
     }
     assert.deepEqual(blocked.ready,scenario==='exhausted'?['alternative','third']:['alternative']);
-    if(['undelivered','projected','failed-evidence'].includes(scenario))return review();
+    if(['undelivered','projected','failed-evidence','wire-explicit-failure'].includes(scenario))return review();
     const next=await review();
     assert.equal(next.continue,true);
     assert.match(next.prompt,/independent ready action/);
@@ -368,7 +373,7 @@ test('Directory returns once for a newly delivered checked block while an indepe
    const run=engine.startRun({workflow:graph,input:{task:'Check both routes',directoryActions:'on',directoryDiagnostics:scenario==='delivered'?'maximal':'off'}});
    await engine.executions.get(run.id);
    const settled=engine.getRun(run.id);
-   if(['no-progress','undelivered','projected','failed-evidence','exhausted'].includes(scenario)){
+   if(['no-progress','undelivered','projected','failed-evidence','exhausted','wire-explicit-failure'].includes(scenario)){
     assert.equal(settled.errorCode,'DIRECTORY_ACTION_UNFINISHED');
    }else{
     assert.equal(settled.status,'completed',settled.error);
