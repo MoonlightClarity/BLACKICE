@@ -841,23 +841,25 @@ test('a diagnostic correction cannot resume a pending Directory task and a named
  assert.equal(engine.getRun(first.id).errorCode??engine.getRun(first.id).nodes.agent.errorCode,'DIRECTORY_ACTION_UNFINISHED');
  const directory=await engine.actionDirectories.get(first.id,'Find openings.');
  const snapshot=directory.read();
- const follow=engine.continueRun(first.id,{nodeId:'agent',message:'DO NOT JOB SEARCH. Stop. Tell me what failed.',directoryActions:'on'});
+ const follow=engine.continueRun(first.id,{nodeId:'agent',message:'DO NOT JOB SEARCH. Stop. Tell me what failed.',directoryActions:'on',chatPlanning:'on'});
  await engine.executions.get(follow.id);
  assert.equal(engine.getRun(follow.id).status,'completed',engine.getRun(follow.id).error);
  assert.equal(engine.getRun(follow.id).directoryActions,'on');
+ assert.equal(engine.getRun(follow.id).chatPlanning,'on');
+ assert.deepEqual(engine.getRun(follow.id).planningModuleReceipts??[],[]);
  assert.deepEqual(directory.read(),snapshot);
  // Pre-upgrade diagnostic turns were not marked. Classify the immediate
  // preceding user input, not the suspended task's original objective.
  delete engine.runs.get(follow.id).chatCorrectionScope;
  delete engine.runs.get(follow.id).nodes.agent.chatCorrectionScope;
- const more=engine.continueRun(follow.id,{nodeId:'agent',message:'contniue',directoryActions:'on'});
+ const more=engine.continueRun(follow.id,{nodeId:'agent',message:'contniue',directoryActions:'on',chatPlanning:'on'});
  await engine.executions.get(more.id);
  assert.equal(engine.getRun(more.id).status,'completed',engine.getRun(more.id).error);
- const repeat=engine.continueRun(more.id,{nodeId:'agent',message:'Continue',directoryActions:'on'});
+ const repeat=engine.continueRun(more.id,{nodeId:'agent',message:'Continue',directoryActions:'on',chatPlanning:'on'});
  await engine.executions.get(repeat.id);
  assert.equal(engine.getRun(repeat.id).status,'completed',engine.getRun(repeat.id).error);
  assert.deepEqual(directory.read(),snapshot);
- const resume=engine.continueRun(repeat.id,{nodeId:'agent',message:'Continue the job search',directoryActions:'on'});
+ const resume=engine.continueRun(repeat.id,{nodeId:'agent',message:'Continue the job search',directoryActions:'on',chatPlanning:'off'});
  await engine.executions.get(resume.id);
  assert.equal(calls,5);
  assert.equal(engine.getRun(resume.id).nodes.agent.errorCode,'DIRECTORY_ACTION_UNFINISHED');
