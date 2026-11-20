@@ -48,7 +48,7 @@ test('the configured catalog retains 34 tools with reviewed authentication, cano
   ]);
   assert.deepEqual(catalog.status(), {
     // A complete reviewed current contract, not an inferred version or reused old SHA.
-    sha256: '347c0b72f3824ee213937e1f6b2dc06b22ceea05a5b05f3fbbb67b9d483f8dfe',
+    sha256: '24d9aecf95a3c3e1dc4e6e03a026d06cdee6e028eb1cec554fd488a55441658a',
     toolCount: 34,
     serverVersion: '2.40.8',
   });
@@ -68,7 +68,13 @@ test('the configured catalog retains 34 tools with reviewed authentication, cano
   assert.equal(currentAction.inputSchema.properties.action.enum.filter(action=>action==='tab_mark').length,1);
   assert.deepEqual(currentAction.inputSchema.properties.inUse,{type:'boolean',description:'For tab_mark: protect an owned tab (true), or release your own mark (false). No ownership transfer; human marks remain protected.'});
   assert.deepEqual(catalog.get('blackice_browser_action').requiredScopes,['read','browser:write']);
-  const beforeDocuments=structuredClone(currentTools);
+  const beforeRecovery=structuredClone(currentTools);
+  const browserRead=beforeRecovery.find(tool=>tool.name==='blackice_browser_read');
+  assert.match(browserRead.description,/current tabs \(use query:"stopped-task-recovery" on tabs only for explicit stopped-task recovery\)/);
+  assert.deepEqual(browserRead.inputSchema.properties.query,{type:'string',maxLength:1000});
+  browserRead.description=browserRead.description.replace('current tabs (use query:"stopped-task-recovery" on tabs only for explicit stopped-task recovery)','tabs');
+  assert.equal(sha(beforeRecovery),'347c0b72f3824ee213937e1f6b2dc06b22ceea05a5b05f3fbbb67b9d483f8dfe');
+  const beforeDocuments=structuredClone(beforeRecovery);
   const documentTool=beforeDocuments.find(tool=>tool.name==='blackice_workspace_read');
   const fields=['startPage','pageCount','startChar','charCount','sheet','startRow','rowCount','startColumn','columnCount'];
   for (const field of fields) {

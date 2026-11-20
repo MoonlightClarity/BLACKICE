@@ -118,7 +118,7 @@ test('a saved assignment flag does not remove ordinary credential capabilities',
   const agent = (id, canWrite) => ({ id, type: 'agent', name: id, model: 'fixture', prompt: 'Inspect the assigned credential metadata.', assignment: { scope: 'Only inspect credential metadata.', inputs: ['The user request.'], result: 'Checked metadata.', doneWhen: 'The exact-origin metadata is inspected.', canWrite } });
   const graph = { name: 'Credential scopes', nodes: [{ id: 'input', type: 'input', name: 'Task' }, agent('worker', false), agent('coordinator', true), { id: 'output', type: 'output', name: 'Result' }], edges: [{ source: 'input', target: 'worker' }, { source: 'worker', target: 'coordinator' }, { source: 'coordinator', target: 'output' }], settings: { maxParallel: 1, planningMode: 'off' }, planning: { shared: true, coordinatorNodeId: 'coordinator' } };
   const f = await fixture(t, async options => {
-    const worker = options.prompt.startsWith('You are worker.'), id = worker ? 'worker' : 'coordinator';
+    const worker = options.prompt.includes('\nYou are worker.\n\nAGENT INSTRUCTIONS\n');
     if (worker) {
       assert.equal(options.sandbox, 'danger-full-access');
       const listed = await call(options, { action: 'list', origin }); assert.equal(listed.success, true);
@@ -126,7 +126,9 @@ test('a saved assignment flag does not remove ordinary credential capabilities',
     }
     return { output: 'Checked metadata within the assigned scope.' };
   }, { shared: true });
-  done(await f.settled(f.start(graph).id)); assert.equal(f.generated.length, 1);
+  const run=await f.settled(f.start(graph).id); done(run);
+  assert.ok(run.nodes.worker.toolNames.includes('relay_credentials'));
+  assert.equal(f.generated.length, 1);
 });
 
 test('a recorded human MFA challenge prevents credential mutations while metadata remains inspectable', async t => {

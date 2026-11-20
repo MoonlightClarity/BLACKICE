@@ -59,7 +59,7 @@ test('whole selected profile and shared root state are byte-preserved without ch
   const imported = await f.store.import(f.input);
   assert.match(imported.id, /^browser-profile-[a-f0-9]{16}$/); assert.ok(imported.id.length <= 40);
   assert.equal(imported.profileDirectory, 'Profile 2'); assert.equal(imported.profileName, 'Synthetic selected profile');
-  assert.equal(imported.executablePath, f.executablePath); assert.notEqual(imported.userDataDir, f.userDataDir);
+  assert.equal(imported.executablePath, await fs.realpath(f.executablePath)); assert.notEqual(imported.userDataDir, f.userDataDir);
   assert.match(imported.snapshot, /^[a-f0-9]{24}$/); assert.equal(imported.version, 2);
   assert.equal(imported.userDataDir, path.join(f.dataDir, 'bp', imported.snapshot));
   assert.equal(path.relative(imported.userDataDir, imported.manifestPath).startsWith('..'), true);
@@ -195,7 +195,7 @@ test('generated official MCP configuration selects the original executable and e
   const f = await fixture(t), imported = await f.store.import(f.input), config = await f.store.connection(imported.id);
   assert.equal(config.id, imported.id); assert.equal(config.transport, 'stdio'); assert.equal(config.enabled, true); assert.equal(config.command, 'npx');
   assert.equal(config.timeoutMs, 60000); assert.equal(config.args[1], 'chrome-devtools-mcp@1.11.0');
-  for (const flag of [`--executablePath=${f.executablePath}`, `--userDataDir=${imported.userDataDir}`, '--chromeArg=--profile-directory=Profile 2', '--no-usage-statistics', '--no-performance-crux', '--experimentalVision=true']) assert.ok(config.args.includes(flag), flag);
+  for (const flag of [`--executablePath=${await fs.realpath(f.executablePath)}`, `--userDataDir=${imported.userDataDir}`, '--chromeArg=--profile-directory=Profile 2', '--no-usage-statistics', '--no-performance-crux', '--experimentalVision=true']) assert.ok(config.args.includes(flag), flag);
   for (const arg of ['--disable-extensions', '--disable-component-extensions-with-background-pages', '--password-store=basic', '--use-mock-keychain', '--disable-sync', '--disable-background-networking', '--disable-client-side-phishing-detection', '--disable-ipc-flooding-protection']) assert.ok(config.args.includes(`--ignoreDefaultChromeArg=${arg}`), arg);
   assert.equal(config.args.some(arg => /^(--autoConnect|--channel|--isolated|--headless|--acceptInsecureCerts|--no-sandbox)(?:=|$)/.test(arg)), false);
   const hidden = await f.store.connection(imported.id, { command: 'npx.cmd', headless: true, timeoutMs: 90000 });
