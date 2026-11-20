@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.36 candidate source, not an installation or publication receipt.** Package version is **2.40.36**. Start with the [2.40.36 notes](RELEASE-NOTES-2.40.36.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.37 candidate source, not an installation or publication receipt.** Package version is **2.40.37**. Start with the [2.40.37 notes](RELEASE-NOTES-2.40.37.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.37](RELEASE-NOTES-2.40.37.md) - show bundled guidance sent and clarify local writes in Directory
 
 - [2.40.36](RELEASE-NOTES-2.40.36.md) - record search coverage in Receipts
 
