@@ -251,6 +251,7 @@ test('an unsuitable option is recorded without closing a shared prerequisite',as
   const state=r=>{assert.equal(r.success,true,JSON.stringify(r));return JSON.parse(r.contentItems[0].text);};
   state(await dir('plan',{actions:[{id:'source',objective:'Find a usable source',dependsOn:[]},{id:'use',objective:'Use it',dependsOn:['source']}]}));
   state(await dir('focus',{id:'source'}));
+  assert.equal((await o.onBeforeFinal({signal:o.signal})).continue,true);
   const failed=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:path.join(root,'missing')},callId:'missing-source'});
   assert.equal(failed.success,false);
   const withFailed=state(await dir('read'));
@@ -261,7 +262,10 @@ test('an unsuitable option is recorded without closing a shared prerequisite',as
   assert.deepEqual(noted.actions[0].notes[0].receipts,[receipt]);
   assert.deepEqual(noted.dependencyBlocked,[]);
   assert.equal((await dir('note',{id:'source',claim:'Same evidence',receipts:[receipt]})).code,'DIRECTORY_NOTE');
-  assert.equal((await o.onBeforeFinal({signal:o.signal})).continue,true);
+  const continuation=await o.onBeforeFinal({signal:o.signal});
+  assert.equal(continuation.continue,true);
+  assert.match(continuation.prompt,/recorded a new finding.*receipt-1/);
+  await assert.rejects(()=>o.onBeforeFinal({signal:o.signal}),{code:'DIRECTORY_ACTION_UNFINISHED'});
   const valid=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:root},callId:'alternate-source'});
   assert.equal(valid.success,true);
   const found=state(await dir('read')).receipts.at(-1).id;
