@@ -60,7 +60,7 @@ const start = async (session, input, model) => {
 const follow = async (session, run, message, model) => {
   const result = await session.api(`/api/runs/${run.id}/continue`, { method: 'POST', body: { nodeId: 'agent', message, ...(model ? { model } : {}) } }); assert.equal(result.status, 201, result.text); return session.settled(result.data.id);
 };
-const persistentDefaults = { codexHistory: 'codex', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultServiceTier: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, subagentsEnabled: true, maxSubagents: 3, connectedGmail: false, executionGuardrails: false, planningOntology: { version: 2, modules: { inference: false, feasibility: false, decomposition: false, branching: false, replanning: false, metacognition: false, anti_overalignment: false, verification: false, time_management: true, subagents: true } }, hiddenModelProviders: [] };
+const persistentDefaults = { codexHistory: 'codex', runTimeoutMs: null, providerIdleTimeoutMs: 300000, defaultEffort: 'default', defaultServiceTier: 'default', defaultContext: { preset: 'model', windowTokens: null, autoCompact: true }, subagentsEnabled: true, maxSubagents: 3, connectedGmail: false, executionGuardrails: false, planningOntology: { version: 2, modules: { inference: false, feasibility: false, decomposition: false, branching: false, replanning: false, metacognition: false, anti_overalignment: false, verification: false, time_management: true, subagents: true } }, hiddenModelProviders: [], chatDefaults: { directoryActions: 'off', chatPlanning: 'off', pastChats: 'off' } };
 // These session tests exercise the full operational tool catalog. Leave room for
 // three turns so a growing catalog does not turn persistence checks into compaction tests.
 const catalogResponse = () => new Response(JSON.stringify({data:[{id:'api-model',context_length:262144,max_output_tokens:8192}]}),{headers:{'Content-Type':'application/json'}});
@@ -105,7 +105,7 @@ test('legacy preference input is a no-op while an actual legacy conversation mig
   let first;
   try {
     await waitFor(() => native.calls.length === 1, 'first native start'); await entered.promise;
-    const changed = await session.api('/api/runtime/settings', { method: 'POST', body: { codexHistory: 'relay' } }); assert.equal(changed.status, 200);assert.equal(changed.data.codexHistory,'codex');
+    const changed = await session.api('/api/runtime/settings', { method: 'POST', body: { codexHistory: 'relay' } }); assert.equal(changed.status, 200);assert.deepEqual(changed.data, persistentDefaults);
     assert.equal(native.calls[0].codexHistory, 'codex'); assert.equal(session.app.engine.getRun(begun.data.id).runtimeSettings.codexHistory, 'codex');
   } finally { release.resolve(); first = await session.settled(begun.data.id); }
   await recordLegacyHistory(session,first.id);
@@ -114,7 +114,7 @@ test('legacy preference input is a no-op while an actual legacy conversation mig
   assert.match(native.calls[1].prompt,/LEGACY_ORIGINAL_MARKER/);assert.match(native.calls[1].prompt,/Policy output 1/);
   const third = await follow(session, second, 'Resume that persistent session.');
   assert.equal(native.calls[2].threadId, second.nodes.agent.threadId); assert.equal(third.modelHandoff, undefined);
-  const compatible=await session.api('/api/runtime/settings', { method: 'POST', body: { codexHistory: 'relay' } });assert.equal(compatible.status,200);assert.equal(compatible.data.codexHistory,'codex');
+  const compatible=await session.api('/api/runtime/settings', { method: 'POST', body: { codexHistory: 'relay' } });assert.equal(compatible.status,200);assert.deepEqual(compatible.data, persistentDefaults);
   const fourth = await follow(session, third, 'Continue without changing the saved native history.');
   assert.equal(native.calls[3].codexHistory, 'codex'); assert.equal(native.calls[3].threadId, second.nodes.agent.threadId); assert.equal(fourth.modelHandoff, undefined);
   assert.match(native.calls[3].prompt, /Continue without changing/);
