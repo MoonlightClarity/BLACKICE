@@ -311,8 +311,12 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     let targets;
     try{targets=resolveConversationSelection(selection,managementTarget,action);}
     catch(error){managementMessage(error.message,true);return;}
-    if(action==='delete'&&!confirmed){
-      trashSelection=new Map(selection);view.trashMessage.textContent=targets.length===1?'Move “'+targets[0].title+'” to Trash?':'Move '+targets.length+' selected chats to Trash?';
+    if((action==='archive'||action==='delete')&&!confirmed){
+      const archiving=action==='archive',target=targets.length===1?'"'+targets[0].title+'"':targets.length+' selected chats';
+      trashSelection={action,selection:new Map(selection)};
+      view.trashTitle.textContent=archiving?'Archive chats?':'Move to Trash?';
+      view.trashMessage.textContent=archiving?'Archive '+target+'?':'Move '+target+' to Trash?';
+      view.trashConfirm.textContent=archiving?'Archive':'Move to Trash';
       view.trashDialog.showModal();return;
     }
     state.managing=true;++state.listRead;managementMessage('Updating conversations…');indexPaint();updateHead();attachmentsUI.refreshEditability();
@@ -370,7 +374,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   view.renameDialog.addEventListener('cancel',event=>{if(state.managing)event.preventDefault();else renameTarget=null;});
   view.trashCancel.addEventListener('click',closeTrash);
   view.trashDialog.addEventListener('cancel',()=>{trashSelection=null;});
-  view.trashConfirm.addEventListener('click',()=>{const selection=trashSelection;closeTrash();if(selection)void requestManagement('delete',selection,{confirmed:true});});
+  view.trashConfirm.addEventListener('click',()=>{const pending=trashSelection;closeTrash();if(pending)void requestManagement(pending.action,pending.selection,{confirmed:true});});
   view.select.addEventListener('click',()=>{if(state.pending||state.managing)return;state.selecting=true;state.selection.clear();managementMessage('');indexPaint();});
   view.bulkCancel.addEventListener('click',()=>{if(state.managing)return;state.selecting=false;state.selection.clear();managementMessage('');indexPaint();view.select.focus();});
   view.bulkAll.addEventListener('click',()=>{

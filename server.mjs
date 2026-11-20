@@ -617,6 +617,11 @@ export async function createHarnessServer(options = {}) {
       if(await handleConversationGoalsHttp({req,res,pathname,goals,body,json,mutations:fileMutations}))return;
       if(/^\/api\/conversations\/[a-zA-Z0-9_-]+\/autonomy$/.test(pathname))return json(res,410,{code:'AUTONOMY_RETIRED',error:'Autonomy is retired. Use an explicit Goal or scheduled task.'});
       if(await handleTaskActionDirectoryHttp({req,res,pathname,engine,conversations,json,body}))return;
+      if(pathname==='/api/conversations/archived-receipts/purge'&&req.method==='POST'){
+        if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Remove saved Receipts in BLACKICE on this computer.'});
+        const input=await body(req,32*1024);
+        return json(res,200,await conversations.purgeArchivedReceipts(input));
+      }
       if(await handleTurnReceiptsHttp({req,res,pathname,conversations,json}))return;
       if(await handleConversationActivityHttp({req,res,pathname,conversations,json}))return;
       if (await handlePlanningDiagnosticsHttp({req,res,pathname,service:planningDiagnostics,body,json,fileMutations})) return;

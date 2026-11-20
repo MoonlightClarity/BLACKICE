@@ -20,8 +20,9 @@ export async function exerciseTaskManagement({evaluate,send,until,fixture,counts
     const manage=async(id,action)=>{
       await until(()=>evaluate('Boolean(document.querySelector('+JSON.stringify(chatAction(id,action))+'))'),'Lifecycle chat row present');
       await evaluate('(()=>{const row=document.querySelector('+JSON.stringify(chatAction(id,action))+').closest(".next-conversation-row");row.querySelector("[data-chat-action='+action+']").click();return true})()');
-      if(action==='delete'){
-        await until(()=>evaluate('document.querySelector("#next-chat-trash-dialog").open'),'Trash confirmation shown');
+      if(action==='delete'||action==='archive'){
+        await until(()=>evaluate('document.querySelector("#next-chat-trash-dialog").open'),'Receipts removal confirmation shown');
+        assert.match(await evaluate('document.querySelector("#next-chat-trash-dialog").textContent'),/Receipts will be permanently removed/);
         await click('#next-chat-trash-confirm');
       }
     };
@@ -39,6 +40,8 @@ export async function exerciseTaskManagement({evaluate,send,until,fixture,counts
     await until(()=>fixture.state.taskHistoryStates[ids[0]]==='active','Chat restored from Trash');
     await bucket('active');await until(async()=>await rows()===2,'Both chats active');
     await click('#next-chat-select');await click('#next-chat-bulk-all');await click('#next-chat-bulk-archive');
+    await until(()=>evaluate('document.querySelector("#next-chat-trash-dialog").open'),'Bulk Archive confirmation shown');
+    await click('#next-chat-trash-confirm');
     await until(()=>ids.every(id=>fixture.state.taskHistoryStates[id]==='archived'),'Both selected chats archived');
     await bucket('archived');await until(async()=>await rows()===2,'Both archived chats');
     await click('#next-chat-select');await click('#next-chat-bulk-all');await click('#next-chat-bulk-restore');

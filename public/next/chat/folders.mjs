@@ -176,7 +176,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     pendingAction={id,action,revision:organization.revision,lifecycleRevision:organization.lifecycleRevision};
     const verb=action==='delete'?'Move to Trash':action==='archive'?'Archive':'Restore';
     view.folderDeleteTitle.textContent=verb+' folder?';
-    view.folderDeleteLabel.textContent='"'+nameOf(id)+'" and every nested folder and chat will '+(action==='delete'?'move to Trash. You can restore them.':action==='archive'?'move to Archive. You can restore them.':'return to Active. Restore its parent folder first if needed.');
+    view.folderDeleteLabel.textContent='"'+nameOf(id)+'" and every nested folder and chat will '+(action==='delete'?'move to Trash.':action==='archive'?'move to Archive.':'return to Active. Restore its parent folder first if needed.')+(action==='restore'?'':' You can restore them, but the chats’ Receipts will be permanently removed.');
     view.folderDeleteConfirm.textContent=verb;view.folderDeleteError.hidden=true;view.folderDeleteDialog.showModal();
   }
   const removeFolder=id=>folderAction(id,'delete');
