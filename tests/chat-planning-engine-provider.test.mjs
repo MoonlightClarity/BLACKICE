@@ -72,7 +72,7 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   assert.match(requests[0].allText,/EXECUTION COMPLETION[\s\S]*Do not end the turn until you are really done/);
   assert.match(requests[0].allText,/WHAT MAKES DONE \(bundled execution method\)[\s\S]*What just happened\?/);
   assert.equal(off.planningModuleReceipts,undefined);
-  const bundled={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done'};
+  const bundled={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:'blackice-what-makes-done-v2'};
   assert.deepEqual(off.skillLoadReceipts,[bundled]);
   const on=await done(await start('Check the startup route',{chatPlanning:'on'}));
   assert.equal(on.status,'completed',on.error);

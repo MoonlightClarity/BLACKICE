@@ -224,6 +224,15 @@ test('a saved skill title is bounded without leaving half of a surrogate pair',(
   assert.equal(projected.skillLoadReceipts[0].title,'x'.repeat(199));
 });
 
+test('owner-edited accepted guidance is not labeled as bundled',()=>{
+  const timeline=fakeTimeline();
+  const edited={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'user',sourceRevision:4};
+  const run=projectFamily({runs:[savedRun('owner-skill',{skillLoadReceipts:[edited]})]}).runs[0];
+  assert.deepEqual(run.skillLoadReceipts,[edited]);
+  paintHistory({timeline},[run]);
+  assert.equal(skillNotices(timeline)[0].textContent,'Owner-edited guidance sent: What Makes Done');
+});
+
 test('live and stored skill receipts retain the first 32 without evicting displayed evidence',()=>{
   const run=savedRun('many-skills',{status:'running',settled:false});
   for(let i=1;i<=33;i++){

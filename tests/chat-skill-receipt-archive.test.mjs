@@ -28,7 +28,7 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
     await rm(resolved,{recursive:true,force:true});
   });
   const id='library-what-makes-done',title='What Makes Done';
-  const automatic={type:'skill_context_submitted',skillId:id,title};
+  const automatic={type:'skill_context_submitted',skillId:id,title,source:'bundled',sourceRevision:'blackice-what-makes-done-v2'};
   const read={name:'relay_skills',arguments:{action:'read',id},callId:'read-1'};
   const search={...read,callId:'search-1',arguments:{action:'search',query:'word'}};
   const invalid={...read,callId:'invalid',arguments:{action:'read',id:'no-such-skill'}};

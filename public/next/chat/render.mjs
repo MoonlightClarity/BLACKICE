@@ -458,7 +458,7 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       const receipts=text(section,'','div');
       if(running(run))receipts.setAttribute('role','status');
       for(const receipt of skillLoads)
-        text(receipts,(receipt.type==='skill_context_submitted'?'Bundled guidance sent: ':'Skill loaded: ')+receipt.title,'div','next-chat-activity next-chat-skill-loaded');
+        text(receipts,(receipt.type==='skill_context_submitted'?(receipt.source==='user'?'Owner-edited guidance sent: ':'Bundled guidance sent: '):'Skill loaded: ')+receipt.title,'div','next-chat-activity next-chat-skill-loaded');
     }
 
     if(olderMessages>0){

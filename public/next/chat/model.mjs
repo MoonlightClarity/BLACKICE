@@ -12,7 +12,10 @@ function projectSkillLoadReceipt(value){
   if(!['skill_loaded','skill_context_submitted'].includes(value?.type)||typeof value.skillId!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(value.skillId)||typeof value.title!=='string')return null;
   const skillId=value.skillId;
   const title=value.title.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/gu,' ').trim().slice(0,200).replace(/[\uD800-\uDBFF]$/u,'')||skillId;
-  return {type:value.type,skillId,title};
+  const source=value.type==='skill_context_submitted'&&['bundled','user'].includes(value.source)?value.source:undefined;
+  const revision=value.sourceRevision,sourceRevision=source==='user'&&Number.isSafeInteger(revision)&&revision>=2?revision:
+    source==='bundled'&&typeof revision==='string'&&/^[A-Za-z0-9_.-]{1,128}$/.test(revision)?revision:undefined;
+  return {type:value.type,skillId,title,...(source?{source}:{}),...(sourceRevision!==undefined?{sourceRevision}:{})};
 }
 export function projectSkillLoadReceipts(values){
   if(!Array.isArray(values))return [];

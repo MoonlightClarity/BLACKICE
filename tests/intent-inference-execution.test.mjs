@@ -80,7 +80,7 @@ test('Planning Off execution gets only the accepted, effective Intent Inference 
  assert.match(defaultRun.prompt,/Use past work to show what the user can bring/);
  assert.equal(defaultRun.prompt.split(block).length,2);
  assert.deepEqual(defaultRun.receipts.filter(r=>r.skillId===id),
-  [{type:'skill_context_submitted',skillId:id,title:'Intent Inference'}]);
+  [{type:'skill_context_submitted',skillId:id,title:'Intent Inference',source:'bundled',sourceRevision:'2'}]);
 
  const resumeSeed=await invoke(jobs);
  const continued=engine.continueRun(resumeSeed.id,{nodeId:'agent',message:jobs,directoryActions:'off',chatPlanning:'off'});
@@ -98,7 +98,7 @@ test('Planning Off execution gets only the accepted, effective Intent Inference 
  const custom=await invoke(reporting);
  assert.match(custom.prompt,/Owner method controls what may be repeated/);
  assert.doesNotMatch(custom.prompt,/Use past work to show what the user can bring/);
- assert.deepEqual(custom.receipts.find(r=>r.skillId===id),{type:'skill_context_submitted',skillId:id,title:'Owner method'});
+ assert.deepEqual(custom.receipts.find(r=>r.skillId===id),{type:'skill_context_submitted',skillId:id,title:'Owner method',source:'user',sourceRevision:2});
 
  accept=false;
  const unaccepted=await invoke(reporting);

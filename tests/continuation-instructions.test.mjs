@@ -14,7 +14,7 @@ test('revised continuation instructions reach the native turn on the same provid
   const runtime=new CodexRuntime({command:process.execPath,args:[fixture],cwd:directory,requestTimeoutMs:5000,runTimeoutMs:8000});
   const requests=[],request=runtime._request.bind(runtime);
   const injected=await readBundledSkill('library-what-makes-done');
-  const receipt={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done'};
+  const receipt={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:'blackice-what-makes-done-v2'};
   let rejectTurn=false;
   runtime._request=(method,params={},...args)=>{requests.push({method,params:structuredClone(params)});if(rejectTurn&&method==='turn/start')return Promise.reject(Error('Synthetic native rejection'));return request(method,params,...args);};
   const engine=new HarnessEngine({runtime,dataDir:path.join(directory,'data'),defaultCwd:directory});
