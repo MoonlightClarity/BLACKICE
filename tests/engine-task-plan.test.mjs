@@ -72,7 +72,10 @@ test('ordinary answer events stream without a compulsory plan or final review', 
     assert.equal(live.nodes.agent.output, 'Direct answer.');
     assert.equal(answerEvents(live).length, 3);
     assert.equal(live.nodes.agent.usage.totalTokens, 13);
-    const initial = await taskCall(options, { action: 'read' });
+    assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_task'));
+    const denied = await call(options, 'relay_task', { action: 'read' });
+    assert.equal(denied.success, false); assert.equal(denied.code, 'TASK_PLAN_UNAVAILABLE');
+    const initial = await context.tasks.get(run.taskId);
     assert.deepEqual(initial.steps, []); assert.equal(initial.plan, undefined);
     return { output: 'Direct answer.', threadId: context.threadId };
   });
@@ -99,7 +102,7 @@ test('ordinary tools run directly and an optional authored outline preserves rea
     assert.equal(state.progress.done, 1);
     return { output: 'Created and read the result.', threadId: context.threadId };
   });
-  const run = await f.settled(f.start().id); completed(run);
+  const run = await f.settled(f.start('/plan Complete the requested fixture work.').id); completed(run);
   assert.equal(f.runtime.calls.length, 1); assert.equal(run.nodes.agent.planning.status, 'off');
   assert.equal(run.taskState.plan.origin, 'human'); assert.equal(run.taskState.progress.done, 1);
   assert.equal(run.nodes.agent.taskSchemaVersion, TASK_SCHEMA_VERSION);
@@ -119,7 +122,7 @@ test('saved Inbox detail survives restart without reactivating automatic Plannin
   const options = { dataDir: f.directory, engine: f.engine, delayMs: 0 };
   let inbox = await new TaskInbox(options).init();
   try {
-    const item = await inbox.add({ input: 'Keep the requested detail when I run this saved task.', cwd: f.cwd, workflow: f.workflow });
+    const item = await inbox.add({ input: '/plan Keep the requested detail when I run this saved task.', cwd: f.cwd, workflow: f.workflow });
     assert.equal(item.workflow.settings.planDetail, 'detailed');
     await inbox.close(); inbox = await new TaskInbox(options).init();
     assert.equal(inbox.get(item.id).workflow.settings.planDetail, 'detailed');
@@ -127,7 +130,7 @@ test('saved Inbox detail survives restart without reactivating automatic Plannin
     assert.equal(run.planDetail, 'detailed'); assert.equal(run.taskState.plan.detail, 'detailed');
     assert.equal(run.workflow.settings.planDetail, 'detailed'); assert.equal(run.planningMode, 'off');
   } finally { await inbox.close(); }
-  const override = await f.settled(f.start({ task: 'Use a compact outline for this request.', planDetail: 'compact' }).id);
+  const override = await f.settled(f.start({ task: '/plan Use a compact outline for this request.', planDetail: 'compact' }).id);
   completed(override); assert.equal(override.planDetail, 'compact'); assert.equal(override.taskState.plan.detail, 'compact');
 });
 
@@ -141,7 +144,7 @@ test('inspection needs no saved leaf and answering does not fabricate optional s
     await saveManualPlan(context, options, [toolLeaf('inspect', 'read', 'input.txt')]);
     return { output: 'The source was inspected; the optional outline is still active.', threadId: context.threadId };
   });
-  const run = await f.settled(f.start().id); completed(run);
+  const run = await f.settled(f.start('/plan Complete the requested fixture work.').id); completed(run);
   assert.equal(run.taskState.steps[0].status, 'active'); assert.equal(run.taskState.progress.done, 0);
   assert.equal(run.nodes.agent.planning.status, 'off');
 });
@@ -159,7 +162,7 @@ test('invalid and stale optional edits remain atomic without vetoing independent
     const state = await saveManualPlan(context, options, [leaf()]); assert.equal(state.plan.origin, 'human');
     return { output: 'Rejected edits preserved state; the independent write succeeded.' };
   });
-  const run = await f.settled(f.start().id); completed(run); assert.equal(f.runtime.calls.length, 1);
+  const run = await f.settled(f.start('/plan Complete the requested fixture work.').id); completed(run); assert.equal(f.runtime.calls.length, 1);
   assert.equal(await readFile(path.join(f.cwd, 'independent.txt'), 'utf8'), 'real write');
 });
 
@@ -179,7 +182,7 @@ test('nested outline chronology and continue reviews persist without gating the 
     await context.tasks.review(state.taskId, { decision: 'continue', nextStepId: 'report', summary: 'Both inputs are inspected. Synthesis remains active and is not claimed complete.' }, { expectedRevision: state.revision, source: 'human', schemaVersion: 14, runId: context.engine.listRuns()[0].id, nodeId: 'agent' });
     return { output: 'Both inputs inspected; synthesis remains active.' };
   });
-  const run = await f.settled(f.start().id); completed(run);
+  const run = await f.settled(f.start('/plan Complete the requested fixture work.').id); completed(run);
   assert.equal(run.taskState.planningReviews.at(-1).decision, 'continue');
   assert.equal(run.taskState.progress.total, 3); assert.equal(run.taskState.progress.done, 2);
   assert.equal(run.taskState.steps.find(step => step.id === 'left').parentId, 'sources');
@@ -203,8 +206,8 @@ test('follow-ups preserve completed evidence, request identity and original run 
     await context.tasks.setStep(state.taskId, 'followup', { status: 'done', evidence: 'Explained the requested second example.' }, { expectedRevision: state.revision, source: 'human' });
     return { output: 'A second example is ready.', threadId: context.threadId };
   });
-  firstSnapshot = await f.settled(f.start({ task: 'What is 2 + 2?', planDetail: 'compact' }).id); completed(firstSnapshot);
-  const request = { nodeId: 'agent', message: 'Give me another example.', planDetail: 'detailed', requestId: 'followup-detail-once' };
+  firstSnapshot = await f.settled(f.start({ task: '/plan What is 2 + 2?', planDetail: 'compact' }).id); completed(firstSnapshot);
+  const request = { nodeId: 'agent', message: '/plan Give me another example.', planDetail: 'detailed', requestId: 'followup-detail-once' };
   const accepted = f.engine.continueRun(firstSnapshot.id, request);
   assert.equal(f.engine.continueRun(firstSnapshot.id, request).id, accepted.id);
   assert.throws(() => f.engine.continueRun(firstSnapshot.id, { ...request, planDetail: 'compact' }), /different|reused|conflict/i);
@@ -218,10 +221,10 @@ for (const version of [1, 2, 3, 4]) test('unsupported native task schema v' + ve
     assert.deepEqual(options.dynamicTools.find(tool => tool.name === 'relay_task'), optionalTool());
     return { output: 'Current catalog observed.', threadId: context.threadId };
   });
-  const first = await f.settled(f.start().id); completed(first);
+  const first = await f.settled(f.start('/plan Complete the requested fixture work.').id); completed(first);
   f.engine.runs.get(first.id).nodes.agent.taskSchemaVersion = version;
   const prior = await f.tasks.get(first.taskId);
-  assert.throws(() => f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue.' }), { code: 'NATIVE_CATALOG_UNSUPPORTED' });
+  assert.throws(() => f.engine.continueRun(first.id, { nodeId: 'agent', message: '/plan Continue.' }), { code: 'NATIVE_CATALOG_UNSUPPORTED' });
   assert.equal(f.runtime.calls.length, 1);
   assert.deepEqual(await f.tasks.get(first.taskId), prior);
 });
@@ -233,8 +236,8 @@ test('provider continuations receive current optional tools when saved schema is
     await saveManualPlan(context, options, [...prior.steps, { ...leaf('provider-' + number, 'Inspect provider catalog'), status: 'pending' }]);
     return { output: 'Current provider catalog.', threadId: context.threadId };
   }, { model: 'fixture-api::model', threadId: 'provider_plan-fixture' });
-  const first = await f.settled(f.start().id); completed(first); delete f.engine.runs.get(first.id).nodes.agent.taskSchemaVersion;
-  const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue through the provider.' }).id); completed(next);
+  const first = await f.settled(f.start('/plan Complete the requested fixture work.').id); completed(first); delete f.engine.runs.get(first.id).nodes.agent.taskSchemaVersion;
+  const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: '/plan Continue through the provider.' }).id); completed(next);
   assert.equal(next.nodes.agent.taskSchemaVersion, TASK_SCHEMA_VERSION); assert.equal(f.runtime.calls[1].threadId, f.threadId);
 });
 
@@ -248,7 +251,7 @@ test('project workers retain manually authored method metadata without recursive
     return { output: 'Current task authoring and manual method metadata checked.' };
   }, { workflowId: 'project-plan-worker' });
   f.engine.projects = {}; f.engine.capabilities = {};
-  const run = await f.settled(f.start().id); completed(run);
+  const run = await f.settled(f.start('/plan Complete the requested fixture work.').id); completed(run);
   assert.equal(run.taskState.plan.method.id, 'software-feature'); assert.equal(run.taskState.progress.done, 1);
 });
 
@@ -278,11 +281,13 @@ test('a follow-up can answer directly while preserving earlier completed outline
       await context.tasks.setStep(state.taskId, 'answer', { status: 'done', evidence: 'The original answer was checked.' }, { expectedRevision: state.revision, source: 'human' });
       return { output: 'Original answer.', threadId: context.threadId };
     }
-    const prior = await context.tasks.get((await taskCall(options, { action: 'read' })).taskId); assert.equal(prior.steps[0].status, 'done');
+    assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_task'));
+    const prior = await context.tasks.get(context.engine.listRuns().find(run => !run.settled).taskId);
+    assert.equal(prior.steps[0].status, 'done');
     options.onEvent({ type: 'delta', delta: 'Direct follow-up.' });
     return { output: 'Direct follow-up.', threadId: context.threadId };
   });
-  const first = await f.settled(f.start().id); completed(first);
+  const first = await f.settled(f.start('/plan Complete the requested fixture work.').id); completed(first);
   const next = await f.settled(f.engine.continueRun(first.id, { nodeId: 'agent', message: 'Answer the next question.' }).id); completed(next);
   assert.equal(next.nodes.agent.output, 'Direct follow-up.'); assert.equal(answerEvents(next).length, 1);
   assert.deepEqual(next.taskState.plan.authoredBy, first.taskState.plan.authoredBy); assert.deepEqual(next.taskState.steps, first.taskState.steps);
@@ -316,7 +321,7 @@ for (const alreadyPlanned of [false, true]) test('Stop ' + (alreadyPlanned ? 'af
     options.onEvent({ type: 'usage', usage: { totalTokens: 17 } });
     throw Object.assign(new Error('Fixture stopped.'), { name: 'AbortError' });
   });
-  const accepted = f.start();
+  const accepted = alreadyPlanned ? f.start('/plan Author the optional fixture outline.') : f.start();
   try { await wait(() => { const run = f.engine.getRun(accepted.id); assert.ok(!run.settled, run.error); return ready; }); }
   finally { if (!f.engine.getRun(accepted.id).settled) f.engine.cancelRun(accepted.id); }
   const stopped = await f.settled(accepted.id); assert.equal(stopped.status, 'cancelled');

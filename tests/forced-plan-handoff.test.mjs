@@ -64,9 +64,9 @@ async function fixture(t, { execute, withPlanning = true } = {}) {
     assert.match(path.basename(directory), /^blackice-forced-handoff-/);
     await rm(directory, { recursive: true, force: true });
   });
-  context.run = async () => {
+  context.run = async (input = request) => {
     const workflow = createMissionWorkflow({ id: 'ordinary-forced-handoff', task: request, model: 'fixture-handoff', cwd, planningMode: 'forced' });
-    const accepted = engine.startRun({ workflow, input: request, planningMode: 'forced', planningExecutionMode: 'automatic', requestId: 'ordinary-forced-handoff' });
+    const accepted = engine.startRun({ workflow, input, planningMode: 'forced', planningExecutionMode: 'automatic', requestId: 'ordinary-forced-handoff' });
     await engine.executions.get(accepted.id);
     return engine.getRun(accepted.id);
   };
@@ -104,7 +104,8 @@ test('an ordinary worker failure remains its actual cause without a synthetic pl
 
 test('a human correction remains unread while ordinary execution no longer has a compulsory plan-review gate', async t => {
   const f = await fixture(t, { execute: async (options, context) => {
-    let receipt = await tool(options, 'relay_task', { action: 'read' });
+    const receipt = await tool(options, 'relay_task', { action: 'read' });
+    assert.equal(receipt.success, true, receipt.contentItems?.[0]?.text);
     let state = payload(receipt);
     state = await context.tasks.setPlan(state.taskId, { plan: { layout: 'sequence', detail: 'detailed', taskType: 'general' }, steps: [executionLeaf()] }, { expectedRevision: state.revision, source: 'human' });
     const changed = await context.tasks.editPlan(state.taskId, {
@@ -118,14 +119,14 @@ test('a human correction remains unread while ordinary execution no longer has a
     assert.ok(!worker || worker.lastReadRevision < changed.revision, 'Tool execution cannot pretend the later human correction was read.');
     return { output: 'The current workspace contains input.txt.' };
   } });
-  const run = await f.run(); assert.equal(run.status, 'completed', run.error);
+  const run = await f.run('/plan '+request); assert.equal(run.status, 'completed', run.error);
   assert.equal(run.taskState.steps[0].note, f.observations.changed.steps[0].note);
   assert.equal(run.taskState.steps[0].status, 'active', 'An answer cannot fabricate completion of optional authored steps.');
 });
 
 test('an optional listing outline does not veto an independent write or fabricate its completion', async t => {
-  const f = await fixture(t, { execute: async (options, context) => {
-    const initial = payload(await tool(options, 'relay_task', { action: 'read' }));
+  const f = await fixture(t, { execute: async (options, context, initial) => {
+    assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_task'));
     const saved = await context.tasks.setPlan(initial.taskId, { plan: { layout: 'sequence', taskType: 'general' }, steps: [executionLeaf()] }, { expectedRevision: initial.revision, source: 'human' });
     assert.equal(saved.plan.origin, 'human');
     const receipt = await context.operation(options, { action: 'write', path: 'direct.txt', text: 'Actual direct write.' });
