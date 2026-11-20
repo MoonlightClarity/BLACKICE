@@ -83,6 +83,13 @@ export class BrowserRouter extends EventEmitter {
     if (args.browser && args.browser !== owner.browser) throw fail('This tab belongs to a different browser. Use its listed browser and tab ID.', 'BROWSER_TAB_MISMATCH');
     return { ...owner, tabId };
   }
+  bindObservedUploadRef(args) {
+    if (this.closed) throw fail('The browser workspace has closed.', 'BROWSER_CLOSED');
+    const selected = this.owner(args, this.status()), driver = this.drivers[selected.browser];
+    if (selected.browser !== 'relay' || typeof driver?.bindObservedUploadRef !== 'function')
+      throw fail('Upload requires the current observed document identity and URL.');
+    return driver.bindObservedUploadRef({ ...args, tabId: selected.nativeId });
+  }
   async observeOperation(args, options = {}) {
     if (this.closed) throw fail('The browser workspace has closed.', 'BROWSER_CLOSED');
     if (options.signal?.aborted) throw cancelled();

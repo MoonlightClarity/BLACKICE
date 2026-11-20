@@ -5,6 +5,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { ElectronBrowserDriver } from '../../desktop/browser-driver.mjs';
 import { BrowserWorkspace } from '../../lib/browser.mjs';
+import { BrowserRouter } from '../../desktop/browser-router.mjs';
 
 const dataDir = process.argv.find(a => a.startsWith('--fixture-data='))?.slice(15);
 if (!dataDir) throw new Error('Temporary fixture directory required.');
@@ -27,7 +28,7 @@ try {
   });
   await new Promise(resolve => server.listen(0, resolve));
   driver = await new ElectronBrowserDriver({ dataDir, downloadDir: path.join(dataDir, 'downloads') }).init();
-  browser = new BrowserWorkspace({ driver });
+  browser = new BrowserWorkspace({ driver: new BrowserRouter({ independent: driver }) });
   let snapshot = await browser.perform({ action: 'open', url: `http://127.0.0.1:${server.address().port}/` });
   const id = snapshot.tabId;
   const fresh = async () => snapshot = await browser.perform({ action: 'snapshot', tabId: id });

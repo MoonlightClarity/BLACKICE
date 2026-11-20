@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.56 candidate source, not an installation or publication receipt.** Package version is **2.40.56**. Start with the [2.40.56 notes](RELEASE-NOTES-2.40.56.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.57 candidate source, not an installation or publication receipt.** Package version is **2.40.57**. Start with the [2.40.57 notes](RELEASE-NOTES-2.40.57.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.57](RELEASE-NOTES-2.40.57.md) - carry observed file bindings through the desktop browser
 
 - [2.40.56](RELEASE-NOTES-2.40.56.md) - fix form preparation and file upload binding
 

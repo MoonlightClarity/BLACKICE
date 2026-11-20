@@ -233,3 +233,23 @@ test('contained folder routing works without an active tab and forwards releaseO
   assert.deepEqual(await router.releaseOwner(owner,{reason:'test'}),{suspended:['owned'],retained:[]});assert.equal(releases,1);
  }finally{await router.close();}
 });
+
+test('desktop routing preserves the observed file ref binding through the workspace', async t => {
+  const relay = new FakeDriver(['one', 'two']);
+  const bindings=[];
+  relay.bindObservedUploadRef=args=>{
+    bindings.push([args.tabId,args.ref]);
+    if (args.tabId!=='one'||args.ref!=='file-ref') throw Object.assign(Error('Stale file input'), {code:'BROWSER_REF_STALE'});
+    return { expectedUrl:'https://example.com/one', expectedDocumentId:'one:42' };
+  };
+  const workspace=new BrowserWorkspace({driver:new BrowserRouter({independent:relay})});
+  t.after(()=>workspace.close());
+  const request={action:'upload',browser:'relay',tabId:'one',ref:'file-ref',paths:[path.resolve('fixture.txt')]};
+  const result=await workspace.perform(request);
+  assert.equal(result.tabId,'one');
+  assert.deepEqual(bindings,[['one','file-ref']]);
+  assert.equal(relay.calls[0].args.expectedUrl,'https://example.com/one');
+  assert.equal(relay.calls[0].args.expectedDocumentId,'one:42');
+  await assert.rejects(workspace.perform({...request,tabId:'two'}), {code:'BROWSER_REF_STALE',actionDispatched:false});
+  assert.equal(relay.calls.length,1);
+});
