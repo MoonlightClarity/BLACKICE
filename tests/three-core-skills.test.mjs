@@ -11,9 +11,10 @@ import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
 import {SkillFolderStore} from '../lib/skill-folders.mjs';
 import {CHAT_PLANNING_MODULES} from '../lib/chat-planning-pass.mjs';
 const ids=['builtin-decomposition','builtin-task-grounding','builtin-structured-analysis'];
-test('the three inline definitions are preserved; removed defaults are not fallback content',async()=>{
+test('the three revised inline definitions are preserved; removed defaults are not fallback content',async()=>{
  assert.deepEqual(searchReleaseSkills().map(x=>x.id),ids);
- const hashes=['1762caa7d98733ee283f7fdee8862a7063ef7ab25d5f7993795e04301c88ca55','95ebf981ca62798b1580426aa8c9fee6e57f6e5ccd214459bffd67001fdea13c','8615e23de4559575e6f0c9a81086006ae6843e547bd77d587cb981415dac6fd4'];
+ // Pin the actual approved critical-path and completion revisions as well as unchanged grounding.
+ const hashes=['0e45b660d8efd57ea0c327234a675fd814c792fa9923017c7c9ad557152487d2','95ebf981ca62798b1580426aa8c9fee6e57f6e5ccd214459bffd67001fdea13c','22b3d21f67512eefcc4032cf546e7e0485f1020568228ecc03851e896b82224b'];
  assert.deepEqual(ids.map(id=>createHash('sha256').update(readReleaseSkill(id).content).digest('hex')),hashes);
  const catalog=createSkillsCatalog();assert.deepEqual((await catalog.list()).entries.filter(x=>x.id.startsWith('builtin-')).map(x=>x.id),ids);
  for(const id of ['builtin-browser','builtin-browser-tab-management','builtin-file-discovery','builtin-job-search','builtin-inference','builtin-time-management','builtin-feasibility','builtin-branching','builtin-replanning','builtin-metacognition','builtin-verification','builtin-delegation']){
