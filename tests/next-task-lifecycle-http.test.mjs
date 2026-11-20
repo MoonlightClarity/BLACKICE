@@ -47,10 +47,12 @@ async function fixture(t,{allowReadiness=false}={}){
   return{directory,dataDir,cwd,api,seed,get runtime(){return runtime;},get app(){return app;},async restart(){await app.close();await boot();}};
 }
 
-test('V2 task lifecycle uses real family archive/Trash/restore routes and survives restart without rewriting task or run evidence',async t=>{
+test('V2 task lifecycle uses real family archive/Trash/restore routes and survives restart preserving task and run evidence except the receipts retirement marker',async t=>{
   const f=await fixture(t);await f.seed('family-root');await f.seed('family-child',{taskId:'family-root',parentRunId:'family-root'});
   const state=await f.app.tasks.ensure({taskId:'family-root',runId:'family-child',cwd:f.cwd,goal:'Original durable plan',defaultPlan:true});
-  const beforeTask=await readFile(f.app.tasks.file(state.taskId)),beforeRun=await readFile(path.join(f.dataDir,'conversations','family-root.json'));
+  const archive=id=>path.join(f.dataDir,'conversations',id+'.json');
+  const beforeTask=await readFile(f.app.tasks.file(state.taskId));
+  const beforeRuns=await Promise.all(['family-root','family-child'].map(async id=>[id,JSON.parse(await readFile(archive(id),'utf8'))]));
   let catalog=await f.api('/api/conversations/search?q=&state=active&limit=40&offset=0');
   assert.equal(catalog.conversations.length,1);assert.equal(catalog.conversations[0].taskId,'family-root');
   assert.deepEqual((await changeTaskState(f.api,catalog.conversations,'archive')).failed,[]);
@@ -61,7 +63,9 @@ test('V2 task lifecycle uses real family archive/Trash/restore routes and surviv
   assert.equal((await f.api('/api/conversations/family-child')).state,'deleted');assert.equal((await f.api('/api/planning?state=deleted')).plans[0].editable,false);
   catalog=await f.api('/api/conversations/search?q=&state=deleted&limit=40&offset=0');await changeTaskState(f.api,catalog.conversations,'restore');
   assert.equal((await f.api('/api/conversations/family-root')).state,'active');
-  assert.deepEqual(await readFile(f.app.tasks.file(state.taskId)),beforeTask);assert.deepEqual(await readFile(path.join(f.dataDir,'conversations','family-root.json')),beforeRun);
+  assert.deepEqual(await readFile(f.app.tasks.file(state.taskId)),beforeTask);
+  for(const [id,before] of beforeRuns)
+    assert.deepEqual(JSON.parse(await readFile(archive(id),'utf8')),{...before,receiptDiagnosticsRemoved:true});
 });
 
 test('real empty-query catalog renders all 13 active saved families and pages archived task metadata without full-run reads',async t=>{

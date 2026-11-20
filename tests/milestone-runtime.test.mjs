@@ -17,10 +17,11 @@ async function fixture(t,execute){
  const tasks=await new TaskStateStore({dataDir:directory}).init();
  class Runtime extends EventEmitter{constructor(){super();this.calls=[];}status(){return{connected:true,authenticated:true,defaultModel:'fixture'};}async runAgent(options){this.calls.push(options);return execute(options,this.calls.length);}async close(){}}
  const runtime=new Runtime(),engine=await new HarnessEngine({runtime,tasks,dataDir:directory,defaultCwd:cwd}).init();
- // Native catalog and uncertain-publication assertions exercise explicit execution guardrails.
+ // Exercise the saved Planning catalog explicitly. Ordinary Chat no longer exposes relay_task.
  engine.runtimeSettings={get:()=>({executionGuardrails:true})};
  t.after(async()=>{await engine.close();await tasks.close();assert.match(path.basename(directory),/^relay-milestone-runtime-/);await rm(directory,{recursive:true,force:true});});
- const workflow=createMissionWorkflow({id:'milestone-fixture',task:'Deliver a checked result.',cwd});
+ const workflow=createMissionWorkflow({id:'milestone-fixture',task:'Deliver a checked result.',cwd,planningMode:'off'});
+ workflow.planning={shared:true,coordinatorNodeId:'agent'};
  return{engine,tasks,runtime,cwd,workflow,settled:id=>wait(()=>engine.getRun(id).settled&&engine.getRun(id))};
 }
 const schema=options=>options.dynamicTools.find(tool=>tool.name==='relay_task').inputSchema.properties;
