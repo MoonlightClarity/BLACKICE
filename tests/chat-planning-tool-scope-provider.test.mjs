@@ -39,6 +39,7 @@ test('ordinary Chat omits and cannot call planning tools; /plan explicitly opts 
       const body=JSON.parse(raw);
       if(!requests.has(phase))requests.set(phase,[]);
       requests.get(phase).push(body);
+      if(phase==='probe-failure'){res.statusCode=400;return send({error:{message:'Fixture probe failed'}});}
       const calls=step++ ? [] : phase==='ordinary' ? graphCalls : phase==='explicit' ? [graphCalls[1],graphCalls[3]] : [];
       send({choices:[{index:0,finish_reason:calls.length?'tool_calls':'stop',message:calls.length?
         {role:'assistant',content:null,tool_calls:calls.map(([name,args],index)=>toolCall({name,args,id:phase+'-'+index}))}:
@@ -57,15 +58,16 @@ test('ordinary Chat omits and cannot call planning tools; /plan explicitly opts 
   runtime=new ProviderRuntime({codex:new Native(),dataDir:path.join(dir,'data'),modelLimitResolver:{enrich:async(_config,model)=>model}});
   await runtime.store.init();
   await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl:'http://127.0.0.1:'+provider.address().port+'/v1',models:[{id:'fixture',contextWindowTokens:196608,maxOutputTokens:4096}]},{preserveDefault:true});
+  await runtime.saveProvider({id:'local_llamacpp',type:'compatible',baseUrl:'http://127.0.0.1:'+provider.address().port+'/v1',models:[{id:'fixture',contextWindowTokens:196608,maxOutputTokens:4096}]},{preserveDefault:true});
   app=await createHarnessServer({runtime,remoteAccess:false,dataDir:path.join(dir,'data'),defaultCwd:cwd,port:0});await app.listen();
   const api=async(route,_method,body)=>route==='/api/workflows'?body:route==='/api/runs'?app.engine.startRun(body):
     app.engine.continueRun(route.split('/')[3],body);
-  const run=async(task,runs=[])=>{
+  const run=async(task,runs=[],options={},expected='completed')=>{
     step=0;
-    const started=await submitChat({api,runs,task,model:'fixture::fixture',cwd});
+    const started=await submitChat({api,runs,task,model:'fixture::fixture',cwd,...options});
     for(let i=0;i<1000;i++){
       const done=app.engine.getRun(started.run.id);
-      if(done.settled){assert.equal(done.status,'completed',done.error);return done;}
+      if(done.settled){assert.equal(done.status,expected,done.error);return done;}
       await delay(10);
     }
     throw Error('Synthetic Chat did not settle.');
@@ -94,4 +96,24 @@ test('ordinary Chat omits and cannot call planning tools; /plan explicitly opts 
   assert.deepEqual(names(requests.get('after')[0]).filter(name=>graphCalls.some(([tool])=>tool===name)),[]);
   assert.equal(after.taskId,initial.taskId);
   assert.notEqual(after.nodes.agent.threadId,explicit.nodes.agent.threadId);
+  const local={model:'local_llamacpp::fixture'};
+  for(const directoryActions of ['off','on']){
+    phase='probe-'+directoryActions;
+    const result=await run('test',[],{...local,directoryActions});
+    const wire=requests.get(phase);
+    assert.equal(wire.length,1);
+    assert.deepEqual(wire[0].tools,[]);
+    assert.equal(wire[0].tool_choice,'none');
+    assert.deepEqual(wire[0].messages.filter(m=>m.role==='user').map(m=>m.content),['test']);
+    assert.equal(result.directoryActions,directoryActions,'this turn does not change the saved mode');
+    assert.equal(result.nodes.agent.localConnectivityProbe,true);
+    if(directoryActions==='off'){
+      phase='probe-followup';
+      const next=await run('Test the file parser in this project.',[result],local);
+      assert.ok(names(requests.get(phase)[0]).includes('relay_workspace'));
+      assert.equal(next.taskId,result.taskId);
+      assert.notEqual(next.nodes.agent.threadId,result.nodes.agent.threadId);
+    }
+  }
+
 });
