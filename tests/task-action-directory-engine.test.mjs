@@ -99,9 +99,10 @@ test('typed partial observation retains live search evidence without closing or 
     const read=async filename=>{
      const r=await call('relay_workspace',{action:'read',path:path.join(root,filename)});assert.equal(r.success,true);return r.contentItems.at(-1).text.match(/receipt-[0-9]+/)[0];
     };
-    await accepted('plan',{actions:[{id:'find_two',objective:'Verify two distinct sources against all required conditions',dependsOn:[]},{id:'report',objective:'Report both qualifying sources',dependsOn:['find_two']}]});
+    await accepted('plan',{actions:[{id:'find_two',objective:'Verify two distinct sources against all required conditions',qualifying:{minQualifyingCount:2,requiredChecks:['remote_us','valid_posting']},dependsOn:[]},{id:'report',objective:'Report both qualifying sources',dependsOn:['find_two']}]});
     await accepted('focus',{id:'find_two'});
     const first=await read('source-one.txt');
+    const row=(id,sourceReceipt,region='verified')=>({id,sourceReceipt,checks:[{id:'remote_us',status:region},{id:'valid_posting',status:'verified'}]});
     const observation={id:'find_two',claim:'One qualifying lead and one ineligible candidate; still need a second qualifying lead.',receipts:[first]};
     const before=await accepted('read');
     for(const outcome of [undefined,'unrecognized']){
@@ -109,12 +110,16 @@ test('typed partial observation retains live search evidence without closing or 
      assert.equal(missing.success,false);assert.equal(missing.code,'DIRECTORY_OUTCOME');assert.match(missing.contentItems[0].text,/This call made no changes/);
     }
     assert.deepEqual(await accepted('read'),before);
-    const partial=await accepted('observe',{...observation,outcome:'partial'});
+    const partial=await accepted('observe',{...observation,outcome:'partial',candidateRows:[row('first',first)]});
     assert.equal(partial.focus,'find_two');
     assert.deepEqual(partial.actions.map(x=>x.state),['active','pending']);
     assert.equal(partial.actions[0].observation,undefined);
     assert.deepEqual(partial.actions[0].notes[0].receipts,[first]);
     assert.deepEqual(partial.ready,[]);
+    const invalid=await dir('observe',{...observation,outcome:'objective-met'});
+    assert.equal(invalid.code,'DIRECTORY_QUALIFICATION');
+    assert.deepEqual(await accepted('read'),partial);
+    assert.equal(partial.actions[0].notes[0].qualification.count,1);
     assert.equal((await dir('focus',{id:'report'})).code,'DIRECTORY_NOT_READY');
     if(scenario==='exhausted'){
      await accepted('block',{id:'find_two',blocker:'search-limit-reached',claim:'The agreed one-source budget ended before finding a second qualifying source.',receipts:[first]});
@@ -122,7 +127,20 @@ test('typed partial observation retains live search evidence without closing or 
      return{output:'One qualifying source verified; the agreed search limit was reached.'};
     }
     const second=await read('source-two.txt');
-    const completed=await accepted('observe',{id:'find_two',outcome:'objective-met',claim:'Confirmed two distinct sources.',receipts:[first,second]});
+    const attempt=(ids,rows)=>dir('observe',{id:'find_two',outcome:'objective-met',claim:'Two qualifying current postings. Remaining: the second source is remote, but its US eligibility is not verified.',receipts:ids,candidateRows:rows});
+    const prior=await accepted('read');
+    const unknown=await attempt([first,second],[row('first',first),row('second',second,'unknown')]);
+    assert.equal(unknown.code,'DIRECTORY_QUALIFICATION');assert.match(unknown.contentItems[0].text,/1 candidates.*2 needed/);
+    const unmet=await attempt([first,second],[row('first',first),row('second',second,'unmet')]);
+    assert.equal(unmet.code,'DIRECTORY_QUALIFICATION');
+    assert.equal((await attempt([first,second],[row('first',first),row('FIRST',second)])).code,'DIRECTORY_QUALIFICATION');
+    assert.equal((await attempt([first,second],[row('first',first),row('same_receipt',first)])).code,'DIRECTORY_QUALIFICATION');
+    assert.deepEqual(await accepted('read'),prior,'Rejected qualified counts retain focus, notes, and receipts.');
+    const reread=await read('source-one.txt');
+    const duplicated=await attempt([first,reread],[row('first',first),row('same_source',reread)]);
+    assert.equal(duplicated.code,'DIRECTORY_QUALIFICATION');assert.match(duplicated.contentItems[0].text,/repeating the same source/);
+    const completed=await accepted('observe',{id:'find_two',outcome:'objective-met',claim:'Confirmed two distinct sources.',receipts:[first,second],candidateRows:[row('first',first),row('second',second)]});
+    assert.equal(completed.actions[0].observation.qualification.count,2);
     assert.deepEqual(completed.ready,['report']);
     await accepted('focus',{id:'report'});
     const report=await read('source-two.txt');
@@ -137,7 +155,12 @@ test('typed partial observation retains live search evidence without closing or 
    const done=engine.getRun(run.id);
    assert.equal(done.status,'completed',done.error);
    assert.equal(done.nodes.a.directoryOutcome,scenario==='exhausted'?'incomplete':undefined);
-   assert(engine.runs.get(run.id).turnMachineTrace.head.some(e=>e.kind==='directory.mutation'&&e.metadata?.observeOutcome==='partial'));
+   const trace=engine.runs.get(run.id).turnMachineTrace.head;
+   assert(trace.some(e=>e.kind==='directory.mutation'&&e.metadata?.observeOutcome==='partial'&&e.metadata.qualifyingCount===1&&e.metadata.requiredQualifyingCount===2));
+   if(scenario==='fulfilled'){
+    assert(trace.some(e=>e.kind==='directory.mutation'&&e.metadata?.code==='DIRECTORY_QUALIFICATION'&&e.metadata.qualifyingCount===1&&e.metadata.requiredQualifyingCount===2));
+    assert(trace.some(e=>e.kind==='directory.mutation'&&e.metadata?.observeOutcome==='objective-met'&&e.metadata.qualifyingCount===2&&e.metadata.requiredQualifyingCount===2));
+   }
   });
  }
 });

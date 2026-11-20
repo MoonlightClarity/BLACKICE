@@ -100,6 +100,39 @@ test('wrong-action and absent receipt diagnostics preserve focus and allow immed
  assert.equal(ledger.finalStatus().ready,true);
 });
 
+test('verification source identity uses the successful returned URL, not requested URL or tracking and hash variants',async()=>{
+ const ledger=create(), context={runId:'run',nodeId:'agent',observationOnly:true};
+ const qualifying={minQualifyingCount:2,requiredChecks:['user_required']};
+ const action={id:'find',objective:'Verify two eligible sources',dependsOn:[],qualifying};
+ const dir=(args,scope=context)=>ledger.handle({...args,revision:ledger.read().revision},scope);
+ await dir({action:'plan',actions:[action]});
+ await dir({action:'focus',id:'find'});
+ const active=ledger.read();
+ for(const replacement of [undefined,{...qualifying,minQualifyingCount:1}]){
+  await assert.rejects(dir({action:'plan',actions:[{...action,qualifying:replacement}]}),{code:'DIRECTORY_RECORDED_ACTION'});
+ }
+ assert.deepEqual(ledger.read(),active);
+ const source=async (url,scope=context,requested='https://public.example/careers?id=unresolved')=>ledger.execute(
+  {name:'relay_browser',arguments:{action:'navigate',url:requested}},
+  async()=>({success:true,contentItems:[{type:'inputText',text:JSON.stringify(url?{url,documentId:'live-document',frames:[{}]}:{status:'opaque result'})}]}),scope);
+ const one=await source('https://public.example/careers?utm_source=first&id=1#work');
+ const alias=await source('https://public.example/careers?id=1&gclid=tracking#remote',context,'https://other.example/requested');
+ const two=await source('https://public.example/careers?id=2&utm_campaign=tracking#remote');
+ const noIdentity=await source(null);
+ assert.equal(noIdentity.result.success,true,'Unavailable identity cannot change normal handler success.');
+ const foreign=await source('https://public.example/careers?id=3',{...context,runId:'other-run'});
+ const mark=(first,second)=>dir({action:'observe',outcome:'objective-met',id:'find',claim:'Verified both sources.',receipts:[first.receiptId,second.receiptId],
+  candidateRows:[first,second].map((r,i)=>({id:'candidate_'+i,sourceReceipt:r.receiptId,checks:[{id:'user_required',status:'verified'}]}))});
+ await assert.rejects(mark(one,alias),{code:'DIRECTORY_QUALIFICATION',message:/repeating the same source/});
+ await assert.rejects(mark(one,noIdentity),{code:'DIRECTORY_QUALIFICATION',message:/successful source-read receipt/});
+ await assert.rejects(mark(one,foreign),{code:'DIRECTORY_QUALIFICATION',message:/from this run and node/});
+ await mark(one,two);
+ assert.equal(ledger.read().actions[0].observation.qualification.count,2);
+ assert.equal(ledger.finalStatus().ready,true);
+ assert.doesNotMatch(JSON.stringify(ledger.read()),/public\.example|tracking|sourceKey|live-document/);
+ const reopened=create({snapshot:ledger.read()});assert.equal(reopened.read().actions[0].observation.qualification.count,2);
+});
+
 test('plan replaces only pending work and can depend on omitted recorded steps',async()=>{
  const ledger=create();await plan(ledger);await focus(ledger);
  const receipt=await ledger.execute({name:'relay_find_files'},async()=>({success:true}),{runId:'run',nodeId:'agent'});
