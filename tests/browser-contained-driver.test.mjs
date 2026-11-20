@@ -2912,3 +2912,41 @@ test('agent upload derives guards only from the current ref on the exact owned t
   await assert.rejects(browser.perform(request, options), { code: 'BROWSER_REF_STALE', actionDispatched: false });
   assert.equal(pathChecks, 0, 'Stale or mismatched targets must fail before checking a file path.');
 });
+
+test('a native popup is attributed during click and inspection is a separate tool observation',async t=>{
+ const {driver,Window}=await fixture(t);
+ const owner=taskOwner('popup-trace'), browser=new BrowserWorkspace({driver:new BrowserRouter({independent:driver})});
+ t.after(()=>browser.close());
+ const parent=await driver.perform({action:'open',url:'https://task.example/'},{owner});
+ const tab=driver.tabs.get(parent.tabId),events=[];
+ const handler=createBrowserToolHandler({browser,owner,onObservation:(event,callId)=>events.push({event,callId})});
+ const call=(action,tabId,callId,extra={})=>handler({name:'relay_browser',callId,arguments:{action,tabId,...extra}});
+ const openPopup=()=>{
+  const response=tab.window.webContents.openHandler({url:'https://task.example/popup'});
+  const childWindow=new Window(response.overrideBrowserWindowOptions);
+  tab.window.webContents.emit('did-create-window',childWindow,{url:'https://task.example/popup'});
+  return [...driver.tabs.values()].find(item=>item.window===childWindow);
+ };
+ const background=openPopup(); assert.equal(events.length,0,'outside input is not attributed');
+ driver.browserPoint=async()=>({x:10,y:10});
+ driver.pointerTarget=async()=>({point:{x:10,y:10},close:async()=>{}});
+ driver.capture=async()=>({retries:0});
+ const prepare=driver.element.bind(driver);driver.element=async(target,args,action,...rest)=>action==='prepare'
+  ? {frame:target.window.webContents.mainFrame,result:{x:10,y:10}} : prepare(target,args,action,...rest);
+ const originalSnapshot=driver.snapshot.bind(driver);driver.snapshot=async (target,...args)=>{
+  const r=await originalSnapshot(target,...args);
+  return {...r,frames:[{observation:'content-observed',elements:[]}]};
+ };
+ let child;
+ driver.clickPoint=async()=>{child=openPopup();};
+ rememberFixtureRef(driver,tab,'test-control');
+ const click=await call('click',tab.id,'click-call',{ref:'test-control'});
+ assert.equal(click.success,true,JSON.parse(click.contentItems[0].text).error);
+ assert.deepEqual(events.filter(x=>x.event.type==='browser.destination'),[{callId:'click-call',
+  event:{type:'browser.destination',action:'click',phase:'popup-during-click',sourceTabId:tab.id,tabId:child.id}}]);
+ assert.ok(!events.some(x=>x.event.tabId===background.id));
+ const snapshot=await call('snapshot',child.id,'inspect-call');
+ assert.equal(snapshot.success,true,JSON.parse(snapshot.contentItems[0].text).error);
+ assert.deepEqual(events.filter(x=>x.event.phase==='inspection-returned'),[{callId:'inspect-call',
+  event:{type:'browser.destination',action:'snapshot',phase:'inspection-returned',tabId:child.id}}]);
+});

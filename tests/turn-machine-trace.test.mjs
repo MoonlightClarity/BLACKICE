@@ -226,3 +226,18 @@ test('maximal export preserves controlled continuation reasons and browser tabs,
   assert.equal(entries[2].metadata?.reason,undefined);
   assert.doesNotMatch(JSON.stringify(entries),/Private|not on the allowlist/);
 });
+
+test('destination references join click and inspection after trace restore',()=>{
+ const run=fixture(), popup='a'.repeat(24), parent='b'.repeat(24);
+ recordTurnMachineEvent(run,wrap({type:'browser.destination',action:'click',phase:'popup-during-click',
+   callRef:'1'.repeat(24),browserTabRef:popup,sourceBrowserTabRef:parent,url:'private popup address'}));
+ recordTurnMachineEvent(run,wrap({type:'browser.destination',action:'snapshot',phase:'inspection-returned',
+   callRef:'2'.repeat(24),browserTabRef:popup,tabId:'private raw tab'}));
+ const {entries}=projectTurnMachineTrace(JSON.parse(JSON.stringify(run)));
+ assert.equal(entries[0].browserTabRef,entries[1].browserTabRef);
+ assert.equal(entries[0].sourceBrowserTabRef,parent);
+ assert.equal(entries[0].metadata.phase,'popup-during-click');
+ assert.equal(entries[1].metadata.phase,'inspection-returned');
+ assert.notEqual(entries[0].callRef,entries[1].callRef);
+ assert.doesNotMatch(JSON.stringify(entries),/private/);
+});

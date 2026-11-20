@@ -782,7 +782,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (this.liveSurface) return { action: 'allow', outlivesOpener: true, createWindow: options => {
         const child = this.createSurfaceWindow({ ...containedWindowOptions(this.session), ...options,
           webPreferences: { ...containedWindowOptions(this.session).webPreferences, ...options.webPreferences, session: this.session, offscreen: false } });
-        try { this.newTab(url || 'about:blank', { window: child, owner: tab.owner, humanCreated, providerKeyProtected: tab.providerKeyProtected === true, folderId: tab.folderId, parentTabId: tab.id }); }
+        try { this.recordClickPopup(tab, this.newTab(url || 'about:blank', { window: child, owner: tab.owner, humanCreated, providerKeyProtected: tab.providerKeyProtected === true, folderId: tab.folderId, parentTabId: tab.id })); }
         catch (cause) { child.destroy(); throw cause; }
         return child.webContents;
       } };
@@ -791,7 +791,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     wc.on('did-create-window', (child, details) => {
       const humanCreated = tab.humanCreated || tab.humanSurface === true;
       if (this.closed || !this.compatibilitySettled || tab.closing || this.tabs.get(tab.id) !== tab || tab.window !== window) child.destroy();
-      else try { this.newTab(details.url || 'about:blank', { window: child, owner: tab.owner, humanCreated, providerKeyProtected: tab.providerKeyProtected === true, folderId: tab.folderId, parentTabId: tab.id }); } catch { if (!child.isDestroyed()) child.destroy(); }
+      else try { this.recordClickPopup(tab, this.newTab(details.url || 'about:blank', { window: child, owner: tab.owner, humanCreated, providerKeyProtected: tab.providerKeyProtected === true, folderId: tab.folderId, parentTabId: tab.id })); } catch { if (!child.isDestroyed()) child.destroy(); }
     });
     wc.on('will-attach-webview', event => event.preventDefault());
     if (this.liveSurface) wc.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame === true) this.cancelAuthentication(tab); });
@@ -1966,11 +1966,25 @@ export class ElectronBrowserDriver extends EventEmitter {
       throw cause;
     }
   }
-  async pointerInput(tab, point, action, signal, expected) {
+  // Attribute only a Chromium popup observed inside one trusted click dispatch.
+  // Unrelated or later popups have an opener but no proven click link.
+  recordClickPopup(tab, childTab) {
+    const active = tab.clickPopupObservers;
+    if (active?.size !== 1 || tab.providerKeyProtected || childTab.providerKeyProtected) return;
+    try { [...active][0].report?.(tab.id, childTab.id); }
+    catch { /* Optional evidence is never part of the action outcome. */ }
+  }
+  async pointerInput(tab, point, action, signal, expected, reportClickPopup) {
     const target = await this.pointerTarget(tab, point, signal, expected);
     try {
       await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...target.point, button: 'none' }, signal, target.guard, target.sessionId);
-      if (action === 'click') await this.clickPoint(tab, target.point, signal, target.guard, target.sessionId);
+      if (action === 'click') {
+        const active = tab.clickPopupObservers ||= new Set();
+        const click = { report: reportClickPopup };
+        active.add(click);
+        try { await this.clickPoint(tab, target.point, signal, target.guard, target.sessionId); }
+        finally { active.delete(click); }
+      }
       if (action === 'scroll') await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseWheel', ...target.point, deltaX: expected.deltaX, deltaY: expected.deltaY, button: 'none' }, signal, target.guard, target.sessionId);
     } finally { await target.close(); }
   }
@@ -2073,7 +2087,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       dispose: () => { clearTimeout(timer); wc.removeListener('did-start-navigation', listener); wake?.(); },
     };
   }
-  async perform(args, { signal, source = 'agent', owner: context, destinationOwner, validateUploadPath, suppressResultSnapshot = false, operationDescriptor, operationId, recoveryInput, cleanupGuard, cleanupReviewed = false, protectInUse = false, settleRecoveryRead = false } = {}) {
+  async perform(args, { signal, source = 'agent', owner: context, destinationOwner, validateUploadPath, suppressResultSnapshot = false, operationDescriptor, operationId, recoveryInput, cleanupGuard, cleanupReviewed = false, protectInUse = false, settleRecoveryRead = false, onClickPopup } = {}) {
     cancel(signal);
     const fillText = args.action === 'fill' ? validateBrowserFillRequest(args) : undefined;
     if (args.action === 'upload') validateBrowserUploadRequest(args);
@@ -2278,7 +2292,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         await this.assertOperationCommit(args, operationDescriptor, { signal, owner });
         await this.armSubmissionObservation(tab, operationDescriptor, operationId, signal);
         if (recoveryInput) await recoveryInput({ signal, prepared: true });
-        await this.pointerInput(tab, point, args.action, signal, args);
+        await this.pointerInput(tab, point, args.action, signal, args, onClickPopup);
         receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: args.ref, input: 'browser protocol' };
       } else {
         const viewport = await bounded(tab.window.webContents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal);
@@ -2288,7 +2302,7 @@ export class ElectronBrowserDriver extends EventEmitter {
           const current = await bounded(tab.window.webContents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal);
           if (current.width !== viewport.width || current.height !== viewport.height) throw error('The browser viewport changed while preparing input. Take a fresh screenshot before acting.');
         }
-        await this.pointerInput(tab, { x: args.x, y: args.y }, args.action, signal, args);
+        await this.pointerInput(tab, { x: args.x, y: args.y }, args.action, signal, args, onClickPopup);
         receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: true };
         // Human preview input shares a queue with typing. A completed guarded
         // click must not hold that queue for navigation settling or a DOM scan;
