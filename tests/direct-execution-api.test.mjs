@@ -218,7 +218,12 @@ test('browser failures keep actionable durable messages, uncertainty and exact r
   const stale = 'This element ref is stale. Take a new snapshot and choose its current ref.', calls = [];
   const browser = new BrowserWorkspace({ driver: {
     status: () => ({ available: true, contained: true, tabs: [{ tabId: 'one' }], activeTab: 'one' }),
-    perform: async args => { calls.push(args.ref); if (args.ref === 'detached') throw Object.assign(new Error(stale), { code: 'BROWSER_REF_STALE', actionDispatched: false }); throw stale; },
+    perform: async args => {
+      calls.push({action:args.action,tabId:args.tabId,...(args.ref?{ref:args.ref}:{})});
+      if(args.action==='snapshot')return {tabId:'one',frames:[{elements:[{ref:'current-control',role:'button',name:'Synthetic button'}]}]};
+      if(args.ref==='detached')throw Object.assign(new Error(stale),{code:'BROWSER_REF_STALE',actionDispatched:false});
+      throw stale;
+    },
     close: async () => {},
   } }); t.after(() => browser.close());
   const { api, dataDir, cwd } = await harness(t, { browser }), completed = [];
@@ -229,18 +234,24 @@ test('browser failures keep actionable durable messages, uncertainty and exact r
     const receipt = JSON.parse(done.result.text.text);
     assert.ok(receipt.error.startsWith(stale)); if (!possible) assert.match(receipt.error, /Do not reuse this ref\..*No page input was dispatched\./); assert.equal(receipt.code, possible ? 'BROWSER_ACTION_FAILED' : 'BROWSER_REF_STALE');
     assert.equal(receipt.actionDispatched, possible ? undefined : false);
+    if(possible)assert.equal(receipt.recovery,undefined);
+    else {
+      assert.deepEqual(receipt.recovery.nextCall,{action:'snapshot',browser:'relay',tabId:'one'});
+      assert.equal(receipt.recovery.observation.frames[0].elements[0].ref,'current-control');
+    }
     assert.deepEqual(done.effects, { possible, confirmed: false });
     const replay = await api.call('blackice_browser_action', request, client);
     assert.equal(replay.existing, true); assert.equal(replay.jobId, pending.jobId);
     completed.push({ request, jobId: pending.jobId, text: done.result.text.text, possible });
   }
-  assert.deepEqual(calls, ['detached', 'unknown-boundary']); await api.close();
+  const expected=[{action:'click',tabId:'one',ref:'detached'},{action:'snapshot',tabId:'one'},{action:'click',tabId:'one',ref:'unknown-boundary'}];
+  assert.deepEqual(calls,expected,'Only the proven pre-dispatch rejection may refresh by observation.'); await api.close();
   const reopened = new DirectExecutionAPI({ dataDir, allowedRoot: cwd, browser }); t.after(() => reopened.close()); await reopened.init();
   for (const { request, jobId, text, possible } of completed) {
     const saved = await reopened.getJob(jobId, client); assert.equal(saved.result.text.text, text); assert.deepEqual(saved.effects, { possible, confirmed: false });
     const replay = await reopened.call('blackice_browser_action', request, client); assert.equal(replay.existing, true); assert.equal(replay.jobId, jobId);
   }
-  assert.deepEqual(calls, ['detached', 'unknown-boundary'], 'Reading and replaying an error receipt must not send the click again.');
+  assert.deepEqual(calls,expected,'Reading and replaying an error receipt must dispatch neither input nor another snapshot.');
   await reopened.close();
 });
 

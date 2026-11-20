@@ -21,6 +21,8 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   const root=await realpath(tmpdir()),dir=await mkdtemp(path.join(root,'blackice-skill-provider-'));
   const requests=[],observed=[];
   const skillId='library-pdf-evidence', title='Read a PDF for evidence';
+  const automatic={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done'};
+  const explicit={type:'skill_loaded',skillId,title};
   const calls=[
     ['lookup',{action:'search',query:'read PDF for evidence'}],
     ['missing',{action:'read',id:'missing-fixture-skill'}],
@@ -66,12 +68,11 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   assert.doesNotMatch(toolResult(1,'lookup'),/Get to the relevant page/);
   assert.match(toolResult(2,'missing'),/not found/i);
   assert.match(toolResult(3,'load'),/Get to the relevant page/);
-  assert.deepEqual(observed.slice(0,4),[[],[],[],[]],'No receipt before the provider accepts the body-bearing continuation.');
+  assert.deepEqual(observed.slice(0,4),[[],[automatic],[automatic],[automatic]],
+    'The automatic prompt receipt starts after first acceptance; discovery, a miss, and a not-yet-accepted body do not emit a skill-loaded receipt.');
   const projected=projectFamily({rootId:done.id,runs:[done]}).runs[0];
   for(const receipts of [observed[4],done.skillLoadReceipts,projected.skillLoadReceipts]){
-    assert.equal(receipts?.length,1);
-    assert.equal(receipts[0].skillId,skillId);
-    assert.equal(receipts[0].title,title);
+    assert.deepEqual(receipts,[automatic,explicit], 'The accepted tool body adds one distinct receipt even after the repeat.');
     assert.doesNotMatch(JSON.stringify(receipts),/Get to the relevant page/);
   }
 });
