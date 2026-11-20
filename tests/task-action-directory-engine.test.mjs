@@ -14,13 +14,16 @@ test('human HTTP redirect invalidates cached provider focus before its next effe
 test('human edit during awaited handoff cannot become an unseen provider revision',async t=>{let calls=0,firstId;const{engine,root}=await setup(t,async o=>{if(++calls===1)return{output:'First ordinary turn'};assert.match(o.prompt,/"revision":0/);assert.doesNotMatch(o.prompt,/Unseen action/);const write=()=>o.onToolCall({name:'relay_workspace',callId:'handoff-write',arguments:{action:'write',path:path.join(root,'handoff.txt'),text:'current focus'}});const denied=await write();assert.equal(denied.success,false);assert.equal(denied.code,'DIRECTORY_CHANGED');await assert.rejects(access(path.join(root,'handoff.txt')));const observed=await o.onToolCall({name:'relay_directory_action',arguments:{action:'read'}});assert.equal(observed.success,true);const accepted=await write();assert.equal(accepted.success,true,JSON.stringify(accepted));assert.equal(await readFile(path.join(root,'handoff.txt'),'utf8'),'current focus');return{output:'Not complete'};});const first=engine.startRun({workflow:graph,input:'Initial ordinary turn'});firstId=first.id;await engine.executions.get(first.id);let held=false;engine.fitHandoff=async(_handoff,_node,_graph,prompt)=>{held=true;await new Promise(r=>setTimeout(r,1));const ledger=await engine.actionDirectories.get(firstId,'Initial ordinary turn');let s=await ledger.edit({action:'plan',revision:0,actions:[{id:'new',objective:'Unseen action',dependsOn:[]}]},{authority:'human'});await ledger.edit({action:'focus',id:'new',revision:s.revision},{authority:'human'});return{prompt,runtimeContinuity:undefined,continuity:{method:'none'}};};const next=engine.continueRun(first.id,{nodeId:'a',message:'Use Directory',directoryActions:'on'});await engine.executions.get(next.id);assert.equal(held,true);assert.equal(calls,2);assert.equal(engine.getRun(next.id).errorCode,'DIRECTORY_ACTION_UNFINISHED');});
 
 test('blocked dependency replay permits an honest final after one recovery but does not record the dependent effect',async t=>{
- const{engine}=await setup(t,async o=>{
+ const{engine,root}=await setup(t,async o=>{
   const call=(args,i)=>o.onToolCall({name:'relay_directory_action',arguments:args,callId:'dir-'+i});
   assert.equal((await call({action:'plan',actions:[{id:'route',objective:'Verify route',dependsOn:[]},{id:'dependent',objective:'Run only after verification',dependsOn:['route']}]},1)).success,true);
   const outOfOrder=await call({action:'observe',id:'route',claim:'Candidate observed',receipts:[]},2);assert.equal(outOfOrder.code,'DIRECTORY_OBSERVATION');assert.match(outOfOrder.contentItems[0].text,/not focused/);
   assert.equal((await o.onBeforeFinal({signal:o.signal})).continue,true);
   assert.equal((await call({action:'focus',id:'route'},3)).success,true);
-  assert.equal((await call({action:'block',id:'route',blocker:'prerequisite-unavailable',claim:'Page changed and the candidate could not be confirmed.'},4)).success,true);
+  assert.equal((await call({action:'block',id:'route',blocker:'prerequisite-unavailable',claim:'No source was checked.'},4)).code,'DIRECTORY_BLOCKER');
+  const missing=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:path.join(root,'required-input')},callId:'verify-unavailable'});
+  assert.equal(missing.success,false);
+  assert.equal((await call({action:'block',id:'route',blocker:'prerequisite-unavailable',claim:'The required input directory does not exist.',receipts:['receipt-1']},5)).success,true);
   assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);
   return{output:'Could not confirm the route. No dependent work was performed.'};
  });
@@ -31,7 +34,7 @@ test('blocked dependency replay permits an honest final after one recovery but d
   assert.equal(result.status,'completed',result.error);assert.equal(result.nodes.a.directoryOutcome,'incomplete');assert.match(result.output,/No dependent work/);
   const ledger=await engine.actionDirectories.get(run.id,'Check a candidate route');
   assert.deepEqual(ledger.finalStatus().dependencyBlocked,[{id:'dependent',blockedBy:['route']}]);
-  assert.equal(ledger.read().receipts.length,0);
+  assert.deepEqual(ledger.read().actions[0].observation.receipts,['receipt-1']);
   if(mode==='maximal'){
    const observed=engine.runs.get(run.id).turnMachineTrace.head;
    assert(observed.some(e=>e.metadata?.reason==='blocked-paths'&&e.metadata?.dependencyBlockedCount===1),JSON.stringify(observed.at(-1)));
@@ -51,9 +54,13 @@ test('focus-after-read live trace replay advances without repeating the successf
   const [receipt]=note.match(/receipt-[0-9]+/);
   const obs=()=>dir('observe',{id:'find',claim:'Read the local inputs',receipts:[receipt]});
   assert.equal((await obs()).code,'DIRECTORY_OBSERVATION');
+  const stopped=await dir('block',{id:'find',blocker:'prerequisite-unavailable',claim:'I found the input but the work is incomplete.'});
+  assert.equal(stopped.code,'DIRECTORY_BLOCKER');
+  assert.match(stopped.contentItems[0].text,/already found or read/);
   assert.equal((await dir('focus',{id:'find'})).success,true);
   const observed=await obs();assert.equal(observed.success,true,JSON.stringify(observed));
   const state=JSON.parse(observed.contentItems[0].text);assert.deepEqual(state.ready,['use']);
+  assert.equal((await dir('focus',{id:'use'})).success,true);
   assert.equal((await dir('block',{id:'use',blocker:'no-viable-route',claim:'Offline replay ends here'})).success,true);
   assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);
   return{output:'Found the local input; no other source was contacted.'};
