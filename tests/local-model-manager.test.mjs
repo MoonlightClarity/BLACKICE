@@ -124,3 +124,23 @@ test('the local model settings module is registered in the static asset allowlis
   const server = await readFile(new URL('../server.mjs', import.meta.url), 'utf8');
   assert.match(server, /'workspaces\/settings-local-models\.mjs'/);
 });
+
+test('saved GGUF files remain selectable with an offline owned router, without exposing missing or external entries', async t=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'blackice-saved-catalog-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const available=path.join(root,'present.gguf');
+  await writeFile(available,'catalog fixture; not loaded as weights');
+  let external=false;
+  const manager=new LocalModelManager({fetchImpl:async url=>{
+    if(!external)throw Error('endpoint offline');
+    if(new URL(url).pathname==='/props')return reply({role:'router'});
+    return reply({data:[{id:'external-only',status:{value:'loaded'}}]});
+  }});
+  manager.llamaSupervisor={status:()=>({owned:false})};
+  manager.llamaConfig=()=>({revision:1,settings:{modelPaths:{present:available,missing:path.join(root,'missing.gguf')}}});
+  const offline=await manager.llamaCatalog();
+  assert.equal(offline.available,false);
+  assert.deepEqual(offline.models.map(m=>[m.id,m.loaded]),[['present',false]]);
+  external=true;
+  assert.deepEqual((await manager.llamaCatalog()).models.map(m=>m.id),['external-only']);
+});

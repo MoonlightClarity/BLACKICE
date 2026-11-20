@@ -2,9 +2,11 @@ import { replyTarget, running, runText } from '../chat/model.mjs';
 
 const record=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{};
 const positive=value=>Number.isSafeInteger(value)&&value>0?value:null;
+const count=value=>Number.isSafeInteger(value)&&value>=0?value:null;
 const tokens=value=>positive(value)?.toLocaleString('en-US')||'Unknown';
 const compactTokens=value=>positive(value)?value%1000===0?(value/1000).toLocaleString('en-US')+'k':tokens(value):'unknown';
 const presets=new Set(['model','extended','custom','900k']);
+const compactionStates=new Set(['running','compacted','skipped','failed']);
 const bounds={outputReserveTokens:[256,Number.MAX_SAFE_INTEGER],headroomTokens:[128,Number.MAX_SAFE_INTEGER],compactAtTokens:[256,Number.MAX_SAFE_INTEGER],keepRecentTokens:[256,Number.MAX_SAFE_INTEGER]};
 const fieldLabels={outputReserveTokens:'Output reserve',headroomTokens:'Safety headroom',compactAtTokens:'Compression trigger',keepRecentTokens:'Recent context to keep'};
 const nativeContextReason='Mistral Vibe Code manages context automatically. Manual compression and custom context settings are unavailable; saved history is preserved.';
@@ -70,13 +72,33 @@ function contextInputBudget(options,info){
   return usable-output-headroom;
 }
 
+// The provider's last reported input is not necessarily the current live context.
+function composerContextReading(current,options,info,savedInfo,loading){
+  if(loading)return {usage:'Loading context',budget:'',used:null,limit:null};
+  const measured=count(current.measuredInputTokens),estimate=count(current.estimatedInputTokens),reported=count(current.actualInputTokens);
+  const observed=estimate!==null&&current.remainingIsEstimate===false;
+  const used=measured??estimate??reported;
+  const usage=used===null?'Context not reported':'Context: '+used.toLocaleString('en-US')+' tokens '+(measured!==null?'measured':observed?'reported':estimate!==null?'estimated':'last reported');
+  const catalogOnly=savedInfo.automaticOnly&&savedInfo.source==='account-catalog';
+  const inputBudget=catalogOnly?null:positive(current.inputBudgetTokens);
+  const usable=catalogOnly?null:positive(current.nativeObservedWindowTokens)||positive(current.effectiveWindowTokens);
+  if(inputBudget)return {usage,budget:tokens(inputBudget)+'-token input budget',used,limit:inputBudget,reported};
+  if(usable)return {usage,budget:tokens(usable)+(current.nativeWindowBasis==='metadata-percent'?'-token estimated usable window':current.windowSource==='working-budget'?'-token working window':'-token usable window'),used,limit:usable,reported};
+  if(catalogOnly)return {usage,budget:positive(savedInfo.defaultWindow)?tokens(savedInfo.defaultWindow)+'-token catalog limit':'',used,limit:null,reported};
+  const nextBudget=used===null?positive(contextInputBudget(options,info)):null;
+  if(nextBudget)return {usage,budget:tokens(nextBudget)+'-token estimated input budget',used,limit:null,reported};
+  return {usage,budget:'',used,limit:null,reported};
+}
+
 /** Only bounded statistics cross the worker boundary, never checkpoint text. */
 export function contextStatistics(value){
   if(!value||typeof value!=='object'||Array.isArray(value))return undefined;
   const result={};
   for(const key of ['preset','windowSource','nativeWindowBasis','estimateMethod'])if(typeof value[key]==='string')result[key]=value[key].slice(0,300);
-  for(const key of ['requestedWindowTokens','modelWindowTokens','configuredModelWindowTokens','effectiveWindowTokens','estimatedInputTokens','actualInputTokens','actualOutputTokens','outputReserveTokens','headroomTokens','inputBudgetTokens','compactAtTokens','keepRecentTokens','remainingTokens','compactionCount','nativeConfiguredWindowTokens','nativeDefaultContextWindowTokens','nativeMaxContextWindowTokens','nativeEffectiveContextWindowPercent','nativeObservedWindowTokens'])if(Number.isFinite(value[key]))result[key]=value[key];
+  for(const key of ['requestedWindowTokens','modelWindowTokens','configuredModelWindowTokens','effectiveWindowTokens','measuredInputTokens','estimatedInputTokens','actualInputTokens','actualOutputTokens','outputReserveTokens','headroomTokens','inputBudgetTokens','compactAtTokens','keepRecentTokens','remainingTokens','compactionCount','nativeConfiguredWindowTokens','nativeDefaultContextWindowTokens','nativeMaxContextWindowTokens','nativeEffectiveContextWindowPercent','nativeObservedWindowTokens'])if(Number.isFinite(value[key]))result[key]=value[key];
   for(const key of ['remainingIsEstimate','autoCompact'])if(typeof value[key]==='boolean')result[key]=value[key];
+  if(compactionStates.has(value.compactionState))result.compactionState=value.compactionState;
+  if(typeof value.compactionReason==='string')result.compactionReason=value.compactionReason.slice(0,400);
   if(Array.isArray(value.warnings))result.warnings=value.warnings.filter(item=>typeof item==='string').slice(0,8).map(item=>item.slice(0,600));
   if(value.lastCompaction)result.lastCompaction=compactionStatistics(value.lastCompaction);
   return result;
@@ -160,6 +182,7 @@ export function createContextControls({mount,id='next-context',scope='chat',auto
   mount.classList.add('next-context-controls');
   mount.dataset.scope=scope;
   mount.innerHTML=[
+    defaults?'':'<div class="next-context-meter" id="'+id+'-meter"><meter id="'+id+'-gauge" min="0" max="1" value="0" aria-hidden="true" hidden></meter><span id="'+id+'-usage"></span><span id="'+id+'-meter-budget"></span><span id="'+id+'-meter-compression" class="next-context-meter-compression" role="status" hidden></span></div>',
     '<div class="next-context-heading" id="'+id+'-heading"><button type="button" id="'+id+'-toggle" aria-expanded="false" aria-controls="'+id+'-body">'+(defaults?'Context settings':'Close context settings')+'</button>',
     '<span id="'+id+'-summary" class="next-help"></span>',
     '</div><div id="'+id+'-body" class="next-context-body" hidden>',
@@ -182,7 +205,7 @@ export function createContextControls({mount,id='next-context',scope='chat',auto
     '</div>',
   ].join('');
   const $=suffix=>mount.querySelector('#'+id+'-'+suffix);
-  const f={budgetControls:$('budget-controls'),apiOptions:$('api-options'),autoRow:$('auto-row'),nativeReset:$('native-reset'),heading:$('heading'),toggle:$('toggle'),body:$('body'),summary:$('summary'),stop:$('stop'),preset:$('preset'),window:$('window'),windowLabel:$('window-label'),capacity:$('capacity'),budgetNote:$('budget-note'),auto:$('auto'),autoLabel:$('auto-label'),autoHelp:$('auto-help'),triggerLabel:$('trigger-label'),triggerHelp:$('trigger-help'),recentLabel:$('recent-label'),trigger:$('trigger'),recent:$('recent'),advanced:$('advanced'),reserve:$('reserve'),headroom:$('headroom'),saved:$('saved'),warnings:$('warnings'),feedback:$('feedback'),result:$('result')};
+  const f={meter:$('meter'),gauge:$('gauge'),usage:$('usage'),meterBudget:$('meter-budget'),meterCompression:$('meter-compression'),budgetControls:$('budget-controls'),apiOptions:$('api-options'),autoRow:$('auto-row'),nativeReset:$('native-reset'),heading:$('heading'),toggle:$('toggle'),body:$('body'),summary:$('summary'),stop:$('stop'),preset:$('preset'),window:$('window'),windowLabel:$('window-label'),capacity:$('capacity'),budgetNote:$('budget-note'),auto:$('auto'),autoLabel:$('auto-label'),autoHelp:$('auto-help'),triggerLabel:$('trigger-label'),triggerHelp:$('trigger-help'),recentLabel:$('recent-label'),trigger:$('trigger'),recent:$('recent'),advanced:$('advanced'),reserve:$('reserve'),headroom:$('headroom'),saved:$('saved'),warnings:$('warnings'),feedback:$('feedback'),result:$('result')};
   let base=contextOptions(),info=contextModelInfo(),snapshot={},dirty=false,revision=0,owner=null,destroyed=false,expanded=false;
   const drafts=new Map();
   const compaction=api&&!defaults?createContextCompaction({api,onChange:target=>{draw();onOperationChange(target);},onComplete}):null;
@@ -230,11 +253,32 @@ export function createContextControls({mount,id='next-context',scope='chat',auto
     for(const input of [f.preset,f.window,f.auto,f.trigger,f.recent,f.reserve,f.headroom])input.disabled=automatic||busy||snapshot.readonly===true;
     const current=snapshot.contextStatus||{},parts=[];
     if(!defaults){
+      const savedInfo=contextModelInfo(snapshot.status||{},target?.model||snapshot.model||'default');
+      const reading=composerContextReading(current,value,info,savedInfo,snapshot.loading===true);
+      if(f.usage.textContent!==reading.usage)f.usage.textContent=reading.usage;
+      if(f.meterBudget.textContent!==reading.budget)f.meterBudget.textContent=reading.budget;
+      f.meterBudget.hidden=!reading.budget;
+      f.meter.title=reading.reported==null?'':'Last reported input: '+reading.reported.toLocaleString('en-US')+' tokens';
+      f.gauge.hidden=reading.used===null||reading.limit===null;
+      if(!f.gauge.hidden){
+        f.gauge.setAttribute('max',String(reading.limit));
+        f.gauge.setAttribute('value',String(Math.min(reading.used,reading.limit)));
+      }
+      const compression=snapshot.loading?null:current.compactionState;
+      const compressionFeedback=compression==='running'?'Compressing context':compression==='failed'?'Context compression failed':'';
+      if(f.meterCompression.textContent!==compressionFeedback)f.meterCompression.textContent=compressionFeedback;
+      f.meterCompression.hidden=!compressionFeedback;
+      f.meterCompression.dataset.error=String(compression==='failed');
+      const reason=typeof current.compactionReason==='string'?current.compactionReason:'';
+      f.meterCompression.title=compressionFeedback?reason:'';
+      if(compression==='failed'||compression==='skipped')parts.push((compression==='failed'?'Automatic compression failed':'Automatic compression skipped')+(reason?': '+reason:'.'));
       if(positive(current.nativeConfiguredWindowTokens))parts.push('Saved configured window: '+tokens(current.nativeConfiguredWindowTokens));
       if(positive(current.nativeObservedWindowTokens))parts.push('Runtime-reported usable window: '+tokens(current.nativeObservedWindowTokens));
       if(positive(current.effectiveWindowTokens)&&current.effectiveWindowTokens!==current.nativeObservedWindowTokens)parts.push((current.nativeWindowBasis==='metadata-percent'?'Estimated usable window':'Active context budget')+': '+tokens(current.effectiveWindowTokens));
       if(positive(current.actualInputTokens))parts.push('Last reported input: '+tokens(current.actualInputTokens));
-      if(positive(current.estimatedInputTokens))parts.push('Estimated current input: '+tokens(current.estimatedInputTokens));
+      const measured=count(current.measuredInputTokens);
+      if(measured!==null)parts.push('Measured current input: '+measured.toLocaleString('en-US'));
+      else if(positive(current.estimatedInputTokens))parts.push('Estimated current input: '+tokens(current.estimatedInputTokens));
       if(positive(current.compactionCount))parts.push('Compressions: '+current.compactionCount);
       const savedLast=snapshot.lastCompaction||current.lastCompaction;
       const localLast=operation?.result?.compacted?{...operation.result,at:operation.at}:null;
@@ -250,7 +294,7 @@ export function createContextControls({mount,id='next-context',scope='chat',auto
     f.result.hidden=!operation?.message;
     f.heading.hidden=!defaults&&!expanded;f.body.hidden=!expanded;
     f.toggle.setAttribute('aria-expanded',String(expanded));
-    mount.dataset.expanded=String(expanded);mount.hidden=!defaults&&!expanded&&!operation?.message;
+    mount.dataset.expanded=String(expanded);mount.hidden=false;
   }
   function load(value){base=contextOptions(automaticCompaction?{...value,autoCompact:true}:value);f.preset.value=base.preset;f.window.value=base.preset==='custom'?String(base.windowTokens??''):'';f.auto.checked=base.autoCompact;f.trigger.value=String(base.compactAtTokens??'');f.recent.value=String(base.keepRecentTokens??'');f.reserve.value=String(base.outputReserveTokens??'');f.headroom.value=String(base.headroomTokens??'');f.advanced.open=base.outputReserveTokens!==undefined||base.headroomTokens!==undefined;dirty=false;revision++;draw();}
   function changed(){dirty=true;revision++;draw();onChange(draft(),revision);}

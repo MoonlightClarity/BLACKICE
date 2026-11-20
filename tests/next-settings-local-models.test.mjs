@@ -62,7 +62,7 @@ function fixture(t, hook) {
   const panel = createLocalModelSettings({mount: dom.mount, api, onChanged: () => { state.changed++; }});
   t.after(() => panel.destroy());
   return {...dom, panel, calls, state, writes: () => calls.filter(call => call.method !== 'GET'),
-    async enter() { panel.enter(); await until(() => dom.$('#next-local-runtime-status').textContent.includes('is running')); }};
+    async enter() { panel.enter(); await until(() => dom.$('#next-local-runtime-status').textContent==='No local model loaded.' && !dom.$('#next-local-load').disabled); }};
 }
 
 test('local model settings construct typed controls and exact runtime/model options without mutating on entry', async t => {
@@ -70,6 +70,9 @@ test('local model settings construct typed controls and exact runtime/model opti
   assert.deepEqual(f.calls, []);
   for (const id of ['refresh', 'load', 'unload', 'import']) assert.equal(f.$('#next-local-' + id).type, 'button');
   assert.equal(f.$('#next-local-context').type, 'number');
+  assert.equal(f.$('#next-local-advanced').open,false);
+  assert.equal(f.$('#next-local-unload').closest('#next-local-advanced'),f.$('#next-local-advanced'));
+  assert.equal(f.$('#next-local-load').closest('#next-local-advanced'),null);
   assert.equal(f.$('#next-local-source-path').type, 'text');
   assert.deepEqual(f.$('#next-local-engine').children.map(item => item.getAttribute('value')), ['ollama', 'lmstudio', 'llamacpp']);
   assert.equal(f.$('#next-local-engine').value, 'ollama');
@@ -106,7 +109,7 @@ test('a pending local load captures exact model/context and suppresses duplicate
   for (const id of ['refresh', 'load', 'unload', 'import', 'engine', 'model', 'context', 'source-path', 'import-name']) assert.equal(f.$('#next-local-' + id).disabled, true);
   gate.resolve(); await until(() => !f.$('#next-local-load').disabled);
   assert.equal(f.state.changed, 1); assert.equal(f.$('#next-local-unload').disabled, false);
-  assert.match(f.$('#next-local-feedback').textContent, /Loaded fixture-local:latest/);
+  assert.match(f.$('#next-local-feedback').textContent, /Ready in the chat model picker: fixture-local:latest/);
   assert.equal(f.calls.filter(call => call.route === '/api/local-models').length, 2);
 });
 
@@ -144,7 +147,7 @@ test('a late local catalog read cannot overwrite a newer entry or repaint a dest
   });
   f.panel.enter(); f.panel.leave(); await f.enter();
   first.resolve({engines: [{id: 'ollama', name: 'Stale runtime', available: false, models: []}]});
-  await settle(); assert.match(f.$('#next-local-runtime-status').textContent, /^Ollama is running/);
+  await settle(); assert.match(f.$('#next-local-runtime-status').textContent, /^No local model loaded/);
   f.panel.leave(); f.panel.enter();
   const card = f.mount.children[0], status = f.$('#next-local-runtime-status'), previous = status.textContent;
   f.panel.destroy(); assert.equal(card.parentElement, null); assert.equal(card.isConnected === true, false);
@@ -178,7 +181,7 @@ test('llama settings preserve startup context and distinguish router from single
   await f.enter(); await f.input('#next-local-context', '8192');
   const runtime = f.$('#next-local-engine'); runtime.value = 'llamacpp'; await runtime.dispatch('change');
   assert.equal(f.$('#next-local-context').disabled, true);
-  assert.match(f.$('#next-local-runtime-status').textContent, /Router mode/);
+  assert.equal(f.$('#next-local-runtime-status').textContent, 'No local model loaded.');
   await f.click('#next-local-load'); await until(() => !f.$('#next-local-refresh').disabled);
   assert.deepEqual(f.writes()[0].body, {engine: 'llamacpp', model: 'fixture.gguf'});
   assert.equal(f.$('#next-local-unload').disabled, false);
@@ -186,7 +189,7 @@ test('llama settings preserve startup context and distinguish router from single
   await f.click('#next-local-refresh'); await until(() => !f.$('#next-local-refresh').disabled);
   assert.equal(f.$('#next-local-unload').disabled, true);
   assert.equal(f.$('#next-local-load').disabled, false);
-  assert.match(f.$('#next-local-runtime-status').textContent, /Single-model server/);
+  assert.match(f.$('#next-local-runtime-status').textContent, /^Loaded:/);
   const count = f.writes().length; await f.click('#next-local-unload'); assert.equal(f.writes().length, count);
   runtime.value = 'ollama'; await runtime.dispatch('change');
   assert.equal(f.$('#next-local-context').disabled, false);

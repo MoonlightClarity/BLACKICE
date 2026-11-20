@@ -18,14 +18,29 @@ function fixture(t,{hook,pickFiles}={}){
  t.after(()=>panel.destroy());
  return {...dom,panel,calls,get changed(){return changed;},async enter(){panel.enter();await tick();},writes:()=>calls.filter(c=>c.method==='POST')};
 }
+test('optional YaRN UI stages one model override, validates bounds, and removes only YaRN',async t=>{
+ const f=fixture(t);await f.enter();
+ await f.input('#next-llama-overrides',JSON.stringify({existing:{gpuLayers:7},other:{ctxSize:8192}}));
+ await f.input('#next-llama-yarn-model','existing');
+ await f.input('#next-llama-yarn-original','32768');
+ await f.input('#next-llama-yarn-target','32768');
+ await f.click('#next-llama-yarn-set');assert.match(f.$('#next-llama-default-feedback').textContent,/target greater/);
+ await f.input('#next-llama-yarn-target','131072');await f.click('#next-llama-yarn-set');
+ assert.equal(f.writes().length,0);
+ assert.match(f.$('#next-llama-default-feedback').textContent,/YaRN staged for existing/);
+ await f.click('#next-llama-default-save');
+ assert.deepEqual(f.writes()[0].body.settings.modelOverrides,{existing:{gpuLayers:7,yarn:{originalContext:32768,targetContext:131072}},other:{ctxSize:8192}});
+ await f.click('#next-llama-yarn-clear');await f.click('#next-llama-default-save');
+ assert.deepEqual(f.writes()[1].body.settings.modelOverrides,{existing:{gpuLayers:7},other:{ctxSize:8192}});
+ assert.ok(f.writes().every(c=>c.route==='/api/local-models/config'),'Settings changes never start or load a model');
+});
+
 test('included runtime, CPU fallback, and simple file flow are visible; technical fields collapsed',async t=>{
  const f=fixture(t,{pickFiles:async()=>({filePaths:['C:\\Models\\research.gguf']})});await f.enter();
  assert.match(f.$('#next-llama-runtime-status').textContent,/Included.*CPU.*fallback/);
  assert.equal(f.$('#next-llama-launch-settings').open,false);assert.equal(f.writes().length,0);
  await f.click('#next-llama-model-browse');
  assert.equal(f.$('#next-llama-model-name').value,'research');
- assert.equal(f.writes().length,0);
- await f.click('#next-llama-model-start');
  assert.equal(f.writes().length,2);
  assert.deepEqual(f.writes()[0].body.settings.modelPaths,{existing:'C:\\Models\\existing.gguf',research:'C:\\Models\\research.gguf'});
  assert.equal(f.writes()[0].body.settings.executablePath,'');
@@ -181,7 +196,7 @@ test('model onboarding separates included engine from external model download wi
  const f=fixture(t);await f.enter();
  assert.match(f.mount.textContent,/Models are not included with BLACKICE/);
  assert.match(f.$('#next-llama-model-guide').textContent,/Get a model.*permanent folder.*chat model selector/s);
- assert.equal(f.$('#next-llama-model-browse').textContent,'Choose model file');
+ assert.equal(f.$('#next-llama-model-browse').textContent,'Load GGUF file…');
  const link=f.$('#next-llama-model-catalog');
  assert.equal(link.getAttribute('href'),'https://huggingface.co/models?library=gguf&search=');
  assert.equal(link.getAttribute('rel'),'noopener noreferrer');
@@ -221,4 +236,19 @@ test('late directory save after leaving cannot erase drafts or replay on return'
  settings={...settings,modelsDirectory:'C:/Models/saved'};revision=3;g.resolve({revision,settings});await pending;await f.enter();
  assert.equal(f.$('#next-llama-default-modelsDirectory').value,'C:/Models/later');assert.equal(f.$('#next-llama-default-ctxSize').value,'8192');assert.equal(f.writes().length,1);
  await f.click('#next-local-directory-save');assert.equal(f.writes()[1].body.expectedRevision,3);
+});
+
+test('picking another GGUF loads it directly without deleting the previous model or applying tuning drafts',async t=>{
+ const f=fixture(t,{pickFiles:async()=>['C:\\Elsewhere\\existing.gguf']});
+ await f.enter();
+ const savedCtx=DEFAULT_LLAMA_CPP_SETTINGS.ctxSize;
+ await f.input('#next-llama-default-ctxSize','8192');
+ await f.click('#next-llama-model-browse');
+ assert.deepEqual(f.writes()[0].body.settings.modelPaths,{existing:'C:\\Models\\existing.gguf','existing-2':'C:\\Elsewhere\\existing.gguf'});
+ assert.equal(f.writes()[0].body.settings.ctxSize,savedCtx);
+ assert.equal(f.$('#next-llama-default-ctxSize').value,'8192');
+ assert.deepEqual(f.writes()[1].body,{engine:'llamacpp',model:'existing-2'});
+ await f.click('#next-llama-model-browse');
+ assert.equal(f.writes().length,3,'loading the same file again does not rewrite configuration');
+ assert.deepEqual(f.writes()[2].body,{engine:'llamacpp',model:'existing-2'});
 });

@@ -743,3 +743,15 @@ test('a starting status listener can close before initialization without spawnin
   await assert.rejects(client.start(), { code: 'CODEX_CLOSED' }); await closing;
   assert.equal(children.length, 0); assert.equal(client.status().connection.phase, 'closed'); assert.deepEqual(stages, ['starting', 'closed']);
 });
+
+test('native context exhaustion keeps a distinct code instead of a generic turn failure', async t => {
+  const { client, begin }=passiveNativeFixture(t);
+  const first=await begin();
+  client._notification('turn/completed',{threadId:first.state.threadId,turn:{id:first.state.turnId,status:'failed',
+    error:{message:'Provider returned a typed failure.',codexErrorInfo:'contextWindowExceeded'},items:[]}});
+  await assert.rejects(first.work,{code:'CODEX_CONTEXT_OVERFLOW'});
+  const second=await begin();
+  client._notification('turn/completed',{threadId:second.state.threadId,turn:{id:second.state.turnId,status:'failed',
+    error:{message:"Codex ran out of room in the model's context window."},items:[]}});
+  await assert.rejects(second.work,{code:'CODEX_CONTEXT_OVERFLOW'});
+});

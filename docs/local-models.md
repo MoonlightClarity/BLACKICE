@@ -6,7 +6,7 @@ BLACKICE can discover, load, unload and use models from local runtimes. The **Se
 
 1. Install and start Ollama so its local API is available at `http://127.0.0.1:11434`.
 2. Open **Settings → Models → Local models**, choose **Ollama**, and refresh.
-3. Choose an installed model and **Load & add to BLACKICE**.
+3. Choose an installed model and **Load**.
 4. To import local weights, expand **Import local weights into Ollama**. Supply an absolute path to a `.gguf` file, or a directory containing `config.json` and `.safetensors` weights, and a local Ollama model name.
 5. Choose the registered model (for example `local_ollama::my-model`) from the BLACKICE chat model picker.
 
@@ -21,7 +21,8 @@ Start LM Studio's local server at `http://127.0.0.1:1234`, refresh the Local mod
 BLACKICE connects directly to the official `llama-server` OpenAI-compatible API. Neither Ollama nor LM Studio is required.
 
 1. The Windows x64 installer includes a pinned **llama.cpp v1.0.0** runtime; no separate runtime installation is needed. Other platforms or custom setups can use a compatible `llama-server` from the [official release](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0). Model weights remain separate. See [bundled runtime provenance](BUNDLED-LLAMA.md).
-2. In **Config → Local Models → llama.cpp**, BLACKICE displays the default `models` directory under its profile data directory. It creates the folder when needed. Put existing GGUF weights there, select **Discover folder models**, then **Load & add to BLACKICE**. Discovery starts or refreshes the idle BLACKICE-owned router without downloading or loading weights. It leaves active work alone and restarts the router only when settings change. A restart or changed model file can unload cached models. Save a custom absolute folder to use weights without moving them; clear it to restore the default. BLACKICE does not create a missing custom folder.
+2. Under **Models → Local models**, click **Load GGUF file…** and confirm the file to load it immediately. To return to a saved model, select it and click **Load**. Switching does not require deleting the previous model or its weights.
+3. **More options** contains folder discovery, runtime setup, and tuning. Discovery starts or refreshes the owned idle router without loading a model. The router may unload cached weights when it restarts. BLACKICE does not create a missing custom folder. Unavailable saved files are skipped when launching other models; their entries are retained if the files return.
 
 For an independently managed server, follow this separate path:
 
@@ -32,7 +33,7 @@ For an independently managed server, follow this separate path:
    ```
 
 2. Open **Config → Local Models**, choose **llama.cpp**, and refresh. An independently managed server supplies its own catalog and does not use the BLACKICE folder setting.
-3. Choose an available model, then **Load & add to BLACKICE**. BLACKICE calls `POST /models/load`, confirms the model is loaded, and registers `local_llamacpp::model-id` without changing any conversation defaults.
+3. Choose an available model, then **Load**. BLACKICE calls `POST /models/load`, confirms the model is loaded, and registers `local_llamacpp::model-id` without changing any conversation defaults.
 4. **Unload** calls `POST /models/unload`; it releases the active model but never deletes its GGUF weights or saved BLACKICE conversations.
 
 **Single-model mode:** An existing `llama-server -m "C:\Models\my-model.gguf" --host 127.0.0.1 --port 8080` is also supported. The already-running model appears in BLACKICE and can be added to Chat, but it cannot be unloaded through the router API; stop or restart its server process instead.
@@ -50,6 +51,12 @@ BLACKICE reads `GET /models` (router) or `GET /v1/models` (single process), send
 - Ollama and LM Studio need an installed and running external server. BLACKICE can start its included llama.cpp router on demand; independently managed servers can still be used.
 - Ollama, LM Studio and llama.cpp models vary in tool-calling support, context size and memory needs. Model availability does not by itself guarantee compatibility with every BLACKICE agent workflow.
 
+
+### Optional YaRN context extension
+
+Under **Config → Models → Local models → llama.cpp → Advanced runtime & model settings → YaRN context extension (per model)**, enter the exact local model ID, the original context documented for that GGUF, and a larger target (up to 262,144 tokens). Choose **Set YaRN**, then **Save launch defaults**. **Clear YaRN** removes that setting for the selected model only after saving. The bundled router applies the model-specific preset at its next owned launch; existing models and independently managed servers are not changed. No restart or load occurs while saving.
+
+The requested target is not a measured usable context. Use only a model that documents YaRN compatibility, and allow for additional memory use and potential quality loss. Verify the model's actual runtime context after loading before relying on the extension.
 ### Validation scope
 
 The adapter is covered by controlled HTTP and UI fixtures, including single-server mode, router lifecycle, and per-slot context metadata. A live llama.cpp model, GPU performance, and end-to-end agent tool use are not yet verified. Sleeping processes are shown as sleeping rather than resident in memory; inference can wake them.

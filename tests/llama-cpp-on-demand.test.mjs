@@ -38,6 +38,19 @@ test('v1.0.0 launcher: editable defaults, global presets and per-model overrides
   assert.equal(DEFAULT_LLAMA_CPP_SETTINGS.shutdownIdleSeconds,0,'untested full shutdown remains off');
 });
 
+test('YaRN writes only exact per-model preset flags and rejects conflicting or invalid contexts',()=>{
+ const yarn={originalContext:32768,targetContext:131072};
+ const launch=buildLlamaCppLaunch(settings({ctxSize:16384,modelOverrides:{long:{yarn,gpuLayers:7},unchanged:{ctxSize:4096}}}));
+ const global=launch.preset.split('[long]')[0],extended=launch.preset.split('[long]\n')[1].split('[unchanged]')[0];
+ assert.match(global,/c = 16384/);assert.doesNotMatch(global,/rope|yarn/);
+ assert.equal(extended,'n-gpu-layers = 7\nc = 131072\nrope-scaling = yarn\nyarn-orig-ctx = 32768\nrope-scale = 4\n');
+ assert.match(launch.preset,/\[unchanged\]\nc = 4096\n$/);assert.doesNotMatch(launch.args.join(' '),/rope|yarn/);
+ for(const invalid of [{...yarn,targetContext:0},{...yarn,targetContext:300000},{...yarn,targetContext:32768},{...yarn,originalContext:0},{...yarn,originalContext:'32768'},{...yarn,flags:'injected'}])
+   assert.throws(()=>settings({modelOverrides:{long:{yarn:invalid}}}),{code:'LOCAL_LLAMA_SETTINGS_INVALID'});
+ assert.throws(()=>settings({modelOverrides:{long:{ctxSize:8192,yarn}}}),/conflicting context/);
+ assert.throws(()=>settings({yarn}),{code:'LOCAL_LLAMA_SETTINGS_INVALID'});
+});
+
 test('revisioned settings persist atomically without running a model', async t => {
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'blackice-llama-settings-'));
   t.after(() => fs.rm(dir,{recursive:true,force:true}));
@@ -67,7 +80,7 @@ function mockSupervisor({external=false,invalidCatalog=false,config={}}={}){
     launches.push({cmd,args,options,child});online=true;return child;
   };
   const fsImpl={async stat(name){
-    const file=name==='C:\\Runtime\\llama-server.exe'||name.endsWith('.gguf');
+    const file=name==='C:\\Runtime\\llama-server.exe'||(name.endsWith('.gguf')&&!name.endsWith('missing.gguf'));
     const directory=name==='C:\\Models';
     if(!file&&!directory)throw Object.assign(Error('Not found'),{code:'ENOENT'});
     return {isFile:()=>file,isDirectory:()=>directory};
@@ -252,4 +265,20 @@ test('invalid new executable is rejected before stopping the existing idle route
   await assert.rejects(f.supervisor.acquire({...f.config,executablePath:'C:\\missing.exe'},2),{code:'LOCAL_LLAMA_EXECUTABLE_MISSING'});
   assert.equal(f.kills,0);assert.equal(f.launches.length,1);assert.equal(f.supervisor.status().owned,true);
   await f.supervisor.close();
+});
+
+test('a missing saved model cannot block cold start or idle switch to another model', async()=>{
+  const f=mockSupervisor({config:{modelPaths:{stale:'C:\\Models\\missing.gguf','small.gguf':'C:\\Models\\small.gguf'},modelOverrides:{stale:{ctxSize:8192}}}});
+  const first=await f.supervisor.acquire(f.config,1);
+  first.release();
+  const second=await f.supervisor.acquire(f.config,2);
+  second.release();
+  assert.equal(f.launches.length,2);
+  assert.equal(f.kills,1);
+  for(const {content} of f.presets){
+    assert.doesNotMatch(content,/stale|missing.gguf/);
+    assert.match(content,/small.gguf/);
+  }
+  assert.ok(f.config.modelPaths.stale,'saved mapping remains available for a disconnected drive');
+  assert.equal(f.config.modelOverrides.stale.ctxSize,8192);
 });

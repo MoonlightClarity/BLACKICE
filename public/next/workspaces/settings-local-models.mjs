@@ -18,15 +18,14 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
   const button = name => { const el = node('button', name); el.setAttribute('type', 'button'); return el; };
   const card = node('section', '', 'next-card next-stack');
   card.setAttribute('aria-label', 'Local model loading');
-  card.append(node('h2', 'Local models'),
-    node('p', 'Use included llama.cpp, or connect Ollama or LM Studio. Loaded models appear in the model picker.', 'next-help'));
+  card.append(node('h2', 'Local models'));
   const row = node('div', '', 'next-row');
   const engine = node('select', '', 'next-field');
   for (const [id, name] of [['ollama', 'Ollama'], ['lmstudio', 'LM Studio'], ['llamacpp', 'llama.cpp']]) {
     const option = node('option', name); option.setAttribute('value', id); engine.append(option);
   }
   engine.id = 'next-local-engine';if(savedEngine)engine.value=savedEngine;
-  const refresh = button('Refresh local models'); refresh.id = 'next-local-refresh';
+  const refresh = button('Refresh list'); refresh.id = 'next-local-refresh';
   row.append(label('Runtime', engine), refresh);
   const runtimeStatus = node('p', 'Checking local runtimes…', 'next-help');
   runtimeStatus.id = 'next-local-runtime-status'; runtimeStatus.setAttribute('role', 'status');
@@ -52,9 +51,9 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
     node('p', 'On Windows use llama-server.exe from the extracted folder; on macOS/Linux use ./llama-server. Select matching dependencies from the same release when required. Downloading does not make the runtime available until you start it.', 'next-help'));
   const choiceRow = node('div', '', 'next-row');
   const models = node('select', '', 'next-field'); models.id = 'next-local-model'; models.style.flex = '1'; models.style.minWidth = '180px';
-  const load = button('Load & add to BLACKICE'); load.id = 'next-local-load'; load.className = 'next-primary';
+  const load = button('Load'); load.id = 'next-local-load'; load.className = 'next-primary';
   const unload = button('Unload'); unload.id = 'next-local-unload';
-  choiceRow.append(label('Local model', models), load, unload);
+  choiceRow.append(label('Local model', models), load);
   const context = node('input', '', 'next-field'); context.setAttribute('type', 'number'); context.min = '128'; context.max = '262144';
   context.placeholder = 'Runtime default'; context.id = 'next-local-context'; context.style.maxWidth = '180px';
   const contextLabel = label('Context length (optional)', context);
@@ -69,9 +68,13 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
   importDetails.append(summary, importHelp, label('Model file or directory', sourcePath), label('Local Ollama model name', alias), importRow);
   const feedback = node('p', '', 'next-help'); feedback.id = 'next-local-feedback'; feedback.setAttribute('role', 'status'); feedback.setAttribute('aria-live', 'polite');
   const launchMount = node('div');launchMount.hidden = true;
-  card.append(row, launchMount, runtimeStatus, choiceRow, contextLabel, contextHelp, setup, importDetails, feedback);
+  const advancedControls = node('details', '', 'next-provider-advanced');
+  const llamaAdvanced = node('div'); llamaAdvanced.hidden = true;
+  advancedControls.id = 'next-local-advanced';
+  advancedControls.append(node('summary', 'More options'), row, unload, contextLabel, contextHelp, importDetails, llamaAdvanced, setup);
+  card.append(runtimeStatus, choiceRow, launchMount, feedback, advancedControls);
   mount.append(card);
-  const launchSettings = createLlamaCppLaunchSettings({mount:launchMount,api,onChanged:async result=>{await onChanged();await refreshCatalog({preferredEngine:'llamacpp',preferredModel:result.model});},
+  const launchSettings = createLlamaCppLaunchSettings({mount:launchMount,advancedMount:llamaAdvanced,api,onChanged:async result=>{await onChanged();await refreshCatalog({preferredEngine:'llamacpp',preferredModel:result.model});},
     onDiscovered:async result=>{
       generation++;
       const item={id:'llamacpp',name:'llama.cpp',available:true,mode:result.mode,models:result.models};
@@ -88,7 +91,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
     contextLabel.hidden=isLlama;
     choiceRow.hidden=isLlama && !(value.models || []).length;
     setup.hidden = !isLlama;
-    launchMount.hidden = !isLlama;
+    launchMount.hidden = llamaAdvanced.hidden = !isLlama;
     contextHelp.textContent = isLlama
       ? 'Adjust context and performance under Advanced runtime & model settings. Unloading never deletes weights or conversations.'
       : 'Optional context window for the next load. Leave blank to use the runtime default. Unloading does not delete model files or BLACKICE conversations.';
@@ -100,16 +103,16 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
       option.setAttribute('value', model.id); models.append(option);
     }
     if ((value.models || []).some(item => item.id === previous)) models.value = previous;
-    runtimeStatus.textContent = value.available
-      ? value.name + ' is running · ' + (value.models || []).length + ' local models found.'
-      : isLlama ? 'No llama.cpp server is running. Discover the models folder or choose a GGUF file above.' : value.name + ' is not available. Start its local server to list and load models.' + (value.error ? ' ' + value.error : '');
-    if (value.available && isLlama) runtimeStatus.textContent += value.mode === 'router'
-      ? ' Router mode supports model load and unload.'
-      : ' Single-model server: the running model can be added to Chat, but only the server owner can unload it.';
+    const loaded = (value.models || []).filter(item => item.loaded && item.status !== 'sleeping');
+    const names = loaded.slice(0, 2).map(item => item.displayName || item.id).join(', ');
+    runtimeStatus.textContent = loaded.length ? 'Loaded: ' + names + (loaded.length > 2 ? ' +' + (loaded.length - 2) + ' more' : '')
+      : value.available || isLlama ? 'No local model loaded.' : (value.name || 'Runtime') + ' is not running.';
     const model = (value.models || []).find(item => item.id === models.value);
-    models.disabled = busy || !value.available || !model;
+    load.textContent = model?.loaded ? 'Add to Chat' : 'Load';
+    models.disabled = busy || (!value.available && !isLlama) || !model;
     load.disabled = busy || !model;
-    unload.disabled = busy || !model?.loaded || model.manageable === false;
+    unload.hidden = !model?.loaded || model.manageable === false;
+    unload.disabled = busy || unload.hidden;
     refresh.disabled = busy;
     engine.disabled = busy;
     importButton.disabled = busy;
@@ -125,7 +128,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
       snapshot = value && Array.isArray(value.engines) ? value : { engines: [] };
       if (preferredEngine) {engine.value = preferredEngine;selectionChosen=true;}
       if(!selectionChosen){
-        const existing=snapshot.engines.find(item=>item.available&&item.models?.length);
+        const existing=snapshot.engines.find(item=>item.models?.length&&(item.available||item.id==='llamacpp'));
         let initial=existing?.id;
         if(!initial){
           try{const providers=await api('/api/providers');initial=(Array.isArray(providers)?providers:[]).find(p=>p.enabled!==false&&p.models?.length&&['ollama','lmstudio','llamacpp'].includes(p.preset))?.preset;}catch{}
@@ -162,7 +165,7 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
       const result = await api('/api/local-models/' + action, 'POST', payload);
       if (action !== 'unload') await onChanged();
       info(action === 'unload' ? 'Unloaded ' + model + '. Model files and saved conversations are unchanged.'
-        : 'Loaded ' + result.model + ' · available in BLACKICE as ' + result.selection + '.');
+        : 'Ready in the chat model picker: ' + result.model + '.');
       await refreshCatalog({ preferredEngine: action === 'import' ? 'ollama' : runtime, preferredModel: result.model });
     } catch (e) { info(e.message || 'Local model operation failed.', true); }
     finally { busy = false; if (alive) updateChoices(); }

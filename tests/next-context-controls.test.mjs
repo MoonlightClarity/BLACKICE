@@ -34,6 +34,37 @@ const vibeInfo=()=>({...info(),subscriptionProviders:[{id:'mistral-vibe',type:'s
   available:true,contextWindowTokens:202144,contextWindowSource:'runtime-reported',
 }]});
 
+test('collapsed Chat meter distinguishes unavailable, estimated and provider-reported context',t=>{
+  const f=controls(t),usage=f.$('#fixture-context-usage'),budget=f.$('#fixture-context-meter-budget'),gauge=f.$('#fixture-context-gauge');
+  assert.equal(f.mount.hidden,false);assert.equal(f.$('#fixture-context-body').hidden,true);
+  assert.equal(usage.textContent,'Context not reported');assert.match(budget.textContent,/estimated input budget/);assert.equal(gauge.hidden,true);
+  f.control.update({contextStatus:{estimatedInputTokens:17200,actualInputTokens:8060,inputBudgetTokens:241000}});
+  assert.equal(usage.textContent,'Context: 17,200 tokens estimated');assert.equal(budget.textContent,'241,000-token input budget');
+  assert.equal(f.$('#fixture-context-meter').title,'Last reported input: 8,060 tokens');
+  assert.equal(gauge.hidden,false);assert.equal(gauge.getAttribute('value'),'17200');assert.equal(gauge.getAttribute('max'),'241000');
+  f.control.update({contextStatus:{actualInputTokens:8060,nativeObservedWindowTokens:258400}});
+  assert.equal(usage.textContent,'Context: 8,060 tokens last reported');assert.equal(budget.textContent,'258,400-token usable window');
+  f.control.update({contextStatus:{measuredInputTokens:5200,estimatedInputTokens:6700,actualInputTokens:2900,inputBudgetTokens:241000,remainingIsEstimate:false}});
+  assert.equal(usage.textContent,'Context: 5,200 tokens measured');assert.equal(gauge.getAttribute('value'),'5200');
+  assert.match(f.$('#fixture-context-saved').textContent,/Measured current input: 5,200/);
+  f.control.update({contextStatus:{estimatedInputTokens:0,remainingIsEstimate:false,inputBudgetTokens:241000}});
+  assert.equal(usage.textContent,'Context: 0 tokens reported');assert.equal(gauge.getAttribute('value'),'0');
+  f.control.update({contextStatus:{estimatedInputTokens:Infinity,actualInputTokens:null},model:'unknown::model'});
+  assert.equal(usage.textContent,'Context not reported');assert.equal(budget.hidden,true);assert.equal(gauge.hidden,true);
+  f.control.update({loading:true,contextStatus:{actualInputTokens:888888}});
+  assert.equal(usage.textContent,'Loading context');assert.equal(gauge.hidden,true);assert.equal(budget.hidden,true);
+  f.control.open();f.control.close();assert.equal(f.mount.hidden,false);assert.equal(f.calls.length,0);
+});
+
+test('composer meter never draws against the Vibe catalog limit',t=>{
+  const f=controls(t),status=vibeInfo(),model=status.models.find(item=>item.id===vibeSelection);
+  Object.assign(model,{contextWindowTokens:1048576,contextWindowSource:'account-catalog'});
+  f.control.update({status,model:vibeSelection,contextStatus:{estimatedInputTokens:12000,inputBudgetTokens:1032000,effectiveWindowTokens:1048576}});
+  assert.match(f.$('#fixture-context-usage').textContent,/12,000 tokens estimated/);
+  assert.equal(f.$('#fixture-context-meter-budget').textContent,'1,048,576-token catalog limit');
+  assert.equal(f.$('#fixture-context-gauge').hidden,true);
+});
+
 test('Vibe context uses only reported capacity and accepts Model default without API budget controls',()=>{
   const status=vibeInfo(),native=contextModelInfo(status,vibeSelection);
   assert.equal(native.native,true);assert.equal(native.automaticOnly,true);assert.equal(native.defaultWindow,202144);
@@ -339,6 +370,31 @@ test('successful submission commits a context draft while later per-chat edits r
   f.control.select('b',{preset:'model'});f.control.select('a',{preset:'extended'});assert.equal(f.control.read().preset,'extended','After commit the next visit takes the saved server context.');
 });
 
+test('Chat meter renders beside the composer, updates from live context events and follows the selected chat',async t=>{
+  const f=await chatFixture(t);
+  Object.assign(f.families.get('b').runs[0].nodes.agent.contextStatus,{measuredInputTokens:7700,estimatedInputTokens:8100});
+  await f.open('a');
+  const meter=f.$('#next-chat-context-meter'),usage=f.$('#next-chat-context-usage'),budget=f.$('#next-chat-context-meter-budget');
+  assert.equal(meter.closest('.next-chat-composer-area'),f.$('#next-chat-form').parentElement);
+  assert.equal(f.$('#next-chat-context-body').hidden,true);
+  assert.equal(usage.textContent,'Context: 12,000 tokens last reported');
+  f.emit({type:'agent.event',runId:'a',nodeId:'agent',data:{type:'context',context:{estimatedInputTokens:38100,inputBudgetTokens:801000}}});
+  assert.equal(usage.textContent,'Context: 38,100 tokens estimated');assert.equal(budget.textContent,'801,000-token input budget');
+  f.emit({type:'agent.event',runId:'a',nodeId:'agent',data:{type:'context',context:{measuredInputTokens:28400,estimatedInputTokens:38100,inputBudgetTokens:801000,remainingIsEstimate:false}}});
+  assert.equal(usage.textContent,'Context: 28,400 tokens measured');
+  const compression=f.$('#next-chat-context-meter-compression');
+  f.emit({type:'agent.event',runId:'a',nodeId:'agent',data:{type:'context',context:{compactionState:'running',estimatedInputTokens:38100,inputBudgetTokens:801000}}});
+  assert.equal(compression.hidden,false);assert.equal(compression.textContent,'Compressing context');
+  f.emit({type:'agent.event',runId:'a',nodeId:'agent',data:{type:'context',context:{compactionState:'failed',compactionReason:'Fixture could not compress safely.',estimatedInputTokens:38100,inputBudgetTokens:801000}}});
+  assert.equal(compression.hidden,false);assert.equal(compression.textContent,'Context compression failed');
+  assert.equal(compression.title,'Fixture could not compress safely.');assert.equal(compression.dataset.error,'true');
+  await f.open('b');assert.equal(usage.textContent,'Context: 7,700 tokens measured');
+  assert.equal(compression.hidden,true);
+  f.emit({type:'agent.event',runId:'a',nodeId:'agent',data:{type:'context',context:{actualInputTokens:99999}}});
+  assert.equal(usage.textContent,'Context: 7,700 tokens measured');
+  assert.equal(f.calls.filter(call=>call.method!=='GET').length,0);
+});
+
 test('actual Chat submission commits the next-turn context and subsequent clean reopen reads backend context',async t=>{
   const f=await chatFixture(t,{continueResponse:({body,families})=>{
     const next=saved('a-next',body.context,{taskId:'a'});families.set('a-next',{rootId:'a',state:'active',runs:[next]});return next;
@@ -382,6 +438,7 @@ test('saved default context round-trips only on explicit runtime Save and keeps 
   const workspace=createSettingsWorkspace({mount:dom.mount,api,getStatus:()=>status,events:{subscribe:()=>()=>{}}});t.after(()=>workspace.destroy());workspace.enter();
   await until(()=>dom.$('#next-runtime-context-preset').value==='900k');
   assert.equal(dom.$('#next-runtime-context-body').hidden,true,'Settings context starts collapsed.');
+  assert.equal(dom.$('#next-runtime-context-meter'),null,'Config does not get a conversation usage meter.');
   const preset=dom.$('#next-runtime-context-preset');preset.value='extended';await preset.dispatch('change',{},true);
   workspace.updateStatus({...status,runtimeSettings:{...runtime,defaultContext:{preset:'model'}}});assert.equal(preset.value,'extended');
   const enter=await dom.$('#next-runtime-context-window').dispatch('keydown',{key:'Enter'},true);assert.equal(enter.defaultPrevented,true);
