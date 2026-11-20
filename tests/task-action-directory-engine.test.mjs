@@ -802,7 +802,7 @@ test('a known undispatched stale click gets one further read-only recovery handb
  assert.match(engine.getRun(run.id).error,/unfinished/);
 });
 
-test('a diagnostic correction cannot resume a pending Directory task and explicit Continue restores tools',async t=>{
+test('a diagnostic correction cannot resume a pending Directory task and a named resume restores tools',async t=>{
  const {createMissionWorkflow}=await import('../public/mission-model.mjs');
  const {chatDirectionScope}=await import('../lib/chat-direction-scope.mjs');
  assert.equal(chatDirectionScope('DO NOT JOB SEARCH. Stop. Look at your previous turns and tell me where you ran into tool issues.'),'diagnose');
@@ -819,16 +819,17 @@ test('a diagnostic correction cannot resume a pending Directory task and explici
    o.onEvent({type:'tool.result',tool:'relay_browser',action:'click',code:'BROWSER_REF_STALE',success:false,actionDispatched:false,callId:'click-old'});
    return {output:'Still pending',threadId:'fixture-codex-thread'};
   }
-  if(calls===2){
+  if(calls>=2&&calls<=4){
    assert.equal(o.hostOnlyTools,true);
    assert.deepEqual(o.dynamicTools??[],[]);
    assert.equal(o.onBeforeFinal,undefined);
    assert.match(o.prompt,/DO NOT JOB SEARCH/);
+   if(calls>2){assert.match(o.prompt,/PRECEDING USER DIRECTION/);assert.match(o.developerInstructions,/preceding diagnostic request/);}
    assert.match(o.prompt,/HISTORICAL SAME-CONVERSATION RECEIPTS/);
    assert.match(o.prompt,/BROWSER_REF_STALE/);
    assert.match(o.prompt,/"actionDispatched":false/);
    assert.doesNotMatch(o.prompt,/CURRENT TASK ACTION DIRECTORY|completed work and take the next/);
-   return{output:'The prior click was rejected.',threadId:'fixture-review-thread'};
+   return{output:'The prior click was rejected.',threadId:'fixture-review-thread-'+calls};
   }
   assert.ok(o.dynamicTools.some(x=>x.name==='relay_directory_action'));
   assert.ok(o.onBeforeFinal);
@@ -845,8 +846,19 @@ test('a diagnostic correction cannot resume a pending Directory task and explici
  assert.equal(engine.getRun(follow.id).status,'completed',engine.getRun(follow.id).error);
  assert.equal(engine.getRun(follow.id).directoryActions,'on');
  assert.deepEqual(directory.read(),snapshot);
- const resume=engine.continueRun(follow.id,{nodeId:'agent',message:'Continue',directoryActions:'on'});
+ // Pre-upgrade diagnostic turns were not marked. Classify the immediate
+ // preceding user input, not the suspended task's original objective.
+ delete engine.runs.get(follow.id).chatCorrectionScope;
+ delete engine.runs.get(follow.id).nodes.agent.chatCorrectionScope;
+ const more=engine.continueRun(follow.id,{nodeId:'agent',message:'contniue',directoryActions:'on'});
+ await engine.executions.get(more.id);
+ assert.equal(engine.getRun(more.id).status,'completed',engine.getRun(more.id).error);
+ const repeat=engine.continueRun(more.id,{nodeId:'agent',message:'Continue',directoryActions:'on'});
+ await engine.executions.get(repeat.id);
+ assert.equal(engine.getRun(repeat.id).status,'completed',engine.getRun(repeat.id).error);
+ assert.deepEqual(directory.read(),snapshot);
+ const resume=engine.continueRun(repeat.id,{nodeId:'agent',message:'Continue the job search',directoryActions:'on'});
  await engine.executions.get(resume.id);
- assert.equal(calls,3);
+ assert.equal(calls,5);
  assert.equal(engine.getRun(resume.id).nodes.agent.errorCode,'DIRECTORY_ACTION_UNFINISHED');
 });

@@ -12,3 +12,5 @@ Use this when the user interrupts, narrows, stops, or asks about work already do
 - “Stop the job search. What failed?” Stop searching. Report failed calls and whether they reached the site, using saved receipts. Do not finish a pending application.
 - “Keep comparing the vendors, but don’t contact them.” Continue the comparison using available sources. Do not send or schedule outreach.
 - “Stop the upload.” Cancel if possible. If it may already have reached the destination, distinguish that from a confirmed cancellation. Do not upload it again.
+
+- "Stop the job search. Tell me what failed." Then: "Continue." Keep explaining the failures. "Continue the job search" resumes the search; check the last confirmed effects first.

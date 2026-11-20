@@ -248,7 +248,7 @@
       "title": "Steerability",
       "description": "Stop or redirect active work promptly and separate a report on earlier work from permission to resume it.",
       "tags": ["execution", "communication", "diagnosis"],
-      "source": {"kind": "first-party", "revision": "1"},
+      "source": {"kind": "first-party", "revision": "2"},
       "bodyFile": "steerability.md"
     },
     {

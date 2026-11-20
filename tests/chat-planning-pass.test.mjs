@@ -85,3 +85,14 @@ test('once per module, no independent admission after cancel, and deadline reche
   assert.equal((await expired.pass.run(decomposition)).status,'failed');
   assert.equal(expired.writes.length,0);
 });
+
+test('invalid planning receipts name the rejected field without recording model output',async()=>{
+ const rejected=fixture({invoke:()=>({transport:'completed',output:{...plan,actions:[{...actions[0],dependsOn:['private-not-in-the-outline']}]}})});
+ assert.deepEqual(await rejected.pass.run(decomposition),{status:'failed',code:'PLANNING_ARTIFACT_INVALID'});
+ assert.equal(rejected.events.at(-1).validationField,'actions.unknownDependency');
+ assert.doesNotMatch(JSON.stringify(rejected.events),/private-not-in-the-outline/);
+ assert.deepEqual(rejected.writes,[]);
+ const malformed=fixture({invoke:()=>({transport:'completed'})});
+ await malformed.pass.run(decomposition);
+ assert.equal(malformed.events.at(-1).validationField,'providerOutput');
+});
