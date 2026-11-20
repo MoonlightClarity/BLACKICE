@@ -69,6 +69,18 @@ test('routine fields use known answers without added friction and behavioral ess
   /a decision about time, not a verdict on fit/,/Save deeper interview preparation for a screen or interview/])assert.match(content,expected);
 });
 
+test('worked discovery tactics explain what to do after stale, missing, or misleading source evidence',async()=>{
+ const {content}=await createSkillsCatalog().detail({id});
+ assert.ok(content.length<=20000,'Job Search must fit the automatic execution context budget');
+ for(const expected of [/### Everyday tactics/,/### Advanced tactics/,/Search by the work and by neighboring titles/,
+  /blank page as no openings/,/Make one source change before declaring a shortfall/,
+  /site:job-boards\.greenhouse\.io/,/after:YYYY-MM-DD[\s\S]*does not establish/,
+  /first_published[\s\S]*distinct from .updated_at/,/publishedAt.+last publication/,
+  /same ID twelve days ago/,/funding date is a reason to look, not the posting date/,
+  /applicantLocationRequirements[\s\S]*baseSalary/,/direct competitors or alternative vendors/,/first seen, not first posted/,/when you verified it/,
+  /career-manager\/blob\/main\/job-search\/SKILL.md/])assert.match(content,expected);
+});
+
 class Native extends EventEmitter {
  status(){return {connected:false,authenticated:false,models:[]};}
  async close(){}
@@ -112,7 +124,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
   return {prompt:JSON.stringify(prompts.at(-1)),receipts:run.skillLoadReceipts||[]};
  };
  const job=await invoke(example);
- assert.ok(job.prompt.includes(heading));assert.ok(job.prompt.includes('rolling last seven days'));
+ assert.ok(job.prompt.includes(heading));assert.ok(job.prompt.includes('rolling last seven days'));assert.ok(job.prompt.includes('### Advanced tactics'));
  assert.deepEqual(job.receipts.filter(r=>r.skillId===id),[accepted]);
  assert.ok(job.receipts.every(r=>r.skillId!=='library-intent-inference'));
 
