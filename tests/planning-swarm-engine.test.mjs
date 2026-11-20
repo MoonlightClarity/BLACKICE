@@ -28,7 +28,7 @@ const graph = (agents, edges, shared = true) => ({
   ...(shared ? { planning: { shared: true, coordinatorNodeId: 'coordinator' } } : {})
 });
 
-async function fixture(t, workflow, execute, { holds = [], subagents = false, attachmentText } = {}) {
+async function fixture(t, workflow, execute, { holds = [], subagents = false, attachmentText, explicitPlan = false } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-planning-runtime-')), cwd = path.join(directory, 'work'); await mkdir(cwd);
   const tasks = await new TaskStateStore({ dataDir: directory }).init(), prefs = await new RuntimeSettingsStore({ dataDir: directory }).init();
   await prefs.update({ executionGuardrails: true, planningOntology:{version:2,modules:{decomposition:true}} });
@@ -41,13 +41,17 @@ async function fixture(t, workflow, execute, { holds = [], subagents = false, at
   }
   const engine = new HarnessEngine({ runtime: new Runtime(), tasks, attachments, dataDir: directory, defaultCwd: cwd }); engine.runtimeSettings = prefs; await engine.init();
   const context = { engine, tasks, cwd, workflow, attachment,
-    start: () => engine.startRun({ workflow, input: { task: 'Complete and check the requested fixture work.', ...(attachment ? { attachmentIds: [attachment.id] } : {}) } }),
+    start: () => engine.startRun({ workflow, input: { task: (explicitPlan ? '/plan ' : '') + 'Complete and check the requested fixture work.', ...(attachment ? { attachmentIds: [attachment.id] } : {}) } }),
     settled: id => waitFor(() => { const run = engine.getRun(id); return run.settled && run; })
   };
   t.after(async () => { for (const hold of holds) hold.resolve(); await engine.close(); await prefs.close(); await tasks.close(); await attachments?.close(); await rm(directory, { recursive: true, force: true }); });
   return context;
 }
-const who = options => options.prompt.match(/^You are ([a-z]+)\./)?.[1];
+const who = options => {
+  const identity = options.prompt.match(/^You are ([a-z]+)\.\r?\n\r?\nAGENT INSTRUCTIONS$/m)?.[1];
+  assert.ok(identity, 'The current agent identity must be present in the provider request.');
+  return identity;
+};
 
 test('Current task execution preserves authored workflow parallelism without serial planner admission', async t => {
   const hold = deferred(), entered = [], workflow = graph([agent('coordinator'), agent('worker')], [['input', 'coordinator'], ['input', 'worker'], ['coordinator', 'output'], ['worker', 'output']]);
@@ -243,7 +247,7 @@ test('Planning Off explicit canonical assignments transfer only named ownership 
     assert.equal(final.contractAssignments.length, 2);
     assert.deepEqual(final.contract.criteria, payload(planned).contract.criteria);
     return { output: 'Both assigned inputs inspected.' };
-  }, { subagents: true });
+  }, { subagents: true, explicitPlan: true });
   const run = await f.settled(f.start().id);
   assert.equal(run.status, 'completed', run.error || run.nodes.coordinator.error);
   assert.deepEqual(children.sort(), ['left', 'right']);
