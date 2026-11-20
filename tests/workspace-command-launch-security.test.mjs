@@ -6,6 +6,8 @@ import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 import vm from 'node:vm';
 import {FIND_FILES_TOOL,validateFileSearchCall} from '../lib/file-search-contract.mjs';
+import { PDF_LIMITS } from '../lib/pdf-documents.mjs';
+import { XLSX_ROWS, XLSX_COLUMNS } from '../lib/spreadsheet-documents.mjs';
 
 // Evaluate the exact implementation with inert dependencies. No real subprocess,
 // filesystem mutation, provider, network, or blocked incident payload can run.
@@ -25,7 +27,7 @@ function fixture({ platform = 'win32', failure, observed = false, synchronous = 
     });
     return child;
   };
-  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall, spawn, fs: { stat: async () => ({ isDirectory: () => true }), readdir: async () => [] }, path, StringDecoder,
+  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall, PDF_LIMITS, XLSX_ROWS, XLSX_COLUMNS, spawn, fs: { stat: async () => ({ isDirectory: () => true }), readdir: async () => [] }, path, StringDecoder,
     process: { platform, env: { BLACKICE_RESTART_ORIGIN: 'stale', KEEP: 'value' } },
     DESKTOP_RESTART_ORIGIN_ENV: 'BLACKICE_RESTART_ORIGIN', setTimeout, clearTimeout, AbortSignal, Buffer, TextDecoder };
   // Strip complete ESM re-exports before declaration keywords; imported contracts are injected above.

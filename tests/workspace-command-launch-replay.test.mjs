@@ -9,6 +9,8 @@ import { StringDecoder } from 'node:string_decoder';
 import { EventEmitter } from 'node:events';
 import vm from 'node:vm';
 import {FIND_FILES_TOOL,validateFileSearchCall} from '../lib/file-search-contract.mjs';
+import { PDF_LIMITS } from '../lib/pdf-documents.mjs';
+import { XLSX_ROWS, XLSX_COLUMNS } from '../lib/spreadsheet-documents.mjs';
 import {managedContextPaths} from '../lib/managed-context-paths.mjs';
 import {createFileSearch} from '../lib/workspace-file-search.mjs';
 import {homedir} from 'node:os';
@@ -22,7 +24,7 @@ const sources = Object.fromEntries(await Promise.all(['workspace-tools', 'direct
   [name, await fs.readFile(new URL(`../lib/${name}.mjs`, import.meta.url), 'utf8')])));
 const forbidden = () => { throw Error('Unexpected external adapter in inert replay test'); };
 function evaluate(name, globals, exports) {
-  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall, managedContextPaths, createFileSearch, homedir, describeHostOperation, normalizeHostOperationResult, fs, path, createHash, randomUUID, StringDecoder, Buffer, TextDecoder,
+  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall, PDF_LIMITS, XLSX_ROWS, XLSX_COLUMNS, managedContextPaths, createFileSearch, homedir, describeHostOperation, normalizeHostOperationResult, fs, path, createHash, randomUUID, StringDecoder, Buffer, TextDecoder,
     structuredClone, setTimeout, clearTimeout, queueMicrotask, AbortController, AbortSignal,
     process: { pid: process.pid, platform: 'linux', env: {}, kill: forbidden }, ...globals };
   // Strip complete ESM re-exports before declaration keywords; imported contracts are injected above.
@@ -44,10 +46,13 @@ async function fixture(t, observed) {
     });
     return child;
   };
-  const workspace = evaluate('workspace-tools', { spawn, DESKTOP_RESTART_ORIGIN_ENV: 'BLACKICE_RESTART_ORIGIN' }, ['createWorkspaceToolHandler']);
+  const workspace = evaluate('workspace-tools', { spawn, DESKTOP_RESTART_ORIGIN_ENV: 'BLACKICE_RESTART_ORIGIN' },
+    ['createWorkspaceToolHandler', 'WORKSPACE_PDF_READ_FIELDS', 'WORKSPACE_XLSX_READ_FIELDS']);
   // Use the real imported ledger and its pack dependencies; only process
   // dispatch and unrelated API adapters are inert substitutes.
   const apiModule = evaluate('direct-execution-api', { ...ledger,
+    WORKSPACE_PDF_READ_FIELDS: workspace.WORKSPACE_PDF_READ_FIELDS,
+    WORKSPACE_XLSX_READ_FIELDS: workspace.WORKSPACE_XLSX_READ_FIELDS,
     createWorkspaceToolHandler: options => {
       const handler = workspace.createWorkspaceToolHandler(options);
       return async (...args) => { preparedExecutions++; return handler(...args); };

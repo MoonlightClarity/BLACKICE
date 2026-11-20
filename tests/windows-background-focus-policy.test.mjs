@@ -6,6 +6,8 @@ import {StringDecoder} from 'node:string_decoder';
 import path from 'node:path';
 import vm from 'node:vm';
 import {FIND_FILES_TOOL,validateFileSearchCall} from '../lib/file-search-contract.mjs';
+import { PDF_LIMITS } from '../lib/pdf-documents.mjs';
+import { XLSX_ROWS, XLSX_COLUMNS } from '../lib/spreadsheet-documents.mjs';
 import {tailscaleStartupRepairScript} from '../desktop/connection-startup.mjs';
 import {resolveCodexCommand} from '../lib/codex-discovery.mjs';
 
@@ -27,7 +29,7 @@ test('normal Windows workspace commands suppress console creation while preservi
     });
     return child;
   };
-  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall,spawn,fs:{stat:async()=>({isDirectory:()=>true})},path:path.win32,StringDecoder,
+  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall, PDF_LIMITS, XLSX_ROWS, XLSX_COLUMNS, spawn,fs:{stat:async()=>({isDirectory:()=>true})},path:path.win32,StringDecoder,
     process:{platform:'win32',env:{}},DESKTOP_RESTART_ORIGIN_ENV:'BLACKICE_RESTART_ORIGIN',
     setTimeout,clearTimeout,AbortSignal,Buffer,TextDecoder};
   // Strip complete ESM re-exports before declaration keywords; imported contracts are injected above.
