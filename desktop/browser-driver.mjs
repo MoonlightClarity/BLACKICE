@@ -1670,6 +1670,17 @@ export class ElectronBrowserDriver extends EventEmitter {
     const context = tab.refContexts?.get(ref);
     return Boolean(context && tab.refs.get(ref) === context.stamp.frame && this.frameStampCurrent(tab, context.stamp) && (documentId === undefined || context.documents.has(documentId)));
   }
+  bindObservedUploadRef(args) {
+    const tab = this.tab(args.tabId), context = tab.refContexts?.get(args.ref);
+    if (!tab.window || tab.window.isDestroyed() || tab.pendingURL || tab.rendererFailure || tab.providerKeyProtected ||
+        !this.referenceCurrent(tab, args.ref) || !context?.documents.size)
+      throw Object.assign(error('The file input is no longer on its observed page. Take a fresh snapshot and choose the current file input.'), {
+        code: 'BROWSER_REF_STALE', actionDispatched: false, browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref),
+      });
+    const expected = { expectedDocumentId: [...context.documents].at(-1), expectedUrl: context.stamp.topUrl };
+    this.assertInputDocument(tab, { ...args, ...expected });
+    return expected;
+  }
   scopedInputCurrent(tab, expected) {
     return Boolean(['click', 'hover', 'select', 'upload'].includes(expected?.action) && typeof expected.ref === 'string' && this.referenceCurrent(tab, expected.ref, expected.expectedDocumentId));
   }

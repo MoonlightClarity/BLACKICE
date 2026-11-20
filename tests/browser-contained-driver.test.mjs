@@ -2883,3 +2883,21 @@ test('an unsettled recovery read does not publish actionable browser refs', asyn
   assert.equal(failed.recovery.observation, undefined);
   assert.equal(failed.recovery.nextCall.action, 'snapshot');
 });
+
+test('agent upload derives guards only from the current ref on the exact owned tab', async t => {
+  const { driver, directory } = await fixture(t);
+  const first = driver.newTab('https://example.test/first');
+  const second = driver.newTab('https://example.test/second');
+  await Promise.all([first.loading, second.loading]);
+  const browser = new BrowserWorkspace({ driver }); t.after(() => browser.close());
+  rememberFixtureRef(driver, first, 'observed-file');
+  const file = path.join(directory, 'chosen.txt'); await writeFile(file, 'Fixture file');
+  const request = { action: 'upload', tabId: first.id, ref: 'observed-file', paths: [file] };
+  let pathChecks = 0; const options = { validateUploadPath: async () => { pathChecks++; } };
+  assert.deepEqual(driver.bindObservedUploadRef(request), { expectedUrl: first.url, expectedDocumentId: `${first.id}:${first.revision}` });
+  await assert.rejects(browser.perform({ ...request, tabId: second.id }, options), { code: 'BROWSER_REF_STALE', actionDispatched: false });
+  await assert.rejects(browser.perform({ ...request, expectedUrl: first.url }, options), { code: 'BROWSER_VALIDATION', actionDispatched: false });
+  driver.navigationChanged(first, true);
+  await assert.rejects(browser.perform(request, options), { code: 'BROWSER_REF_STALE', actionDispatched: false });
+  assert.equal(pathChecks, 0, 'Stale or mismatched targets must fail before checking a file path.');
+});

@@ -72,7 +72,7 @@ try {
   const stale = ref('Old field'); await act('click', 'Replace field');
   await assert.rejects(browser.perform({ action: 'fill', tabId: id, ref: stale, text: 'no' }), /stale|fresh snapshot/); checks.push('Detached refs fail without touching replacement');
   const upload = path.join(dataDir, 'upload-fixture.txt'); await fs.writeFile(upload, 'RELAY_UPLOAD');
-  await act('upload', 'Upload file', { paths: [upload], expectedUrl: snapshot.url, expectedDocumentId: snapshot.documentId }); check('File upload + change event', () => assert.ok(snapshot.frames[0].text.includes('upload-fixture.txt')));
+  await act('upload', 'Upload file', { paths: [upload] }); check('Observed ref binds file upload and fires change event', () => assert.ok(snapshot.frames[0].text.includes('upload-fixture.txt')));
   await act('click', 'Download fixture');
   let downloads; for (let i = 0; i < 50; i++) { downloads = await browser.perform({ action: 'downloads' }); if (downloads.downloads[0]?.status === 'completed') break; await new Promise(r => setTimeout(r, 30)); }
   check('Download saved to unique local file', () => assert.equal(downloads.downloads[0]?.status, 'completed'));

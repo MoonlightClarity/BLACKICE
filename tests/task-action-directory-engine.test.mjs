@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {EventEmitter} from 'node:events';import {mkdtemp,rm} from 'node:fs/promises';import path from 'node:path';import {tmpdir} from 'node:os';import {HarnessEngine} from '../lib/engine.mjs';import {TaskActionDirectoryStore} from '../lib/task-action-directory-store.mjs';
 const graph={name:'Actions',nodes:[{id:'i',type:'input'},{id:'a',type:'agent',name:'Agent',model:'fixture-model',prompt:'Do task'},{id:'o',type:'output'}],edges:[{source:'i',target:'a'},{source:'a',target:'o'}],settings:{maxParallel:1,planningMode:'off'}};
 class Runtime extends EventEmitter{status(){return{connected:true,authenticated:true,models:[{id:'fixture-model',supportsTools:true}]};}async runAgent(options){return this.execute(options);}}
-async function setup(t,execute){const root=await mkdtemp(path.join(tmpdir(),'action-directory-'));const runtime=new Runtime();runtime.execute=execute;const engine=await new HarnessEngine({runtime,dataDir:root,defaultCwd:root}).init();t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});return{root,engine};}
+async function setup(t,execute,browser){const root=await mkdtemp(path.join(tmpdir(),'action-directory-'));const runtime=new Runtime();runtime.execute=execute;const engine=await new HarnessEngine({runtime,dataDir:root,defaultCwd:root,browser}).init();t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});return{root,engine};}
 test('actual engine explicit Directory prevents zero-tool final from completing while Off remains ordinary Chat',async t=>{let options;const{engine}=await setup(t,async o=>{options=o;return{output:'All done'};});const on=engine.startRun({workflow:graph,input:{task:'Find three jobs',directoryActions:'on'}});await engine.executions.get(on.id);assert.equal(engine.getRun(on.id).status,'failed');assert.match(engine.getRun(on.id).error,/unfinished/);assert(options.dynamicTools.some(x=>x.name==='relay_directory_action'));assert.equal(options.hostOnlyTools,true);const off=engine.startRun({workflow:graph,input:{task:'Answer text',directoryActions:'off'}});await engine.executions.get(off.id);assert.equal(engine.getRun(off.id).status,'completed');assert(!options.dynamicTools.some(x=>x.name==='relay_directory_action'));});
 test('a no-actions provider final tells the model to start the actual next step using the evidence already returned',async t=>{
  const {engine,root}=await setup(t,async o=>{
@@ -696,4 +696,53 @@ test('Directory returns once for a newly delivered checked block while an indepe
    }
   });
  }
+});
+
+test('Directory serializes parallel form preparation before receipt reservation without admitting submit',async t=>{
+ for(const uncertain of [false,true])await t.test(uncertain?'unknown write blocks the next field':'settled writes permit the next field',async t=>{
+  let tab,started,release;const firstStarts=new Promise(r=>{started=r;}),holdFirst=new Promise(r=>{release=r;});
+  const seen=[];const firstSignal=new AbortController();
+  const browser={
+   status:()=>({available:true,contained:true,tabs:tab?[tab]:[]}),
+   async perform(args,{owner}){
+    if(args.action==='open'){tab={tabId:'fixture-tab',documentId:'fixture-document',url:'https://example.test/form',owner};return tab;}
+    seen.push(args.action+':'+args.ref);
+    if(args.ref==='first'){started();await holdFirst;if(uncertain)firstSignal.abort();}
+    return tab;
+   }
+  };
+  const {engine}=await setup(t,async o=>{
+   const call=(name,args,context)=>o.onToolCall({name,arguments:args,callId:'queue-'+(args.ref||args.action)},context);
+   const dir=(action,args={})=>call('relay_directory_action',{action,id:'prepare',...args});
+   assert.equal((await dir('plan',{actions:[{id:'prepare',objective:'Prepare the fixture form',dependsOn:[]}]})).success,true);
+   assert.equal((await dir('focus')).success,true);
+   assert.equal((await call('relay_browser',{action:'open',url:'https://example.test/form'})).success,true);
+   const args={tabId:'fixture-tab',expectedUrl:'https://example.test/form',expectedDocumentId:'fixture-document'};
+   const first=call('relay_browser',{...args,action:'fill',ref:'first',text:'Fixture A'},{signal:firstSignal.signal}).catch(error=>error);
+   await firstStarts;
+   const second=call('relay_browser',{...args,action:'select',ref:'second',value:'Fixture B'});
+   try{
+    const submit=await call('relay_browser',{...args,action:'click',ref:'submit'});
+    assert.equal(submit.code,'DIRECTORY_UNKNOWN');
+    assert.deepEqual(seen,['fill:first']);
+   }finally{release();}
+   const [a,b]=await Promise.all([first,second]);
+   if(uncertain){
+    assert.notEqual(a.success,true);
+    assert.equal(b.code,'DIRECTORY_UNKNOWN');
+    assert.deepEqual(seen,['fill:first']);
+   }else{
+    assert.equal(a.success,true);
+    assert.equal(b.success,true);
+    assert.deepEqual(seen,['fill:first','select:second']);
+    const receipts=[a,b].map(r=>r.contentItems.at(-1).text.match(/receipt-[0-9]+/)[0]);
+    assert.equal((await dir('observe',{outcome:'objective-met',claim:'Fixture fields prepared, not submitted.',receipts})).success,true);
+   }
+   return {output:'Fixture only.'};
+  },browser);
+  const run=engine.startRun({workflow:graph,input:{task:'Prepare the fixture form, do not submit',directoryActions:'on'}});
+  await engine.executions.get(run.id);
+  const result=engine.getRun(run.id);
+  assert.equal(result.status,uncertain?'failed':'completed',result.error);
+ });
 });
