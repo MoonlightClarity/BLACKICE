@@ -404,7 +404,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "blackice-what-makes-done-v1"
+        "revision": "blackice-what-makes-done-v2"
       },
       "bodyFile": "what-makes-done.md"
     },

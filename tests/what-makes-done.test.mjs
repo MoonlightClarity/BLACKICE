@@ -15,6 +15,21 @@ test('What Makes Done is a discoverable advisory skill with actionable examples'
  assert.match(ACTION_DIRECTORY_TOOL.description,/add and take the next useful authorized step/);
 });
 
+test('What Makes Done reconciles exact duplicate risk without importing old conversations or flattening evidence',async()=>{
+ const {content,provenance}=await readBundledSkill('library-what-makes-done');
+ assert.equal(provenance.revision,'blackice-what-makes-done-v2');
+ assert.match(content,/the smallest check in records the current request lets you use/);
+ assert.match(content,/Do not automatically ingest an old ledger or turn Past Chats on/);
+ assert.match(content,/If Past Chats is off, do not look up past chats through another tool or source/);
+ assert.match(content,/\*\*Verified:\*\*[\s\S]*do not count it as a new action/);
+ assert.match(content,/\*\*Reported:\*\*[\s\S]*continue with an eligible alternative, but it is not a verified submission/);
+ assert.match(content,/\*\*Unknown:\*\*[\s\S]*Check before retrying/);
+ assert.match(content,/\*\*Not dispatched:\*\*[\s\S]*This says nothing about other attempts/);
+ assert.match(content,/same ATS employer and posting ID[\s\S]*across URL variants/);
+ assert.match(content,/Different posting IDs with the same title are not by themselves a duplicate/);
+ assert.match(content,/An empty email search does not clear a portal submission/);
+ assert.match(content,/Match the account, merchant, and cart or order reference/);
+});
 test('receipt-backed discovery advances to delivery; a confirmation is a separate action',async()=>{
  const d=new TaskActionDirectory({taskId:'fixture',objective:'Submit one synthetic application'});
  const opt=()=>({expectedActionRevision:d.read().actionRevision});
