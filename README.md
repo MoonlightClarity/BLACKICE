@@ -10,7 +10,7 @@ The goal is to reduce the work of managing the agent: copying instructions betwe
 
 ## Latest Windows release and active work
 
-**[BLACKICE v2.40.57](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.57)** (November 20, 2026) is a **Windows test candidate / pre-release** with an unsigned installer, build manifest, and source-code archives. The tagged source and included README are pinned to [commit `67c94d8`](https://github.com/MoonlightClarity/BLACKICE/commit/67c94d87dc99f91c946b7d48082c1d75c50033ea); the default `main` branch is not the same code snapshot. See the [version-specific release notes](https://github.com/MoonlightClarity/BLACKICE/blob/v2.40.57/RELEASE-NOTES-2.40.57.md) for included changes and verification boundaries.
+**[BLACKICE v2.40.57](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.57)** (November 20, 2026) is the current **Windows release**, with an unsigned installer, build manifest, and source-code archives. The tagged source and included README are pinned to [commit `67c94d8`](https://github.com/MoonlightClarity/BLACKICE/commit/67c94d87dc99f91c946b7d48082c1d75c50033ea); the default `main` branch is not the same code snapshot. See the [version-specific release notes](https://github.com/MoonlightClarity/BLACKICE/blob/v2.40.57/RELEASE-NOTES-2.40.57.md) for included changes and verification boundaries.
 
 **In progress — not included in the v2.40.57 installer:**
 
