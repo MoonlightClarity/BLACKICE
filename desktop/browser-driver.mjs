@@ -1370,7 +1370,11 @@ export class ElectronBrowserDriver extends EventEmitter {
           value.elements = value.elements.slice(0, remainingElements); value.text = value.text.slice(0, remainingText);
           remainingElements -= value.elements.length; remainingText -= value.text.length;
           captured.push({ stamp, elements: value.elements });
-          frames.push({ frame: frameLabel, ...value });
+          // An embedded document URL is not evidence of rendered content. This
+          // describes this capture only, not visibility of the embedding frame.
+          const observation = query || value.truncated || value.readyState !== 'complete' ? 'unknown'
+            : value.elements.length || value.text.trim() ? 'content-observed' : 'no-content-observed';
+          frames.push({ frame: frameLabel, ...value, observation });
           if (query && frame === mainFrame && value.elements.length) break;
         } catch (reason) {
           cancel(signal);

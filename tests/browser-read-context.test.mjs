@@ -239,3 +239,28 @@ test('renderer observations report native and explicit ARIA requirements, not la
   ]);
   for (const mode of [false, true]) assert.equal(f.run('Describe your experience', mode).elements[0].required, true);
 });
+
+
+test('frame observation distinguishes captured content, empty complete content and incomplete evidence', async () => {
+  const main = readableFrame(roleFixture());
+  const child = (id, state) => ({
+    processId: 1, routingId: id, url: 'https://embedded.example.test/', parent: main,
+    framesInSubtree: [], executeJavaScript: async () => ({ title: 'Embedded fixture', url: 'https://embedded.example.test/', elements: [], text: '', readyState: 'complete', ...state })
+  });
+  const blank = child(1, {});
+  const visibleDescendant = child(2, { text: 'Embedded fixture instructions', elements: [{ ref: 'embedded-control', name: 'Continue' }] });
+  const truncated = child(3, { truncated: true });
+  const loading = child(4, { readyState: 'loading' });
+  visibleDescendant.parent = blank;
+  main.framesInSubtree = [main, blank, visibleDescendant, truncated, loading];
+  const f = frameFixture(() => main);
+  const snapshot = await f.driver.perform({ action: 'snapshot', tabId: f.tab.id });
+  assert.deepEqual(snapshot.frames.map(v => [v.frame, v.observation]), [
+    ['9-12', 'content-observed'], ['1-1', 'no-content-observed'], ['1-2', 'content-observed'], ['1-3', 'unknown'], ['1-4', 'unknown']
+  ]);
+  assert.equal(snapshot.frames[1].url, 'https://embedded.example.test/');
+  assert.equal(snapshot.frames[2].elements[0].name, 'Continue', 'An empty parent capture must not suppress descendant controls.');
+  const filtered = await f.driver.perform({ action: 'read', tabId: f.tab.id, query: 'not on the page' });
+  assert.equal(filtered.frames.length, 5);
+  assert.ok(filtered.frames.every(v => v.observation === 'unknown'));
+});

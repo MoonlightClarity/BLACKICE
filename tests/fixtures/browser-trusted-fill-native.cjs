@@ -17,7 +17,7 @@ const markup = (frame = false) => `<!doctype html><title>Trusted fill fixture</t
 <input aria-label="Email" id="email" type="email" required value="old@example.test"><input aria-label="Number" id="number" type="number" value="123"><input aria-label="Read only" id="readonly" readonly value="preserve"><input aria-label="Disabled" id="disabled" disabled value="preserve">
 <input aria-label="Navigate on focus" id="navigate" value="preserve"><input aria-label="Redirect on select" id="redirect" value="preserve">
 <input aria-label="Retire after focus" id="retire" value="preserve"><button id="commit">Commit fixture</button><div aria-label="Rich text" role="textbox" contenteditable="true" id="rich">Initial rich</div>
-${frame ? '' : '<iframe title="Cross-origin fixture" src="http://localhost:PORT/frame"></iframe>'}
+${frame ? '' : '<iframe title="Cross-origin fixture" src="http://localhost:PORT/frame"></iframe><iframe title="Empty embedded fixture" hidden src="http://localhost:PORT/empty"></iframe>'}
 <script>
 window.fixture={fields:{},events:[]};
 for(const el of document.querySelectorAll('input,textarea,[contenteditable]')){
@@ -35,7 +35,7 @@ const check = (name, fn) => { fn(); report.checks.push(name); };
 async function main() {
   await app.whenReady();
   const { ElectronBrowserDriver } = await import(pathToFileURL(path.resolve(__dirname, '../../desktop/browser-driver.mjs')));
-  server = http.createServer((req, res) => { res.setHeader('content-type', 'text/html'); res.end(markup(req.url === '/frame').replace('PORT', String(server.address().port))); });
+  server = http.createServer((req, res) => { res.setHeader('content-type', 'text/html'); res.end(req.url === '/empty' ? '<!doctype html><title>Empty embedded fixture</title>' : markup(req.url === '/frame').replaceAll('PORT', String(server.address().port))); });
   await new Promise(resolve => server.listen(0, resolve));
   driver = await new ElectronBrowserDriver({ dataDir: directory, downloadDir: path.join(directory, 'downloads') }).init();
   let snapshot = await driver.perform({ action: 'open', url: `http://127.0.0.1:${server.address().port}/` });
@@ -47,7 +47,20 @@ async function main() {
     assert.equal(controls.find(item => item.name === 'Rich text')?.required, undefined);
   };
   check('native browser snapshot exposes only declared form requirements', () => assertFormRequirements(snapshot));
-  const formObservation = await driver.perform({ action: 'read', tabId: tab.id });
+  let formObservation;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    formObservation = await driver.perform({ action: 'read', tabId: tab.id });
+    if (formObservation.frames.some(frame => frame.url.endsWith('/empty') && frame.observation === 'no-content-observed')
+      && formObservation.frames.some(frame => frame.url.endsWith('/frame') && frame.elements.some(item => item.name === 'Frame field'))) break;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  check('native browser distinguishes the empty hidden document from observed embedded controls', () => {
+    assert.equal(formObservation.frames.find(frame => frame.url.endsWith('/empty'))?.observation, 'no-content-observed');
+    const embedded = formObservation.frames.find(frame => frame.url.endsWith('/frame'));
+    assert.equal(embedded?.observation, 'content-observed');
+    assert.ok(embedded?.elements.some(item => item.name === 'Frame field'));
+  });
+
   check('native browser read preserves declared form requirements', () => assertFormRequirements(formObservation));
   const fresh = async () => snapshot = await driver.perform({ action: 'snapshot', tabId: tab.id });
   const ref = name => { const value = snapshot.frames.flatMap(frame => frame.elements).find(item => item.name === name); assert.ok(value, `Missing synthetic ${name} target`); return value.ref; };
