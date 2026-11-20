@@ -630,6 +630,7 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       text(receipt,toolFailure.label,'summary');
       text(receipt,toolFailure.detail,'p');
     }
+    if(run.status==='failed'&&run.settled===true&&Object.values(run.nodes||{}).some(node=>node.directoryCheckpoint==='partial-source-notes'))text(footer,'Task incomplete. Directory keeps the partial, agent-reported source notes.','span','next-turn-note');
     if(run.status==='completed'&&run.settled===true&&hasPlan&&!planView.complete)text(footer,'Unfinished steps','span','next-turn-note');
     if (['failed','cancelled'].includes(run.status) && run.settled===true && !delivery.needsFollowup) {
       const retry=text(footer,'Retry','button');retry.type='button';retry.addEventListener('click',()=>cache.callbacks.onStop?.('retry',run.id));

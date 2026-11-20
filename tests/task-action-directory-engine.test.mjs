@@ -164,6 +164,60 @@ test('typed partial observation retains live search evidence without closing or 
   });
  }
 });
+test('qualification diagnostics repair the exact field; exhausted Directory retries retain source notes without releasing candidate prose',async t=>{
+ for(const scenario of ['safe','prior-effect','empty-final','provider-incomplete']){
+  await t.test(scenario,async t=>{
+   const {engine,root}=await setup(t,async o=>{
+    let seq=0;const call=(name,args)=>o.onToolCall({name,arguments:args,callId:'qualify-repair-'+(++seq)});
+    const dir=async(action,args={})=>call('relay_directory_action',{action,...args});
+    const accepted=async(action,args={})=>{const r=await dir(action,args);assert.equal(r.success,true,JSON.stringify(r));return JSON.parse(r.contentItems[0].text);};
+    const base={id:'find',objective:'Verify two qualifying candidates',dependsOn:[]};
+    for(const [qualifying,description] of [
+     [{minQualifyingCount:2,requiredChecks:'remote'},/qualifying\.requiredChecks to an array/],
+     [{minQualifyingCount:2,requiredChecks:['PRIVATE SECRET TOKEN']},/per qualifying\.requiredChecks ID/],
+     [{minQualifyingCount:'2',requiredChecks:['remote']},/qualifying\.minQualifyingCount to an integer/],
+     [{minQualifyingCount:2,requiredChecks:['remote','remote']},/each qualifying\.requiredChecks ID once/],
+     [{minQualifyingCount:2,requiredChecks:['remote'],secret:'PRIVATE SECRET TOKEN'},/with only minQualifyingCount and requiredChecks/]
+    ]){
+     const bad=await dir('plan',{actions:[{...base,qualifying}]});
+     assert.equal(bad.code,'DIRECTORY_QUALIFICATION');assert.match(bad.contentItems[0].text,description);
+     assert.doesNotMatch(bad.contentItems[0].text,/PRIVATE SECRET TOKEN/);
+    }
+    assert.deepEqual((await accepted('read')).actions,[]);
+    await accepted('plan',{actions:[{...base,qualifying:{minQualifyingCount:2,requiredChecks:['remote']}}]});
+    await accepted('focus',{id:'find'});
+    if(scenario==='prior-effect')assert.equal((await call('relay_workspace',{action:'write',path:path.join(root,'local.txt'),text:'One authorized fixture write.'})).success,true);
+    const savePartial=async i=>{
+     const result=await call('relay_workspace',{action:'read',path:path.join(root,'source-'+i+'.txt')});
+     assert.equal(result.success,true);
+     const [receipt]=result.contentItems.at(-1).text.match(/receipt-[0-9]+/);
+     return accepted('observe',{id:'find',outcome:'partial',claim:'Agent-recorded partial check '+i+'.',receipts:[receipt]});
+    };
+    const review=(options={})=>o.onBeforeFinal({output:'UNVERIFIED FINAL CLAIM',signal:o.signal,...options});
+    await savePartial(1);
+    assert.equal((await review()).continue,true);
+    await savePartial(2);
+    assert.equal((await review()).continue,true);
+    const latest=await savePartial(3);
+    assert.equal(latest.actions[0].notes.length,3);
+    return await review(scenario==='empty-final'?{output:''}:scenario==='provider-incomplete'?{incomplete:true}:{});
+   });
+   const {writeFile}=await import('node:fs/promises');
+   for(let i=1;i<=3;i++)await writeFile(path.join(root,'source-'+i+'.txt'),'Fixture source '+i+'.');
+   const run=engine.startRun({workflow:graph,input:{task:'Report two verified sources only',directoryActions:'on',directoryDiagnostics:'maximal'}});
+   await engine.executions.get(run.id);
+   const done=engine.getRun(run.id),trace=engine.runs.get(run.id).turnMachineTrace.head;
+   assert.equal(done.status,'failed',done.error);assert.equal(done.errorCode,'DIRECTORY_ACTION_UNFINISHED');
+   assert.equal(done.nodes.a.directoryCheckpoint,scenario==='safe'?'partial-source-notes':undefined);
+   assert.equal(done.nodes.a.directoryOutcome,scenario==='safe'?'incomplete':undefined);
+   assert.doesNotMatch(String(done.output),/UNVERIFIED FINAL CLAIM/);
+   const ledger=await engine.actionDirectories.get(run.id,'Unchanged objective');
+   assert.deepEqual(ledger.read().actions[0].notes.map(note=>note.claim),[1,2,3].map(i=>'Agent-recorded partial check '+i+'.'));
+   assert.deepEqual(trace.filter(e=>e.kind==='directory.mutation'&&e.metadata?.qualifyingIssue).map(e=>e.metadata.qualifyingIssue),['check-count','check-id','count-range','duplicate-check','contract-shape']);
+   assert.doesNotMatch(JSON.stringify(trace),/PRIVATE SECRET TOKEN|UNVERIFIED FINAL CLAIM/);
+  });
+ }
+});
 test('actual handler work drives action observation and durable same-task state without payload imports',async t=>{let state;const{engine,root}=await setup(t,async o=>{const call=async args=>{const r=await o.onToolCall({name:'relay_directory_action',arguments:args,callId:'directory'});assert.equal(r.success,true,JSON.stringify(r));return JSON.parse(r.contentItems[0].text);};state=await call({action:'read'});state=await call({action:'plan',revision:state.revision,actions:[{id:'inspect',objective:'List current directory',dependsOn:[]}]});state=await call({action:'focus',revision:state.revision,id:'inspect'});const r=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:root},callId:'list'});assert.equal(r.success,true,JSON.stringify(r));state=await call({action:'read'});assert.equal(state.receipts.length,1);state=await call({action:'observe',outcome:'objective-met',revision:state.revision,id:'inspect',claim:'The folder listing returned',receipts:[state.receipts[0].id]});assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);return{output:'Listed folder'};});const run=engine.startRun({workflow:graph,input:{task:'List current folder',directoryActions:'on'}});await engine.executions.get(run.id);assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);assert.equal(engine.getRun(run.id).nodes.a.directoryContext,undefined,'Action Directory works with diagnostic capture off');const store=new TaskActionDirectoryStore(root);const reopened=await store.get(run.id,'Ignored new objective');assert.equal(reopened.read().actions[0].state,'observed');const other=await store.get('separate-task','Another objective');assert.equal(other.read().actions.length,0);assert.equal(other.read().objective,'Another objective');await store.close();});
 test('same display group does not inherit action mode or action state',async t=>{const{engine}=await setup(t,async()=>({output:'No work'}));const first=engine.startRun({workflow:graph,input:{task:'First',directoryActions:'on'}});await engine.executions.get(first.id);const second=engine.startRun({workflow:graph,input:{task:'Second'}},{chatDisplayGroupId:first.id,sourceTaskId:first.id});await engine.executions.get(second.id);const run=engine.getRun(second.id);assert.equal(run.directoryActions,undefined);assert.equal(run.status,'completed');assert.notEqual(run.taskId||run.id,first.id);});
 test('late Directory callback after cancellation cannot mutate durable state',async t=>{let options;const{engine}=await setup(t,async o=>{options=o;return{output:'No actions'};});const run=engine.startRun({workflow:graph,input:{task:'Do work',directoryActions:'on'}});await engine.executions.get(run.id);const ledger=await engine.actionDirectories.get(run.id,'Work');const before=ledger.read();const result=await options.onToolCall({name:'relay_directory_action',arguments:{action:'plan',revision:before.revision,actions:[{id:'late',objective:'Late',dependsOn:[]}]}});assert.equal(result.success,false);assert.equal(result.code,'ABORT_ERR');assert.deepEqual(ledger.read(),before);});
