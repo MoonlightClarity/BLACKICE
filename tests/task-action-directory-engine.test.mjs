@@ -317,3 +317,64 @@ test('a verified dead route gets one chance to use another allowed option before
  await engine.executions.get(run.id);
  assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);
 });
+test('Directory returns once for a newly delivered checked block while an independent action is ready',async t=>{
+ for(const scenario of ['delivered','undelivered','projected','failed-evidence','no-independent','no-progress','exhausted']){
+  await t.test(scenario,async subt=>{
+   const {engine,root}=await setup(subt,async o=>{
+    let n=0;
+    const dir=async(args,{deliver=true,projected=false}={})=>{
+     const call={name:'relay_directory_action',arguments:args,callId:'dir-block-'+(++n)};
+     const result=await o.onToolCall(call);
+     assert.equal(result.success,true,JSON.stringify(result));
+     if(deliver)o.onToolResultDelivered({call,result:projected?{...result,contentItems:[{type:'inputText',text:'projected'}]}:result});
+     return JSON.parse(result.contentItems[0].text);
+    };
+    const review=()=>o.onBeforeFinal({signal:o.signal});
+    const actions=[{id:'primary',objective:'Check that the primary source exposes the needed record',dependsOn:[]},
+     {id:'alternative',objective:'Check the alternative source',dependsOn:scenario==='no-independent'?['primary']:[]}];
+    if(scenario==='exhausted')actions.push({id:'third',objective:'Check the third source',dependsOn:[]});
+    await dir({action:'plan',actions});
+    await dir({action:'focus',id:'primary'});
+    assert.equal((await review()).continue,true);
+    if(scenario==='no-progress')return review();
+    const check=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:scenario==='failed-evidence'?path.join(root,'missing'):root},callId:'source-check'});
+    assert.equal(check.success,scenario!=='failed-evidence');
+    const discovered=await dir({action:'read'});
+    const blocked=await dir({action:'block',id:'primary',blocker:'prerequisite-unavailable',claim:'The checked source has no required record',receipts:[discovered.receipts.at(-1).id]},{deliver:scenario!=='undelivered',projected:scenario==='projected'});
+    assert.equal(blocked.focus,null);
+    if(scenario==='no-independent'){
+     assert.deepEqual(blocked.ready,[]);
+     assert.equal(await review(),undefined);
+     return{output:'The primary source blocks the dependent work.'};
+    }
+    assert.deepEqual(blocked.ready,scenario==='exhausted'?['alternative','third']:['alternative']);
+    if(['undelivered','projected','failed-evidence'].includes(scenario))return review();
+    const next=await review();
+    assert.equal(next.continue,true);
+    assert.match(next.prompt,/independent ready action/);
+    assert.match(next.prompt,/do not repeat the blocked action/i);
+    await dir({action:'focus',id:'alternative'});
+    assert.equal((await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:root},callId:'alternate-check'})).success,true);
+    const alternative=await dir({action:'read'});
+    if(scenario==='exhausted'){
+     const checked=await dir({action:'block',id:'alternative',blocker:'prerequisite-unavailable',claim:'The alternative has no required record',receipts:[alternative.receipts.at(-1).id]});
+     assert.deepEqual(checked.ready,['third']);
+     return review();
+    }
+    await dir({action:'observe',id:'alternative',claim:'Verified the alternative source',receipts:[alternative.receipts.at(-1).id]});
+    assert.equal(await review(),undefined);
+    return{output:'The independently verified alternative was checked.'};
+   });
+   const run=engine.startRun({workflow:graph,input:{task:'Check both routes',directoryActions:'on',directoryDiagnostics:scenario==='delivered'?'maximal':'off'}});
+   await engine.executions.get(run.id);
+   const settled=engine.getRun(run.id);
+   if(['no-progress','undelivered','projected','failed-evidence','exhausted'].includes(scenario)){
+    assert.equal(settled.errorCode,'DIRECTORY_ACTION_UNFINISHED');
+   }else{
+    assert.equal(settled.status,'completed',settled.error);
+    assert.equal(settled.nodes.a.directoryOutcome,'incomplete','Reporting a blocked history is not task completion');
+    assert.equal(settled.events.filter(row=>row.data?.type==='directory.final'&&row.data?.phase==='continue-after-checked-block').length,scenario==='delivered'?1:0);
+   }
+  });
+ }
+});
