@@ -218,6 +218,48 @@ test('qualification diagnostics repair the exact field; exhausted Directory retr
   });
  }
 });
+test('a search-only receipt can preserve zero candidate partial progress and continue, but cannot close counted work',async t=>{
+ const {engine,root}=await setup(t,async o=>{
+  let seq=0;const call=(name,args)=>o.onToolCall({name,arguments:args,callId:'discovery-'+(++seq)});
+  const directory=o.dynamicTools.find(tool=>tool.name==='relay_directory_action');
+  assert.equal(directory.inputSchema.properties.candidateRows.minItems,0);
+  const dir=(action,args={})=>call('relay_directory_action',{action,...args});
+  const accepted=async(action,args={})=>{const r=await dir(action,args);assert.equal(r.success,true,JSON.stringify(r));return JSON.parse(r.contentItems[0].text);};
+  const receipt=async(action,location)=>{
+   const r=await call('relay_workspace',{action,path:location});assert.equal(r.success,true);return r.contentItems.at(-1).text.match(/receipt-[0-9]+/)[0];
+  };
+  const review=output=>o.onBeforeFinal({output,signal:o.signal});
+  await accepted('plan',{actions:[{id:'find',objective:'Verify one qualifying source',qualifying:{minQualifyingCount:1,requiredChecks:['fit']},dependsOn:[]}]});
+  await accepted('focus',{id:'find'});
+  assert.equal((await review('No source checked yet.')).continue,true);
+  for(const candidateRows of [[],undefined]){
+   const found=await receipt('list',root);
+   const args={id:'find',claim:'The index was checked; no individual source evaluated yet.',receipts:[found],...(candidateRows===undefined?{}:{candidateRows})};
+   const before=await accepted('read');
+   assert.equal((await dir('observe',{...args,outcome:'objective-met'})).code,'DIRECTORY_QUALIFICATION');
+   assert.equal((await dir('observe',{...args,outcome:'partial',candidateRows:null})).code,'DIRECTORY_QUALIFICATION');
+   assert.deepEqual(await accepted('read'),before);
+   const partial=await accepted('observe',{...args,outcome:'partial'});
+   assert.equal(partial.focus,'find');assert.equal(partial.actions[0].state,'active');assert.deepEqual(partial.ready,[]);
+   assert.deepEqual(partial.actions[0].notes.at(-1).qualification,{count:0,candidateRows:[]});
+   assert.deepEqual(partial.actions[0].notes.at(-1).receipts,[found]);
+   if(candidateRows!==undefined){
+    const next=await review('I checked a result index, and no candidate is verified.');
+    assert.equal(next.continue,true);assert.match(next.prompt,/new finding for the active action/);
+   }
+  }
+  const checked=await receipt('read',path.join(root,'candidate.txt'));
+  await accepted('observe',{id:'find',outcome:'objective-met',claim:'One actual qualifying source.',receipts:[checked],candidateRows:[{id:'candidate',sourceReceipt:checked,checks:[{id:'fit',status:'verified'}]}]});
+  assert.equal(await review('One source verified.'),undefined);
+  return{output:'One source verified.'};
+ });
+ const {writeFile}=await import('node:fs/promises');await writeFile(path.join(root,'candidate.txt'),'Independent candidate source.');
+ const run=engine.startRun({workflow:graph,input:{task:'Find one verified candidate from available sources',directoryActions:'on',directoryDiagnostics:'maximal'}});
+ await engine.executions.get(run.id);
+ assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);
+ const trace=engine.runs.get(run.id).turnMachineTrace.head;
+ assert.equal(trace.filter(e=>e.kind==='directory.mutation'&&e.metadata?.observeOutcome==='partial'&&e.metadata.qualifyingCount===0&&e.metadata.requiredQualifyingCount===1).length,2);
+});
 test('actual handler work drives action observation and durable same-task state without payload imports',async t=>{let state;const{engine,root}=await setup(t,async o=>{const call=async args=>{const r=await o.onToolCall({name:'relay_directory_action',arguments:args,callId:'directory'});assert.equal(r.success,true,JSON.stringify(r));return JSON.parse(r.contentItems[0].text);};state=await call({action:'read'});state=await call({action:'plan',revision:state.revision,actions:[{id:'inspect',objective:'List current directory',dependsOn:[]}]});state=await call({action:'focus',revision:state.revision,id:'inspect'});const r=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:root},callId:'list'});assert.equal(r.success,true,JSON.stringify(r));state=await call({action:'read'});assert.equal(state.receipts.length,1);state=await call({action:'observe',outcome:'objective-met',revision:state.revision,id:'inspect',claim:'The folder listing returned',receipts:[state.receipts[0].id]});assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);return{output:'Listed folder'};});const run=engine.startRun({workflow:graph,input:{task:'List current folder',directoryActions:'on'}});await engine.executions.get(run.id);assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);assert.equal(engine.getRun(run.id).nodes.a.directoryContext,undefined,'Action Directory works with diagnostic capture off');const store=new TaskActionDirectoryStore(root);const reopened=await store.get(run.id,'Ignored new objective');assert.equal(reopened.read().actions[0].state,'observed');const other=await store.get('separate-task','Another objective');assert.equal(other.read().actions.length,0);assert.equal(other.read().objective,'Another objective');await store.close();});
 test('same display group does not inherit action mode or action state',async t=>{const{engine}=await setup(t,async()=>({output:'No work'}));const first=engine.startRun({workflow:graph,input:{task:'First',directoryActions:'on'}});await engine.executions.get(first.id);const second=engine.startRun({workflow:graph,input:{task:'Second'}},{chatDisplayGroupId:first.id,sourceTaskId:first.id});await engine.executions.get(second.id);const run=engine.getRun(second.id);assert.equal(run.directoryActions,undefined);assert.equal(run.status,'completed');assert.notEqual(run.taskId||run.id,first.id);});
 test('late Directory callback after cancellation cannot mutate durable state',async t=>{let options;const{engine}=await setup(t,async o=>{options=o;return{output:'No actions'};});const run=engine.startRun({workflow:graph,input:{task:'Do work',directoryActions:'on'}});await engine.executions.get(run.id);const ledger=await engine.actionDirectories.get(run.id,'Work');const before=ledger.read();const result=await options.onToolCall({name:'relay_directory_action',arguments:{action:'plan',revision:before.revision,actions:[{id:'late',objective:'Late',dependsOn:[]}]}});assert.equal(result.success,false);assert.equal(result.code,'ABORT_ERR');assert.deepEqual(ledger.read(),before);});
