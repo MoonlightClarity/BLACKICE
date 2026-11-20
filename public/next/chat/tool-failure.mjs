@@ -57,6 +57,7 @@ function alarmCode(tool,value) {
  if(tool==='relay_browser'&&['BROWSER_REF_STALE','BROWSER_INPUT_DOCUMENT_CHANGED','BROWSER_UNAVAILABLE'].includes(value))return value;
  if(tool==='relay_skills'&&['SKILL_NOT_FOUND','SKILL_UNAVAILABLE'].includes(value))return value;
  if(tool==='relay_history'&&value==='PAST_CHATS_OFF')return value;
+ if(tool==='relay_workspace'&&['ENOENT','EACCES','EPERM'].includes(value))return value;
  if(tool==='relay_directory_action'&&['DIRECTORY_BLOCKER','DIRECTORY_UNKNOWN','DIRECTORY_CHANGED','DIRECTORY_NOT_READY'].includes(value))return value;
  return null;
 }
@@ -103,6 +104,9 @@ export function diagnosticAlarmCopy(raw) {
   case 'BROWSER_UNAVAILABLE':observed='The runtime reported no available contained browser.';break;
   case 'SKILL_NOT_FOUND':observed='The skill catalog could not find the requested entry.';explanation='The entry may have been deleted or requested under a different ID.';break;
   case 'SKILL_UNAVAILABLE':observed='The runtime could not load the requested skill.';explanation='The receipt does not identify which catalog or storage check failed.';break;
+  case 'ENOENT':observed='The workspace tool did not find the file or a folder in its path.';explanation='The path may have moved, been typed differently, or pointed to a folder that is not present.';break;
+  case 'EACCES':
+  case 'EPERM':observed='The operating system did not let the workspace tool access the path.';explanation='Check this file or folder’s access and whether another app is holding it. A permission error does not mean the file is missing.';break;
   case 'PAST_CHATS_OFF':observed='The tool denied the unrelated chat lookup because Search other chats is Off.';explanation='This setting does not block current-chat continuity.';break;
   case 'DIRECTORY_BLOCKER':observed='Action Directory rejected the proposed block.';explanation='A candidate may have failed without demonstrating that the whole action is blocked.';break;
   case 'DIRECTORY_UNKNOWN':observed='Action Directory recorded an unresolved attempt.';explanation='This is not proof that the effect happened or that it did not.';break;

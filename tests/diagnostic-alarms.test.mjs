@@ -63,3 +63,13 @@ test('actual failed skill read emits alarm before run settles and keeps ordinary
  assert.equal(completed.status,'completed',completed.error);
  assert.deepEqual(projectFamily({runs:[completed]}).runs[0].diagnosticAlarms,alarms[0].data);
 });
+
+test('workspace alarms report observed missing path or access code without retaining the path',()=>{
+ const failure={type:'tool.result',tool:'relay_workspace',action:'read',success:false,message:'C:/Users/private/secret.pdf was not found'};
+ for(const [code,expect] of [['ENOENT',/did not find/],['EACCES',/did not let/],['EPERM',/did not let/]]){
+  const alarm=recordDiagnosticAlarm(null,{...failure,code});
+  assert.equal(alarm.rows[0].code,code);
+  assert.match(diagnosticAlarmCopy(alarm.rows[0]).observed,expect);
+  assert.doesNotMatch(JSON.stringify(alarm),/private|secret\.pdf/);
+ }
+});
