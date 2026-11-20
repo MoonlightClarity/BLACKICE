@@ -101,6 +101,39 @@ test('Move opens a named dialog as a genuine modal, retains choice through refre
  await f.key(form,'Escape');assert.equal(f.$('.next-browser-folder-editor'),null);assert.equal(f.calls.length,0);
 });
 
+test('Move refreshes destination paths and new choices without resetting the selected folder ID',async t=>{
+ const f=fixture(t);await f.click('.next-browser-tab-move');
+ const form=f.$('.next-browser-folder-editor'),target=form.querySelector('select');
+ target.value='c';
+ f.data.collections[0].name='Renamed project';
+ f.data.collections.push({id:'new',name:'Evidence',parentId:'c'});
+ f.render();
+ assert.equal(form.querySelector('select'),target);
+ assert.equal(target.value,'c');
+ assert.deepEqual([...target.querySelectorAll('option')].map(o=>[o.value,o.textContent]),[
+  ['', 'Unfiled'],['p','Renamed project'],['c','Renamed project / Research'],['new','Renamed project / Research / Evidence'],
+ ]);
+ target.value='new';await target.dispatch('change');await form.dispatch('submit');
+ assert.deepEqual(f.calls,[{browser:'relay',action:'tab_collect',tabId:'a',collectionId:'new'}]);
+});
+
+test('Move blocks a removed selected folder until the user explicitly chooses another destination',async t=>{
+ const f=fixture(t);await f.click('.next-browser-tab-move');
+ const form=f.$('.next-browser-folder-editor'),target=form.querySelector('select'),save=form.querySelector('[type="submit"]');
+ assert.equal(target.value,'c');
+ f.data.collections.pop();f.data.tabs[0].collectionId='p';f.render();
+ const missing=[...target.querySelectorAll('option')].find(o=>o.value==='c');
+ assert.equal(missing.textContent,'Unavailable: Projects / Research');assert.equal(missing.disabled,true);
+ assert.equal(target.value,'c');assert.equal(save.disabled,true);
+ assert.match(form.querySelector('[role="status"]').textContent,/no longer exists/i);
+ await form.dispatch('submit');f.render();await form.dispatch('submit');
+ assert.equal(f.calls.length,0);
+ target.value='';await target.dispatch('change');assert.equal(save.disabled,false);
+ assert.equal(form.querySelector('[role="status"]').hidden,true);
+ await form.dispatch('submit');
+ assert.deepEqual(f.calls,[{browser:'relay',action:'tab_collect',tabId:'a',collectionId:null}]);
+});
+
 test('folder row creates a child under the chosen folder, reveals it, and leaves top-level creation unchanged',async t=>{
  const f=fixture(t),add=f.$('[data-folder-control="create:c"]');
  assert.equal(add.getAttribute('aria-label'),'New subfolder in Projects / Research');

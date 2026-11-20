@@ -196,6 +196,7 @@
 .next-browser-folder-editor strong{flex-basis:100%}
 .next-browser-folder-editor input{flex:1;min-width:90px}
 .next-browser-folder-editor select{max-width:240px;min-width:0}
+.next-browser-move-status{flex-basis:100%;margin:0;color:var(--muted)}
 .next-browser-navigation .next-browser-address{flex-wrap:wrap}
 .next-browser-navigation .next-browser-address #next-browser-url{flex:1 1 180px}
 @media(max-width:800px){.next-browser-navigation .next-browser-folder-tree{max-height:170px}.next-browser-navigation .next-browser-address{gap:3px}.next-browser-address button{font-size:11px}.next-browser-folder-editor select{max-width:100%}}
