@@ -27,6 +27,7 @@ const deferred = () => {
 };
 const node = (id, type, prompt = '') => ({ id, type, name: id, prompt, x: 40, y: 40 });
 const edge = (source, target) => ({ id: `${source}-${target}`, source, target });
+const matchesTask = (prompt, task) => prompt.split('\n').includes(task);
 const workflow = (overrides = {}) => ({
   id: 'test-flow', name: 'Bounded QA',
   nodes: [node('input', 'input'), node('agent', 'agent', 'AGENT_MARKER'), node('output', 'output')],
@@ -98,14 +99,19 @@ test('legacy saved application caps are ignored without migration and old writes
  assert.equal(controlled.executionStatus().capacity,1,'explicit embedding/test hook remains independent of retired app setting');
 });
 test('lowering the limit leaves all current chats running and delays only new starts until capacity is free', async t => {
-  const holds = [deferred(), deferred(), deferred(), deferred()], runtime = new FakeRuntime(() => holds[runtime.calls.length - 1].promise), { engine } = await harness(t, runtime, {maxConcurrentRuns:null});
+  const tasks = ['Held limit-change chat 0', 'Held limit-change chat 1', 'Held limit-change chat 2', 'New chat after removing limit.'];
+  const holds = tasks.map(() => deferred()), runtime = new FakeRuntime(({prompt}) => {
+    const index = tasks.findIndex(task => matchesTask(prompt, task));
+    assert.notEqual(index,-1,'the provider invocation must match one authored test task');
+    return holds[index].promise;
+  }), { engine } = await harness(t, runtime, {maxConcurrentRuns:null});
   try {
-    const runs = Array.from({ length: 3 }, (_, index) => engine.startRun({ workflow: workflow(), input: `Held limit-change chat ${index}` })); await waitFor(() => runtime.calls.length === 3, 'three chats start');
+    const runs = tasks.slice(0,3).map(input => engine.startRun({ workflow: workflow(), input })); await waitFor(() => runtime.calls.length === 3, 'three chats start');
     await engine.updateExecutionSettings({ maxConcurrentRuns: 1 }); assert.equal(engine.executionStatus().activeCount, 3); assert.equal(engine.executionStatus().availableSlots, 0); assert.ok(runtime.calls.every(call => !call.signal.aborted));
     assert.throws(() => engine.startRun({ workflow: workflow(), input: 'Wait for capacity.' }), { code: 'RUN_CAPACITY' });
     holds[0].resolve({ output: 'First complete.' }); holds[1].resolve({ output: 'Second complete.' }); await Promise.all(runs.slice(0, 2).map(run => engine.executions.get(run.id)));
     assert.equal(engine.executionStatus().activeCount, 1); assert.equal(engine.executionStatus().availableSlots, 0); assert.throws(() => engine.startRun({ workflow: workflow(), input: 'Still full.' }), { code: 'RUN_CAPACITY' });
-    await engine.updateExecutionSettings({ maxConcurrentRuns: null }); const fourth = engine.startRun({ workflow: workflow(), input: 'New chat after removing limit.' }); await waitFor(() => runtime.calls.length === 4, 'unlimited change admits another chat without interrupting the old one');
+    await engine.updateExecutionSettings({ maxConcurrentRuns: null }); const fourth = engine.startRun({ workflow: workflow(), input: tasks[3] }); await waitFor(() => runtime.calls.length === 4, 'unlimited change admits another chat without interrupting the old one');
     assert.ok(runtime.calls.every(call => !call.signal.aborted)); holds[2].resolve({ output: 'Third complete.' }); holds[3].resolve({ output: 'Fourth complete.' }); await Promise.all([engine.executions.get(runs[2].id), engine.executions.get(fourth.id)]);
   } finally { holds.forEach(hold => hold.resolve({ output: 'Fixture cleanup.' })); }
 });
@@ -199,7 +205,8 @@ test('a coded cancellation acknowledged after user Stop remains cancelled withou
 test('independent chats reserve capacity immediately, run together, and retain separate Stop and completion boundaries', async t => {
   const holds = new Map(['FIRST CHAT', 'SECOND CHAT', 'THIRD CHAT'].map(key => [key, deferred()]));
   const runtime = new FakeRuntime(async options => {
-    const key = [...holds.keys()].find(value => options.prompt.includes(value));
+    const key = [...holds.keys()].find(value => matchesTask(options.prompt, value));
+    assert.ok(key,'the invocation must belong to a fixture chat');
     options.onEvent({ type: 'thread', threadId: `thread-${key.replaceAll(' ', '-')}` });
     return holds.get(key).promise;
   });
@@ -210,14 +217,17 @@ test('independent chats reserve capacity immediately, run together, and retain s
     assert.equal(engine.startRun(request).id, first.id, 'receipt replay precedes capacity rejection');
     assert.throws(() => engine.startRun({ workflow: workflow(), input: 'THIRD CHAT' }), { status: 409, code: 'RUN_CAPACITY' });
     await waitFor(() => runtime.calls.length === 2, 'both independent chats enter the runtime before either finishes');
+    const firstCall=runtime.calls.find(call=>matchesTask(call.prompt,'FIRST CHAT'));
+    const secondCall=runtime.calls.find(call=>matchesTask(call.prompt,'SECOND CHAT'));
+    assert.ok(firstCall&&secondCall);
     engine.cancelRun(first.id);
-    assert.equal(runtime.calls[0].signal.aborted, true); assert.equal(runtime.calls[1].signal.aborted, false); assert.equal(engine.getRun(second.id).status, 'running');
+    assert.equal(firstCall.signal.aborted, true); assert.equal(secondCall.signal.aborted, false); assert.equal(engine.getRun(second.id).status, 'running');
     assert.equal(engine.executionStatus().availableSlots, 0, 'a stopped chat retains its slot until the runtime acknowledges');
     holds.get('FIRST CHAT').resolve({ output: 'Stopped reply.', threadId: 'thread-first' }); await engine.executions.get(first.id);
     assert.equal(engine.executionStatus().availableSlots, 1); assert.deepEqual(engine.executionStatus().activeRunIds, [second.id]);
     const third = engine.startRun({ workflow: workflow(), input: 'THIRD CHAT' }); await waitFor(() => runtime.calls.length === 3, 'a replacement uses the freed slot');
     holds.get('THIRD CHAT').resolve({ output: 'Third complete.', threadId: 'thread-third' }); await engine.executions.get(third.id);
-    assert.equal(engine.getRun(third.id).status, 'completed'); assert.equal(engine.getRun(second.id).status, 'running'); assert.equal(runtime.calls[1].signal.aborted, false);
+    assert.equal(engine.getRun(third.id).status, 'completed'); assert.equal(engine.getRun(second.id).status, 'running'); assert.equal(secondCall.signal.aborted, false);
     holds.get('SECOND CHAT').resolve({ output: 'Second complete.', threadId: 'thread-second' }); await engine.executions.get(second.id);
     assert.equal(engine.getRun(first.id).status, 'cancelled'); assert.equal(engine.getRun(second.id).nodes.agent.output, 'Second complete.'); assert.equal(engine.executionStatus().activeCount, 0); assert.equal(engine.executionStatus().availableSlots, 2);
   } finally { for (const hold of holds.values()) hold.resolve({ output: 'Fixture cleanup.' }); }
@@ -272,9 +282,14 @@ test('multiple admitted chats ignore retired learning hooks without reading lear
 });
 
 test('shutdown cancels and drains every active chat and advertises no new capacity while waiting', async t => {
-  const holds = [deferred(), deferred()], runtime = new FakeRuntime(() => holds[runtime.calls.length - 1].promise);
+  const tasks=['First held chat.','Second held chat.'];
+  const holds = tasks.map(()=>deferred()), runtime = new FakeRuntime(({prompt}) => {
+    const index=tasks.findIndex(task=>matchesTask(prompt,task));
+    assert.notEqual(index,-1,'the invocation must belong to a shutdown fixture chat');
+    return holds[index].promise;
+  });
   const { engine } = await harness(t, runtime);
-  const first = engine.startRun({ workflow: workflow(), input: 'First held chat.' }), second = engine.startRun({ workflow: workflow(), input: 'Second held chat.' }); await waitFor(() => runtime.calls.length === 2, 'both shutdown fixtures start');
+  const first = engine.startRun({ workflow: workflow(), input: tasks[0] }), second = engine.startRun({ workflow: workflow(), input: tasks[1] }); await waitFor(() => runtime.calls.length === 2, 'both shutdown fixtures start');
   let finished = false; const closing = engine.close().then(() => { finished = true; });
   try {
     assert.ok(runtime.calls.every(call => call.signal.aborted)); assert.equal(engine.executionStatus().availableSlots, 0); assert.equal(engine.executionStatus().activeCount, 2); assert.equal(engine.executionStatus().stopping, true);
@@ -353,12 +368,19 @@ test('client request hashes canonicalize authored keys and replay the same admis
 });
 
 test('admission pins every default agent before delayed work and leaves the saved workflow authored',async t=>{
-  let selected='first-model';const entered=deferred(),release=deferred();
-  const runtime=new FakeRuntime(async options=>{if(options.prompt.startsWith('You are first.')){entered.resolve();await release.promise;}return{output:'Pinned fixture result',threadId:'pinned-thread'};});
+  let selected='first-model';const release=deferred();
+  const runtime=new FakeRuntime(async()=>{if(runtime.calls.length===1)await release.promise;return{output:'Pinned fixture result',threadId:'pinned-thread'};});
   runtime.status=()=>({connected:true,authenticated:true,defaultModel:selected});
   const{engine}=await harness(t,runtime),graph=workflow({nodes:[node('input','input'),{...node('first','agent','FIRST'),model:'default'},{...node('second','agent','SECOND'),model:'default'},node('output','output')],edges:[edge('input','first'),edge('first','second'),edge('second','output')],settings:{maxParallel:1}});
   await engine.saveWorkflow(graph);const run=engine.startRun({workflow:graph,input:'Keep the selected model for all queued agents.'});
-  try{await entered.promise;selected='later-model';assert.deepEqual(engine.getRun(run.id).workflow.nodes.filter(node=>node.type==='agent').map(node=>node.model),['first-model','first-model']);assert.deepEqual(engine.listWorkflows()[0].nodes.filter(node=>node.type==='agent').map(node=>node.model),['default','default']);}
+  try{
+    await waitFor(()=>runtime.calls.length||engine.runs.get(run.id).settled,'first sequential agent reaches the mock runtime');
+    assert.equal(runtime.calls.length,1,engine.getRun(run.id).error);
+    assert.match(runtime.calls[0].prompt,/\bYou are first\./,'the held invocation belongs to the first agent');
+    selected='later-model';
+    assert.deepEqual(engine.getRun(run.id).workflow.nodes.filter(node=>node.type==='agent').map(node=>node.model),['first-model','first-model']);
+    assert.deepEqual(engine.listWorkflows()[0].nodes.filter(node=>node.type==='agent').map(node=>node.model),['default','default']);
+  }
   finally{release.resolve();}
   await engine.executions.get(run.id);assert.deepEqual(runtime.calls.map(call=>call.model),['first-model','first-model']);
   const next=engine.startRun({workflow:graph,input:'Use the new default on the next submission.'});await engine.executions.get(next.id);assert.equal(runtime.calls.at(-1).model,'later-model');
