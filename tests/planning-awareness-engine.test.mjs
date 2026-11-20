@@ -19,7 +19,7 @@ const workflow = {
   nodes: [{ id: 'input', type: 'input', name: 'Request' }, { id: 'agent', type: 'agent', name: 'Agent', model: 'fixture-awareness', prompt: 'Complete the requested work.' }, { id: 'output', type: 'output', name: 'Result' }],
   edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }],
 };
-async function fixture(t, execute, { delegates = false } = {}) {
+async function fixture(t, execute, { delegates = false, manualPlanning = false } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'blackice-awareness-engine-')), cwd = path.join(directory, 'work'); await mkdir(cwd);
   const tasks = await new TaskStateStore({ dataDir: directory }).init(), settings = await new RuntimeSettingsStore({ dataDir: directory }).init();
   // These fixtures exercise the opt-in saved-edit execution gates.
@@ -33,7 +33,7 @@ async function fixture(t, execute, { delegates = false } = {}) {
   const engine = new HarnessEngine({ runtime: new Runtime(), tasks, dataDir: directory, defaultCwd: cwd }); engine.runtimeSettings = settings; await engine.init(); context.engine = engine;
   t.after(async () => { await engine.close(); await settings.close(); await tasks.close(); await rm(directory, { recursive: true, force: true }); });
   return { ...context, async run() {
-    const accepted = engine.startRun({ workflow, input: { task: 'Check actual saved-edit awareness and file writes.' } }), deadline = Date.now() + 10000;
+    const accepted = engine.startRun({ workflow: manualPlanning ? {...workflow, planning:{shared:true,coordinatorNodeId:'agent'}, settings:{...workflow.settings,planningMode:'off'}} : workflow, input: { task: 'Check actual saved-edit awareness and file writes.' } }), deadline = Date.now() + 10000;
     while (Date.now() < deadline) { const result = engine.getRun(accepted.id); if (result.settled) return result; await new Promise(resolve => setTimeout(resolve, 5)); }
     assert.fail('The controlled awareness engine did not settle.');
   } };
@@ -60,7 +60,7 @@ test('manual saved corrections and presence remain visible without installing an
     const completed = await context.tasks.setStep(initial.taskId, 'build', { status: 'done', evidence: 'The actual written file contains the revised fixture result.' }, { expectedRevision: reviewed.revision, source: 'human' });
     assert.equal(completed.steps.find(step=>step.id==='build').status,'done');
     return { output: 'Written and checked the revised fixture result.' };
-  });
+  }, { manualPlanning:true });
   const result = await f.run(); assert.equal(result.status, 'completed', result.error);
   assert.equal(await readFile(path.join(f.cwd, 'presence.txt'), 'utf8'), 'Presence is advisory.');
   assert.equal(await readFile(path.join(f.cwd, 'actual.txt'), 'utf8'), 'Revised fixture result.');

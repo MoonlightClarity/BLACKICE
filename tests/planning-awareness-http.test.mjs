@@ -57,7 +57,7 @@ async function waitFor(read, message, timeout = 5000) {
   assert.fail(message);
 }
 
-async function fixture(t, { remote = false, emailEnabled = true } = {}) {
+async function fixture(t, { remote = false, emailEnabled = true, seedPlanning = true } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'blackice-planning-awareness-http-')), dataDir = path.join(root, 'data');
   await mkdir(dataDir);
   const transport = createRemoteTransportFixture(), manager = new RemoteAccessManager({ dataDir, transport: transport.transport, defaultHttpsPort: 8443 }), streams = new Set();
@@ -106,7 +106,10 @@ async function fixture(t, { remote = false, emailEnabled = true } = {}) {
       req.on('error', reject);
     });
   }
-  const workflow = { id: 'awareness-http-flow', name: 'Planning awareness fixture', nodes: [
+  // Mail retirement is a route contract and does not require a Planning turn.
+  const base = {root,app,manager,local,remote:remoteRequest,browser,events};
+  if(!seedPlanning)return base;
+  const workflow = { id: 'awareness-http-flow', name: 'Planning awareness fixture', planning:{shared:true,coordinatorNodeId:'agent'}, nodes: [
     { id: 'input', type: 'input', name: 'Task' },
     { id: 'agent', type: 'agent', name: 'Fixture worker', prompt: 'Complete the local fixture task.', model: 'awareness-http-fixture' },
     { id: 'output', type: 'output', name: 'Result' },
@@ -120,7 +123,7 @@ async function fixture(t, { remote = false, emailEnabled = true } = {}) {
   // Human graph-editor state, independent of the current model task catalog.
   const state=await app.tasks.setPlan(taskId,{plan:{layout:'sequence'},steps:[{id:'inspect',kind:'action',title:'Inspect task gateway',status:'pending',result:'Observed gateway state',note:'Inspect current gateway state',doneWhen:'State is read'}]},{expectedRevision:initial.revision,source:'human'});
   const stepId=state.steps[0].id;assert.equal(state.provenance.source,'human');
-  return { root, app, manager, local, remote: remoteRequest, browser, events, taskId, stepId, state, run, route: `/api/tasks/${taskId}/plan` };
+  return { ...base, taskId, stepId, state, run, route: `/api/tasks/${taskId}/plan` };
 }
 
 test('local presence endpoints require the session, accept only a node lease, and never write saved plan bytes or worker receipts', async t => {
@@ -221,8 +224,9 @@ test('awareness respects chat visibility and maintenance while existing leases c
 });
 
 test('retired built-in email routes fail closed locally and for paired browsers without invoking a mailbox CLI', async t => {
-  const f = await fixture(t, { remote: true, emailEnabled: false }), paired = await f.browser('Paired browser');
+  const f = await fixture(t, { remote: true, emailEnabled: false, seedPlanning: false }), paired = await f.browser('Paired browser');
   assert.equal(f.app.email, null, 'No built-in email runtime is started.');
+  assert.deepEqual(f.app.engine.listRuns(),[],'The mail route fixture does not open a Planning run.');
   const routes = [
     ['/api/email', 'GET'],
     ['/api/email/oauth/status', 'GET'],
