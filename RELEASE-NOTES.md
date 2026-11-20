@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.63 candidate source, not an installation or publication receipt.** Package version is **2.40.63**. Start with the [2.40.63 notes](RELEASE-NOTES-2.40.63.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.65 candidate source, not an installation or publication receipt.** Package version is **2.40.65**. Start with the [2.40.65 notes](RELEASE-NOTES-2.40.65.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.65](RELEASE-NOTES-2.40.65.md) - load Anti-Completion Bias in execution
 
 - [2.40.63](RELEASE-NOTES-2.40.63.md) - preserve failure evidence across diagnosis follow-ups
 
