@@ -10,7 +10,7 @@ import {child,answer,judgment} from './fixture-child-admission.mjs';
 const analyses=[
   {key:'estimate',objective:'Estimate a practical completion window from the sparse supplied samples.',description:'Return an approximate window with a declared variability assumption, not a guaranteed date.',evidence:'Three retained durations and an explicitly declared variability assumption.',source:'Three comparable fictional runs took two, three and five days. No guarantee or current measurement is supplied.',threshold:'A rough window is sufficient to choose a reversible next step.'},
   {key:'hypothesis',objective:'Choose a useful working hypothesis for the reported symptom.',description:'Rank plausible explanations with stated assumptions and uncertainty, without claiming a new inspection occurred.',evidence:'The retained symptom report and declared diagnostic assumptions.',source:'The fictional device intermittently resets after a load increase. No current inspection is available.',threshold:'Choose a reasonable first hypothesis; certainty is not required.'},
-  {key:'satisficing',objective:'Recommend a good-enough option from the supplied partial tradeoffs.',description:'Choose an option meeting the stated minimum benefit under declared assumptions, without proving global optimality.',evidence:'The partial option comparison and stated threshold.',source:'Option A has estimated benefit seven and cost two; B has estimated benefit nine and cost seven. Minimum useful benefit is six. Estimates may be imperfect.',threshold:'Stop when an option is reasonably expected to meet the minimum benefit within the cost constraint.'},
+  {key:'choose_workable_option',objective:'Recommend a good-enough option from the supplied partial tradeoffs.',description:'Choose an option meeting the stated minimum benefit under declared assumptions, without proving global optimality.',evidence:'The partial option comparison and stated threshold.',source:'Option A has estimated benefit seven and cost two; B has estimated benefit nine and cost seven. Minimum useful benefit is six. Estimates may be imperfect.',threshold:'Stop when an option is reasonably expected to meet the minimum benefit within the cost constraint.'},
   {key:'information-value',objective:'Estimate whether another check is worth its cost and delay before a reversible choice.',description:'Compare the expected benefit of information with its cost using declared probabilities; recommend proceeding or checking, but do not perform the check.',evidence:'Supplied hypothetical check costs and explicitly declared decision probabilities.',source:'A hypothetical extra check costs two effort units and delays the decision. A reversible option is currently preferred. Its value of further information is uncertain.',threshold:'Do not investigate when the plausible decision benefit is lower than the check cost and delay.'},
 ];
 
@@ -18,7 +18,7 @@ test('stage and reviewer contracts permit bounded inference and satisficing with
   const criterion={id:'choice',label:'Useful choice',description:'Recommend a useful option under stated assumptions.',verification:'response',accuracy:{mode:'qualitative',tolerance:'',decisionThreshold:'Good enough for a reversible decision.',evidenceNeeded:'Available partial comparison.',consequence:'A small reversible planning cost.',unknownPolicy:'assumption',stopWhen:'An adequately supported practical choice is available.'}};
   const contract=planningStageContract({node:{kind:'inference'},cycleContext:{acceptanceCriteria:[criterion]},sources:[]});
   assert.deepEqual(contract.inheritedCriteria,[criterion]);
-  assert.deepEqual(contract.reasoning.allowed,['bounded_inference','estimates','declared_assumptions','satisficing','value_of_information']);
+  assert.deepEqual(contract.reasoning.allowed,['bounded_inference','estimates','declared_assumptions','choose_workable_option','value_of_information']);
   const prompt=childAdmissionPrompt({requests:[],sources:[]});
   assert.match(prompt,/not complete evidence or proof/);
   assert.match(prompt,/Do not demand every unknown be resolved/);
@@ -46,7 +46,7 @@ test('saved uncertain-analysis judgments preserve inherited assumption policy wi
     assert.equal(snapshot.requests[0].acceptanceCriteria[0].accuracy.decisionThreshold,row.threshold);
     assert.deepEqual(request,before);
     const contract=planningStageContract({node:request.nodes[0],sources:request.sources});
-    assert.equal(contract.reasoning.allowed.includes('satisficing'),true);
+    assert.equal(contract.reasoning.allowed.includes('choose_workable_option'),true);
     assert.deepEqual(contract.capabilities,{actionTools:false,newObservations:false});
   }
 });

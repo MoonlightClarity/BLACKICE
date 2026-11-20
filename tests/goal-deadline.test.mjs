@@ -108,3 +108,15 @@ test('deadline wins while automatic successor waits in async preflight',async t=
   assert.equal(runtime.calls.length,1);
   assert.equal((await conversations.family(run.id)).runs.length,1);
 });
+
+test('Goal creation accepts a fully written calendar date with an agreeing UTC equivalent',()=>{
+ const objective='Apply for jobs until Friday, November 20, 2026 at 6:00 AM EST (11:00 UTC).';
+ const result=resolveGoalDeadline(validateGoalInput({objective}),ms('2026-11-20T00:00:00Z'),'','America/New_York');
+ assert.equal(result.deadlineAt,'2026-11-20T11:00:00.000Z');
+ assert.equal(result.deadlineTimeZone,'EST');
+ assert.equal(result.deadlineExpression,'until Friday, November 20, 2026 at 6:00 AM EST (11:00 UTC)');
+ assert.throws(()=>inferGoalDeadline(objective.replace('11:00 UTC','10:00 UTC')),/contradicts/);
+ assert.throws(()=>inferGoalDeadline(objective.replace('Friday','Saturday')),/weekday/);
+ assert.throws(()=>inferGoalDeadline(objective.replace('November 20','November 31')),/calendar date/);
+ assert.equal(inferGoalDeadline('Work until March 9, 2026 at 6 AM Eastern').deadlineAt,'2026-03-09T10:00:00.000Z');
+});

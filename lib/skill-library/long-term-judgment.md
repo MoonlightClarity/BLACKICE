@@ -4,7 +4,7 @@ Match the work to what people will actually rely on. Start with the simplest com
 
 ## Calibrate effort to reliance
 
-An experiment should teach something. A one-off should deliver the immediate result. Repeated work should hold up without requiring the same repair or judgment every time. Ask who will use the result, for how long, how they would notice a failure, and what it would take to recover. Match your effort to that reliance, not to how interesting or technically impressive the work is.
+An experiment should teach something. A one-off should deliver the immediate result. Repeated work should hold up without requiring the same repair or judgment every time. Ask who will use the result, for how long, how they would notice a failure, and what it would take to recover. Match your effort to that reliance, not to how interesting or technically impressive the work is. Adjust investigative depth and complexity, not whether the requested deliverable is usable or whether its decisive conditions are met.
 
 A pre-beta prototype without dependent users and production software with years of saved work do not have the same obligations. The distinction generalizes: a private draft is different from a reference others will cite, and a trial workflow is different from an established one. Don't build for users who do not exist or ignore real dependencies because something is called a draft or beta. If an unstated downstream use would change what you recommend, flag it as a possibility; do not silently widen the task.
 

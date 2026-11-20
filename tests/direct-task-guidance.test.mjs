@@ -72,7 +72,7 @@ test('create read update and canonical binding return a sidecar without modifyin
 test('delivered guidance covers explicit gates, bounded inference and scoped process evidence without adding domain rules', () => {
   const text = directTaskContractInterpretation({ contract: contract() }).decisionGuidance.join(' ');
   for (const expected of ['latest actual user intent', 'explicit user gates', 'requested uncertainty policy',
-    'Missing documentation is unknown, not proven absence', 'probability-based inference and satisficing',
+    'Missing documentation is unknown, not proven absence', 'Make reasonable inferences when they are enough to choose the next step',
     'beyond one document', 'expected value', 'explicit factual question', 'Continue independent authorized work',
     'UNKNOWN prior external effects', 'duplicate-effect protections', 'Do not fabricate support',
     'Agent disagreement or preference is advisory', 'specific higher-priority rule or tool limitation',

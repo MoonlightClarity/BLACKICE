@@ -28,7 +28,7 @@ for (const directoryMode of ['off']) test('identity delivered in '+directoryMode
  const workflow={name:'Identity delivery',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture::remote',prompt:'Reply briefly.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{planningMode:'off'}};
  const first=engine.startRun({workflow,input:{task:'Reply briefly.',directoryMode}});
  await entered;const oldText=JSON.stringify(runtime.calls[0]);
- assert.match(oldText,/calibrated inference/);
+ assert.match(oldText,/Use the simplest route that delivers/);
  assert.match(oldText,/GENERAL ANALYTICAL METHOD/);
  assert.doesNotMatch(oldText,/## Execution and coordination|## Verification and practical learning/);
  const doc=await identity.read('soul');
@@ -37,7 +37,7 @@ for (const directoryMode of ['off']) test('identity delivered in '+directoryMode
  assert.equal(engine.getRun(first.id).status,'completed',engine.getRun(first.id).error);
  const count=runtime.calls.length, readCount=runtime.soulReads.length;
  assert.ok(readCount>0);assert.ok(runtime.soulReads.every(r=>r.content===doc.content&&r.hash===doc.hash&&r.revision===doc.revision));
- assert.ok(runtime.calls.every(c=>JSON.stringify(c).includes('calibrated inference')));
+ assert.ok(runtime.calls.every(c=>JSON.stringify(c).includes('Use the simplest route that delivers')));
  assert.ok(runtime.calls.every(c=>!JSON.stringify(c).includes('CUSTOM_NEXT_TURN')));
  if(directoryMode==='on')assert.ok(count>=3);
  const second=engine.startRun({workflow,input:{task:'Reply again.',directoryMode}});await engine.executions.get(second.id);
@@ -77,7 +77,7 @@ test('sequential agent nodes share admission SOUL while USER remains live and ne
  assert.equal(engine.getRun(first.id).status,'completed',engine.getRun(first.id).error);
  assert.equal(runtime.calls.length,2);assert.equal(runtime.reads.length,2);
  for(const {soul,user} of runtime.reads){assert.equal(soul.content,original.content);assert.equal(soul.hash,original.hash);assert.equal(soul.revision,original.revision);assert.equal(user.content,'# LIVE_USER_EDIT');}
- for(const call of runtime.calls){assert.match(JSON.stringify(call),/calibrated inference/);assert.doesNotMatch(JSON.stringify(call),/NEXT_EXECUTION_SOUL/);}
+ for(const call of runtime.calls){assert.match(JSON.stringify(call),/Use the simplest route that delivers/);assert.doesNotMatch(JSON.stringify(call),/NEXT_EXECUTION_SOUL/);}
  assert.match(JSON.stringify(runtime.calls[1]),/LIVE_USER_EDIT/);
  const second=engine.startRun({workflow,input:{task:'Two new steps.',directoryMode:'off'}});
  await engine.executions.get(second.id);assert.equal(engine.getRun(second.id).status,'completed',engine.getRun(second.id).error);
