@@ -39,7 +39,7 @@ test('local tokenizer does not overrule explicit reserve, hard context, or missi
 });
 
 test('automatic compaction reports attempts and failures without hiding the original history',async()=>{
-  const f=fixture({count:22000});
+  const f=fixture({count:26000});
   f.state.record.messages=[
     {role:'user',content:'First message'},{role:'assistant',content:'An answer'},
     {role:'user',content:'Second message'},{role:'assistant',content:'Another answer'},
@@ -49,5 +49,28 @@ test('automatic compaction reports attempts and failures without hiding the orig
   await assert.rejects(f.runtime.ensureContext(f.state),{code:'CONTEXT_SUMMARY_FAILED'});
   assert.deepEqual(f.events.filter(e=>e.context?.compactionState).map(e=>e.context.compactionState),['running','failed']);
   assert.equal(f.state.record.contextStatus.compactionReason,'Summary model stopped.');
+  assert.deepEqual(f.state.record.messages,before);
+});
+
+test('a failed early compaction keeps running with unchanged history while the prompt fits',async()=>{
+  const f=fixture({count:22000});
+  f.state.record.messages=['First direction','First result','Latest direction','Latest result']
+    .map((content,index)=>({role:index%2?'assistant':'user',content}));
+  const before=structuredClone(f.state.record.messages);
+  let attempts=0;
+  f.runtime.compactRecord=async()=>{
+    attempts++;
+    throw Object.assign(Error('Summary model stopped.'),{code:'CONTEXT_SUMMARY_FAILED'});
+  };
+  const fit=await f.runtime.ensureContext(f.state);
+  assert.equal(fit.compactionState,'failed');
+  assert.match(fit.compactionReason,/Continuing with unchanged history/);
+  assert.deepEqual(f.state.record.messages,before);
+  assert.deepEqual(f.events.filter(e=>e.context?.compactionState).map(e=>e.context.compactionState),['running','failed']);
+  await f.runtime.ensureContext(f.state);
+  assert.equal(attempts,1,'do not repeat a failed early compression at each step');
+  f.runtime.measureLocalContext=async(_state,context)=>({...context,measuredInputTokens:context.inputBudgetTokens+1});
+  await assert.rejects(f.runtime.ensureContext(f.state),{code:'CONTEXT_SUMMARY_FAILED'});
+  assert.equal(attempts,2,'retry when the original history does not fit');
   assert.deepEqual(f.state.record.messages,before);
 });

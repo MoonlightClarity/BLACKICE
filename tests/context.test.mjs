@@ -91,11 +91,11 @@ function answer(type, text, { call = false, incomplete = false } = {}) {
   if (type === 'anthropic') return { content: call ? [{ type: 'tool_use', id: 'call-a', name: 'observe', input: {} }] : [{ type: 'text', text }], stop_reason: incomplete ? 'max_tokens' : call ? 'tool_use' : 'end_turn', usage: { input_tokens: 20, output_tokens: 5 } };
   return { choices: [{ message: call ? { role: 'assistant', content: null, tool_calls: [{ id: 'call-a', type: 'function', function: { name: 'observe', arguments: '{}' } }] } : { role: 'assistant', content: text }, finish_reason: incomplete ? 'length' : call ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 } };
 }
-async function harness(t, type, { failSummary = false } = {}) {
+async function harness(t, type, { failSummary = false, normalResponse } = {}) {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'relay-context-test-')), requests = []; let normalCalls = 0;
   const server = createServer(async (request, response) => {
     if (request.method === 'GET' && new URL(request.url, 'http://fixture').pathname.endsWith('/models')) return send(response, { data: [] });
-    let raw = ''; for await (const chunk of request) raw += chunk; const body = JSON.parse(raw); requests.push(body); const summary = JSON.stringify(body).includes('Create a concise continuity checkpoint'); send(response, answer(type, summary ? 'Objective kept. The workspace was observed; continue verification.' : ++normalCalls === 1 ? '' : 'Verified workspace.', { call: !summary && normalCalls === 1, incomplete: summary && failSummary }));
+    let raw = ''; for await (const chunk of request) raw += chunk; const body = JSON.parse(raw); requests.push(body); const summary = JSON.stringify(body).includes('Create a concise continuity checkpoint'); if(!summary)normalCalls++; send(response, !summary && normalResponse ? normalResponse(normalCalls, body) : answer(type, summary ? 'Objective kept. The workspace was observed; continue verification.' : normalCalls === 1 ? '' : 'Verified workspace.', { call: !summary && normalCalls === 1, incomplete: summary && failSummary }));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); const baseUrl = `http://127.0.0.1:${server.address().port}/v1`;
   const runtime = await new ProviderRuntime({ modelLimitResolver: protocolModelLimitResolver, codex: new FakeCodex(), dataDir }).init();
@@ -271,4 +271,46 @@ test('native history import reserves the complete current turn before chunking a
   const result=await runtime.runAgent({cwd,prompt,developerInstructions:instructions,dynamicTools:tools,context,codexHistory:'relay',continuity:{text:source,transcriptPath:path.join(cwd,'original.txt')}}),imports=requests.filter(item=>item.method==='thread/inject_items');
   assert.ok(imports.length>2);for(const entry of imports){const imported=entry.params.items[0].content[0].text,target=Number(/checkpoint under (\d+) tokens/.exec(imported)?.[1]);assert.ok(target>=256);assert.ok(estimateContextTokens([[instructions,prompt,imported],tools])+target<7424,'import plus its stated retained checkpoint target and complete current payload fits');}
   assert.equal(requests.filter(item=>item.method==='thread/start').length,1);assert.equal(requests.filter(item=>item.method==='turn/start').length,1);assert.equal(result.codexHistory,'codex');
+});
+
+test('steering across an automatic checkpoint reaches the next model step without replaying the observed tool',async t=>{
+ const {runtime,dataDir,requests}=await harness(t,'compatible',{normalResponse:(count,body)=>{
+   if(count===1)return answer('compatible','',{call:true});
+   if(count===3){
+     const next=answer('compatible','',{call:true});
+     const call=next.choices[0].message.tool_calls[0];
+     call.id='call-beta';call.function.name='verify_beta';
+     assert.equal(body.messages.at(-1).content,direction);
+     return next;
+   }
+   return answer('compatible','Verified workspace.');
+ }});
+ const direction='Change of plan: keep project BETA only; stop the ALPHA work.';
+ const events=[];let calls=0,betaCalls=0,steer,expectedThread;
+ const first=await runtime.runAgent({cwd:dataDir,model:'context::selected-model',prompt:'Observe project ALPHA.',context:{...options,autoCompact:true,compactAtTokens:1000},dynamicTools:[observe],onToolCall:async()=>{
+   calls++;return {success:true,contentItems:[{type:'inputText',text:'confirmed receipt '+ 'original evidence '.repeat(480)}]};
+ }});
+ expectedThread=first.threadId;
+ const last=await runtime.runAgent({cwd:dataDir,model:'context::selected-model',threadId:expectedThread,prompt:'Continue where you left off.',dynamicTools:[observe,{...observe,name:'verify_beta'}],
+   onToolCall:async call=>{
+     assert.equal(call.name,'verify_beta','a checkpoint must not replay the earlier tool');
+     betaCalls++;return {success:true,contentItems:[{type:'inputText',text:'BETA verified'}]};
+   },
+   onEvent:event=>{
+     events.push(event);
+     if(event.context?.compactionState==='running'&&!steer)steer=runtime.steerAgent(expectedThread,direction);
+   },
+ });
+ assert.equal((await steer).accepted,true);
+ assert.equal(last.threadId,expectedThread);
+ assert.equal(last.context.compactionCount,1);
+ assert.equal(calls,1);
+ assert.equal(betaCalls,1);
+ assert.equal(requests.at(-1).messages.at(-1).tool_call_id,'call-beta');
+ assert.match(JSON.stringify(requests.at(-1)),/historical continuity summary/);
+ const saved=await runtime.readThread(expectedThread);
+ assert.equal(saved.transcript.filter(record=>record.content===direction).length,1);
+ assert.equal(saved.transcript.filter(record=>record.role==='tool'&&record.tool_call_id==='call-a').length,1);
+ assertPairs(saved.messages);assertPairs(saved.transcript);
+ assert.ok(events.some(e=>e.context?.compactionState==='compacted'));
 });
