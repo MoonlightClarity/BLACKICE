@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.49 candidate source, not an installation or publication receipt.** Package version is **2.40.49**. Start with the [2.40.49 notes](RELEASE-NOTES-2.40.49.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.50 candidate source, not an installation or publication receipt.** Package version is **2.40.50**. Start with the [2.40.50 notes](RELEASE-NOTES-2.40.50.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.50](RELEASE-NOTES-2.40.50.md) - add a Job Search skill for recent active vacancies
 
 - [2.40.49](RELEASE-NOTES-2.40.49.md) - record search progress with zero qualifying results
 
