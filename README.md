@@ -8,6 +8,17 @@ The goal is to reduce the work of managing the agent: copying instructions betwe
 
 **[Download for Windows](https://github.com/MoonlightClarity/BLACKICE/releases)** · **[Source](https://github.com/MoonlightClarity/BLACKICE)** · **[Issues](https://github.com/MoonlightClarity/BLACKICE/issues)** · **[Apache-2.0 license](LICENSE)**
 
+## Latest Windows release and active work
+
+**[BLACKICE v2.40.57](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.57)** (November 20, 2026) is a **Windows test candidate / pre-release** with an unsigned installer, build manifest, and source-code archives. The tagged source and included README are pinned to [commit `67c94d8`](https://github.com/MoonlightClarity/BLACKICE/commit/67c94d87dc99f91c946b7d48082c1d75c50033ea); the default `main` branch is not the same code snapshot. See the [version-specific release notes](https://github.com/MoonlightClarity/BLACKICE/blob/v2.40.57/RELEASE-NOTES-2.40.57.md) for included changes and verification boundaries.
+
+**In progress — not included in the v2.40.57 installer:**
+
+- Missing-model picker status and feedback.
+- Waiting for model readiness before continuing.
+- Wrong file-tool routing.
+- Directory error reporting and visibility.
+
 > **Source status (November 18, 2026):** The default branch identifies itself as **2.40.6 candidate source**, not a verified installed or published release. This README describes intended and implemented behavior in that source; it is **not** a claim that every feature is present in a downloadable installer or that complex tasks reliably complete unattended. Consult the [2.40.6 source notes](RELEASE-NOTES-2.40.6.md) and the [published release notes](https://github.com/MoonlightClarity/BLACKICE/releases) for version-specific evidence. Source tests, renderer checks, and synthetic trials do not replace an exact-installer or live-workflow qualification.
 
 **Guide:** [Getting started](#getting-started) · [Capabilities](#what-you-can-delegate) · [Models](#models-and-providers) · [Planning and Activity](#planning-and-activity) · [Goals and continuing work](#goal-mode-and-continuing-work) · [Troubleshooting](#configuration-and-troubleshooting) · [Contributors](#contributors)
