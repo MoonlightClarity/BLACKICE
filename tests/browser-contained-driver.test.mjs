@@ -516,9 +516,20 @@ test('navigation retires accumulated refs before any input', async t => {
   const second = await f.driver.perform({ action: 'read', tabId: f.tab.id, query: 'Privacy' }, { source: 'user' });
   const refs = [first.frames[0].elements[0].ref, second.frames[0].elements[0].ref];
   assert.equal(f.tab.refs.size, 2);
-  f.tab.window.webContents.emit('did-navigate-in-page');
+  const before=f.tab.revision;
+  const sameUrl=f.tab.window.webContents.getURL();
+  f.tab.window.webContents.emit('did-navigate-in-page',{},sameUrl,true,1,1);
   assert.equal(f.tab.refs.size, 0);
-  for (const ref of refs) await assert.rejects(f.driver.element(f.tab, { ref, value: 'yes' }, 'select'), { code: 'BROWSER_REF_STALE' });
+  f.tab.window.webContents.emit('did-frame-navigate',{},sameUrl,200,'OK',true,1,1);
+  for (const ref of refs) await assert.rejects(f.driver.element(f.tab, { ref, value: 'yes' }, 'select'), error=>{
+    assert.equal(error.code,'BROWSER_REF_STALE');
+    assert.equal(error.actionDispatched,false);
+    assert.equal(error.browserReferenceDiagnostic.bindingEvent,'in-page-navigation');
+    assert.equal(error.browserReferenceDiagnostic.retiredAtRevision,before+1);
+    assert.equal(error.browserReferenceDiagnostic.currentRevision,before+2);
+    assert.equal(error.browserReferenceDiagnostic.topUrlChanged,false);
+    return true;
+  });
   assert.deepEqual(f.controls.map(control => control.value), ['', '']);
 });
 

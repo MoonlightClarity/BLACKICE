@@ -27,6 +27,6 @@ for (const mode of ['live', 'offscreen']) test(
     assert.equal(report.ok, true, report.error);
     assert.equal(report.liveProfileAccessed, false);
     assert.equal(report.onlyLoopback, true);
-    assert.ok(report.checks.length >= 6);
+    assert.ok(report.checks.includes('same-url-history-event-explains-stale-input-without-dispatch'));
   },
 );

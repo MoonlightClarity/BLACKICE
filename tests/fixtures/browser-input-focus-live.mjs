@@ -110,6 +110,21 @@ app.whenReady().then(async () => {
       assert.equal((await state()).model.name, '');
       checks.push('attached-and-reparked-views-retain-working-input');
     }
+    await fresh();
+    const staleRef=ref('Connector title'),currentUrl=snapshot.url;
+    const navigated=new Promise(resolve=>wc.once('did-navigate-in-page',resolve));
+    await wc.executeJavaScript('history.pushState({fixtureRevision:2},"",location.href)');
+    await navigated;
+    assert.equal(wc.getURL(),currentUrl);
+    await assert.rejects(driver.perform({action:'click',tabId:tab.id,ref:staleRef}),error=>{
+      assert.equal(error.code,'BROWSER_REF_STALE');
+      assert.equal(error.actionDispatched,false);
+      assert.equal(error.browserReferenceDiagnostic.bindingEvent,'in-page-navigation');
+      assert.equal(error.browserReferenceDiagnostic.topUrlChanged,false);
+      assert.ok(error.browserReferenceDiagnostic.retiredAtRevision>error.browserReferenceDiagnostic.observedRevision);
+      return true;
+    });
+    checks.push('same-url-history-event-explains-stale-input-without-dispatch');
     assert.equal(focusCommands.length % 2, 0);
     assert.ok(focusCommands.every((enabled, index) => enabled === (index % 2 === 0)));
     if (mode === 'live') assert.ok(focusCommands.length > 0);

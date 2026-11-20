@@ -15,12 +15,12 @@ test('core trace exceptions never alter dispatch, persisted state or final resul
 
 test('browser reference diagnosis is scoped to Maximal and never includes ref, URLs or frame identifiers',()=>{
  const call={name:'relay_browser',callId:'browser-click',arguments:{action:'click',ref:'PRIVATE_REF',url:'PRIVATE_URL'}};
- const error={code:'BROWSER_REF_STALE',actionDispatched:false,browserReferenceDiagnostic:{reason:'document-changed',observedRevision:4,currentRevision:8,topUrlChanged:true,frameUrlChanged:'PRIVATE_FRAME',ref:'PRIVATE_REF',url:'PRIVATE_URL'}};
+ const error={code:'BROWSER_REF_STALE',actionDispatched:false,browserReferenceDiagnostic:{reason:'document-changed',observedRevision:4,retiredAtRevision:6,currentRevision:8,bindingEvent:'frame-navigation',topUrlChanged:true,frameUrlChanged:'PRIVATE_FRAME',ref:'PRIVATE_REF',url:'PRIVATE_URL'}};
  for(const level of ['off','on','maximal']){
   const events=[],log=createDirectoryTelemetry({level,emit:e=>events.push(e)});
   log.browserReference(call,error);log.browserReference({...call,namespace:'foreign'},error);
   if(level!=='maximal'){assert.deepEqual(events,[]);continue;}
-  assert.deepEqual(events,[{type:'browser.reference',phase:'rejected',tool:'relay_browser',action:'click',code:'BROWSER_REF_STALE',callId:'browser-click',actionDispatched:false,bindingReason:'document-changed',observedRevision:4,currentRevision:8,topUrlChanged:true,sequence:1}]);
+  assert.deepEqual(events,[{type:'browser.reference',phase:'rejected',tool:'relay_browser',action:'click',code:'BROWSER_REF_STALE',callId:'browser-click',actionDispatched:false,bindingReason:'document-changed',observedRevision:4,retiredAtRevision:6,currentRevision:8,bindingEvent:'frame-navigation',topUrlChanged:true,sequence:1}]);
   assert.doesNotMatch(JSON.stringify(events),/PRIVATE/);
  }
 });

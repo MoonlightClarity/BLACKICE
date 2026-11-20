@@ -796,9 +796,9 @@ export class ElectronBrowserDriver extends EventEmitter {
     wc.on('will-attach-webview', event => event.preventDefault());
     if (this.liveSurface) wc.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame === true) this.cancelAuthentication(tab); });
     wc.on('did-frame-navigate', (_event, _url, _responseCode, _statusText, isMainFrame, frameProcessId, frameRoutingId) => {
-      this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url);
+      this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url, 'frame-navigation');
     });
-    wc.on('did-navigate-in-page', (_event, _url, isMainFrame, frameProcessId, frameRoutingId) => this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url));
+    wc.on('did-navigate-in-page', (_event, _url, isMainFrame, frameProcessId, frameRoutingId) => this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url, 'in-page-navigation'));
     wc.on('did-fail-load', (_event, code, description, _url, isMainFrame) => { if (isMainFrame !== false && code !== -3) { tab.loadError = String(description || `Navigation failed (${code}).`); this.emit('changed'); } });
     wc.on('page-title-updated', (_event, value) => { tab.title = value; this.persist(); this.emit('changed'); });
     const handoffExternal = (event, target) => {
@@ -920,7 +920,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     try { tab.url = this.tabURL(tab); tab.title = window.webContents.getTitle() || tab.title; } catch {}
     const reasons = ['clean-exit', 'abnormal-exit', 'killed', 'crashed', 'oom', 'launch-failed', 'integrity-failure'];
     tab.rendererFailure = { reason: reasons.includes(details.reason) ? details.reason : 'unknown', ...(Number.isInteger(details.exitCode) ? { exitCode: details.exitCode } : {}), at: new Date().toISOString() };
-    tab.pendingURL = tab.url; tab.preparingURL = null; tab.revision++; this.retireAllReferences(tab);
+    tab.pendingURL = tab.url; tab.preparingURL = null; tab.revision++; this.retireAllReferences(tab, 'document-changed', undefined, 'renderer-gone');
     this.clearInteraction(tab); tab.suspendedWork.clear();
     tab.containmentReady = null; tab.rendererReady = null; tab.loading = Promise.resolve();
     for (const notify of tab.rendererWaiters || []) notify();
@@ -942,7 +942,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (tab.pendingInteraction || tab.suspendedWork.size) return { suspended: false, reason: 'A website interaction still requires inspection.' };
     if (this.downloads.some(item => item.tabId === tab.id && item.status === 'downloading')) return { suspended: false, reason: 'A download is still running.' };
     tab.url = this.tabURL(tab); tab.title = tab.window.webContents.getTitle() || tab.title; tab.pendingURL = tab.url; tab.preparingURL = null;
-    tab.revision++; this.retireAllReferences(tab); tab.suspending = true; tab.userPinned = false; tab.containmentReady = null; tab.rendererReady = null; tab.loading = Promise.resolve();
+    tab.revision++; this.retireAllReferences(tab, 'document-changed', undefined, 'tab-suspended'); tab.suspending = true; tab.userPinned = false; tab.containmentReady = null; tab.rendererReady = null; tab.loading = Promise.resolve();
     tab.window.destroy(); tab.window = null; this.persist(); this.emit('changed');
     return { suspended: true };
   }
@@ -1589,12 +1589,12 @@ export class ElectronBrowserDriver extends EventEmitter {
     };
   }
   // Retain the cause of invalidation without holding old native frame objects or URLs.
-  retireReference(tab, ref, { reason, topUrlChanged, frameUrlChanged, frameLineageChanged }) {
+  retireReference(tab, ref, { reason, topUrlChanged, frameUrlChanged, frameLineageChanged, bindingEvent }) {
     const context = tab.refContexts?.get(ref);
     if (context) {
       const retired = tab.retiredRefs ||= new Map();
       retired.delete(ref);
-      retired.set(ref, { reason, observedRevision: context.stamp.revision, topUrlChanged, frameUrlChanged, frameLineageChanged });
+      retired.set(ref, { reason, observedRevision: context.stamp.revision, retiredAtRevision:tab.revision, topUrlChanged, frameUrlChanged, frameLineageChanged, ...(bindingEvent?{bindingEvent}:{}) });
       while (retired.size > MAX_OBSERVED_REFS) retired.delete(retired.keys().next().value);
     }
     tab.refs.delete(ref); tab.refContexts?.delete(ref);
@@ -1613,21 +1613,21 @@ export class ElectronBrowserDriver extends EventEmitter {
       ? 'document-changed' : !current || frameUrlChanged || frameLineageChanged ? 'frame-changed' : fallback || 'binding-mismatch';
     return { reason, observedRevision: stamp.revision, currentRevision, topUrlChanged, frameUrlChanged, frameLineageChanged };
   }
-  retireAllReferences(tab, reason = 'document-changed', url) {
+  retireAllReferences(tab, reason = 'document-changed', url, bindingEvent) {
     tab.mainRevision = (tab.mainRevision || 0) + 1;
     for (const [ref, context] of tab.refContexts || []) this.retireReference(tab, ref, {
-      reason, topUrlChanged: typeof url === 'string' ? url !== context.stamp.topUrl : undefined
+      reason, bindingEvent, topUrlChanged: typeof url === 'string' ? url !== context.stamp.topUrl : undefined
     });
     tab.refs.clear(); tab.refContexts?.clear(); tab.frameRevisions?.clear();
   }
-  navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, url) {
+  navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, url, bindingEvent) {
     tab.revision++;
-    if (isMainFrame !== false || !Number.isInteger(frameProcessId) || frameProcessId < 0 || !Number.isInteger(frameRoutingId) || frameRoutingId < 0) this.retireAllReferences(tab, isMainFrame === false ? 'frame-changed' : 'document-changed', isMainFrame === true ? url : undefined);
+    if (isMainFrame !== false || !Number.isInteger(frameProcessId) || frameProcessId < 0 || !Number.isInteger(frameRoutingId) || frameRoutingId < 0) this.retireAllReferences(tab, isMainFrame === false ? 'frame-changed' : 'document-changed', isMainFrame === true ? url : undefined, bindingEvent);
     else {
       const key = `${frameProcessId}-${frameRoutingId}`, revisions = tab.frameRevisions ||= new Map();
       revisions.set(key, (revisions.get(key) || 0) + 1);
       for (const [ref, context] of tab.refContexts || []) if (context.stamp.lineage.some(value => value.key === key)) this.retireReference(tab, ref, {
-        reason: 'frame-changed', frameLineageChanged: true, frameUrlChanged: context.stamp.lineage[0]?.key === key && typeof url === 'string' ? url !== context.stamp.url : undefined
+        reason: 'frame-changed', bindingEvent, frameLineageChanged: true, frameUrlChanged: context.stamp.lineage[0]?.key === key && typeof url === 'string' ? url !== context.stamp.url : undefined
       });
       if (revisions.size > MAX_OBSERVED_REFS) this.retireAllReferences(tab, 'reference-evicted');
     }
