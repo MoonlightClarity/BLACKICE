@@ -6,6 +6,7 @@ import {mkdtemp,realpath,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
+import {ACTION_DIRECTORY_INSTRUCTIONS,ACTION_DIRECTORY_TOOL} from '../lib/task-action-directory.mjs';
 import {ProviderRuntime} from '../lib/providers.mjs';
 import {wantsJobSearchSkill,wantsIntentInferenceSkill} from '../lib/chat-intent-inference.mjs';
 import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
@@ -79,6 +80,14 @@ test('worked discovery tactics explain what to do after stale, missing, or misle
   /same ID twelve days ago/,/funding date is a reason to look, not the posting date/,
   /applicantLocationRequirements[\s\S]*baseSalary/,/direct competitors or alternative vendors/,/first seen, not first posted/,/when you verified it/,
   /career-manager\/blob\/main\/job-search\/SKILL.md/])assert.match(content,expected);
+});
+
+test('Directory models capped and required searches differently in the instructions and tool field',()=>{
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/find at least two" requires two/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/find up to two[\s\S]*caps results and requires no minimum/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/capped search with no minimum, omit qualifying/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/actual search receipts even if zero candidates qualified/);
+ assert.match(ACTION_DIRECTORY_TOOL.inputSchema.properties.actions.items.properties.qualifying.properties.minQualifyingCount.description,/Required lower bound only/);
 });
 
 class Native extends EventEmitter {
