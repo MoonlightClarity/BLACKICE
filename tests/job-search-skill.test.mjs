@@ -132,16 +132,26 @@ test('actual Compatible main-turn transport submits the job skill selectively an
   assert.deepEqual(before.at(-1),[],'transport has not yet accepted the prompt');
   return {prompt:JSON.stringify(prompts.at(-1)),receipts:run.skillLoadReceipts||[]};
  };
+ const alignmentId='builtin-task-grounding';
+ const alignmentHeading='ANTI-OVERALIGNMENT (advisory execution method; not permission)';
  const job=await invoke(example);
+ assert.ok(job.prompt.includes(alignmentHeading));
+ assert.ok(job.prompt.includes('illustrative three-gate pipeline'));
+ assert.ok(job.receipts.some(r=>r.skillId===alignmentId&&r.title==='Anti-Overalignment'&&r.type==='skill_context_submitted'));
  assert.ok(job.prompt.includes(heading));assert.ok(job.prompt.includes('rolling last seven days'));assert.ok(job.prompt.includes('### Advanced tactics'));
  assert.deepEqual(job.receipts.filter(r=>r.skillId===id),[accepted]);
  assert.ok(job.receipts.every(r=>r.skillId!=='library-intent-inference'));
 
  const ordinary=await invoke('Write a short explanation of how job search works.');
+ assert.ok(!ordinary.prompt.includes(alignmentHeading));
+ assert.ok(ordinary.receipts.every(r=>r.skillId!==alignmentId));
  assert.ok(!ordinary.prompt.includes(heading));assert.ok(ordinary.receipts.every(r=>r.skillId!==id));
 
  await catalog.delete({id,value:{expectedRevision:1}});
+ await catalog.delete({id:alignmentId,value:{expectedRevision:1}});
  const deleted=await invoke(example);
+ assert.ok(!deleted.prompt.includes(alignmentHeading));
+ assert.ok(deleted.receipts.every(r=>r.skillId!==alignmentId));
  assert.ok(!deleted.prompt.includes(heading));assert.ok(deleted.receipts.every(r=>r.skillId!==id));
  assert.equal(prompts.length,3,'no extra provider calls for skill selection');
 });
