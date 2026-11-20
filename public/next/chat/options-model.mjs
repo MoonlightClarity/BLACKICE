@@ -42,6 +42,7 @@ export function chatOptionChoices(status={},raw={}){
   }
   if(selected.model!=='default'&&!models.some(item=>item.id===selected.model)){
     const old=isRetired(selected.model),removed=missingApiModelConnection(status,selected.model);
+    const removedLocal=(status.providers||[]).some(provider=>['llamacpp','ollama','lmstudio'].includes(provider.preset)&&selected.model.startsWith(provider.id+'::'));
     const provider=selected.model.startsWith('antigravity::')?'Antigravity':selected.model.startsWith('qwen_code::')?'Qwen Code':'';
     // A selected *historical* model is retained in the control for an exact
     // label, but is never offered as a new selectable model.
@@ -49,7 +50,7 @@ export function chatOptionChoices(status={},raw={}){
       ?provider+' · '+selected.model.split('::').slice(1).join('::')+' · retired (historical chat)'
       :removed?'API connection removed. Choose a model.'
       :selected.model===UNKNOWN_CHAT_MODEL?'Saved model unknown · choose a model':selected.model+' · unavailable',
-      disabled:true,historical:old||removed});
+      disabled:true,historical:old||removed||removedLocal});
   }
   const efforts=reasoningChoices(status,selected.model,selected.effort)
     .map(item=>({id:item.value,label:item.label,disabled:!item.available,verified:item.verified}));

@@ -150,3 +150,56 @@ test('saved GGUF files remain selectable with an offline owned router, without e
   external=true;
   assert.deepEqual((await manager.llamaCatalog()).models.map(m=>m.id),['external-only']);
 });
+
+test('removing a saved local choice persists across restart, clears only its default, and leaves the file alone',async t=>{
+  const {ProviderStore}=await import('../lib/provider-store.mjs');
+  const dataDir=await mkdtemp(path.join(os.tmpdir(),'blackice-remove-model-'));
+  t.after(()=>rm(dataDir,{recursive:true,force:true}));
+  const modelPath=path.join(dataDir,'saved.gguf');
+  await writeFile(modelPath,'model file remains');
+  const store=new ProviderStore({dataDir});
+  const providerId='local_llamacpp';
+  const saveProvider=(value,options)=>store.save(value,options);
+  await saveProvider({id:providerId,preset:'llamacpp',type:'compatible',name:'Local llama.cpp',baseUrl:'http://127.0.0.1:8080/v1',models:['saved.gguf','other']});
+  await store.setDefaultModel(providerId+'::saved.gguf');
+  const endpoint={runtime:{listProviders:()=>store.list(),saveProvider},method:'POST',pathname:'/api/local-models/remove',value:{providerId,model:'saved.gguf'}};
+  assert.equal((await localModelHTTP({...endpoint,remote:true})).status,403);
+  assert.equal((await localModelHTTP({...endpoint,value:{...endpoint.value,sourcePath:modelPath}})).status,400);
+  assert.equal((await localModelHTTP(endpoint)).status,200);
+  assert.equal(await readFile(modelPath,'utf8'),'model file remains');
+  assert.equal((await localModelHTTP(endpoint)).status,404);
+  const reopened=new ProviderStore({dataDir});await reopened.init();
+  assert.equal(reopened.defaultModel,null);
+  assert.deepEqual(reopened.get(providerId).models.map(item=>item.id),['other']);
+  await reopened.setDefaultModel(providerId+'::other');
+  const last={...endpoint,runtime:{listProviders:()=>reopened.list(),saveProvider:(value,options)=>reopened.save(value,options)},value:{providerId,model:'other'}};
+  assert.equal((await localModelHTTP(last)).status,200);
+  assert.deepEqual(reopened.get(providerId).models,[]);
+});
+
+test('Chat removes the local choice through the served route and refreshes the model catalog',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'blackice-remove-picker-http-'));
+ const dataDir=path.join(root,'data');await mkdir(dataDir);
+ const {ProviderStore}=await import('../lib/provider-store.mjs');
+ const {createHarnessServer}=await import('../server.mjs');
+ const store=new ProviderStore({dataDir});
+ const id='local_llamacpp',selection=id+'::gone';
+ await store.save({id,preset:'llamacpp',type:'compatible',name:'Local llama.cpp',baseUrl:'http://127.0.0.1:8080/v1',models:['gone','keep']});
+ class Runtime extends EventEmitter {
+   listProviders(){return store.list();}
+   saveProvider(value,options){return store.save(value,options);}
+   status(){return {connected:true,providers:this.listProviders(),models:this.listProviders().flatMap(p=>p.models.map(m=>({id:p.id+'::'+m.id})))};}
+   async runAgent(){assert.fail('Removing a model must not start an agent');}
+   async start(){return this.status();}
+   async close(){}
+ }
+ const app=await createHarnessServer({runtime:new Runtime(),dataDir,defaultCwd:root,port:0});
+ t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});
+ const base=await app.listen(), home=await fetch(base);
+ const origin=new URL(base).origin,cookie=home.headers.get('set-cookie').split(';')[0];await home.text();
+ const response=await fetch(origin+'/api/local-models/remove',{method:'POST',headers:{Cookie:cookie,Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({providerId:id,model:'gone'})});
+ const result=await response.json();
+ assert.equal(response.status,200,JSON.stringify(result));
+ assert.equal(result.selection,selection);
+ assert.deepEqual(result.status.models.map(m=>m.id),[id+'::keep']);
+});

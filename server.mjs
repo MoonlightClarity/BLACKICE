@@ -1100,14 +1100,14 @@ export async function createHarnessServer(options = {}) {
       const identityMatch = pathname.match(/^\/api\/identity\/(soul|user)(?:\/(versions|restore))?$/);
       if (identityMatch && req.method === 'GET' && identityMatch[2] !== 'restore') return json(res, 200, identityMatch[2] === 'versions' ? await identity.versions(identityMatch[1]) : await identity.read(identityMatch[1]));
       if (identityMatch && (req.method === 'PUT' && !identityMatch[2] || req.method === 'POST' && identityMatch[2] === 'restore')) { const value = await body(req); const result = identityMatch[2] === 'restore' ? await identity.restore({ ...value, kind: identityMatch[1], provenance: { source: 'user' } }) : await identity.update({ ...value, kind: identityMatch[1], provenance: { source: 'user' } }); sendEvent({ type: 'identity.updated', data: identity.status(), at: new Date().toISOString() }); return json(res, 200, result); }
-      if (pathname === '/api/local-models' || /^\/api\/local-models\/(?:load|unload|import|downloads|config|activate|discover|missing-files)$/.test(pathname)) {
+      if (pathname === '/api/local-models' || /^\/api\/local-models\/(?:load|unload|import|downloads|config|activate|discover|missing-files|remove)$/.test(pathname)) {
         const result = await localModelHTTP({
           manager: localModels, runtime, pathname, method: req.method,
           remote: req.headers['x-blackice-remote'] === '1',
           value: req.method === 'POST' ? await body(req, 15000) : undefined,
         });
         if (result?.status === 200 && req.method === 'POST') runtimeUpdate();
-        return json(res, result.status, result.body);
+        return json(res, result.status, result.status === 200 && pathname === '/api/local-models/remove' ? {...result.body, status:status(req)} : result.body);
       }
       if (pathname === '/api/providers/setup' || /^\/api\/providers\/setup\/jobs\/direct_[a-f0-9]{64}$/.test(pathname)) {
         const result = await providerSetupHTTP({

@@ -2,6 +2,8 @@
 
 BLACKICE can discover, load, unload and use models from local runtimes. The **Settings → Models → Local models** panel is separate from optional cloud API connections. A loaded model is registered in the normal chat model picker; adding it does not replace the selected default model or rewrite existing conversations.
 
+Use **Remove** beside a saved local model in the Chat picker to take it out of the list, even if its file is missing. This keeps model files and chat history. To add the model to the picker again, load it from Local models.
+
 ## Ollama
 
 1. Install and start Ollama so its local API is available at `http://127.0.0.1:11434`.

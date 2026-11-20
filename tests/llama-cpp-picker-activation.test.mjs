@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {planningDOM} from './fixture-planning-dom.mjs';
 import {createGroupedModelPicker} from '../public/next/core/model-picker.mjs';
 
-function fixture(t,{onBeforeSelect,onOpenAvailability}={}) {
+function fixture(t,{onBeforeSelect,onOpenAvailability,onRemoveModel}={}) {
   const dom=planningDOM(t),select=dom.element('select');
   select.id='llama-picker-test';dom.mount.append(select);
   const options=[{id:'default',label:'Use default'}, {id:'local_llamacpp::small.gguf',label:'Small local'}];
@@ -15,9 +15,9 @@ function fixture(t,{onBeforeSelect,onOpenAvailability}={}) {
   const changes=[];
   select.dispatchEvent=event=>{void select.dispatch(event.type,{target:select},true);return true;};
   select.addEventListener('change',()=>changes.push(select.value));
-  const picker=createGroupedModelPicker({select,onBeforeSelect,onOpenAvailability});
+  const picker=createGroupedModelPicker({select,onBeforeSelect,onOpenAvailability,onRemoveModel});
   const models=[{id:'default',label:'Use default'}, {id:'local_llamacpp::small.gguf',label:'Small local'}];
-  const status={providers:[{id:'local_llamacpp',preset:'llamacpp',name:'Local llama.cpp'}],
+  const status={providers:[{id:'local_llamacpp',preset:'llamacpp',name:'Local llama.cpp',type:'compatible',baseUrl:'http://127.0.0.1:8080/v1',models:[{id:'small.gguf'}]}],
     models:[{id:'local_llamacpp::small.gguf',providerId:'local_llamacpp',available:true}]};
   picker.update({models,status,selected:select.value});
   t.after(()=>picker.destroy());
@@ -99,4 +99,32 @@ test('an old file check cannot overwrite a newer open picker', async t=>{
   await f.show();await settle();
   resume({'local_llamacpp::small.gguf':'Model file is missing.'});await settle();
   assert.equal(f.panel().querySelector('[data-model-value="local_llamacpp::small.gguf"]').disabled,false);
+});
+
+test('a missing model can be removed without selecting it or closing the picker', async t=>{
+  const requests=[];
+  let f;
+  f=fixture(t,{
+    onBeforeSelect:async()=>assert.fail('remove must not activate a model'),
+    onOpenAvailability:async()=>({'local_llamacpp::small.gguf':'Model file is missing.'}),
+    onRemoveModel:async target=>{
+      requests.push(target);
+      f.picker.update({models:[{id:'default',label:'Use default'}]});
+    },
+  });
+  await f.show();await settle();
+  assert.equal(f.panel().querySelector('[data-model-value="local_llamacpp::small.gguf"]').disabled,true);
+  await f.panel().querySelector('[data-model-remove="local_llamacpp::small.gguf"]').dispatch('click',{},true);
+  assert.deepEqual(requests,[{providerId:'local_llamacpp',model:'small.gguf'}]);
+  assert.equal(f.panel().querySelector('[data-model-value="local_llamacpp::small.gguf"]'),null);
+  assert.deepEqual(f.changes,[]);
+  assert.equal(f.panel().hidden,false);
+});
+
+test('failed removal leaves the local model in the picker and reports the error',async t=>{
+  const f=fixture(t,{onRemoveModel:async()=>{throw Error('Local model is busy');}});
+  await f.show();
+  await f.panel().querySelector('[data-model-remove="local_llamacpp::small.gguf"]').dispatch('click',{},true);
+  assert.ok(f.panel().querySelector('[data-model-remove="local_llamacpp::small.gguf"]'));
+  assert.match(f.panel().querySelector('.next-model-picker-summary').textContent,/Local model is busy/);
 });

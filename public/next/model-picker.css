@@ -31,5 +31,7 @@
 .next-model-picker-aliases{padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid #263c49}
 .next-model-picker-more{width:100%;min-height:32px;text-align:left;font-size:11px}
 .next-model-picker-entry{min-width:0}
+.next-model-picker-entry-removable{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px}
+.next-model-picker-remove{font-size:11px;min-height:30px;padding:3px 7px}
 .next-model-picker-panel :is(button,summary,input):focus-visible{outline:2px solid #9edbe5;outline-offset:2px}
 @media(max-width:600px){.next-chat-model{max-width:100%;flex:1 1 180px}.next-model-picker-panel{padding:10px}}

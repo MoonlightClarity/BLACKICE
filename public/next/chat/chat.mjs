@@ -26,6 +26,9 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(!catalog.some(item=>item.id?.startsWith('local_llamacpp::')))return {};
     const result=await api('/api/local-models/missing-files');
     return Object.fromEntries((result.models||[]).map(id=>['local_llamacpp::'+id,'Model file is missing.']));
+  },onRemoveModel:async ({providerId,model})=>{
+    const result=await api('/api/local-models/remove','POST',{providerId,model});
+    if(!state.destroyed&&state.active)refreshChoices(result.status);
   },onBeforeSelect:async choice=>{
     const status=getStatus?.()||{},selected=choice.id==='default'?status.defaultModel:choice.id;
     if(typeof selected!=='string')return;

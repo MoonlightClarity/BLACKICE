@@ -8,7 +8,7 @@ const unavailableReason=model=>[model?.availabilityReason,model?.error].find(val
 const noop=()=>({update(){},close(){},destroy(){}});
 
 /** The native select owns the chosen value and its existing change handler. */
-export function createGroupedModelPicker({select,label='Model',onEnableProvider,onSetupProvider,onBeforeSelect,onOpenAvailability}={}){
+export function createGroupedModelPicker({select,label='Model',onEnableProvider,onSetupProvider,onBeforeSelect,onOpenAvailability,onRemoveModel}={}){
   const doc=select?.ownerDocument,owner=select?.parentElement;
   if(!select||!doc?.body||!owner)return noop();
   const create=(tag,className,value)=>{const node=doc.createElement(tag);if(className)node.className=className;if(value!==undefined)node.textContent=value;return node;};
@@ -78,6 +78,27 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
     }catch(error){if(!destroyed&&opened&&revision===openRevision)activationError=error?.message||'Connection could not be enabled. Open Settings > Models.';}
     finally{activating=null;if(!destroyed&&opened)render();}
   }
+  function removable(model){
+    if(typeof onRemoveModel!=='function'||model?.historical||model?.alias)return null;
+    const at=model.id.indexOf('::');
+    if(at<1)return null;
+    const providerId=model.id.slice(0,at),id=model.id.slice(at+2);
+    const locations={llamacpp:'8080',ollama:'11434',lmstudio:'1234'};
+    const provider=(status.providers||[]).find(row=>row.id===providerId);
+    if(!provider||!Object.hasOwn(locations,provider.preset)||provider.type!=='compatible'||
+        provider.baseUrl!==`http://127.0.0.1:${locations[provider.preset]}/v1`||!provider.models?.some(item=>item.id===id))return null;
+    return {providerId,model:id};
+  }
+  async function remove(id){
+    const target=removable(models.find(model=>model.id===id));
+    if(!target||activating||!opened||destroyed||select.disabled)return;
+    const revision=openRevision;activating='remove:'+id;activationError='';
+    // The button is re-rendered and disabled while the mutation is pending.
+    search.focus({preventScroll:true});render();
+    try{await onRemoveModel(target);}
+    catch(error){if(!destroyed&&opened&&revision===openRevision)activationError=error?.message||'Could not remove this local model.';}
+    finally{activating=null;if(!destroyed&&opened)render();}
+  }
   function modelRow(model){
     const enable=!available(model)&&canEnable(model),entry=create('div','next-model-picker-entry'),row=button('next-model-picker-option');row.dataset.modelValue=model.id;row.setAttribute('aria-pressed',String(model.id===selected));row.disabled=Boolean(activating)||(!available(model)&&!enable);
     const displayName=nameOf(model),body=create('span','next-model-picker-option-body');body.append(create('strong','',displayName));
@@ -88,10 +109,19 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
       if(reason)body.append(create('small','',reason));
     }
     const checked=create('span','next-model-picker-selected',model.id===selected?'✓':'');checked.setAttribute('aria-hidden','true');row.append(body,checked);row.addEventListener('click',event=>{event.preventDefault();if(typeof onBeforeSelect==='function'&&available(model)){void choose(model.id);return;}return choose(model.id);});entry.append(row);
+    if(removable(model)){
+      const removeButton=button('next-model-picker-remove','Remove');
+      removeButton.dataset.modelRemove=model.id;
+      removeButton.disabled=Boolean(activating);
+      removeButton.title='Remove from picker; keep the model file';
+      removeButton.setAttribute('aria-label','Remove '+displayName+' from the model picker');
+      removeButton.addEventListener('click',event=>{event.preventDefault();return remove(model.id);});
+      entry.classList.add('next-model-picker-entry-removable');entry.append(removeButton);
+    }
     return entry;
   }
   function render(){
-    if(!opened)return;const prior=doc.activeElement,focusValue=prior?.dataset?.modelValue,focusProvider=prior?.dataset?.modelProvider,focusSetup=prior?.dataset?.modelSetupProvider,restore=results.contains(prior);
+    if(!opened)return;const prior=doc.activeElement,focusValue=prior?.dataset?.modelValue,focusProvider=prior?.dataset?.modelProvider,focusSetup=prior?.dataset?.modelSetupProvider,focusRemove=prior?.dataset?.modelRemove,restore=results.contains(prior);
     // Preserve the exact historical selection in the trigger, but never list
     // a retired native CLI as a new model choice, even with a stale catalog.
     const selectable=models.filter(model=>!model.historical&&!/^(?:antigravity|qwen_code)::/.test(model.id));
@@ -118,8 +148,8 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
       };
       details.open=expanded.has(group.id)?expanded.get(group.id):Boolean(search.value.trim());details.addEventListener('toggle',event=>{if(event.target!==details)return;expanded.set(group.id,details.open);populate();position();});results.append(details);populate();
     }
-    summary.textContent=activationError||(activating?'Preparing the selected model.':entries.length?`${entries.length} model${entries.length===1?'':'s'} in ${groups.length} provider${groups.length===1?'':'s'}.`:connections.length?'Set up a native account connection to load its model catalog.':'No matching models. Try another search.');
-    if(restore){const target=focusValue?Array.from(results.querySelectorAll('[data-model-value]')).find(node=>node.dataset.modelValue===focusValue):focusProvider?Array.from(results.querySelectorAll('summary')).find(node=>node.dataset.modelProvider===focusProvider):focusSetup?Array.from(results.querySelectorAll('[data-model-setup-provider]')).find(node=>node.dataset.modelSetupProvider===focusSetup):null;(target||search).focus({preventScroll:true});}
+    summary.textContent=activationError||(activating?(activating.startsWith('remove:')?'Removing local model.':'Preparing the selected model.'):entries.length?`${entries.length} model${entries.length===1?'':'s'} in ${groups.length} provider${groups.length===1?'':'s'}.`:connections.length?'Set up a native account connection to load its model catalog.':'No matching models. Try another search.');
+    if(restore){const target=focusValue?Array.from(results.querySelectorAll('[data-model-value]')).find(node=>node.dataset.modelValue===focusValue):focusProvider?Array.from(results.querySelectorAll('summary')).find(node=>node.dataset.modelProvider===focusProvider):focusSetup?Array.from(results.querySelectorAll('[data-model-setup-provider]')).find(node=>node.dataset.modelSetupProvider===focusSetup):focusRemove?Array.from(results.querySelectorAll('[data-model-remove]')).find(node=>node.dataset.modelRemove===focusRemove):null;(target||search).focus({preventScroll:true});}
     position();
   }
   function close({restoreFocus=true}={}){if(!opened)return;const owned=panel.contains(doc.activeElement);opened=false;openRevision++;panel.hidden=true;trigger.setAttribute('aria-expanded','false');if(restoreFocus&&owned&&!destroyed)trigger.focus({preventScroll:true});}
@@ -140,7 +170,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
     if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();return;}
     if(event.isComposing||!['ArrowDown','ArrowUp'].includes(event.key))return;
     if(event.target!==search&&!results.contains(event.target))return;
-    const targets=Array.from(results.querySelectorAll('summary,[data-model-value],[data-model-more],[data-model-setup-provider]')).filter(node=>!node.disabled&&visibleInDetails(node));
+    const targets=Array.from(results.querySelectorAll('summary,[data-model-value],[data-model-more],[data-model-setup-provider],[data-model-remove]')).filter(node=>!node.disabled&&visibleInDetails(node));
     if(!targets.length)return;event.preventDefault();const current=targets.indexOf(doc.activeElement),next=event.key==='ArrowDown'?(current+1)%targets.length:(current<=0?targets.length-1:current-1);targets[next].focus();
   };
   const onOutside=event=>{if(opened&&!panel.contains(event.target)&&!trigger.contains(event.target))close({restoreFocus:false});};
