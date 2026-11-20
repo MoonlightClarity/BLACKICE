@@ -100,13 +100,16 @@ test('ordinary admission returns an honest partial response without a retired re
   const f = await fixture(t, async options => {
     assert.match(options.prompt, /Oak Hollow or Harbor City/);
     assert.equal(typeof options.onBeforeFinal, 'undefined');
-    const state = payload(await options.onToolCall({ name: 'relay_task', arguments: { action: 'read' }, callId: 'read-current' }));
-    assert.equal(state.contract, undefined);
+    assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_task'));
+    const denied = await options.onToolCall({ name: 'relay_task', arguments: { action: 'read' }, callId: 'read-current' });
+    assert.equal(denied.success, false);
+    assert.equal(denied.code, 'TASK_PLAN_UNAVAILABLE');
     return { output: 'No applications have been performed by this fixture.' };
   });
   const accepted = f.engine.startRun({ workflow: f.workflow, input: request, planningMode: 'forced', planningOntology:{version:2,modules:{decomposition:true,verification:true}}, planningExecutionMode: 'automatic' });
   await f.engine.executions.get(accepted.id); const run = f.engine.getRun(accepted.id);
   assert.equal(run.status, 'completed'); assert.equal(run.errorCode,undefined);assert.match(run.output,/No applications have been performed/); assert.equal(f.calls.length, 1);
+  assert.equal(run.taskState.contract, undefined);
   assert.equal(run.responseCycle, undefined); assert.equal(run.viability, undefined); assert.equal(run.nodes.agent.planning.status, 'off');
   const journal = await readContractJournal(f.tasks, run.taskId); assert.deepEqual(journal.records, []); assert.deepEqual(journal.evidence, []);
   assert.equal((await f.store.list()).requests.length, 0);

@@ -55,7 +55,11 @@ test('anti-overalignment calibrates inference without records-only gates and pre
     /If one application is blocked, continue other applications/,
     /NO independent authorized work/,
     /User-supplied answers and user uncertainty policy govern/,
-    /grounded probability-based inference/,
+    /Use an estimate or inference when the evidence supports the next step/,
+    /Check any missing fact that could change that step/,
+    /Distinguish supplied facts, inferred answers and unknowns/,
+    /grounded qualitative judgment or explicitly labeled estimates/,
+    /A local stop requires concrete evidence that the exact next operation cannot currently be performed/,
     /reassess the shared assumption/,
     /quarantine only that affected submission/,
     /never fabricated completion/,
@@ -106,7 +110,7 @@ test('retired module requests preserve ordinary authoring, delegation and contin
       assert.equal(admittedPolicy,undefined);
       assert.equal(options.onBeforeFinal,undefined);
       assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
-      assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_task'));
+      assert.ok(!options.dynamicTools.some(tool=>tool.name==='relay_task'));
       assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_delegate'));
       const retired=await options.onToolCall({name:'relay_control',arguments:{action:'planning_cycle_create'}});
       assert.equal(retired.success,false);assert.match(JSON.parse(retired.contentItems[0].text).error,/Choose an action from the current relay_control schema/);

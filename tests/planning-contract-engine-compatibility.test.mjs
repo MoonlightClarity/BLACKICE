@@ -42,8 +42,9 @@ async function fixture(t, execute, { subagents = false } = {}) {
   engine.runtimeSettings = { get: () => ({ executionGuardrails: false, subagentsEnabled: subagents, maxSubagents: 2, planningOntology:{version:2,modules:{decomposition:true,verification:true}} }) };
   context = { engine, tasks, cwd, directory };
   t.after(async () => { await engine.close(); await tasks.close(); await fs.rm(directory, { recursive: true, force: true }); });
-  return { ...context, async run(mode) {
-    const accepted = engine.startRun({ workflow: graph(), input: 'Read the supplied input file and report its contents.', planningMode: mode });
+  return { ...context, async run(mode, { authorOutline = false } = {}) {
+    const task = 'Read the supplied input file and report its contents.';
+    const accepted = engine.startRun({ workflow: graph(), input: authorOutline ? '/plan ' + task : task, planningMode: mode });
     await engine.executions.get(accepted.id);
     return engine.getRun(accepted.id);
   } };
@@ -66,7 +67,7 @@ test('new production runs preserve optional schema 14 authoring and actual reads
     assert.equal(typeof options.onBeforeFinal, 'undefined');
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_compatibility' };
   });
-  const run = await f.run('forced');
+  const run = await f.run('forced', { authorOutline: true });
   assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
   assert.equal(run.planningContractVersion, 14); assert.equal(run.planningEnforcement, undefined); assert.equal(run.planningMode, 'off');
   assert.equal(run.taskState.contract.planEpoch, 1);
@@ -147,7 +148,7 @@ test('schema 14 legacy Forced delegation preserves optional canonical owners wit
     assert.equal(typeof options.onBeforeFinal, 'undefined');
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_parent' };
   }, { subagents: true });
-  const run = await f.run('forced');
+  const run = await f.run('forced', { authorOutline: true });
   assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
   assert.equal(childCalls, 2);
   assert.equal(run.taskState.contract.planEpoch, 2);
@@ -179,7 +180,7 @@ test('schema 14 publishes optional material edits without falsely completing cri
     assert.equal(typeof options.onBeforeFinal, 'undefined');
     return { output: 'The actual fixture input.', threadId: 'provider_fixture_live_projection' };
   });
-  const run = await f.run('forced');
+  const run = await f.run('forced', { authorOutline: true });
   assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
   assert.equal(observed.saved.progress.done, 0);
   assert.deepEqual(observed.visible.contractRuntime, observed.saved.contractRuntime, 'Live canonical evidence must match the durable projection, including absence of proof.');

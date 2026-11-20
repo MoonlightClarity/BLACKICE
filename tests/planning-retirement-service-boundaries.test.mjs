@@ -102,7 +102,7 @@ test('actual Engine coordinator creates a graph, runs a response-only module and
  engine.runtimeSettings={get:()=>({executionGuardrails:false,subagentsEnabled:true,maxSubagents:2})};
  t.after(async()=>{await engine.close();await runner.close();await store.close();await rm(dataDir,{recursive:true,force:true});});
  const workflow={id:'engine-module-roundtrip',name:'Current native module',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'engine-module-fixture',prompt:'Use the shared graph for a bounded synthetic analysis.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{planningMode:'off'}};
- const admitted=engine.startRun({workflow,input:'Analyze the synthetic graph.',planningMode:'off'});await engine.executions.get(admitted.id);
+ const admitted=engine.startRun({workflow,input:'/plan Analyze the synthetic graph.',planningMode:'off'});await engine.executions.get(admitted.id);
  const finished=engine.getRun(admitted.id);assert.equal(finished.status,'completed',JSON.stringify(finished));
  assert.equal(coordinatorCalls,1);assert.equal(moduleCalls,1);assert.ok(observedResponse);
  const saved=await store.get('engine-current');assert.equal(saved.conversationId,finished.taskId||finished.id);assert.equal(saved.responses[0].id,observedResponse);assert.equal(saved.responses[0].verifiedAction,false);

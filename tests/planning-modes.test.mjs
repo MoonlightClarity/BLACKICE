@@ -129,7 +129,7 @@ test('coordinator and independent read-only workers use the current catalog with
   const f = await fixture(t, async options => {
     assert.doesNotMatch(options.developerInstructions, /REQUIRED FIRST-PARTY BLACKICE PLANNING SKILL/);
     if (options.prompt.includes('YOUR ASSIGNED TASK:')) {
-      assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_task'));
+      assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_task'));
       return { output: 'The supplied fixture contains no external action or guest operation.' };
     }
     const delegated = await options.onToolCall({ name: 'relay_delegate', arguments: { tasks: [{ id: 'inspect-input', prompt: 'Read the supplied fixture only and report its scope; do not execute commands or edit files.', readOnly: true }, { id: 'inspect-tools', prompt: 'Independently inspect the supplied worker tool catalog; do not execute commands or edit files.', readOnly: true }] } });
@@ -171,9 +171,8 @@ test('Off permits normal operations and final output without creating an automat
     assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
     assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|Maintain the current task outline|form a brief operational plan|For substantive work, discover relevant methods/);
     assert.doesNotMatch(options.prompt, /DEFAULT TASK OUTLINE|METHOD DISCOVERY AND ADAPTATION/);
-    assert.match(options.dynamicTools.find(tool=>tool.name==='relay_task').description,/Optional|optional/); assert.ok(options.dynamicTools.some(tool=>/receipt|reconcil|uncertain/i.test(tool.description)), 'Recovery guidance remains on actual tools');
-    const optionalTaskTool = options.dynamicTools.find(tool => tool.name === 'relay_task');
-    assert.equal(optionalTaskTool.name, 'relay_task'); assert.match(optionalTaskTool.description, /Optional compact auditable task context/, 'Explicit Off does not advertise mandatory planning.');
+    assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_task'));
+    assert.ok(options.dynamicTools.some(tool=>/receipt|reconcil|uncertain/i.test(tool.description)), 'Recovery guidance remains on actual tools');
     options.onEvent({ type: 'delta', delta: 'The actual operation is complete.' });
     const response = await call(options, 'relay_workspace', { action: 'write', path: 'off.txt', text: 'actual off-mode result' }); assert.equal(response.success, true);
     return { output: 'The actual operation is complete.', threadId: 'planning-mode-thread' };
@@ -310,7 +309,7 @@ test('Off identity and disabled automatic planning apply to delegated workers wi
   const f = await fixture(t, async options => {
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS)); assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
     if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
-      assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_task')); assert.doesNotMatch(options.developerInstructions, /form a brief operational plan/);
+      assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_task')); assert.doesNotMatch(options.developerInstructions, /form a brief operational plan/);
       assert.match(options.developerInstructions, /Maintain the exact assigned canonical work-item IDs/);
       assert.ok(!options.dynamicTools.some(tool=>['relay_delegate','relay_control'].includes(tool.name)));
       return { output: 'Observed independent fixture result.' };
@@ -402,7 +401,7 @@ test('optional current model authoring uses exact revision without a mandatory p
   const unsupported=await call(options,'relay_task',{action:'step',expectedRevision:2,stepId:'answer',status:'done',evidence:'Unverified claim'});assert.equal(unsupported.success,false);
   return {output:'Authored intent is not completion evidence.',threadId:'planning-mode-thread'};
  });
- const run=await f.settle(f.start({planDetail:'compact',planningMode:'maximal'}).id);finished(run);
+ const run=await f.settle(f.start({input:'/plan Author the optional fixture outline.',planDetail:'compact',planningMode:'maximal'}).id);finished(run);
  const state=await f.tasks.get(run.taskId);assert.equal(state.contract.workItems[0].id,'answer');assert.equal(state.contract.workItems[0].status,undefined);assert.equal(run.planDetail,'compact');assert.equal(run.planningMode,'off');
 });
 
