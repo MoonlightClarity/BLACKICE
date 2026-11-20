@@ -243,6 +243,15 @@
       "bodyFile": "project-handoff.md"
     },
     {
+      "id": "library-steerability",
+      "aliases": ["stop current work", "do not continue", "do not search", "tool failures", "changed direction"],
+      "title": "Steerability",
+      "description": "Stop or redirect active work promptly and separate a report on earlier work from permission to resume it.",
+      "tags": ["execution", "communication", "diagnosis"],
+      "source": {"kind": "first-party", "revision": "1"},
+      "bodyFile": "steerability.md"
+    },
+    {
       "id": "library-software-debugging",
       "aliases": ["app freezes", "app hangs", "desktop freezes", "intermittent freezes", "reproduce bug", "diagnose hang", "desktop unresponsive"],
       "title": "Diagnose a software bug",

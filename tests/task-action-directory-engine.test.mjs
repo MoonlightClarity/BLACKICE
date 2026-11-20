@@ -801,3 +801,52 @@ test('a known undispatched stale click gets one further read-only recovery handb
  assert.equal(clickAttempts,1);
  assert.match(engine.getRun(run.id).error,/unfinished/);
 });
+
+test('a diagnostic correction cannot resume a pending Directory task and explicit Continue restores tools',async t=>{
+ const {createMissionWorkflow}=await import('../public/mission-model.mjs');
+ const {chatDirectionScope}=await import('../lib/chat-direction-scope.mjs');
+ assert.equal(chatDirectionScope('DO NOT JOB SEARCH. Stop. Look at your previous turns and tell me where you ran into tool issues.'),'diagnose');
+ assert.equal(chatDirectionScope('no - I am not asking you to apply yet. I am asking about tool failures'),'diagnose');
+ assert.equal(chatDirectionScope('Tell me what failed, then resume the search'),null);
+ assert.equal(chatDirectionScope('Continue'),null);
+ let calls=0;
+ const {engine,root}=await setup(t,async o=>{
+  calls++;
+  if(calls===1){
+   o.onEvent({type:'thread',threadId:'fixture-codex-thread'});
+   const plan=await o.onToolCall({name:'relay_directory_action',arguments:{action:'plan',actions:[{id:'search',objective:'Find openings',dependsOn:[]}]}});
+   assert.equal(plan.success,true);
+   o.onEvent({type:'tool.result',tool:'relay_browser',action:'click',code:'BROWSER_REF_STALE',success:false,actionDispatched:false,callId:'click-old'});
+   return {output:'Still pending',threadId:'fixture-codex-thread'};
+  }
+  if(calls===2){
+   assert.equal(o.hostOnlyTools,true);
+   assert.deepEqual(o.dynamicTools??[],[]);
+   assert.equal(o.onBeforeFinal,undefined);
+   assert.match(o.prompt,/DO NOT JOB SEARCH/);
+   assert.match(o.prompt,/HISTORICAL SAME-CONVERSATION RECEIPTS/);
+   assert.match(o.prompt,/BROWSER_REF_STALE/);
+   assert.match(o.prompt,/"actionDispatched":false/);
+   assert.doesNotMatch(o.prompt,/CURRENT TASK ACTION DIRECTORY|completed work and take the next/);
+   return{output:'The prior click was rejected.',threadId:'fixture-review-thread'};
+  }
+  assert.ok(o.dynamicTools.some(x=>x.name==='relay_directory_action'));
+  assert.ok(o.onBeforeFinal);
+  return{output:'The resumed work remains pending.',threadId:'fixture-resumed-thread'};
+ });
+ const workflow=createMissionWorkflow({id:'mission_chat_steering_fixture',task:'Find openings.',cwd:root,model:'fixture-model',planningMode:'off'});
+ const first=engine.startRun({workflow,input:{task:'Find openings.',directoryActions:'on'}});
+ await engine.executions.get(first.id);
+ assert.equal(engine.getRun(first.id).errorCode??engine.getRun(first.id).nodes.agent.errorCode,'DIRECTORY_ACTION_UNFINISHED');
+ const directory=await engine.actionDirectories.get(first.id,'Find openings.');
+ const snapshot=directory.read();
+ const follow=engine.continueRun(first.id,{nodeId:'agent',message:'DO NOT JOB SEARCH. Stop. Tell me what failed.',directoryActions:'on'});
+ await engine.executions.get(follow.id);
+ assert.equal(engine.getRun(follow.id).status,'completed',engine.getRun(follow.id).error);
+ assert.equal(engine.getRun(follow.id).directoryActions,'on');
+ assert.deepEqual(directory.read(),snapshot);
+ const resume=engine.continueRun(follow.id,{nodeId:'agent',message:'Continue',directoryActions:'on'});
+ await engine.executions.get(resume.id);
+ assert.equal(calls,3);
+ assert.equal(engine.getRun(resume.id).nodes.agent.errorCode,'DIRECTORY_ACTION_UNFINISHED');
+});
