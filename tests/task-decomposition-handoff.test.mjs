@@ -19,6 +19,7 @@ test('Directory makes handoff and recovery guidance visible without changing too
  assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/record stable source locators.*names or receipt IDs alone may not be usable/);
  assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/preserve the record and make a fresh task-owned read or search in the ready step \(or add a narrow recovery step\)/);
  assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/A missing old tab or link alone is not a blocker/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/Before writing or editing any file.*focus it.*files on your own computer/);
  assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/Unknown attempts must remain unresolved, never assume absence or replay/);
 });
 
