@@ -22,7 +22,7 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   const root=await realpath(tmpdir()),dir=await mkdtemp(path.join(root,'blackice-skill-provider-'));
   const requests=[],observed=[];
   const skillId='library-pdf-evidence', title='Read a PDF for evidence';
-  const automatic={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:'blackice-what-makes-done-v2'};
+  const automatic={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:'blackice-what-makes-done-v4'};
   const explicit={type:'skill_loaded',skillId,title};
   const calls=[
     ['lookup',{action:'search',query:'read PDF for evidence'}],
@@ -85,14 +85,14 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   assert.match(wire(0),/WHAT MAKES DONE \(bundled execution method\)[\s\S]*What just happened\?/);
   catalog=createSkillsCatalog({dataDir:path.join(dir,'engine')});
   const packaged=await catalog.detail({id:completion});
-  assert.equal(packaged.provenance.revision,'blackice-what-makes-done-v2');
+  assert.equal(packaged.provenance.revision,'blackice-what-makes-done-v4');
   const edited=await catalog.save({id:completion,value:{expectedRevision:packaged.revision,content:'# What Makes Done\nOwner completion fixture 9321.'}});
   const editedRun=await run('Use the current completion method.');
   assert.match(wire(5),core);
   // Both task execution and supported model skill lookup use the owner-facing choice.
   assert.match(wire(5),/WHAT MAKES DONE \(owner-edited execution method\)[\s\S]*local revision 2[\s\S]*Owner completion fixture 9321/);
   assert.doesNotMatch(wire(5),/What just happened\?/);
-  assert.match(wire(0),/WHAT MAKES DONE \(bundled execution method\)[\s\S]*blackice-what-makes-done-v2[\s\S]*What just happened\?/);
+  assert.match(wire(0),/WHAT MAKES DONE \(bundled execution method\)[\s\S]*blackice-what-makes-done-v4[\s\S]*What just happened\?/);
   const ownerReceipt={...automatic,source:'user',sourceRevision:2};
   assert.deepEqual(editedRun.skillLoadReceipts,[ownerReceipt]);
   assert.deepEqual(projectFamily({rootId:editedRun.id,runs:[editedRun]}).runs[0].skillLoadReceipts,[ownerReceipt]);

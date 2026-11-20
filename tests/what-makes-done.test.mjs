@@ -17,7 +17,7 @@ test('What Makes Done is a discoverable advisory skill with actionable examples'
 
 test('What Makes Done reconciles exact duplicate risk without importing old conversations or flattening evidence',async()=>{
  const {content,provenance}=await readBundledSkill('library-what-makes-done');
- assert.equal(provenance.revision,'blackice-what-makes-done-v2');
+ assert.equal(provenance.revision,'blackice-what-makes-done-v4');
  assert.match(content,/the smallest check in records the current request lets you use/);
  assert.match(content,/Do not automatically ingest an old ledger or turn Past Chats on/);
  assert.match(content,/If Past Chats is off, do not look up past chats through another tool or source/);

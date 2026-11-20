@@ -32,6 +32,44 @@ test('a no-actions provider final tells the model to start the actual next step 
  await engine.executions.get(run.id);
  assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);
 });
+test('capped-search completion review keeps work open until the live checks are all Yes',async t=>{
+ const {engine,root}=await setup(t,async o=>{
+  let seq=0;
+  const call=(name,args)=>o.onToolCall({name,arguments:args,callId:'checklist-'+(++seq)});
+  const dir=(action,rest={})=>call('relay_directory_action',{id:'scope',action,...rest});
+  const checked=async name=>{
+   const r=await call('relay_workspace',{action:'read',path:path.join(root,name+'.txt')});
+   assert.equal(r.success,true);
+   return r.contentItems.at(-1).text.match(/receipt-[0-9]+/)[0];
+  };
+  const output='Zero verified findings in the stated scope.';
+  assert.equal((await dir('plan',{actions:[{id:'scope',objective:'Search the two named sources',dependsOn:[],doneChecks:[
+   {id:'sources',check:'Was the planned scope checked?',requestQuote:'in the named local sources'},
+   {id:'one',parentId:'sources',check:'Was source one checked?'},
+   {id:'two',parentId:'sources',check:'Was source two checked?'},
+  ]}]})).success,true);
+  assert.equal((await dir('focus')).success,true);
+  const one=await checked('one');
+  const close=checkResults=>dir('observe',{outcome:'objective-met',claim:output,receipts:checkResults.filter(x=>x.yes).map(x=>x.receipt),checkResults});
+  const first={id:'one',yes:true,receipt:one};
+  const rejection=await close([first,{id:'two',yes:false}]);
+  assert.equal(rejection.success,false);
+  assert.match(JSON.stringify(rejection.contentItems),/DIRECTORY_DONE_CHECKLIST|still No or unreported/);
+  const review=()=>o.onBeforeFinal({output,signal:o.signal});
+  assert.equal((await review()).continue,true);
+  const two=await checked('two');
+  const done=await close([first,{id:'two',yes:true,receipt:two},{id:'sources',yes:true,receipt:two}]);
+  assert.equal(done.success,true,JSON.stringify(done));
+  assert.equal(JSON.parse(done.contentItems[0].text).actions[0].doneCheckStatus[0].yes,true);
+  assert.equal(await review(),undefined);
+  return{output};
+ });
+ const {writeFile}=await import('node:fs/promises');
+ for(const name of ['one','two'])await writeFile(path.join(root,name+'.txt'),'No eligible material.');
+ const run=engine.startRun({workflow:graph,input:{task:'Find up to two eligible findings in the named local sources.',directoryActions:'on'}});
+ await engine.executions.get(run.id);
+ assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);
+});
 test('a closed outline with an explicitly incomplete result gets one read-only recovery, otherwise remains incomplete',async t=>{
  for(const scenario of ['recover','repeated','effect','complete']){
   await t.test(scenario,async t=>{
