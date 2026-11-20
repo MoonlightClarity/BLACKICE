@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.51 candidate source, not an installation or publication receipt.** Package version is **2.40.51**. Start with the [2.40.51 notes](RELEASE-NOTES-2.40.51.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.52 candidate source, not an installation or publication receipt.** Package version is **2.40.52**. Start with the [2.40.52 notes](RELEASE-NOTES-2.40.52.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.52](RELEASE-NOTES-2.40.52.md) - add job search tactics and distinguish result caps from required counts
 
 - [2.40.51](RELEASE-NOTES-2.40.51.md) - clarify screening evidence and search result caps
 
