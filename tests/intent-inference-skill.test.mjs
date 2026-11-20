@@ -37,3 +37,17 @@ test('the first-party skill can be opened and operationalizes temporal and non-t
  assert.match(entry.content,/I meant just revise the summary/);
 });
 
+test('intent guidance distinguishes transferable experience from the work the user wants next',async()=>{
+ const query='transferable experience versus target work';
+ const {entries}=await invoke({action:'search',query,limit:5});
+ assert.equal(entries[0]?.id,id,query);
+ assert.ok(!Object.hasOwn(entries[0],'content'));
+ const {entry}=await invoke({action:'read',id});
+ assert.equal(entry.provenance.revision,'2');
+ assert.match(entry.content,/what they want to leave behind and what they want instead/);
+ assert.match(entry.content,/regular duties, recurring outputs, and who uses them/);
+ assert.match(entry.content,/set that option aside and inspect the next one/);
+ assert.match(entry.content,/blanket ban on an industry, tool, or employment type/);
+ assert.match(entry.content,/annotation queues[\s\S]*research briefs that guide pricing/);
+ assert.match(entry.content,/spreadsheet template still requires manual copying[\s\S]*produce the needed report/);
+});

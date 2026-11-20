@@ -364,16 +364,16 @@
       "id": "library-intent-inference",
       "title": "Intent Inference",
       "aliases": [
-        "intent inference",
         "what did they mean",
         "time-only deadline",
         "until 6 AM",
         "by tomorrow morning",
         "ambiguous request",
         "infer the deadline",
-        "draft or send"
+        "draft or send",
+        "transferable experience versus target work"
       ],
-      "description": "Resolve ambiguous references, date and deadline intent, fresh requests versus resumed work, and the next useful action without inventing permission or task scope.",
+      "description": "Resolve ambiguous references, date and deadline intent, fresh requests versus resumed work, the user's intended change, and the next useful action without inventing permission or task scope.",
       "tags": [
         "methods",
         "intent",
@@ -383,7 +383,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "2"
       },
       "bodyFile": "intent-inference.md"
     },
