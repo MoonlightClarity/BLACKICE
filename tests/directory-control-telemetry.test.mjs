@@ -24,3 +24,10 @@ test('browser reference diagnosis is scoped to Maximal and never includes ref, U
   assert.doesNotMatch(JSON.stringify(events),/PRIVATE/);
  }
 });
+
+test('maximal browser binding event carries only recognized cause, phase and mismatch flags',()=>{
+ const events=[],log=createDirectoryTelemetry({level:'maximal',emit:e=>events.push(e)});
+ const call={name:'relay_browser',arguments:{action:'fill',text:'PRIVATE_FILL'}};
+ log.browserReference(call,{code:'BROWSER_REF_STALE',browserReferenceDiagnostic:{reason:'control-changed',controlBindingCause:'identity-changed',controlBindingPhase:'fill-ready',controlNameChanged:true,controlTagChanged:'PRIVATE_TAG',controlRoleChanged:false,name:'PRIVATE_NAME',value:'PRIVATE_VALUE'}});
+ assert.deepEqual(events,[{type:'browser.reference',phase:'rejected',tool:'relay_browser',action:'fill',code:'BROWSER_REF_STALE',bindingReason:'control-changed',controlBindingCause:'identity-changed',controlBindingPhase:'fill-ready',controlNameChanged:true,sequence:1}]);
+});

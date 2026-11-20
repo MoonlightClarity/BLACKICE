@@ -116,3 +116,13 @@ test('browser binding diagnosis survives machine export with only host compariso
  assert.deepEqual(entry.metadata,{observedRevision:4,currentRevision:8,bindingReason:'document-changed',phase:'rejected',action:'click',tool:'relay_browser',code:'BROWSER_REF_STALE',topUrlChanged:true,frameLineageChanged:false,actionDispatched:false});
  assert.doesNotMatch(JSON.stringify(entry),/PRIVATE|click-call/);
 });
+
+test('maximal machine trace reprojects only bounded renderer binding diagnostics on export',()=>{
+ const run=fixture();
+ recordTurnMachineEvent(run,wrap({type:'browser.reference',action:'fill',phase:'rejected',bindingReason:'control-changed',controlBindingCause:'identity-changed',controlBindingPhase:'fill-ready',controlNameChanged:true,controlTypeChanged:'PRIVATE_TYPE',value:'PRIVATE_VALUE'}));
+ recordTurnMachineEvent(run,wrap({type:'browser.reference',action:'fill',bindingReason:'control-changed',controlBindingCause:'PRIVATE_CAUSE',controlBindingPhase:'PRIVATE_PHASE',controlNameChanged:true}));
+ const [valid,invalid]=projectTurnMachineTrace(run).entries;
+ assert.deepEqual(valid.metadata,{bindingReason:'control-changed',phase:'rejected',action:'fill',controlBindingCause:'identity-changed',controlBindingPhase:'fill-ready',controlNameChanged:true});
+ assert.deepEqual(invalid.metadata,{bindingReason:'control-changed',action:'fill'});
+ assert.doesNotMatch(JSON.stringify([valid,invalid]),/PRIVATE/);
+});

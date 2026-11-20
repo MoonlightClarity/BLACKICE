@@ -44,7 +44,7 @@ async function main() {
       assert.ok(Number.isSafeInteger(diagnostic.currentRevision));
       for (const [name, value] of Object.entries(properties)) assert.equal(diagnostic[name], value, name);
       for (const [key, value] of Object.entries(diagnostic)) {
-        if (key === 'reason' || value === undefined) continue;
+        if (key === 'reason' || key === 'controlBindingCause' || value === undefined) continue;
         assert.ok(typeof value === 'boolean' || Number.isSafeInteger(value), key);
       }
       return true;
@@ -68,8 +68,32 @@ async function main() {
   await reject(priorMainRef, 'document-changed', { topUrlChanged: true });
   const removed = ref('Main button');
   await wc.executeJavaScript("document.querySelector('button').remove()");
-  await reject(removed, 'control-changed');
+  await reject(removed, 'control-changed', { controlBindingCause: 'control-disconnected' });
   assert.equal(await wc.executeJavaScript('window.clickCount'), 0);
+  await wc.executeJavaScript("fixtureField=document.createElement('input');fixtureField.setAttribute('aria-label','Synthetic subject');fixtureField.value='Keep existing';document.body.append(fixtureField);window.fixtureInputs=0;fixtureField.addEventListener('input',()=>window.fixtureInputs++);");
+  snapshot = await driver.perform({ action: 'snapshot', tabId: tab.id });
+  const fillRef = ref('Synthetic subject');
+  await wc.executeJavaScript("fixtureField.style.visibility='hidden'");
+  await assert.rejects(driver.perform({ action: 'fill', tabId: tab.id, ref: fillRef, text: 'Never inserted' }), error => {
+    assert.equal(error.code, 'BROWSER_REF_STALE');
+    assert.equal(error.actionDispatched, false);
+    assert.equal(error.browserReferenceDiagnostic.controlBindingCause, 'hidden');
+    assert.equal(error.browserReferenceDiagnostic.controlBindingPhase, 'fill');
+    return true;
+  });
+  await wc.executeJavaScript("fixtureField.style.visibility='visible';fixtureField.focus=function(options){HTMLElement.prototype.focus.call(this,options);this.setAttribute('aria-label','Different semantics');};undefined;");
+  snapshot = await driver.perform({ action: 'snapshot', tabId: tab.id });
+  await assert.rejects(driver.perform({ action: 'fill', tabId: tab.id, ref: ref('Synthetic subject'), text: 'Never inserted' }), error => {
+    assert.equal(error.code, 'BROWSER_REF_STALE');
+    assert.notEqual(error.actionDispatched, false, 'focus handlers already ran');
+    assert.equal(error.browserReferenceDiagnostic.controlBindingCause, 'identity-changed');
+    assert.equal(error.browserReferenceDiagnostic.controlBindingPhase, 'fill-ready');
+    assert.equal(error.browserReferenceDiagnostic.controlNameChanged, true);
+    assert.doesNotMatch(JSON.stringify(error.browserReferenceDiagnostic), /Different semantics|Synthetic subject|Never inserted/);
+    return true;
+  });
+  assert.deepEqual(await wc.executeJavaScript('[fixtureField.value, window.fixtureInputs]'), ['Keep existing', 0]);
+  report.checks.push('hidden fill and focus-time semantic change distinguish phase with no text input or replay');
   const expectReady = value => {
     assert.equal(new URL(value.url).pathname, '/spa-ready');
     const names = value.frames.flatMap(frame => frame.elements).map(element => element.name);

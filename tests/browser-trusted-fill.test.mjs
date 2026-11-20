@@ -79,3 +79,38 @@ test('actual hidden Chromium fill commits trusted form state across replacement 
   const report = JSON.parse(await fs.readFile(path.join(directory, 'result.json'), 'utf8'));
   assert.equal(code, 0, report.error || output); assert.equal(report.ok, true, report.error); assert.equal(report.closedWindows, true); assert.ok(report.checks.length >= 10);
 });
+
+test('renderer stale diagnostics distinguish fixed causes and redact control contents', () => {
+  for (const kind of ['control-disconnected', 'hidden', 'no-box', 'identity-changed', 'focus-change']) {
+    const calls = [];
+    const field = {
+      isConnected: kind !== 'control-disconnected', tagName: 'INPUT',
+      type: kind === 'identity-changed' ? 'search' : 'text', value: 'PRIVATE_VALUE',
+      label: kind === 'identity-changed' ? 'PRIVATE_NEW_LABEL' : 'PRIVATE_OLD_LABEL',
+      getAttribute(key) { return key === 'aria-label' ? this.label : null; },
+      getBoundingClientRect: () => ({ width: kind === 'no-box' ? 0 : 10, height: 0 }),
+      getRootNode: () => ({}), focus() { calls.push('focus'); context.document.activeElement = this; this.label = 'PRIVATE_FOCUSED_LABEL'; },
+      select() { calls.push('select'); }, dispatchEvent() { calls.push('input'); },
+    };
+    const context = vm.createContext({
+      fixture: { elements: new Map([['field', field]]), identities: new Map([['field', JSON.stringify(['INPUT', 'text', 'textbox', 'PRIVATE_OLD_LABEL'])]]) },
+      document: { activeElement: null, getElementById: () => null },
+      getComputedStyle: () => ({ display: kind === 'hidden' ? 'none' : 'block', visibility: 'visible' }),
+    });
+    const perform = action => vm.runInContext('(' + elementSource + ')("fixture","field",' + JSON.stringify(action) + ',{text:"PRIVATE_INPUT"})', context);
+    let result = perform('fill');
+    if (kind === 'focus-change') {
+      assert.equal(result.needsTrustedTextInput, true);
+      result = perform('fill-ready');
+    }
+    const error = result.__blackiceElementError;
+    assert.equal(error.code, 'BROWSER_REF_STALE');
+    assert.equal(error.controlBindingCause, kind === 'focus-change' ? 'identity-changed' : kind);
+    assert.equal(error.inputDispatched, false);
+    assert.equal(error.controlNameChanged, ['identity-changed', 'focus-change'].includes(kind) ? true : undefined);
+    assert.equal(error.controlTypeChanged, kind === 'identity-changed' ? true : undefined);
+    assert.deepEqual(calls, kind === 'focus-change' ? ['focus'] : []);
+    assert.equal(field.value, 'PRIVATE_VALUE');
+    assert.doesNotMatch(JSON.stringify(error), /PRIVATE/);
+  }
+});

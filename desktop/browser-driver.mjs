@@ -13,6 +13,7 @@ import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, bro
 import { captureHiddenPage } from './browser-capture.mjs';
 import { NativePasswordManager, passwordManagerURL, passwordManagerPreload } from './native-password-manager.mjs';
 import { prepareBrowserCompatibility } from './browser-compatibility.mjs';
+import { projectBrowserControlBinding } from '../lib/browser-reference-diagnostic.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { BrowserTabDiagnostics, diagnosticText } from '../lib/browser-tab-diagnostics.mjs';
 import { BrowserProtection, protectionOrigin } from '../lib/browser-protection.mjs';
@@ -261,7 +262,7 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
   // here as well as at the host boundary, before focus or selection can change.
   if (['fill', 'fill-ready'].includes(action) && (typeof args?.text !== 'string' || args.value !== undefined)) return { __blackiceElementError: { message: 'Fill requires an explicit text string and does not accept value. Use text:"" to intentionally clear a field; value is only for select.', code: 'BROWSER_VALIDATION', inputDispatched: false } };
   const state = globalThis[key], el = state?.elements.get(ref);
-  if (!el?.isConnected) return { __blackiceElementError: { message: 'This element ref is stale. Take a new snapshot and choose its current ref.', code: 'BROWSER_REF_STALE', inputDispatched: false } };
+  if (!el?.isConnected) return { __blackiceElementError: { message: 'This element ref is stale. Take a new snapshot and choose its current ref.', code: 'BROWSER_REF_STALE', inputDispatched: false, controlBindingCause: 'control-disconnected' } };
   // Retaining a ref does not authorize a node that was hidden or repurposed
   // after observation. Reinspect rather than acting on changed semantics.
   const expected = state.identities?.get(ref);
@@ -270,8 +271,25 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
     const role = el.getAttribute('role') || ({ A: 'link', BUTTON: 'button', INPUT: el.type === 'checkbox' ? 'checkbox' : el.type === 'radio' ? 'radio' : 'textbox', TEXTAREA: 'textbox', SELECT: 'combobox', SUMMARY: 'button' }[el.tagName]) || (/^H[1-6]$/.test(el.tagName) ? 'heading' : '');
     const labelled = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ');
     const label = String(el.getAttribute('aria-label') || labelled || (el.labels ? [...el.labels].map(l => l.textContent).join(' ') : '') || el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || el.getAttribute('data-placeholder') || el.textContent || el.getAttribute('title') || el.getAttribute('alt') || '').replace(/\s+/g, ' ').trim().slice(0, 300);
-    const actual = JSON.stringify([el.tagName, el.type || '', role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), label]);
-    if (style.display === 'none' || style.visibility === 'hidden' || !(box.width > 0 || box.height > 0) || actual !== expected) return { __blackiceElementError: { message: 'This observed control changed. Take a fresh snapshot and choose its current ref.', code: 'BROWSER_REF_STALE', inputDispatched: false } };
+    const descriptor = [el.tagName, el.type || '', role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), label];
+    const cause = style.display === 'none' || style.visibility === 'hidden' ? 'hidden'
+      : !(box.width > 0 || box.height > 0) ? 'no-box'
+      : JSON.stringify(descriptor) !== expected ? 'identity-changed' : undefined;
+    if (cause) {
+      let mismatch = {};
+      if (cause === 'identity-changed') {
+        // Report only which comparison failed, never either descriptor's content.
+        try {
+          const observed = JSON.parse(expected);
+          if (Array.isArray(observed) && observed.length === 4) {
+            for (const [index, key] of ['controlTagChanged','controlTypeChanged','controlRoleChanged','controlNameChanged'].entries()) {
+              if (observed[index] !== descriptor[index]) mismatch[key] = true;
+            }
+          }
+        } catch { /* malformed descriptors still reject */ }
+      }
+      return { __blackiceElementError: { message: 'This observed control changed. Take a fresh snapshot and choose its current ref.', code: 'BROWSER_REF_STALE', inputDispatched: false, controlBindingCause: cause, ...mismatch } };
+    }
   }
   if (el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true') throw new Error('This element is disabled. Inspect what is required first.');
   if (action === 'host-inspect') return inspectOperation(el, state, args);
@@ -1394,7 +1412,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (result?.__blackiceElementError) {
       const { message, code, inputDispatched } = result.__blackiceElementError;
       // A renderer ref rejection happens before the operation reaches its input path.
-      throw Object.assign(error(message), { code, ...(code === 'BROWSER_REF_STALE' ? { browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref, 'control-changed') } : {}), ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true } : action === 'select' && inputDispatched === false ? { inputDispatched: false } : {}) });
+      throw Object.assign(error(message), { code, ...(code === 'BROWSER_REF_STALE' ? { browserReferenceDiagnostic: { ...this.referenceDiagnostic(tab, args.ref, 'control-changed'), ...projectBrowserControlBinding(result.__blackiceElementError, action) } } : {}), ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true } : action === 'select' && inputDispatched === false ? { inputDispatched: false } : {}) });
     }
     if (!this.referenceCurrent(tab, args.ref)) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref) });
     return { frame, result };
