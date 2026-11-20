@@ -136,7 +136,12 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  };
  const alignmentId='builtin-task-grounding';
  const alignmentHeading='ANTI-OVERALIGNMENT (advisory execution method; not permission)';
+ const antiCompletion='library-anti-completion-bias';
+ const completionReceipt=(source,sourceRevision)=>({type:'skill_context_submitted',skillId:antiCompletion,title:'Anti-Completion Bias',source,sourceRevision});
  const job=await invoke(example);
+ assert.equal(job.prompt.split('ANTI-COMPLETION BIAS (bundled execution method)').length,2);
+ assert.ok(job.prompt.includes('finish the other half before mentioning the first'));
+ assert.deepEqual(job.receipts.filter(r=>r.skillId===antiCompletion),[completionReceipt('bundled','blackice-anti-completion-bias-v2')]);
  assert.ok(job.prompt.includes(alignmentHeading));
  assert.ok(job.prompt.includes('Take the simplest route that delivers the whole result'));
  assert.ok(job.prompt.includes('three reviewers can independently veto'));
@@ -147,7 +152,11 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.deepEqual(job.receipts.filter(r=>r.skillId===id),[accepted]);
  assert.ok(job.receipts.every(r=>r.skillId!=='library-intent-inference'));
 
+ await catalog.save({id:antiCompletion,value:{expectedRevision:1,content:'# Anti-Completion Bias\nUse the owner-defined next-action instruction.'}});
  const ordinary=await invoke('Write a short explanation of how job search works.');
+ assert.ok(ordinary.prompt.includes('Use the owner-defined next-action instruction.'));
+ assert.ok(!ordinary.prompt.includes('finish the other half before mentioning the first'));
+ assert.deepEqual(ordinary.receipts.filter(r=>r.skillId===antiCompletion),[completionReceipt('user',2)]);
  assert.ok(!ordinary.prompt.includes(alignmentHeading));
  assert.ok(ordinary.prompt.includes('Take the simplest route that delivers the whole result'));
  assert.ok(ordinary.receipts.every(r=>r.skillId!==alignmentId));
@@ -155,7 +164,11 @@ test('actual Compatible main-turn transport submits the job skill selectively an
 
  await catalog.delete({id,value:{expectedRevision:1}});
  await catalog.delete({id:alignmentId,value:{expectedRevision:1}});
+ await catalog.delete({id:antiCompletion,value:{expectedRevision:2}});
  const deleted=await invoke(example);
+ assert.ok(!deleted.prompt.includes('ANTI-COMPLETION BIAS ('));
+ assert.ok(deleted.receipts.every(r=>r.skillId!==antiCompletion));
+ assert.ok(deleted.receipts.some(r=>r.skillId==='library-what-makes-done'));
  assert.ok(!deleted.prompt.includes(alignmentHeading));
  assert.ok(deleted.receipts.every(r=>r.skillId!==alignmentId));
  assert.ok(!deleted.prompt.includes(heading));assert.ok(deleted.receipts.every(r=>r.skillId!==id));

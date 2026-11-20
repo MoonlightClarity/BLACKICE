@@ -22,6 +22,7 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   const root=await realpath(tmpdir()),dir=await mkdtemp(path.join(root,'blackice-skill-provider-'));
   const requests=[],observed=[];
   const skillId='library-pdf-evidence', title='Read a PDF for evidence';
+  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:'blackice-anti-completion-bias-v2'};
   const automatic={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:'blackice-what-makes-done-v4'};
   const explicit={type:'skill_loaded',skillId,title};
   const calls=[
@@ -71,11 +72,11 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   assert.doesNotMatch(toolResult(1,'lookup'),/Get to the relevant page/);
   assert.match(toolResult(2,'missing'),/not found/i);
   assert.match(toolResult(3,'load'),/Get to the relevant page/);
-  assert.deepEqual(observed.slice(0,4),[[],[automatic],[automatic],[automatic]],
+  assert.deepEqual(observed.slice(0,4),[[],[automatic,antiCompletion],[automatic,antiCompletion],[automatic,antiCompletion]],
     'The automatic prompt receipt starts after first acceptance; discovery, a miss, and a not-yet-accepted body do not emit a skill-loaded receipt.');
   const projected=projectFamily({rootId:done.id,runs:[done]}).runs[0];
   for(const receipts of [observed[4],done.skillLoadReceipts,projected.skillLoadReceipts]){
-    assert.deepEqual(receipts,[automatic,explicit], 'The accepted tool body adds one distinct receipt even after the repeat.');
+    assert.deepEqual(receipts,[automatic,antiCompletion,explicit], 'The accepted tool body adds one distinct receipt even after the repeat.');
     assert.doesNotMatch(JSON.stringify(receipts),/Get to the relevant page/);
   }
 
@@ -94,14 +95,14 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   assert.doesNotMatch(wire(5),/What just happened\?/);
   assert.match(wire(0),/WHAT MAKES DONE \(bundled execution method\)[\s\S]*blackice-what-makes-done-v4[\s\S]*What just happened\?/);
   const ownerReceipt={...automatic,source:'user',sourceRevision:2};
-  assert.deepEqual(editedRun.skillLoadReceipts,[ownerReceipt]);
-  assert.deepEqual(projectFamily({rootId:editedRun.id,runs:[editedRun]}).runs[0].skillLoadReceipts,[ownerReceipt]);
+  assert.deepEqual(editedRun.skillLoadReceipts,[ownerReceipt,antiCompletion]);
+  assert.deepEqual(projectFamily({rootId:editedRun.id,runs:[editedRun]}).runs[0].skillLoadReceipts,[ownerReceipt,antiCompletion]);
 
   const removed=await catalog.delete({id:completion,value:{expectedRevision:edited.revision}});
   const deletedRun=await run('Keep the core completion contract only.');
   assert.match(wire(6),core);
   assert.doesNotMatch(wire(6),/WHAT MAKES DONE \((?:bundled|owner-edited) execution method\)|Owner completion fixture 9321|What just happened\?/);
-  assert.equal(deletedRun.skillLoadReceipts,undefined);
+  assert.deepEqual(deletedRun.skillLoadReceipts,[antiCompletion]);
   await assert.rejects(catalog.detail({id:completion}),{status:404});
   const restored=await catalog.restore({id:completion,value:{expectedRevision:removed.revision}});
   assert.equal(restored.content,edited.content);

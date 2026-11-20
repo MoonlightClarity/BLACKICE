@@ -531,7 +531,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "blackice-anti-completion-bias-v1"
+        "revision": "blackice-anti-completion-bias-v2"
       },
       "bodyFile": "anti-completion-bias.md"
     }

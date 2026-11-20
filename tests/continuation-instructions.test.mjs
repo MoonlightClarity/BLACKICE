@@ -14,7 +14,8 @@ test('revised continuation instructions reach the native turn on the same provid
   const runtime=new CodexRuntime({command:process.execPath,args:[fixture],cwd:directory,requestTimeoutMs:5000,runTimeoutMs:8000});
   const requests=[],request=runtime._request.bind(runtime);
   const injected=await readBundledSkill('library-what-makes-done');
-  const receipt={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:'blackice-what-makes-done-v2'};
+  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:'blackice-anti-completion-bias-v2'};
+  const receipt={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:'blackice-what-makes-done-v4'};
   let rejectTurn=false;
   runtime._request=(method,params={},...args)=>{requests.push({method,params:structuredClone(params)});if(rejectTurn&&method==='turn/start')return Promise.reject(Error('Synthetic native rejection'));return request(method,params,...args);};
   const engine=new HarnessEngine({runtime,dataDir:path.join(directory,'data'),defaultCwd:directory});
@@ -41,8 +42,8 @@ test('revised continuation instructions reach the native turn on the same provid
   const sent=turns[1].params.input.map(item=>item.text||'').join('\n');
   for(const turn of turns)assert.ok(turn.params.input[0].text.includes(injected.content));
   for(const runId of [first.id,next.id]){
-    const run=engine.getRun(runId);assert.deepEqual(run.skillLoadReceipts,[receipt]);
-    assert.equal(run.events.filter(event=>event.data.type===receipt.type).length,1);
+    const run=engine.getRun(runId);assert.deepEqual(run.skillLoadReceipts,[receipt,antiCompletion]);
+    assert.equal(run.events.filter(event=>event.data.type===receipt.type).length,2);
   }
   assert.ok(sent.includes(prompt),'the actual native turn request carries the new brief');
   assert.ok(!sent.includes('ORIGINAL_AGENT_BRIEF'),'the resumed turn does not resend superseded instructions');

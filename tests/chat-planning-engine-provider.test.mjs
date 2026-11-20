@@ -72,12 +72,13 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   assert.match(requests[0].allText,/EXECUTION COMPLETION[\s\S]*Do not end the turn until you are really done/);
   assert.match(requests[0].allText,/WHAT MAKES DONE \(bundled execution method\)[\s\S]*What just happened\?/);
   assert.equal(off.planningModuleReceipts,undefined);
+  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:'blackice-anti-completion-bias-v2'};
   const bundled={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:'blackice-what-makes-done-v4'};
-  assert.deepEqual(off.skillLoadReceipts,[bundled]);
+  assert.deepEqual(off.skillLoadReceipts,[bundled,antiCompletion]);
   const on=await done(await start('Check the startup route',{chatPlanning:'on'}));
   assert.equal(on.status,'completed',on.error);
-  assert.deepEqual(on.skillLoadReceipts,[bundled]);
-  assert.equal(on.events.filter(event=>event.data.type===bundled.type).length,1);
+  assert.deepEqual(on.skillLoadReceipts,[bundled,antiCompletion]);
+  assert.equal(on.events.filter(event=>event.data.type===bundled.type).length,2);
   assert.deepEqual(requests.map(row=>row.prep),[false,true,false]);
   assert.ok(!requests[1].body.tools?.length);
   assert.equal(requests[1].body.model,'fixture');
