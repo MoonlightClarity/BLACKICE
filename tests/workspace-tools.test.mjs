@@ -110,13 +110,19 @@ test('real shell runs return their working directory, stderr and actual nonzero 
 });
 
 test('bounded filesystem search previews retain literal mode and the exact query', async t => {
-  const { handler, cwd } = await harness(t, { rgCommand: '__relay_missing_search_executable__' });
+  const { handler, cwd, events } = await harness(t, { rgCommand: '__relay_missing_search_executable__', captureSearchCoverage: true });
   const query = 'audit|marker';
   await writeFile(path.join(cwd, 'many.txt'), (query + ' ' + 'x'.repeat(480) + '\n').repeat(100));
   const response = await handler(call({ action: 'search', query, limit: 100 })), found = parsed(response);
   assert.equal(response.success, true); assert.ok(response.contentItems[0].text.length <= 40000);
   assert.equal(found.matchMode, 'literal'); assert.equal(found.query, query); assert.equal(found.engine, 'filesystem');
   assert.equal(found.truncated, true); assert.ok(found.preview);
+  const baseline = createWorkspaceToolHandler({cwd,rgCommand:'__relay_missing_search_executable__'});
+  assert.deepEqual(response,await baseline(call({action:'search',query,limit:100})));
+  const coverage=events.find(e=>e.type==='workspace.search.coverage');
+  assert.equal(coverage.resultPreviewOnly,true);
+  assert.equal(coverage.truncated,true);
+  assert.equal(coverage.returnedMatches,undefined);
 });
 
 test('only an executor-supplied origin reaches the command child and inherited case variants are stripped', async t => {
@@ -351,4 +357,21 @@ test('content search coverage is opt-in, typed, and describes both bounded backe
   const standard=await harness(t,{rgCommand:'__relay_missing_search_executable__'});
   await standard.handler(call({action:'search',query:sensitive}));
   assert.equal(standard.events.some(e=>e.type==='workspace.search.coverage'),false);
+});
+
+test('rg capture cap reports partial output without counting a trailing fragment as an exact result', async t => {
+  const {cwd}=await harness(t);
+  const script=path.join(cwd,'search-cap-fake.cjs');
+  await writeFile(script,'process.stdout.write("VISIBLE_LINE\\n"+"PRIVATE_FRAGMENT".repeat(5000))');
+  const {handler,events}=await harness(t,{rgCommand:[process.execPath,script],captureSearchCoverage:true});
+  const response=await handler({...call({action:'search',query:'VISIBLE_LINE'}),callId:'capture-cap'});
+  const body=parsed(response), coverage=events.find(e=>e.type==='workspace.search.coverage');
+  assert.equal(response.success,true);
+  assert.equal(body.truncated,true);
+  assert.equal(body.preview,undefined);
+  assert.equal(body.output.length,32000);
+  assert.equal(coverage.truncated,true);
+  assert.equal(coverage.resultPreviewOnly,false);
+  assert.equal(coverage.returnedMatches,undefined);
+  assert.doesNotMatch(JSON.stringify(coverage),/PRIVATE_FRAGMENT|VISIBLE_LINE/);
 });

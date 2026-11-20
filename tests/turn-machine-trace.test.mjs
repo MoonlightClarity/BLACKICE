@@ -153,4 +153,9 @@ test('workspace search coverage matches the same call in maximal export, safely 
  const live=projectTurnMachineTrace(run).entries[0];
  assert.equal(live.metadata.returnedMatches,2);
  assert.equal(live.metadata.timedOut,undefined);
+ const preview=JSON.parse(JSON.stringify(run));
+ Object.assign(preview.turnMachineTrace.head[0].metadata,{resultPreviewOnly:true,truncated:true,returnedMatches:100});
+ const replayed=projectTurnMachineTrace(preview).entries[0];
+ assert.equal(replayed.metadata.resultPreviewOnly,true);
+ assert.equal(replayed.metadata.returnedMatches,undefined);
 });
