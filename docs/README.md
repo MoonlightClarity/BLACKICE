@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: 2.40.31 candidate source index.** Package version is **2.40.31**, not an installed or published artifact. See [2.40.31 source notes](../RELEASE-NOTES-2.40.31.md) and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
+> **Status: 2.40.32 candidate source index.** Package version is **2.40.32**, not an installed or published artifact. See [2.40.32 source notes](../RELEASE-NOTES-2.40.32.md) and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
