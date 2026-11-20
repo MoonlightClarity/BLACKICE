@@ -71,7 +71,8 @@
     "docs/context-architecture-reset.md",
     "docs/browser-stability-20261118.md",
     "docs/browser-folder-app-integration.md",
-    "docs/HUMAN-SKILL-EDITOR-20261118.md"
+    "docs/HUMAN-SKILL-EDITOR-20261118.md",
+    "docs/minicpm-context-vision-runtime-20261120.md"
   ],
   "historical": [
     "APPLICATION-COMPATIBILITY.md",

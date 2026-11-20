@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.65 candidate source, not an installation or publication receipt.** Package version is **2.40.65**. Start with the [2.40.65 notes](RELEASE-NOTES-2.40.65.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.66 candidate source, not an installation or publication receipt.** Package version is **2.40.66**. Start with the [2.40.66 notes](RELEASE-NOTES-2.40.66.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.66](RELEASE-NOTES-2.40.66.md) - preserve MiniCPM settings with Anti-Completion Bias enabled
 
 - [2.40.65](RELEASE-NOTES-2.40.65.md) - load Anti-Completion Bias in execution
 
