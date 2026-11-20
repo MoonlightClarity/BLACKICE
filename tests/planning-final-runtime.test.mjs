@@ -48,6 +48,13 @@ for (const type of ['openai', 'anthropic', 'compatible']) test(`${type}: a final
   assert.deepEqual(candidates.map(item => item.usage.totalTokens), [10, 15]); assert.equal(result.usage.totalTokens, 15);
   assert.deepEqual(events.filter(event => event.type === 'message' && event.phase === 'final_answer').map(event => event.text), ['Reassessed final answer.']);
   assert.equal(events.filter(event => event.type === 'planning.continuation').length, 1);
+  const boundaries = events.filter(event => ['provider.final', 'host.final-review'].includes(event.type));
+  assert.deepEqual(boundaries.map(event => event.type), ['provider.final', 'host.final-review', 'provider.final', 'host.final-review']);
+  const expectedStop = { openai: 'completed', anthropic: 'end_turn', compatible: 'stop' }[type];
+  assert.deepEqual(boundaries.filter(event => event.type === 'provider.final').map(event => ({
+    termination: event.providerTermination, providerType: event.providerType, configured: event.reviewConfigured
+  })), Array(2).fill({ termination: expectedStop, providerType: type, configured: true }));
+  assert.deepEqual(boundaries.filter(event => event.type === 'host.final-review').map(event => event.reviewDecision), ['continue', 'accepted']);
   const record = await f.runtime.readThread(result.threadId);
   assert.match(JSON.stringify(record.messages), /BLACKICE INTERNAL CONTINUATION/);
   assert.match(JSON.stringify(f.requests[2]), /Premature candidate/);
@@ -65,6 +72,8 @@ test('an accepted API final needs no extra pass and local review failures do not
   assert.deepEqual(f.runtime.checks.get('fixture'), health);
   assert.equal(events.filter(event => event.type === 'message' && event.phase === 'final_answer').length, 0);
   assert.equal(events.findLast(event => event.type === 'usage').usage.totalTokens, 5);
+  assert.equal(events.find(event => event.type === 'provider.final')?.providerTermination, 'stop');
+  assert.equal(events.find(event => event.type === 'host.final-review')?.reviewDecision, 'rejected');
 });
 
 test('API steering accepted during final review continues before completing', async t => {
@@ -144,6 +153,11 @@ test('native final review normalizes legacy history input and keeps one persiste
   assert.deepEqual(candidates.map(row => row.output), ['Premature native candidate.', 'Reassessed native final.']);
   assert.deepEqual(candidates.map(row => row.usage.totalTokens), [5, 10]);
   assert.deepEqual(events.filter(row => row.type === 'message').map(row => row.text), ['Reassessed native final.']);
+  const boundaries = events.filter(event => ['provider.final', 'host.final-review'].includes(event.type));
+  assert.deepEqual(boundaries.map(event => [event.type, event.providerTermination ?? event.reviewDecision]), [
+    ['provider.final','completed'], ['host.final-review','continue'], ['provider.final','completed'], ['host.final-review','accepted'],
+  ]);
+  assert.ok(boundaries.filter(event => event.type === 'provider.final').every(event => event.terminationField === 'turn-status'));
   assert.equal(f.requests.filter(row => row.method === 'thread/unsubscribe').length, 1, 'Completion releases the subscription while retaining persistent history.');
   assert.equal(f.client.status().activeTurns, 0); assert.equal(f.client.contexts.has(result.threadId), true);
 });

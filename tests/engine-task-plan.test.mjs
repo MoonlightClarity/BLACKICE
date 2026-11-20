@@ -10,6 +10,7 @@ import { TaskStateStore, TASK_SCHEMA_VERSION, currentTaskTool } from '../lib/tas
 import { MethodStore } from '../lib/methods.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
 import { capabilityGuidance } from '../lib/tool-routing.mjs';
+import { projectTurnMachineTrace } from '../lib/turn-machine-trace.mjs';
 
 const wait = async check => {
   const deadline = Date.now() + 7000;
@@ -60,6 +61,28 @@ async function fixture(t, execute, { model = 'fixture-plan-model', threadId = 'n
 const completed = run => assert.equal(run.status, 'completed', run.error || run.nodes.agent.error);
 const answerEvents = run => run.events.filter(event => ['delta', 'message'].includes(event.data?.type) || event.data?.type === 'item' && ['agentMessage', 'exitedReviewMode'].includes(event.data.item?.type));
 const optionalTool = () => currentTaskTool({ executionGuardrails: false });
+
+test('only Maximal retains provider and host final boundaries with the actual review mode', async t => {
+  const f = await fixture(t, async options => {
+    options.onEvent({ type:'provider.final', providerType:'codex', providerTermination:'completed', terminationField:'turn-status', reviewConfigured:Boolean(options.onBeforeFinal), turnId:'fixture-turn' });
+    options.onEvent({ type:'host.final-review', reviewDecision:'not-configured', turnId:'fixture-turn' });
+    return { output:'Direct answer.' };
+  });
+  for(const depth of ['off','on','maximal']){
+    const initial = f.start({task:'What is the fixture result?',directoryDiagnostics:depth});
+    const run = await f.settled(initial.id);
+    completed(run);
+    const boundaries = projectTurnMachineTrace(f.engine.runs.get(initial.id)).entries.filter(row => ['provider.final','host.final-review'].includes(row.kind));
+    assert.equal(boundaries.length, depth==='maximal' ? 2 : 0);
+    assert.equal(run.events.filter(row => ['provider.final','host.final-review'].includes(row.data?.type)).length, boundaries.length);
+    if(boundaries.length){
+      assert.deepEqual(boundaries.map(row=>row.metadata.reviewMode),['none','none']);
+      assert.equal(boundaries[0].metadata.reviewConfigured,false);
+      assert.equal(boundaries[1].metadata.reviewDecision,'not-configured');
+      assert.equal(boundaries[0].turnRef,boundaries[1].turnRef);
+    }
+  }
+});
 
 test('ordinary answer events stream without a compulsory plan or final review', async t => {
   const f = await fixture(t, async (options, number, context) => {

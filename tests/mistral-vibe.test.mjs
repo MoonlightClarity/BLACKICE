@@ -185,6 +185,10 @@ test('real session review continuation publishes only an accepted final and corr
   assert.equal(prompts[1].params.prompt[0].text, 'Correct the draft.');
   assert.ok(f.connections[0].calls.some(call => call.method === 'session/set_config_option' && call.params.configId === 'thinking' && call.params.value === 'off'));
   assert.deepEqual(events.filter(event => event.type === 'message' && event.phase === 'final_answer').map(event => event.text), ['accepted']);
+  const boundaries = events.filter(event => ['provider.final','host.final-review'].includes(event.type));
+  assert.deepEqual(boundaries.map(event => [event.type,event.providerTermination ?? event.reviewDecision]), [
+    ['provider.final','end_turn'], ['host.final-review','continue'], ['provider.final','end_turn'], ['host.final-review','accepted'],
+  ]);
   assert.equal(events.filter(event => event.type === 'turn' && event.status === 'completed').length, 1);
 });
 

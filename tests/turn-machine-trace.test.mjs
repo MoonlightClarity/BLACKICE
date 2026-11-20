@@ -62,6 +62,24 @@ test('host metadata only: bound snapshot + applied mutation, opaque correlation 
   assert.equal(trace.entries[4].metadata.status,'completed');
 });
 
+test('maximal keeps provider termination separate from host acceptance and omits non-allowlisted text',()=>{
+  const run=fixture();
+  const raw={type:'provider.final',providerType:'compatible',providerTermination:'stop',reviewConfigured:false,remainingSteps:2,incomplete:false,turnId:'one'};
+  for(const name of ['output','prompt','reasoning','candidate']) Object.defineProperty(raw,name,{get(){assert.fail(name+' must not be read');}});
+  recordTurnMachineEvent(run,wrap(raw));
+  recordTurnMachineEvent(run,wrap({type:'host.final-review',reviewDecision:'not-configured',turnId:'one'}));
+  recordTurnMachineEvent(run,wrap({type:'provider.final',providerType:'mistral-vibe',providerTermination:'not-an-observed-reason',reviewConfigured:true}));
+  recordTurnMachineEvent(run,wrap({type:'host.final-review',reviewDecision:'rejected',code:'DIRECTORY_ACTION_UNFINISHED'}));
+  const trace=projectTurnMachineTrace(run);
+  assert.equal(trace.entries[0].turnRef,trace.entries[1].turnRef);
+  assert.deepEqual(trace.entries.map(({kind,metadata})=>[kind,metadata]),[
+    ['provider.final',{providerType:'compatible',providerTermination:'stop',reviewConfigured:false,remainingSteps:2,incomplete:false}],
+    ['host.final-review',{reviewDecision:'not-configured'}],
+    ['provider.final',{providerType:'mistral-vibe',reviewConfigured:true}],
+    ['host.final-review',{reviewDecision:'rejected',code:'DIRECTORY_ACTION_UNFINISHED'}]
+  ]);
+});
+
 test('ring limit keeps first and latest observations, reports exact dropped span, and does not invent restored detail',()=>{
   const run=fixture(), {headEntries,tailEntries}=TURN_MACHINE_TRACE_LIMITS,total=headEntries+tailEntries+87;
   for(let i=0;i<total;i++)recordTurnMachineEvent(run,wrap({type:'delta'}));
