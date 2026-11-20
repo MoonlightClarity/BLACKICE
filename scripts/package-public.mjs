@@ -8,12 +8,13 @@ import { fileURLToPath } from 'node:url';
 import { publicSigningConfiguration, publicBuilderConfiguration, verifyPublisherSignature } from './release-signing.mjs';
 import { appFingerprint } from './release-check.mjs';
 
-const source=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'), parent=path.dirname(source), outputs=path.basename(parent)==='outputs'?parent:path.join(source,'dist');
+const source=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'), parent=path.dirname(source);
 if(process.platform!=='win32')throw Error('Public Windows artifacts must be built and verified on Windows.');
 const signing=await publicSigningConfiguration();
 const requireCodeSigning=process.argv.includes('--require-signing');
 const version=JSON.parse(await fs.readFile(path.join(source,'package.json'),'utf8')).version;
 if(!/^\d+\.\d+\.\d+$/.test(version))throw Error('Public packaging requires a stable numeric release version.');
+const outputs=process.argv.includes('--local-candidate')?path.join(source,'dist','candidate-'+version):path.basename(parent)==='outputs'?parent:path.join(source,'dist');
 const id=randomUUID(),buildRoot=path.join(source,'.build',`public-${id}`),configFile=path.join(source,'.build',`public-signing-${id}.json`),stage=path.join(outputs,`.Blackice-Public-stage-${id}`),destination=path.join(outputs,'Blackice-Public-Windows'),previous=path.join(outputs,`.Blackice-Public-previous-${id}`);
 const config=publicBuilderConfiguration(signing,{source,output:buildRoot,requireCodeSigning});
 let previousMoved=false,promoted=false;
