@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.42 candidate source, not an installation or publication receipt.** Package version is **2.40.42**. Start with the [2.40.42 notes](RELEASE-NOTES-2.40.42.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.43 candidate source, not an installation or publication receipt.** Package version is **2.40.43**. Start with the [2.40.43 notes](RELEASE-NOTES-2.40.43.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.43](RELEASE-NOTES-2.40.43.md) - keep counts-only browser observations in Maximal receipts
 
 - [2.40.42](RELEASE-NOTES-2.40.42.md) - report observed verification evidence and explain Directory receipt mismatches
 
