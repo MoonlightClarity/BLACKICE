@@ -382,15 +382,33 @@ test('cleanup bounds a continuously spawning adapter and reports remaining tabs'
 });
 
 
-for(const action of ['archive','delete']) test(action+' refuses work that starts while retirement is being saved',async t=>{
+for(const action of ['archive','delete']) test(action+' refuses a follow-up admitted before the final retirement check',async t=>{
   const f=await fixture(t);await f.move('conversation','conversation-a');
-  const archive=f.app.conversations, change=archive.changeState.bind(archive), get=archive.engine.getRun.bind(archive.engine);
-  let started=false;
-  archive.changeState=(id,value)=>{started=true;return change(id,value);};
-  archive.engine.getRun=id=>id==='conversation-a'&&started?{...savedTurn(id),status:'running',settled:false}:get(id);
-  const response=await f.request('/api/conversations/conversation-a/'+action,{});
-  assert.equal(response.status,409,'retirement must not commit after work has begun');
-  assert.equal(f.driver.tabs.length,3);
+  const archive=f.app.conversations,engine=archive.engine,change=archive.changeState.bind(archive),execute=engine.execute;
+  const followUp={...savedTurn('racing-turn',{taskId:'conversation-a',parentRunId:'conversation-a'}),status:'queued',settled:false};
+  let release,execution;
+  const gate=new Promise(resolve=>{release=resolve;});
+  engine.execute=async run=>{await gate;run.status='completed';};
+  archive.changeState=(id,value)=>{
+    const retirement=change(id,value);
+    // The preliminary family read has finished but the serialized state
+    // operation has not run yet. Admit through the real engine synchronously.
+    engine.dispatchRun(followUp);
+    execution=engine.executions.get(followUp.id);
+    return retirement;
+  };
+  try{
+    const before=archive.metadataRevision;
+    const response=await f.request('/api/conversations/conversation-a/'+action,{});
+    assert.ok(execution,'the racing work must actually be admitted');
+    assert.equal(engine.runs.get(followUp.id).settled,false);
+    assert.equal(response.status,409,'retirement must not commit once work was admitted');
+    assert.equal(archive.metadataRevision,before);
+    assert.equal(archive.states['conversation-a']?.state||'active','active');
+    assert.equal(archive.retiredReceiptIds.has('conversation-a'),false);
+    assert.equal(f.driver.calls.filter(call=>call.args.action==='close').length,0);
+    assert.equal(f.driver.tabs.length,3);
+  }finally{archive.changeState=change;engine.execute=execute;release();await execution;}
 });
 
 test('restoring while retirement cleanup is queued preserves the restored conversation tabs',async t=>{
@@ -426,16 +444,18 @@ test('Trash rejects active work without closing tabs',async t=>{
   const result=await f.request('/api/conversations/conversation-a/delete',{});
   assert.equal(result.status,409);assert.equal(f.driver.tabs.length,3);
 });
-test('retirement reserves engine admission throughout asynchronous metadata persistence',async t=>{
+for(const action of ['archive','delete']) test(action+' reserves engine admission throughout asynchronous metadata persistence',async t=>{
   const f=await fixture(t);await f.move('conversation','conversation-a');
   const archive=f.app.conversations,io=archive.io;let release,entered;
   const gate=new Promise(resolve=>release=resolve),started=new Promise(resolve=>entered=resolve);
   archive.io={...io,open:async(...args)=>{if(String(args[0]).includes('conversation-state.json.bak')){entered();await gate;}return io.open(...args);}};
-  const retiring=f.request('/api/conversations/conversation-a/archive',{});
+  const retiring=f.request('/api/conversations/conversation-a/'+action,{});
   try{
-    await started;
+    const checkpoint=await Promise.race([started.then(()=>true),retiring.then(()=>false)]);
+    assert.equal(checkpoint,true,'retirement must reach the held metadata write');
     assert.throws(()=>archive.engine.dispatchRun(savedTurn('new-turn',{taskId:'conversation-a',parentRunId:'conversation-a'})),{code:'CONVERSATION_TRANSITION'});
     assert.equal(archive.engine.runs.has('new-turn'),false);
+    assert.equal(f.driver.calls.filter(call=>call.args.action==='close').length,0);
     release();assert.equal((await retiring).status,200);
     assert.throws(()=>archive.engine.dispatchRun(savedTurn('new-turn',{taskId:'conversation-a'})),{code:'CONVERSATION_TRANSITION'});
     await f.request('/api/conversations/conversation-a/restore',{});

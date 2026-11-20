@@ -46,10 +46,12 @@ test('Archive, Trash and Restore apply to the whole family and survive restart p
  const first=turn('turn-0'),second=turn('turn-1',first.id);engine.runs.set(first.id,first);engine.runs.set(second.id,second);await archive.capture(first);await archive.capture(second);const original=await archive.get(first.id);
  assert.equal(archive.list().length,1);await archive.setState(second.id,'archived');assert.equal(archive.list().length,0);assert.equal(archive.list('archived')[0].taskId,first.taskId);assert.equal((await archive.family(first.id)).state,'archived');
  const late=turn('turn-2',second.id);engine.runs.set(late.id,late);await archive.capture(late);assert.equal(archive.list().length,0,'a late/new family snapshot must not reactivate an archived chat');assert.equal(archive.list('archived')[0].latestRunId,late.id);
- await archive.setState(first.id,'deleted');assert.equal(archive.list('archived').length,0);assert.equal(archive.list('deleted').length,1);assert.equal((await archive.family(late.id)).runs.length,3);assert.deepEqual(await archive.get(first.id),original,'state changes preserve the original run and its saved thread');await archive.close();
+ await archive.setState(first.id,'deleted');assert.equal(archive.list('archived').length,0);assert.equal(archive.list('deleted').length,1);assert.equal((await archive.family(late.id)).runs.length,3);
+ const {receiptDiagnosticsRemoved,...preserved}=await archive.get(first.id);
+ assert.equal(receiptDiagnosticsRemoved,true);assert.deepEqual(preserved,original,'retirement preserves the original run and its saved thread apart from the Receipts marker');await archive.close();
  const restored=await new ConversationArchive({dataDir,engine:new Engine()}).init();archives.push(restored);assert.equal(restored.list().length,0);assert.equal(restored.list('deleted').length,1);assert.equal((await restored.family(second.id)).state,'deleted');
  await restored.setState(late.id,'active');assert.equal(restored.list().length,1);assert.equal(restored.list('deleted').length,0);assert.deepEqual((await restored.family(second.id)).runs.map(run=>run.id),[first.id,second.id,late.id]);await restored.close();
- const again=await new ConversationArchive({dataDir,engine:new Engine()}).init();archives.push(again);assert.equal(again.list()[0].state,'active');assert.equal((await again.get(first.id)).nodes.agent.threadId,'real-thread');
+ const again=await new ConversationArchive({dataDir,engine:new Engine()}).init();archives.push(again);assert.equal(again.list()[0].state,'active');const reopened=await again.get(first.id);assert.equal(reopened.nodes.agent.threadId,'real-thread');assert.equal(reopened.receiptDiagnosticsRemoved,true);
 });
 
 test('Trash refuses an active family even when invoked through a completed older turn',async t=>{
