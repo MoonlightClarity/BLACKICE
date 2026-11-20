@@ -809,7 +809,7 @@ test('a diagnostic correction cannot resume a pending Directory task and a named
  assert.equal(chatDirectionScope('no - I am not asking you to apply yet. I am asking about tool failures'),'diagnose');
  assert.equal(chatDirectionScope('Tell me what failed, then resume the search'),null);
  assert.equal(chatDirectionScope('Continue'),null);
- let calls=0;
+ let calls=0,cleanDiagnosticId;
  const {engine,root}=await setup(t,async o=>{
   calls++;
   if(calls===1){
@@ -819,13 +819,14 @@ test('a diagnostic correction cannot resume a pending Directory task and a named
    o.onEvent({type:'tool.result',tool:'relay_browser',action:'click',code:'BROWSER_REF_STALE',success:false,actionDispatched:false,callId:'click-old'});
    return {output:'Still pending',threadId:'fixture-codex-thread'};
   }
-  if(calls>=2&&calls<=4){
+  if(calls>=2&&calls<=5){
    assert.equal(o.hostOnlyTools,true);
    assert.deepEqual(o.dynamicTools??[],[]);
    assert.equal(o.onBeforeFinal,undefined);
    assert.match(o.prompt,/DO NOT JOB SEARCH/);
    if(calls>2){assert.match(o.prompt,/PRECEDING USER DIRECTION/);assert.match(o.developerInstructions,/preceding diagnostic request/);}
    assert.match(o.prompt,/HISTORICAL SAME-CONVERSATION RECEIPTS/);
+   if(cleanDiagnosticId)assert.ok(!o.prompt.includes(cleanDiagnosticId));
    assert.match(o.prompt,/BROWSER_REF_STALE/);
    assert.match(o.prompt,/"actionDispatched":false/);
    assert.doesNotMatch(o.prompt,/CURRENT TASK ACTION DIRECTORY|completed work and take the next/);
@@ -864,8 +865,12 @@ test('a diagnostic correction cannot resume a pending Directory task and a named
  await engine.executions.get(repeat.id);
  assert.equal(engine.getRun(repeat.id).status,'completed',engine.getRun(repeat.id).error);
  assert.deepEqual(directory.read(),snapshot);
- const resume=engine.continueRun(repeat.id,{nodeId:'agent',message:'Continue the job search',directoryActions:'on',chatPlanning:'off'});
+ cleanDiagnosticId=repeat.id;
+ const next=engine.continueRun(repeat.id,{nodeId:'agent',message:'Continue',directoryActions:'on',chatPlanning:'on'});
+ await engine.executions.get(next.id);
+ assert.equal(engine.getRun(next.id).status,'completed',engine.getRun(next.id).error);
+ const resume=engine.continueRun(next.id,{nodeId:'agent',message:'Continue the job search',directoryActions:'on',chatPlanning:'off'});
  await engine.executions.get(resume.id);
- assert.equal(calls,5);
+ assert.equal(calls,6);
  assert.equal(engine.getRun(resume.id).nodes.agent.errorCode,'DIRECTORY_ACTION_UNFINISHED');
 });
