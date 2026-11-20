@@ -62,6 +62,25 @@ test('host metadata only: bound snapshot + applied mutation, opaque correlation 
   assert.equal(trace.entries[4].metadata.status,'completed');
 });
 
+test('workspace run action survives JSON round-trip without command or output',()=>{
+  const run=fixture();
+  const workspace={type:'workspace.action',action:'run'};
+  const result={type:'tool.result',tool:'relay_workspace',status:'completed',success:true,action:'run',callId:'workspace-call'};
+  for(const row of [workspace,result])
+    for(const key of ['command','arguments','output','target','result','message'])
+      Object.defineProperty(row,key,{enumerable:true,get(){assert.fail(key+' must not be read');}});
+  recordTurnMachineEvent(run,wrap(workspace));
+  recordTurnMachineEvent(run,wrap(result));
+  const expected=[
+    ['workspace.action',{action:'run'}],
+    ['tool.result',{action:'run',tool:'relay_workspace',status:'completed',success:true}]
+  ];
+  const projection=value=>projectTurnMachineTrace(value).entries.map(({kind,metadata})=>[kind,metadata]);
+  assert.deepEqual(projection(run),expected);
+  const restored={...fixture(),turnMachineTrace:JSON.parse(JSON.stringify(run.turnMachineTrace))};
+  assert.deepEqual(projection(restored),expected);
+});
+
 test('maximal keeps provider termination separate from host acceptance and omits non-allowlisted text',()=>{
   const run=fixture();
   const raw={type:'provider.final',providerType:'compatible',providerTermination:'stop',reviewConfigured:false,remainingSteps:2,incomplete:false,turnId:'one'};
