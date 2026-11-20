@@ -241,3 +241,8 @@
 .next-action-outline .action-outline-detail p,.next-action-outline .action-outline-unassigned h3{margin:0 0 6px;font-size:inherit}
 .next-action-outline .action-outline-attempts{padding-inline-start:17px;margin:0 0 8px}
 .next-action-outline :is(button,input,summary):focus-visible{outline:2px solid var(--next-focus,#89c7ee);outline-offset:2px}
+
+.next-chat-diagnostic-alarm{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 14px;background:#2c2224;border-bottom:1px solid #995650;color:#ffe2da;font-size:12px}
+.next-chat-diagnostic-alarm[hidden]{display:none}
+.next-chat-diagnostic-alarm p{margin:0;min-width:0;flex:1 1 320px;overflow-wrap:anywhere}
+.next-chat-diagnostic-alarm button{font-size:11px;padding:4px 8px}

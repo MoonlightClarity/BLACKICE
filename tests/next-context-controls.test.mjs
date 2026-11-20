@@ -441,3 +441,22 @@ test('new Chat selector reflects persisted defaults while saved Chat settings st
  f.workspace.updateStatus({...f.status,runtimeSettings:{chatDefaults:configured}});
  assert.deepEqual(actual(),saved);
 });
+
+test('a verified runtime diagnostic appears live, is scoped to the selected turn and can be dismissed without a tool call',async t=>{
+ const f=await chatFixture(t);
+ await f.open('a');
+ const alarm=f.$('#next-chat-diagnostic-alarm'),message=f.$('#next-chat-diagnostic-message');
+ const data={revision:1,rows:[{tool:'relay_browser',action:'click',code:'BROWSER_REF_STALE',knownNotDispatched:true,count:1,message:'PRIVATE secret'}]};
+ assert.equal(alarm.hidden,true);
+ const original=f.calls.length;
+ f.emit({type:'diagnostic.alarm',runId:'b',data});assert.equal(alarm.hidden,true);
+ f.emit({type:'diagnostic.alarm',runId:'a',data});assert.equal(alarm.hidden,false);
+ assert.match(message.textContent,/Browser tool failed.*No page input was dispatched.*may have changed/);
+ assert.doesNotMatch(message.textContent,/PRIVATE secret/);
+ await f.$('#next-chat-diagnostic-dismiss').dispatch('click');
+ assert.equal(alarm.hidden,true);
+ f.emit({type:'diagnostic.alarm',runId:'a',data:{...data,revision:2,rows:[{...data.rows[0],count:2}]}});
+ assert.match(message.textContent,/Repeated 2 times/);assert.equal(alarm.hidden,false);
+ f.emit({type:'diagnostic.alarm',runId:'a',data});assert.match(message.textContent,/Repeated 2 times/);
+ assert.equal(f.calls.length,original,'a diagnostic never initiates recovery or another tool action');
+});

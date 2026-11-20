@@ -41,3 +41,73 @@ export function chatToolFailure(run={}){
   return {label:latest.followedBySuccess?'Tool failure recorded; matching call later succeeded':'Tool failure recorded',
     detail:display+': '+reason};
 }
+
+const alarmActions=new Set('call open tabs read search snapshot click fill select press type upload download navigate attach send draft list get find plan note observe focus block start edit write delete move status previous_turn_diagnostics'.split(' '));
+const alarmTools=Object.freeze({
+ relay_browser:'Browser',relay_skills:'Skills',relay_workspace:'Workspace',relay_find_files:'File search',relay_files:'Task files',
+ relay_email:'Email',relay_directory_action:'Action Directory',relay_task:'Planning',relay_history:'Search other chats',
+ relay_agents:'Agents',relay_control:'Controls',relay_identity:'Identity',relay_apps:'Applications',relay_windows:'Windows',
+ relay_browser_signin:'Browser sign-in',relay_browser_credentials:'Browser credentials',relay_prompt:'Prompts',
+ 'Codex command':'Codex command','Codex file edit':'Codex file edit','Connected tool':'Connected tool',
+});
+const cancelCodes=new Set(['ABORT_ERR','USER_STEER','TOOL_SUPERSEDED','GOAL_DEADLINE_REACHED']);
+const own=(object,key)=>typeof key==='string'&&Object.hasOwn(object,key);
+function alarmCode(tool,value) {
+ if(value==='TOOL_UNAVAILABLE')return value;
+ if(tool==='relay_browser'&&['BROWSER_REF_STALE','BROWSER_INPUT_DOCUMENT_CHANGED','BROWSER_UNAVAILABLE'].includes(value))return value;
+ if(tool==='relay_skills'&&['SKILL_NOT_FOUND','SKILL_UNAVAILABLE'].includes(value))return value;
+ if(tool==='relay_history'&&value==='PAST_CHATS_OFF')return value;
+ if(tool==='relay_directory_action'&&['DIRECTORY_BLOCKER','DIRECTORY_UNKNOWN','DIRECTORY_CHANGED','DIRECTORY_NOT_READY'].includes(value))return value;
+ return null;
+}
+const safeAlarmRow=row=>{
+ const tool=own(alarmTools,row?.tool)?row.tool:'Connected tool';
+ const reason=alarmCode(tool,row?.code);
+ const action=typeof row?.action==='string'&&alarmActions.has(row.action)?row.action:null;
+ return {tool,action,code:reason,knownNotDispatched:tool==='relay_browser'&&row?.knownNotDispatched===true,
+  count:Number.isSafeInteger(row?.count)&&row.count>0?Math.min(row.count,999999):1};
+};
+
+export function projectDiagnosticAlarms(value){
+ if(!Number.isSafeInteger(value?.revision)||value.revision<1||!Array.isArray(value.rows))return null;
+ const rows=value.rows.slice(0,5).map(safeAlarmRow);
+ return rows.length?{revision:value.revision,rows}:null;
+}
+export function latestDiagnosticAlarms(known,incoming){
+ const current=projectDiagnosticAlarms(known), next=projectDiagnosticAlarms(incoming);
+ return next&&(!current||next.revision>current.revision)?next:current;
+}
+export function recordDiagnosticAlarm(previous,event){
+ if(event?.type!=='tool.result'||event.success!==false||cancelCodes.has(event.code))return null;
+ const prior=projectDiagnosticAlarms(previous);
+ const row=safeAlarmRow({tool:event.tool,action:event.action,code:event.code,knownNotDispatched:event.actionDispatched===false});
+ const key=r=>JSON.stringify([r.tool,r.action,r.code,r.knownNotDispatched]);
+ const old=prior?.rows.find(r=>key(r)===key(row));
+ row.count=Math.min(999999,(old?.count||0)+1);
+ return {revision:Math.min(Number.MAX_SAFE_INTEGER,(prior?.revision||0)+1),rows:[row,...(prior?.rows||[]).filter(r=>key(r)!==key(row))].slice(0,5)};
+}
+export function diagnosticAlarmCopy(raw) {
+ const row=safeAlarmRow(raw), name=alarmTools[row.tool];
+ const skillLoad=row.tool==='relay_skills'&&row.action==='read';
+ const title=skillLoad?'Skill load failed':name+' tool failed'+(row.action?' ('+row.action+')':'');
+ let observed=skillLoad?'The skill read returned a failure.':'The tool reported failure.';
+ let explanation='Root cause is not yet known.';
+ switch(row.code){
+  case 'BROWSER_REF_STALE':
+  case 'BROWSER_INPUT_DOCUMENT_CHANGED':
+   observed='The browser rejected the current page reference.';
+   observed+=row.knownNotDispatched?' No page input was dispatched.':' Dispatch status is not confirmed by this receipt.';
+   explanation='The page or target may have changed. This receipt does not establish why.';
+   break;
+  case 'TOOL_UNAVAILABLE':observed='The runtime reported that this tool was not available to the active turn.';break;
+  case 'BROWSER_UNAVAILABLE':observed='The runtime reported no available contained browser.';break;
+  case 'SKILL_NOT_FOUND':observed='The skill catalog could not find the requested entry.';explanation='The entry may have been deleted or requested under a different ID.';break;
+  case 'SKILL_UNAVAILABLE':observed='The runtime could not load the requested skill.';explanation='The receipt does not identify which catalog or storage check failed.';break;
+  case 'PAST_CHATS_OFF':observed='The tool denied the unrelated chat lookup because Search other chats is Off.';explanation='This setting does not block current-chat continuity.';break;
+  case 'DIRECTORY_BLOCKER':observed='Action Directory rejected the proposed block.';explanation='A candidate may have failed without demonstrating that the whole action is blocked.';break;
+  case 'DIRECTORY_UNKNOWN':observed='Action Directory recorded an unresolved attempt.';explanation='This is not proof that the effect happened or that it did not.';break;
+  case 'DIRECTORY_CHANGED':observed='The action outline changed before the operation could use the prior revision.';explanation='The receipt does not say who changed it.';break;
+  case 'DIRECTORY_NOT_READY':observed='Action Directory rejected the attempt to focus an action that was not ready.';break;
+ }
+ return {title,observed,explanation,code:row.code,count:row.count};
+}

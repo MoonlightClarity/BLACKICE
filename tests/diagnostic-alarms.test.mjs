@@ -1,0 +1,65 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {EventEmitter} from 'node:events';
+import {mkdtemp,realpath,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {HarnessEngine} from '../lib/engine.mjs';
+import {toolResultEvent} from '../lib/tool-outcomes.mjs';
+import {diagnosticAlarmCopy,latestDiagnosticAlarms,projectDiagnosticAlarms,recordDiagnosticAlarm} from '../public/next/chat/tool-failure.mjs';
+import {projectFamily} from '../public/next/chat/reader-model.mjs';
+
+test('alarm keeps only allowlisted identifiers and groups identical observed failures',()=>{
+ const failure={type:'tool.result',tool:'relay_browser',action:'click',success:false,code:'BROWSER_REF_STALE',actionDispatched:false,message:'PRIVATE mail@example.test'};
+ const first=recordDiagnosticAlarm(null,failure);
+ const repeat=recordDiagnosticAlarm(first,failure);
+ const unknown=recordDiagnosticAlarm(repeat,{...failure,actionDispatched:undefined});
+ assert.equal(unknown.rows[0].count,1);
+ assert.equal(unknown.rows[1].count,2);
+ assert.match(diagnosticAlarmCopy(unknown.rows[0]).observed,/not confirmed/);
+ assert.match(diagnosticAlarmCopy(unknown.rows[1]).observed,/No page input was dispatched/);
+ assert.match(diagnosticAlarmCopy(unknown.rows[1]).explanation,/may have changed.*does not establish why/);
+ for(const event of [{type:'skill_loaded'},{type:'tool.result',success:true},{...failure,code:'GOAL_DEADLINE_REACHED'}])
+  assert.equal(recordDiagnosticAlarm(unknown,event),null);
+ const malicious=recordDiagnosticAlarm(unknown,{...failure,tool:'MCP SECRET NAME',action:'SECRET',code:'SECRET',callId:'PRIVATE'});
+ assert.deepEqual(malicious.rows[0],{tool:'Connected tool',action:null,code:null,knownNotDispatched:false,count:1});
+ assert.doesNotMatch(JSON.stringify(malicious),/PRIVATE|SECRET|mail@example/);
+ assert.equal(latestDiagnosticAlarms(malicious,repeat).revision,malicious.revision);
+ assert.equal(projectDiagnosticAlarms({revision:1,rows:Array(20).fill({})}).rows.length,5);
+ assert.equal(toolResultEvent({name:'relay_browser',arguments:{action:'click'}},{success:false,actionDispatched:false}).actionDispatched,false);
+ assert.equal(toolResultEvent({name:'relay_browser',arguments:{action:'click'}},{success:false,contentItems:[{type:'inputText',text:'{"actionDispatched":false}'}]}).actionDispatched,undefined,'prose does not prove that input was absent');
+});
+
+const graph={name:'Alarm fixture',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Fixture',model:'fixture-model',prompt:'Use the fixture'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}};
+test('actual failed skill read emits alarm before run settles and keeps ordinary work unblocked',{timeout:10000},async t=>{
+ const temp=await realpath(tmpdir()),root=await mkdtemp(path.join(temp,'blackice-alarm-'));
+ let notify;
+ const hit=new Promise(resolve=>{notify=resolve;});let finish;
+ const pending=new Promise(resolve=>{finish=resolve;});
+ const runtime=new class extends EventEmitter{
+  status(){return{connected:true,authenticated:true,models:[{id:'fixture-model',supportsTools:true}]};}
+  async runAgent(options){
+   const call={name:'relay_skills',callId:'fixture-read-private',arguments:{action:'read',id:'library-private-missing'}};
+   let failure;
+   await assert.rejects(async()=>{try{await options.onToolCall(call);}catch(error){failure=error;throw error;}},{code:'SKILL_NOT_FOUND'});
+   options.onEvent(toolResultEvent(call,{success:false,code:failure.code,message:'PRIVATE skill body'}));
+   options.onEvent({type:'skill_loaded',skillId:'library-previous',title:'Earlier skill'});
+   notify();await pending;
+   return{output:'Worked independently after the failed read.'};
+  }
+ };
+ const engine=await new HarnessEngine({runtime,dataDir:root,defaultCwd:root}).init();
+ t.after(async()=>{finish();await engine.close();const resolved=await realpath(root);assert.equal(path.dirname(resolved),temp);assert.match(path.basename(resolved),/^blackice-alarm-/);await rm(resolved,{recursive:true,force:true});});
+ const alarms=[];engine.on('event',event=>{if(event.type==='diagnostic.alarm')alarms.push(event);});
+ const run=engine.startRun({workflow:graph,input:{task:'Open a missing skill then continue independently',directoryDiagnostics:'off'}});
+ await hit;
+ assert.equal(engine.getRun(run.id).settled,false);
+ assert.equal(alarms.length,1);
+ assert.equal(alarms[0].runId,run.id);
+ assert.match(diagnosticAlarmCopy(alarms[0].data.rows[0]).title,/Skill load failed/);
+ assert.doesNotMatch(JSON.stringify(alarms),/PRIVATE|library-private|fixture-read-private/);
+ finish();await engine.executions.get(run.id);
+ const completed=engine.getRun(run.id);
+ assert.equal(completed.status,'completed',completed.error);
+ assert.deepEqual(projectFamily({runs:[completed]}).runs[0].diagnosticAlarms,alarms[0].data);
+});

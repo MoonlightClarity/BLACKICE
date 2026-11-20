@@ -1,3 +1,4 @@
+import {latestDiagnosticAlarms} from './tool-failure.mjs';
 /** Conversation shaping independent of the legacy interface and execution views. */
 const text = value => typeof value === 'string' ? value : '';
 const hasVisibleChatText = value => typeof value === 'string' && /[^\s\p{Default_Ignorable_Code_Point}]/u.test(value);
@@ -406,6 +407,7 @@ export function mergeChatRunUpdate(previous, updated) {
   }));
   const result={...previous,status:updated.status??previous.status,settled:updated.settled??previous.settled,
     nodes,output:updated.output??previous.output,updatedAt:updated.updatedAt||previous.updatedAt};
+  if(updated.diagnosticAlarms)result.diagnosticAlarms=latestDiagnosticAlarms(previous.diagnosticAlarms,updated.diagnosticAlarms);
   if(Array.isArray(updated.planningModuleReceipts))result.planningModuleReceipts=mergeChatPlanningModuleReceipts(result,previous.planningModuleReceipts,updated.planningModuleReceipts);
   if(Array.isArray(updated.skillLoadReceipts))result.skillLoadReceipts=mergeChatSkillLoadReceipts(previous.skillLoadReceipts,updated.skillLoadReceipts);
   if(Object.hasOwn(updated,'error'))result.error=chatErrorText(updated.error)||undefined;

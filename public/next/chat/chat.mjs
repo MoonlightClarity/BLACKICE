@@ -11,6 +11,7 @@ import { submitChat, submitFreshChatTask, replyState } from './send.mjs';
 import {createGoalControls,parseGoalCommand} from './goals.mjs';
 import { createConversationReader } from './reader-client.mjs';
 import {chatTurnMode} from '../../chat-turn-defaults.mjs';
+import {diagnosticAlarmCopy,latestDiagnosticAlarms} from './tool-failure.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML, stableId } from '../core/dom.mjs';
 import { normalizeChatOptions, validateChatOptions, savedChatExecutionMode } from './options-model.mjs';
@@ -75,6 +76,20 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   const activityInspector=createActivityInspector({frame:view.shell,api,events,getRunId:()=>state.runs.at(-1)?.id||null,onTurnReceipts:()=>turnReceiptsInspector.open()});
   const pastChatsDrafts=new Map();
   const selectedPastChats=()=>selectedMode('pastChats',pastChatsDrafts);
+  let silencedAlarm;
+  const paintDiagnosticAlarm=()=>{
+    const run=state.runs.at(-1),alarms=run?.diagnosticAlarms;
+    const visible=Boolean(state.selected&&alarms?.rows?.length&&!(silencedAlarm?.runId===run.id&&silencedAlarm.revision>=alarms.revision));
+    view.diagnosticAlarm.hidden=!visible;
+    if(!visible){view.diagnosticMessage.textContent='';return;}
+    const row=diagnosticAlarmCopy(alarms.rows[0]);
+    const repeat=row.count>1?' Repeated '+row.count+' times.':'';
+    const more=alarms.rows.length>1?' Other recent failures are in receipts.':'';
+    const text=row.title+(row.code?' ['+row.code+']':'')+'. '+row.observed+' '+row.explanation+repeat+more;
+    if(view.diagnosticMessage.textContent!==text)view.diagnosticMessage.textContent=text;
+  };
+  view.diagnosticDismiss.addEventListener('click',()=>{const run=state.runs.at(-1);silencedAlarm={runId:run?.id,revision:run?.diagnosticAlarms?.revision};paintDiagnosticAlarm();});
+  view.diagnosticReceipts.addEventListener('click',()=>activityInspector.open());
   const visualMount=mount.ownerDocument.createElement('div');view.scroll.append(visualMount);
   const visuals=createVisualWorkspace({mount:visualMount,api,getConversationId:root,notify:message=>notify(message)});
   const selectedBucket=()=>state.selected?.state||state.bucket;
@@ -135,6 +150,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     view.input.value='';state.inputRevision++;resize();saveDraft();
   }
   const updateHead = () => {
+    paintDiagnosticAlarm();
     if(view.model.disabled!==state.pending){view.model.disabled=state.pending;refreshChoices(runtimeStatus);}
     syncContext();
     activityInspector.refresh(state.selected?state.runs.at(-1)?.id:null);
@@ -426,9 +442,11 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     const runs=conversationRuns(family);
     // The snapshot can have been requested just before a live receipt arrived.
     if(refresh){
+      const alarmById=new Map(state.runs.map(run=>[run.id,run.diagnosticAlarms]));
       const planningById=new Map(state.runs.map(run=>[run.id,run.planningModuleReceipts]));
       const liveById=new Map(state.runs.map(run=>[run.id,run.skillLoadReceipts]));
       for(const run of runs){
+        run.diagnosticAlarms=latestDiagnosticAlarms(alarmById.get(run.id),run.diagnosticAlarms);
         const live=liveById.get(run.id);
         if(live?.length)run.skillLoadReceipts=mergeChatSkillLoadReceipts(live,run.skillLoadReceipts);
         const livePlanning=planningById.get(run.id);
@@ -693,6 +711,10 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     if(!event.runId || !state.runs.some(run=>run.id===event.runId))return;
     const data=event.data || {};
     const currentRun=state.runs.find(run=>run.id===event.runId);
+    if(event.type==='diagnostic.alarm'){
+      currentRun.diagnosticAlarms=latestDiagnosticAlarms(currentRun.diagnosticAlarms,data);
+      paintDiagnosticAlarm();return;
+    }
     if(applyChatSkillLoadEvent(currentRun,event)||applyChatPlanningModuleEvent(currentRun,event)){render({preserve:true});return;}
     if(event.type==='agent.event'&&data.type==='thread'&&concreteChatModel(data.model)){
       const node=currentRun.nodes?.[event.nodeId];if(node)node.resolvedModel=data.model;
