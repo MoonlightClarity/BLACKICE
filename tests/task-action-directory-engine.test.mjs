@@ -289,3 +289,31 @@ test('an unsuitable option is recorded without closing a shared prerequisite',as
  assert.equal(result.status,'completed',result.error);
  assert.equal(result.nodes.a.directoryOutcome,undefined);
 });
+
+test('a verified dead route gets one chance to use another allowed option before final',async t=>{
+ const {engine,root}=await setup(t,async o=>{
+  let sequence=0;
+  const call=(name,args)=>o.onToolCall({name,arguments:args,callId:'route-'+(++sequence)});
+  const dir=(action,args)=>call('relay_directory_action',{action,...args});
+  const state=r=>{assert.equal(r.success,true,JSON.stringify(r));return JSON.parse(r.contentItems[0].text);};
+  state(await dir('plan',{actions:[{id:'first',objective:'Check first route',dependsOn:[]},{id:'deliver',objective:'Deliver the result',dependsOn:['first']}]}));
+  state(await dir('focus',{id:'first'}));
+  const unavailable=await call('relay_workspace',{action:'list',path:path.join(root,'not-present')});
+  assert.equal(unavailable.success,false);
+  state(await dir('block',{id:'first',blocker:'no-viable-route',claim:'This route is unavailable.',receipts:['receipt-1']}));
+  const review=await o.onBeforeFinal({signal:o.signal});
+  assert.equal(review.continue,true);
+  assert.match(review.prompt,/another option/);
+  assert.equal(await o.onBeforeFinal({signal:o.signal}),undefined,'No endless review once the blocked route has been checked');
+  assert.equal(state(await dir('read')).actions.find(row=>row.id==='first').state,'blocked');
+  state(await dir('plan',{actions:[{id:'alternate',objective:'Use another route',dependsOn:[]}]}));
+  state(await dir('focus',{id:'alternate'}));
+  assert.equal((await call('relay_workspace',{action:'list',path:root})).success,true);
+  state(await dir('observe',{id:'alternate',claim:'The alternate source was available.',receipts:['receipt-2']}));
+  assert.equal(await o.onBeforeFinal({signal:o.signal}),undefined);
+  return {output:'Used the alternate source.'};
+ });
+ const run=engine.startRun({workflow:graph,input:{task:'Find a usable source',directoryActions:'on'}});
+ await engine.executions.get(run.id);
+ assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);
+});

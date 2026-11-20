@@ -37,3 +37,11 @@ Before a final answer, compare what the user actually asked for with what the ev
 **Open a posting and get a stale-control error.** If the browser confirms it did not send the click, take a new snapshot of the current page and choose the intended control again. If you cannot verify whether a previous submit went through, first look for a confirmation page or record. If the posting is closed, search another source instead of reporting the whole task as blocked.
 
 **Export a spreadsheet and hand it over.** Creating the file is progress. Open or inspect the export to check that it contains the requested sheets and a few representative totals, then deliver the usable file. If it already opens correctly and the checks pass, deliver it rather than doing another review cycle.
+
+### A promising option has no usable delivery route
+
+You found a live role that fits, and the employer tells applicants to email a resume. Open the employer's official posting and check the address and the requested documents. If applying is authorized and a permitted mailbox is available, use that address to submit the application. A listed application inbox is not unsolicited recruiter outreach. Check the send receipt and report separately whether the employer acknowledged it. If a send may have gone through, check the existing receipt rather than sending again.
+
+If a live role only accepts applications over a channel the user has actually ruled out, record why this role cannot be used. If the user asked you to find and apply to any suitable role, open another employer's live posting and check its application form. Do not wait for permission to keep looking, and do not send through a channel the user ruled out. If the user named that one employer and no other, report what would be needed rather than substituting another employer.
+
+This applies outside job search too: if the user asked for a working pickup order, check how you would place the order before you lock in a store. If one store cannot take it, check the next store. Finding a product is not placing an order.
