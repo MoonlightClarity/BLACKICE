@@ -5,28 +5,29 @@ const hasVisibleChatText = value => typeof value === 'string' && /[^\s\p{Default
 export const runText = run => typeof run?.input === 'string' ? run.input : text(run?.input?.task);
 export const displayChatRequest = run => run?.autonomy?.automatic || run?.autonomyDispatch ? '' : runText(run);
 export const running = run => ['queued','running','waiting'].includes(run?.status) || run?.settled === false;
-// A receipt means the runtime returned the skill body, not that the model applied it.
+// A receipt records submitted content, not whether the model applied it.
 const CHAT_SKILL_LOAD_LIMIT=32;
+const skillReceiptKey=value=>value.type+':'+value.skillId;
 function projectSkillLoadReceipt(value){
-  if(value?.type!=='skill_loaded'||typeof value.skillId!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(value.skillId)||typeof value.title!=='string')return null;
+  if(!['skill_loaded','skill_context_submitted'].includes(value?.type)||typeof value.skillId!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(value.skillId)||typeof value.title!=='string')return null;
   const skillId=value.skillId;
   const title=value.title.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/gu,' ').trim().slice(0,200).replace(/[\uD800-\uDBFF]$/u,'')||skillId;
-  return {type:'skill_loaded',skillId,title};
+  return {type:value.type,skillId,title};
 }
 export function projectSkillLoadReceipts(values){
   if(!Array.isArray(values))return [];
   const receipts=[],seen=new Set();
   for(const value of values.slice(0,CHAT_SKILL_LOAD_LIMIT)){
     const receipt=projectSkillLoadReceipt(value);
-    if(receipt&&!seen.has(receipt.skillId)){seen.add(receipt.skillId);receipts.push(receipt);}
+    if(receipt&&!seen.has(skillReceiptKey(receipt))){seen.add(skillReceiptKey(receipt));receipts.push(receipt);}
   }
   return receipts;
 }
 export function mergeChatSkillLoadReceipts(known,incoming){
-  const receipts=projectSkillLoadReceipts(known),seen=new Set(receipts.map(item=>item.skillId));
+  const receipts=projectSkillLoadReceipts(known),seen=new Set(receipts.map(skillReceiptKey));
   for(const receipt of projectSkillLoadReceipts(incoming)){
     if(receipts.length===CHAT_SKILL_LOAD_LIMIT)break;
-    if(!seen.has(receipt.skillId)){seen.add(receipt.skillId);receipts.push(receipt);}
+    if(!seen.has(skillReceiptKey(receipt))){seen.add(skillReceiptKey(receipt));receipts.push(receipt);}
   }
   return receipts;
 }
@@ -35,7 +36,7 @@ export function applyChatSkillLoadEvent(run,event){
   const receipt=projectSkillLoadReceipt(event.data);
   if(!receipt)return false;
   const receipts=projectSkillLoadReceipts(run.skillLoadReceipts);
-  if(receipts.length>=CHAT_SKILL_LOAD_LIMIT||receipts.some(item=>item.skillId===receipt.skillId))return false;
+  if(receipts.length>=CHAT_SKILL_LOAD_LIMIT||receipts.some(item=>skillReceiptKey(item)===skillReceiptKey(receipt)))return false;
   run.skillLoadReceipts=[...receipts,receipt];
   return true;
 }

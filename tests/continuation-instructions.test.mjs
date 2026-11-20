@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HarnessEngine } from '../lib/engine.mjs';
+import { readBundledSkill } from '../lib/skill-library.mjs';
 import { CodexRuntime } from '../lib/codex.mjs';
 
 test('revised continuation instructions reach the native turn on the same provider thread', async t => {
@@ -12,7 +13,10 @@ test('revised continuation instructions reach the native turn on the same provid
   const fixture=fileURLToPath(new URL('./fixtures/fake-app-server.mjs',import.meta.url));
   const runtime=new CodexRuntime({command:process.execPath,args:[fixture],cwd:directory,requestTimeoutMs:5000,runTimeoutMs:8000});
   const requests=[],request=runtime._request.bind(runtime);
-  runtime._request=(method,params={},...args)=>{requests.push({method,params:structuredClone(params)});return request(method,params,...args);};
+  const injected=await readBundledSkill('library-what-makes-done');
+  const receipt={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done'};
+  let rejectTurn=false;
+  runtime._request=(method,params={},...args)=>{requests.push({method,params:structuredClone(params)});if(rejectTurn&&method==='turn/start')return Promise.reject(Error('Synthetic native rejection'));return request(method,params,...args);};
   const engine=new HarnessEngine({runtime,dataDir:path.join(directory,'data'),defaultCwd:directory});
   t.after(async()=>{await engine.close();await runtime.close();await rm(directory,{recursive:true,force:true});});
   await runtime.start();await engine.init();
@@ -35,7 +39,17 @@ test('revised continuation instructions reach the native turn on the same provid
   assert.equal(resumes[0].params.threadId,threadId);
   assert.equal(turns[1].params.threadId,threadId);
   const sent=turns[1].params.input.map(item=>item.text||'').join('\n');
+  for(const turn of turns)assert.ok(turn.params.input[0].text.includes(injected.content));
+  for(const runId of [first.id,next.id]){
+    const run=engine.getRun(runId);assert.deepEqual(run.skillLoadReceipts,[receipt]);
+    assert.equal(run.events.filter(event=>event.data.type===receipt.type).length,1);
+  }
   assert.ok(sent.includes(prompt),'the actual native turn request carries the new brief');
   assert.ok(!sent.includes('ORIGINAL_AGENT_BRIEF'),'the resumed turn does not resend superseded instructions');
   assert.equal(engine.getRun(first.id).workflow.nodes.find(node=>node.id==='agent').prompt,workflow.nodes[1].prompt);
+  rejectTurn=true;
+  const failed=engine.continueRun(next.id,{nodeId:'agent',message:'Reject this synthetic turn.'});
+  await engine.executions.get(failed.id);
+  assert.equal(engine.getRun(failed.id).status,'failed');
+  assert.equal(engine.getRun(failed.id).skillLoadReceipts,undefined);
 });

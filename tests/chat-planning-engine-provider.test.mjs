@@ -39,6 +39,7 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
     const allText=JSON.stringify(body.messages);
     const prep=allText.includes('This is one bounded planning phase');
     requests.push({prep,body,allText});
+    if(allText.includes('UNACCEPTED SYNTHETIC PROMPT')){res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:{message:'Synthetic request rejection'}}));return;}
     const respond=content=>{
       res.setHeader('Content-Type','application/json');
       res.end(JSON.stringify({choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content}}]}));
@@ -71,8 +72,12 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   assert.match(requests[0].allText,/EXECUTION COMPLETION[\s\S]*Do not end the turn until you are really done/);
   assert.match(requests[0].allText,/WHAT MAKES DONE \(bundled execution method\)[\s\S]*What just happened\?/);
   assert.equal(off.planningModuleReceipts,undefined);
+  const bundled={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done'};
+  assert.deepEqual(off.skillLoadReceipts,[bundled]);
   const on=await done(await start('Check the startup route',{chatPlanning:'on'}));
   assert.equal(on.status,'completed',on.error);
+  assert.deepEqual(on.skillLoadReceipts,[bundled]);
+  assert.equal(on.events.filter(event=>event.data.type===bundled.type).length,1);
   assert.deepEqual(requests.map(row=>row.prep),[false,true,false]);
   assert.ok(!requests[1].body.tools?.length);
   assert.equal(requests[1].body.model,'fixture');
@@ -105,6 +110,10 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   assert.equal(cancelled.status,'cancelled');
   assert.deepEqual(cancelled.planningModuleReceipts.map(row=>row.phase),['started','cancelled']);
   assert.equal((await engine.actionDirectories.get(cancelled.id,cancelled.input)).read().revision,0);
+  assert.equal(cancelled.skillLoadReceipts,undefined);
+  const rejected=await done(await start('UNACCEPTED SYNTHETIC PROMPT',{chatPlanning:'off'}));
+  assert.equal(rejected.status,'failed');
+  assert.equal(rejected.skillLoadReceipts,undefined);
   assert.equal(requests.filter(row=>row.allText.includes('PAUSE FOR CANCEL')).length,1);
 });
 

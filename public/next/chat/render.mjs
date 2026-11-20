@@ -411,7 +411,7 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     const failure=chatRunError(run),toolFailure=run.toolFailure??chatToolFailure(run);
     const skillLoads=projectSkillLoadReceipts(run.skillLoadReceipts);
     const planningModules=projectPlanningModuleReceipts(run);
-    const signature=[run,...planningModules.flatMap(receipt=>[receipt.moduleId,receipt.phase]),...skillLoads.flatMap(receipt=>[receipt.skillId,receipt.title]),run.status,run.settled,run.output,failure?.message,failure?.code,toolFailure?.label,toolFailure?.detail,request,run.retryOf,earlier&&displayChatRequest(earlier),
+    const signature=[run,...planningModules.flatMap(receipt=>[receipt.moduleId,receipt.phase]),...skillLoads.flatMap(receipt=>[receipt.type,receipt.skillId,receipt.title]),run.status,run.settled,run.output,failure?.message,failure?.code,toolFailure?.label,toolFailure?.detail,request,run.retryOf,earlier&&displayChatRequest(earlier),
       run===shown.at(-1),run.taskState,run.taskState?.revision,run.planningActivity,run.workflow,markdown,
       delivery.missing,delivery.pausedAfterPlan,delivery.needsFollowup,delivery.errors.join('\n'),
       messageLimits?.get(run.id),allMessages.length,...(run.attachmentIds||[]).flatMap(id=>[id,getAttachment?.(id)?.name]),
@@ -458,7 +458,7 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
       const receipts=text(section,'','div');
       if(running(run))receipts.setAttribute('role','status');
       for(const receipt of skillLoads)
-        text(receipts,'Skill loaded: '+receipt.title,'div','next-chat-activity next-chat-skill-loaded');
+        text(receipts,(receipt.type==='skill_context_submitted'?'Bundled guidance sent: ':'Skill loaded: ')+receipt.title,'div','next-chat-activity next-chat-skill-loaded');
     }
 
     if(olderMessages>0){

@@ -69,14 +69,16 @@ const finalResponses = {
   compatible: { choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: 'done' } }] },
 };
 for (const type of ['openai', 'anthropic', 'compatible']) test(type + ' adapter acknowledges cached result only after actual HTTP acceptance', async t => {
-  const delivered = [], received = [];
+  const delivered = [], received = [], accepted = [];
+  const current={role:'user',content:'Exact current operational prompt with bundled guidance.'};
   const { runtime, config } = await apiFixture(t, type, async (req, res) => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
     received.push(JSON.parse(Buffer.concat(chunks).toString()));
+    assert.equal(accepted.length, received.length === 1 ? 0 : 1);
     assert.equal(delivered.length, received.length - 1, 'No early acknowledgment before the request is accepted.');
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(finalResponses[type]));
   });
-  const state = { record: { model: 'fixture', messages: structuredClone(histories[type]) }, tools: [spec], controller: new AbortController(), inputImages: [], providerIdleTimeoutMs: 2000, onToolResultDelivered: value => delivered.push(value) };
+  const state = { record: { model: 'fixture', messages: [...structuredClone(histories[type]),current] }, tools: [spec], controller: new AbortController(), inputImages: [], inputImageMessage:current, providerIdleTimeoutMs: 2000, onPromptAccepted:value=>accepted.push(value), onToolResultDelivered: value => delivered.push(value) };
   const method = type === 'openai' ? 'responses' : type === 'anthropic' ? 'messages' : 'chat';
   assert.equal((await runtime[method](state, config)).text, 'done');
   assert.equal(delivered.length, 1);
@@ -84,6 +86,7 @@ for (const type of ['openai', 'anthropic', 'compatible']) test(type + ' adapter 
   await runtime[method](state, config);
   assert.equal(delivered.length, 2, 'A delivered cached transcript receipt is acknowledged again, without executing a tool.');
   assert.equal(received.length, 2);
+  assert.deepEqual(accepted,[current.content],'Correction requests do not repeat the initial submission receipt.');
 });
 
 test('HTTP rejection and network uncertainty do not acknowledge retained result texts', async t => {
@@ -140,4 +143,16 @@ test('schema14 complete, manifest, page and journal responses bypass legacy atom
     const receipt = { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify({ taskSchemaVersion: 14, contractVersion: 2, taskId: 'task', revision: 2, steps: [], ...body }) }] };
     assert.equal(projectNativeTaskResult(receipt, { action: 'read', view: body.view || 'current' }), receipt);
   }
+});
+
+test('wire acknowledgment excludes equal historical text, wrong roles and omitted current prompt', () => {
+  const current={role:'user',content:'Same text as a historical prompt'}, accepted=[];
+  const state={record:{messages:[{...current},current]},inputImageMessage:current,onPromptAccepted:prompt=>accepted.push(prompt)};
+  const observer=providerToolDeliveryObserver(state,'compatible',1);
+  for(const messages of [[{...current}],[{...current},{...current,role:'assistant'}],[{...current},{role:'user',content:'summary'}]]){
+    observer.onAccepted(JSON.stringify({messages}));
+  }
+  assert.deepEqual(accepted,[]);
+  observer.onAccepted(JSON.stringify({messages:[{...current},{...current}]}));
+  assert.deepEqual(accepted,[current.content]);
 });

@@ -203,14 +203,15 @@ test('the reopened Chat timeline renders only projected skill receipt titles in 
   const secret='body-must-not-leave-receipt';
   const first=loadedSkill('example-skill','<em>Example skill</em>');
   const source=savedRun('saved-skill',{taskId:unrelated.taskId,status:'completed',output:'Final response',
-    skillLoadReceipts:[{...first,body:secret},first,{type:'tool.result',skillId:'search',title:'Search hit'}]});
+    skillLoadReceipts:[{...first,body:secret},first,{...first,type:'skill_context_submitted',body:secret},{type:'tool.result',skillId:'search',title:'Search hit'}]});
   const reopened=projectFamily({runs:[unrelated,source]});
   assert.equal(JSON.stringify(reopened).includes(secret),false);
-  assert.deepEqual(reopened.runs.find(run=>run.id===source.id).skillLoadReceipts,[first]);
+  assert.deepEqual(reopened.runs.find(run=>run.id===source.id).skillLoadReceipts,[first,{...first,type:'skill_context_submitted'}]);
   const timeline=fakeTimeline();
   paintHistory({timeline},reopened.runs);
   const [notice]=skillNotices(timeline);
-  assert.equal(skillNotices(timeline).length,1);
+  assert.equal(skillNotices(timeline).length,2);
+  assert.equal(skillNotices(timeline)[1].textContent,'Bundled guidance sent: <em>Example skill</em>');
   assert.equal(notice.textContent,'Skill loaded: <em>Example skill</em>');
   assert.equal(notice.innerHTML,'');
   assert.equal(notice.parentElement.parentElement.dataset.runId,source.id);

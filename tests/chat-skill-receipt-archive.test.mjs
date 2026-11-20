@@ -27,11 +27,12 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
     assert.match(path.basename(resolved),/^blackice-skill-receipt-/);
     await rm(resolved,{recursive:true,force:true});
   });
-  const id='library-word-review',title='Review a Word document';
+  const id='library-what-makes-done',title='What Makes Done';
+  const automatic={type:'skill_context_submitted',skillId:id,title};
   const read={name:'relay_skills',arguments:{action:'read',id},callId:'read-1'};
   const search={...read,callId:'search-1',arguments:{action:'search',query:'word'}};
   const invalid={...read,callId:'invalid',arguments:{action:'read',id:'no-such-skill'}};
-  const before=()=>assert.equal([...engine.runs.values()][0].skillLoadReceipts,undefined);
+  const before=()=>assert.deepEqual([...engine.runs.values()][0].skillLoadReceipts,[automatic]);
   // The UI's catalog detail endpoint uses the same reader independently.
   const catalogEntry=await createSkillsCatalog({dataDir:engineDir}).detail({id});
   const catalogBody=catalogEntry.content;
@@ -39,7 +40,13 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
   class Runtime extends EventEmitter{
     defaultModel='offline-fixture';
     status(){return {connected:true,authenticated:true,defaultModel:this.defaultModel};}
-    async runAgent({onToolCall,onToolResultDelivered}){
+    async runAgent({prompt,onPromptAccepted,onToolCall,onToolResultDelivered}){
+      assert.equal([...engine.runs.values()][0].skillLoadReceipts,undefined);
+      onPromptAccepted('An unrelated prompt');
+      assert.equal([...engine.runs.values()][0].skillLoadReceipts,undefined);
+      assert.ok(prompt.includes(catalogBody));
+      onPromptAccepted(prompt);onPromptAccepted(prompt);
+      before();
       const metadata=await onToolCall(search);
       onToolResultDelivered({call:search,result:metadata});
       await assert.rejects(onToolCall(invalid));
@@ -70,18 +77,18 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
   assert.equal(run?.settled,true);
   assert.equal(run.status,'completed',run.error);
   const receipt={type:'skill_loaded',skillId:id,title};
-  assert.deepEqual(run.skillLoadReceipts,[receipt]);
+  assert.deepEqual(run.skillLoadReceipts,[automatic,receipt]);
   const evidence=run.events.filter(e=>e.data?.type==='skill_loaded');
   assert.equal(evidence.length,1);
   assert.deepEqual(evidence[0].data,receipt);
   assert.equal(evidence[0].runId,started.id);
   assert.equal(evidence[0].nodeId,'agent');
-  run.events=run.events.filter(e=>e.data?.type!=='skill_loaded');
+  run.events=run.events.filter(e=>!['skill_loaded','skill_context_submitted'].includes(e.data?.type));
   await archive.capture(engine.getRun(started.id));await archive.close();
   const raw=await readFile(path.join(archiveDir,'conversations',started.id+'.json'),'utf8');
   assert.ok(!raw.includes(JSON.stringify(catalogBody).slice(1,-1)),'private body never enters the archived receipt');
-  assert.deepEqual(JSON.parse(raw).skillLoadReceipts,[receipt]);
+  assert.deepEqual(JSON.parse(raw).skillLoadReceipts,[automatic,receipt]);
   const reopened=await new ConversationArchive({dataDir:archiveDir,engine:new EmptyEngine()}).init();archives.push(reopened);
   const saved=(await reopened.family(started.id)).runs[0];
-  assert.deepEqual(saved.skillLoadReceipts,[receipt]);
+  assert.deepEqual(saved.skillLoadReceipts,[automatic,receipt]);
 });

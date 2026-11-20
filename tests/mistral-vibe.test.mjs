@@ -1257,3 +1257,19 @@ test('terminal Stop takes precedence over concurrent Vibe review steering', asyn
   await steering; await rejected;
   assert.equal(f.connections[0].calls.filter(c => c.method === 'session/prompt').length, 1);
 });
+
+test('Vibe acknowledges exact current prompt only after ACP returns its prompt response', async t => {
+  const accepted=[], current='Synthetic current bundled guidance';
+  const f=await fixture(t,{onPrompt(connection,params){
+    assert.deepEqual(accepted,[]);
+    assert.equal(params.prompt[0].text,current);
+    return connection.answer('Verified fixture response');
+  }});
+  const result=await f.runtime.runAgent(input({prompt:current,onPromptAccepted:prompt=>accepted.push(prompt)}));
+  assert.equal(result.output,'Verified fixture response');
+  assert.deepEqual(accepted,[current]);
+  const denied=[];
+  f.onPrompt=()=>{throw Error('Synthetic prompt rejection');};
+  await assert.rejects(f.runtime.runAgent(input({prompt:current,onPromptAccepted:prompt=>denied.push(prompt)})));
+  assert.deepEqual(denied,[]);
+});
