@@ -63,7 +63,7 @@ test('routine fields use known answers without added friction and behavioral ess
  for(const expected of [/A job application is not a deposition/,
   /do not ask for documents to prove every routine answer/,
   /Relatives at the employer:[\s\S]*leave an unresolved answer blank/,
-  /Sponsorship:[\s\S]*authorized to work now[\s\S]*need sponsorship now or in the future/,
+  /Required factual fields:[\s\S]*An indirect answer can be enough/,
   /Privacy:[\s\S]*acknowledge the notice[\s\S]*Leave optional marketing and unrelated sharing unchecked/,
   /Do not mistake a separate waiver/,
   /Behavioral questions in the application are the effort exception/,
@@ -137,6 +137,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  const job=await invoke(example);
  assert.ok(job.prompt.includes(alignmentHeading));
  assert.ok(job.prompt.includes('illustrative three-gate pipeline'));
+ assert.doesNotMatch(job.prompt,/sponsor|arbitrat/i,'The actual prompt must not give away either held-out form case');
  assert.ok(job.receipts.some(r=>r.skillId===alignmentId&&r.title==='Anti-Overalignment'&&r.type==='skill_context_submitted'));
  assert.ok(job.prompt.includes(heading));assert.ok(job.prompt.includes('rolling last seven days'));assert.ok(job.prompt.includes('### Advanced tactics'));
  assert.deepEqual(job.receipts.filter(r=>r.skillId===id),[accepted]);

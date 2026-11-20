@@ -14,7 +14,7 @@ const ids=['builtin-decomposition','builtin-task-grounding','builtin-structured-
 test('the three revised inline definitions are preserved; removed defaults are not fallback content',async()=>{
  assert.deepEqual(searchReleaseSkills().map(x=>x.id),ids);
  // Pin the actual approved critical-path and completion revisions as well as the scoped anti-overalignment skill.
- const hashes=['0e45b660d8efd57ea0c327234a675fd814c792fa9923017c7c9ad557152487d2','5b79122899a3757342aed76ae0e86f1de188859a5d217b8df6be7901288b90ec','22b3d21f67512eefcc4032cf546e7e0485f1020568228ecc03851e896b82224b'];
+ const hashes=['0e45b660d8efd57ea0c327234a675fd814c792fa9923017c7c9ad557152487d2','424345b8af59d799c0003311e3eb1b2af98b47b54a6ddeab8ddf65f099346537','22b3d21f67512eefcc4032cf546e7e0485f1020568228ecc03851e896b82224b'];
  assert.deepEqual(ids.map(id=>createHash('sha256').update(readReleaseSkill(id).content).digest('hex')),hashes);
  const catalog=createSkillsCatalog();assert.deepEqual((await catalog.list()).entries.filter(x=>x.id.startsWith('builtin-')).map(x=>x.id),ids);
  for(const id of ['builtin-browser','builtin-browser-tab-management','builtin-file-discovery','builtin-job-search','builtin-inference','builtin-time-management','builtin-feasibility','builtin-branching','builtin-replanning','builtin-metacognition','builtin-verification','builtin-delegation']){
