@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.40 candidate source, not an installation or publication receipt.** Package version is **2.40.40**. Start with the [2.40.40 notes](RELEASE-NOTES-2.40.40.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.41 candidate source, not an installation or publication receipt.** Package version is **2.40.41**. Start with the [2.40.41 notes](RELEASE-NOTES-2.40.41.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.41](RELEASE-NOTES-2.40.41.md) - intent guidance in execution and more concrete Directory continuation
 
 - [2.40.40](RELEASE-NOTES-2.40.40.md) - continue an independent Directory action after a checked block and label workspace runs in Maximal Receipts
 
