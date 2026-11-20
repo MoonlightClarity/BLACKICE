@@ -141,6 +141,12 @@ test('saved GGUF files remain selectable with an offline owned router, without e
   const offline=await manager.llamaCatalog();
   assert.equal(offline.available,false);
   assert.deepEqual(offline.models.map(m=>[m.id,m.loaded]),[['present',false]]);
+  const endpoint={manager,pathname:'/api/local-models/missing-files',method:'GET'};
+  assert.deepEqual((await localModelHTTP(endpoint)).body,{models:['missing']});
+  assert.equal((await localModelHTTP({...endpoint,remote:true})).status,403);
+  assert.equal((await localModelHTTP({...endpoint,method:'POST'})).status,405);
+  await writeFile(path.join(root,'missing.gguf'),'restored fixture');
+  assert.deepEqual((await localModelHTTP(endpoint)).body,{models:[]});
   external=true;
   assert.deepEqual((await manager.llamaCatalog()).models.map(m=>m.id),['external-only']);
 });

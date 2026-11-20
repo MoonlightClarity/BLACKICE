@@ -139,3 +139,14 @@ test('path fields reject whitespace-only and NUL values in the advertised schema
   assert.equal(pattern.test('   '), false); assert.equal(pattern.test('\0'), false);
   assert.equal(pattern.test('Directory with spaces'), true);
 });
+
+test('a single local-file match returns exact workspace read arguments, not an attachment ID', async t=>{
+ const {cwd,handler}=await fixture(t);
+ const file=path.join(cwd,'fixture-resume.txt');
+ await writeFile(file,'Read this task document.');
+ const found=success(await handler(call({query:'fixture-resume',path:cwd})));
+ assert.equal(found.matches.length,1);
+ assert.deepEqual(found.readMatch,{tool:'relay_workspace',arguments:{action:'read',path:found.matches[0].path}});
+ const read=success(await handler(call(found.readMatch.arguments,found.readMatch.tool)));
+ assert.match(JSON.stringify(read),/Read this task document/);
+});

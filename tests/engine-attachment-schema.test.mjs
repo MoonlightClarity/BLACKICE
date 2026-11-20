@@ -138,3 +138,21 @@ test('current attachment context stays bounded with ten heavily escaped text exc
   const first=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Read bounded attachments',attachmentIds}}).id);completed(first);
   const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'Continue bounded files'}).id);completed(next);
 });
+
+test('API/local tools omit the attachment reader until the current task has an attached file', async t=>{
+  const threadId='provider_attachment-fixture';
+  const f=await fixture(t,async(options,number)=>{
+    if(number===1){
+      assert.equal(fileTool(options),undefined);
+      assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_find_files'));
+      assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
+    }else assert.deepEqual(fileTool(options),ATTACHMENT_TOOL);
+    return {output:'Task result.',threadId};
+  },{model:'local_llamacpp::fixture',threadId});
+  const first=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Read a file from disk.'}}).id);completed(first);
+  const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'Read this attached file instead.',attachmentIds:[ids.text]}).id);completed(next);
+  assert.equal(next.taskId,first.taskId);
+  assert.equal(next.modelHandoff.reason,'attachment-tool-scope');
+  assert.equal(f.runtime.calls[1].threadId,undefined);
+  assert.equal(f.runtime.calls.length,2);
+});

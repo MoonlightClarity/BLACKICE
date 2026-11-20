@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {planningDOM} from './fixture-planning-dom.mjs';
 import {createGroupedModelPicker} from '../public/next/core/model-picker.mjs';
 
-function fixture(t,{onBeforeSelect}={}) {
+function fixture(t,{onBeforeSelect,onOpenAvailability}={}) {
   const dom=planningDOM(t),select=dom.element('select');
   select.id='llama-picker-test';dom.mount.append(select);
   const options=[{id:'default',label:'Use default'}, {id:'local_llamacpp::small.gguf',label:'Small local'}];
@@ -15,7 +15,7 @@ function fixture(t,{onBeforeSelect}={}) {
   const changes=[];
   select.dispatchEvent=event=>{void select.dispatch(event.type,{target:select},true);return true;};
   select.addEventListener('change',()=>changes.push(select.value));
-  const picker=createGroupedModelPicker({select,onBeforeSelect});
+  const picker=createGroupedModelPicker({select,onBeforeSelect,onOpenAvailability});
   const models=[{id:'default',label:'Use default'}, {id:'local_llamacpp::small.gguf',label:'Small local'}];
   const status={providers:[{id:'local_llamacpp',preset:'llamacpp',name:'Local llama.cpp'}],
     models:[{id:'local_llamacpp::small.gguf',providerId:'local_llamacpp',available:true}]};
@@ -68,4 +68,35 @@ test('dismissing during activation prevents a late model switch',async t=>{
   release();await settle();
   assert.equal(f.select.value,'default');
   assert.deepEqual(f.changes,[]);
+});
+
+test('a saved local model with a missing file cannot be selected; reopening detects its return', async t=>{
+  let missing=true,activations=0;
+  const f=fixture(t,{
+    onBeforeSelect:async()=>{activations++;},
+    onOpenAvailability:async()=>missing?{'local_llamacpp::small.gguf':'Model file is missing.'}:{},
+  });
+  await f.show();await settle();
+  let row=f.panel().querySelector('[data-model-value="local_llamacpp::small.gguf"]');
+  assert.equal(row.disabled,true);
+  assert.match(row.textContent,/file is missing/);
+  await row.dispatch('click',{},true);await settle();
+  assert.equal(activations,0);
+  assert.equal(f.select.value,'default');
+  f.picker.close({restoreFocus:false});missing=false;
+  await f.show();await settle();
+  row=f.panel().querySelector('[data-model-value="local_llamacpp::small.gguf"]');
+  assert.equal(row.disabled,false);
+  await row.dispatch('click',{},true);await settle();
+  assert.equal(activations,1);
+});
+
+test('an old file check cannot overwrite a newer open picker', async t=>{
+  let resume,opens=0;
+  const f=fixture(t,{onOpenAvailability:()=>++opens===1?new Promise(resolve=>{resume=resolve;}):Promise.resolve({})});
+  await f.show();
+  f.picker.close({restoreFocus:false});
+  await f.show();await settle();
+  resume({'local_llamacpp::small.gguf':'Model file is missing.'});await settle();
+  assert.equal(f.panel().querySelector('[data-model-value="local_llamacpp::small.gguf"]').disabled,false);
 });

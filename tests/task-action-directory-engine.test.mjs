@@ -746,3 +746,22 @@ test('Directory serializes parallel form preparation before receipt reservation 
   assert.equal(result.status,uncertain?'failed':'completed',result.error);
  });
 });
+
+test('Directory surfaces a nonexistent Agents action without asking for focus',async t=>{
+ const {engine}=await setup(t,async o=>{
+  const call=(name,action)=>o.onToolCall({name,arguments:{action},callId:name+'-'+action});
+  const invalid=await call('relay_agents','read');
+  assert.equal(invalid.success,false);
+  assert.equal(invalid.code,'NATIVE_AGENT_ACTION_INVALID');
+  assert.equal(invalid.actionDispatched,false);
+  assert.match(invalid.contentItems[0].text,/list or get.*Workspace|list or get.*relay_workspace/);
+  assert.equal((await call('relay_agents','list')).success,true,'a genuine observation needs no focus');
+  const outline=JSON.parse((await call('relay_directory_action','read')).contentItems[0].text);
+  assert.deepEqual(outline.actions,[]);
+  assert.ok(outline.receipts.every(receipt=>receipt.tool==='relay_agents'),'only the genuine observation entered Directory');
+  return{output:'Fixture completed its checks.'};
+ });
+ const run=engine.startRun({workflow:graph,input:{task:'Inspect available task state.',directoryActions:'on'}});
+ await engine.executions.get(run.id);
+ assert.match(engine.getRun(run.id).error,/unfinished/,'fixture intentionally neither planned nor completed an action');
+});

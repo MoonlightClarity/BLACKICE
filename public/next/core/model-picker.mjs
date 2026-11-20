@@ -8,7 +8,7 @@ const unavailableReason=model=>[model?.availabilityReason,model?.error].find(val
 const noop=()=>({update(){},close(){},destroy(){}});
 
 /** The native select owns the chosen value and its existing change handler. */
-export function createGroupedModelPicker({select,label='Model',onEnableProvider,onSetupProvider,onBeforeSelect}={}){
+export function createGroupedModelPicker({select,label='Model',onEnableProvider,onSetupProvider,onBeforeSelect,onOpenAvailability}={}){
   const doc=select?.ownerDocument,owner=select?.parentElement;
   if(!select||!doc?.body||!owner)return noop();
   const create=(tag,className,value)=>{const node=doc.createElement(tag);if(className)node.className=className;if(value!==undefined)node.textContent=value;return node;};
@@ -20,12 +20,13 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
   const current=create('p','next-model-picker-current'),results=create('div','next-model-picker-results'),summary=create('p','next-model-picker-summary');summary.setAttribute('role','status');summary.setAttribute('aria-live','polite');
   panel.append(header,search,current,results,summary);panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label',`Choose ${label.toLowerCase()}`);panel.id=`${select.id||'next-model'}-picker`;trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-expanded','false');trigger.setAttribute('aria-controls',panel.id);doc.body.append(panel);
   const wasHidden=select.hidden;select.hidden=true;
-  let opened=false,destroyed=false,models=[],status={},selected=select.value,signature='',expanded=new Map(),limits=new Map(),activating=null,activationError='',openRevision=0;
+  let opened=false,destroyed=false,models=[],status={},selected=select.value,signature='',expanded=new Map(),limits=new Map(),activating=null,activationError='',openRevision=0,unavailable={};
   const providerOptions=()=>({providers:[...(status.providers||[]),...(status.subscriptionProviders||[])],defaultProviderId:'codex'});
   const hiddenProviders=()=>Array.isArray(status.runtimeSettings?.hiddenModelProviders)?status.runtimeSettings.hiddenModelProviders:[];
   const options=()=>({...providerOptions(),query:search.value,hiddenModelProviders:hiddenProviders()});
-  const available=model=>Boolean(model)&&model.disabled!==true&&model.available!==false;
-  const canEnable=model=>!model?.historical&&typeof onEnableProvider==='function'&&Boolean(readyDisabledProvider(status,model?.id));
+  const localReason=model=>unavailable[model?.id==='default'?status.defaultModel:model?.id];
+  const available=model=>Boolean(model)&&!localReason(model)&&model.disabled!==true&&model.available!==false;
+  const canEnable=model=>!localReason(model)&&!model?.historical&&typeof onEnableProvider==='function'&&Boolean(readyDisabledProvider(status,model?.id));
   const setupProviders=()=>typeof onSetupProvider==='function'?(status.subscriptionProviders||[]).filter(provider=>provider?.id==='mistral-vibe'&&provider.type==='subscription-cli'&&!hiddenProviders().includes(provider.id)&&(provider.authenticated!==true||provider.available!==true||!provider.models?.length)):[];
   async function setupProvider(id){
     if(activating||!opened||destroyed||select.disabled||!setupProviders().some(provider=>provider.id===id))return;
@@ -81,7 +82,11 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
     const enable=!available(model)&&canEnable(model),entry=create('div','next-model-picker-entry'),row=button('next-model-picker-option');row.dataset.modelValue=model.id;row.setAttribute('aria-pressed',String(model.id===selected));row.disabled=Boolean(activating)||(!available(model)&&!enable);
     const displayName=nameOf(model),body=create('span','next-model-picker-option-body');body.append(create('strong','',displayName));
     if(enable){body.append(create('small','',activating===model.id?'Enabling connection…':'Enable connection'));row.setAttribute('aria-description','Enable this saved API connection and select this model.');}
-    else if(!available(model))row.setAttribute('aria-description',unavailableReason(model));
+    else if(!available(model)){
+      const reason=localReason(model);
+      row.setAttribute('aria-description',reason||unavailableReason(model));
+      if(reason)body.append(create('small','',reason));
+    }
     const checked=create('span','next-model-picker-selected',model.id===selected?'✓':'');checked.setAttribute('aria-hidden','true');row.append(body,checked);row.addEventListener('click',event=>{event.preventDefault();if(typeof onBeforeSelect==='function'&&available(model)){void choose(model.id);return;}return choose(model.id);});entry.append(row);
     return entry;
   }
@@ -118,7 +123,15 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
     position();
   }
   function close({restoreFocus=true}={}){if(!opened)return;const owned=panel.contains(doc.activeElement);opened=false;openRevision++;panel.hidden=true;trigger.setAttribute('aria-expanded','false');if(restoreFocus&&owned&&!destroyed)trigger.focus({preventScroll:true});}
-  function open(){if(destroyed||select.disabled)return;if(opened){close();return;}opened=true;openRevision++;activationError='';expanded=new Map();limits=new Map();search.value='';panel.hidden=false;trigger.setAttribute('aria-expanded','true');render();search.focus({preventScroll:true});}
+  async function refreshAvailability(revision){
+    if(typeof onOpenAvailability!=='function')return;
+    try{
+      const result=await onOpenAvailability(models);
+      if(destroyed||!opened||revision!==openRevision)return;
+      unavailable=result||{};render();
+    }catch{/* Keep the prior check; the backend will still validate a load. */}
+  }
+  function open(){if(destroyed||select.disabled)return;if(opened){close();return;}opened=true;openRevision++;activationError='';expanded=new Map();limits=new Map();search.value='';panel.hidden=false;trigger.setAttribute('aria-expanded','true');render();search.focus({preventScroll:true});void refreshAvailability(openRevision);}
   const onTrigger=event=>{event.preventDefault();open();};
   const onTriggerKey=event=>{if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();if(!opened)open();}};
   const onFilter=()=>{expanded.clear();limits.clear();render();};

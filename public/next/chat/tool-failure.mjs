@@ -53,7 +53,9 @@ const alarmTools=Object.freeze({
 const cancelCodes=new Set(['ABORT_ERR','USER_STEER','TOOL_SUPERSEDED','GOAL_DEADLINE_REACHED']);
 const own=(object,key)=>typeof key==='string'&&Object.hasOwn(object,key);
 function alarmCode(tool,value) {
- if(value==='TOOL_UNAVAILABLE')return value;
+ if(value==='TOOL_UNAVAILABLE'||value==='DIRECTORY_FOCUS')return value;
+ if(tool==='relay_agents'&&value==='NATIVE_AGENT_ACTION_INVALID')return value;
+ if(tool==='relay_files'&&value==='ATTACHMENT_NOT_IN_TASK_SCOPE')return value;
  if(tool==='relay_browser'&&['BROWSER_REF_STALE','BROWSER_INPUT_DOCUMENT_CHANGED','BROWSER_UNAVAILABLE'].includes(value))return value;
  if(tool==='relay_skills'&&['SKILL_NOT_FOUND','SKILL_UNAVAILABLE'].includes(value))return value;
  if(tool==='relay_history'&&value==='PAST_CHATS_OFF')return value;
@@ -108,6 +110,9 @@ export function diagnosticAlarmCopy(raw) {
   case 'EACCES':
   case 'EPERM':observed='The operating system did not let the workspace tool access the path.';explanation='Check this file or folder’s access and whether another app is holding it. A permission error does not mean the file is missing.';break;
   case 'PAST_CHATS_OFF':observed='The tool denied the unrelated chat lookup because Search other chats is Off.';explanation='This setting does not block current-chat continuity.';break;
+  case 'DIRECTORY_FOCUS':observed='Action Directory rejected the call before the tool ran.';explanation='The call required an active action in the outline. Check that the tool and action are valid before retrying.';break;
+  case 'NATIVE_AGENT_ACTION_INVALID':observed='The requested Agents action does not exist.';explanation='Use list or get for saved runs, or Workspace read for a local file.';break;
+  case 'ATTACHMENT_NOT_IN_TASK_SCOPE':observed='The attachment reader rejected an ID outside this task.';explanation='For files on disk, use Workspace read with the file path.';break;
   case 'DIRECTORY_BLOCKER':observed='Action Directory rejected the proposed block.';explanation='A candidate may have failed without demonstrating that the whole action is blocked.';break;
   case 'DIRECTORY_UNKNOWN':observed='Action Directory recorded an unresolved attempt.';explanation='This is not proof that the effect happened or that it did not.';break;
   case 'DIRECTORY_CHANGED':observed='The action outline changed before the operation could use the prior revision.';explanation='The receipt does not say who changed it.';break;

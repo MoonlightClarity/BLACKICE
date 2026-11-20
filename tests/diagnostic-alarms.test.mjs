@@ -73,3 +73,12 @@ test('workspace alarms report observed missing path or access code without retai
   assert.doesNotMatch(JSON.stringify(alarm),/private|secret\.pdf/);
  }
 });
+
+test('Agents alarms distinguish nonexistent actions from Directory rejecting dispatch',()=>{
+ const event={type:'tool.result',tool:'relay_agents',action:'read',success:false};
+ const gate=recordDiagnosticAlarm(null,{...event,code:'DIRECTORY_FOCUS'});
+ const invalid=recordDiagnosticAlarm(gate,{...event,code:'NATIVE_AGENT_ACTION_INVALID'});
+ assert.match(diagnosticAlarmCopy(invalid.rows[0]).observed,/does not exist/);
+ assert.match(diagnosticAlarmCopy(invalid.rows[1]).observed,/before the tool ran/);
+ assert.equal(invalid.rows.length,2);
+});
