@@ -3,6 +3,35 @@ const graph={name:'Actions',nodes:[{id:'i',type:'input'},{id:'a',type:'agent',na
 class Runtime extends EventEmitter{status(){return{connected:true,authenticated:true,models:[{id:'fixture-model',supportsTools:true}]};}async runAgent(options){return this.execute(options);}}
 async function setup(t,execute){const root=await mkdtemp(path.join(tmpdir(),'action-directory-'));const runtime=new Runtime();runtime.execute=execute;const engine=await new HarnessEngine({runtime,dataDir:root,defaultCwd:root}).init();t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});return{root,engine};}
 test('actual engine explicit Directory prevents zero-tool final from completing while Off remains ordinary Chat',async t=>{let options;const{engine}=await setup(t,async o=>{options=o;return{output:'All done'};});const on=engine.startRun({workflow:graph,input:{task:'Find three jobs',directoryActions:'on'}});await engine.executions.get(on.id);assert.equal(engine.getRun(on.id).status,'failed');assert.match(engine.getRun(on.id).error,/unfinished/);assert(options.dynamicTools.some(x=>x.name==='relay_directory_action'));assert.equal(options.hostOnlyTools,true);const off=engine.startRun({workflow:graph,input:{task:'Answer text',directoryActions:'off'}});await engine.executions.get(off.id);assert.equal(engine.getRun(off.id).status,'completed');assert(!options.dynamicTools.some(x=>x.name==='relay_directory_action'));});
+test('a no-actions provider final tells the model to start the actual next step using the evidence already returned',async t=>{
+ const {engine,root}=await setup(t,async o=>{
+  const call=(name,args,id)=>o.onToolCall({name,arguments:args,callId:id});
+  const dir=(action,data={})=>call('relay_directory_action',{action,...data},'directory-'+action);
+  const inspected=await call('relay_workspace',{action:'list',path:root},'initial-read');
+  assert.equal(inspected.success,true);
+  const review=()=>o.onBeforeFinal({output:'I opened the input; the result has not been saved.',signal:o.signal});
+  const continuation=await review();
+  assert.equal(continuation.continue,true);
+  assert.match(continuation.prompt,/^Directory has no actions/);
+  assert.match(continuation.prompt,/use the evidence already returned/);
+  assert.match(continuation.prompt,/one concrete next step and its observable result; focus that step and take the next tool action now/);
+  assert.match(continuation.prompt,/Do not list or reopen sources already inspected/);
+  assert.match(continuation.prompt,/check that exact prerequisite in the focused step and record the actual blocker with the returned receipt/);
+  const empty=await dir('read');
+  assert.deepEqual(JSON.parse(empty.contentItems[0].text).actions,[],'The host did not invent a step.');
+  assert.equal((await dir('plan',{actions:[{id:'save',objective:'Save the verified output',dependsOn:[]}]})).success,true);
+  assert.equal((await dir('focus',{id:'save'})).success,true);
+  const saved=await call('relay_workspace',{action:'write',path:path.join(root,'result.txt'),text:'Verified output'},'save-output');
+  assert.equal(saved.success,true);
+  const [receipt]=saved.contentItems.at(-1).text.match(/receipt-[0-9]+/);
+  assert.equal((await dir('observe',{id:'save',claim:'The output was saved.',receipts:[receipt]})).success,true);
+  assert.equal(await o.onBeforeFinal({output:'Saved the result.',signal:o.signal}),undefined);
+  return {output:'Saved the result.'};
+ });
+ const run=engine.startRun({workflow:graph,input:{task:'Inspect the inputs, then save the verified output',directoryActions:'on'}});
+ await engine.executions.get(run.id);
+ assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);
+});
 test('actual handler work drives action observation and durable same-task state without payload imports',async t=>{let state;const{engine,root}=await setup(t,async o=>{const call=async args=>{const r=await o.onToolCall({name:'relay_directory_action',arguments:args,callId:'directory'});assert.equal(r.success,true,JSON.stringify(r));return JSON.parse(r.contentItems[0].text);};state=await call({action:'read'});state=await call({action:'plan',revision:state.revision,actions:[{id:'inspect',objective:'List current directory',dependsOn:[]}]});state=await call({action:'focus',revision:state.revision,id:'inspect'});const r=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:root},callId:'list'});assert.equal(r.success,true,JSON.stringify(r));state=await call({action:'read'});assert.equal(state.receipts.length,1);state=await call({action:'observe',revision:state.revision,id:'inspect',claim:'The folder listing returned',receipts:[state.receipts[0].id]});assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);return{output:'Listed folder'};});const run=engine.startRun({workflow:graph,input:{task:'List current folder',directoryActions:'on'}});await engine.executions.get(run.id);assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);assert.equal(engine.getRun(run.id).nodes.a.directoryContext,undefined,'Action Directory works with diagnostic capture off');const store=new TaskActionDirectoryStore(root);const reopened=await store.get(run.id,'Ignored new objective');assert.equal(reopened.read().actions[0].state,'observed');const other=await store.get('separate-task','Another objective');assert.equal(other.read().actions.length,0);assert.equal(other.read().objective,'Another objective');await store.close();});
 test('same display group does not inherit action mode or action state',async t=>{const{engine}=await setup(t,async()=>({output:'No work'}));const first=engine.startRun({workflow:graph,input:{task:'First',directoryActions:'on'}});await engine.executions.get(first.id);const second=engine.startRun({workflow:graph,input:{task:'Second'}},{chatDisplayGroupId:first.id,sourceTaskId:first.id});await engine.executions.get(second.id);const run=engine.getRun(second.id);assert.equal(run.directoryActions,undefined);assert.equal(run.status,'completed');assert.notEqual(run.taskId||run.id,first.id);});
 test('late Directory callback after cancellation cannot mutate durable state',async t=>{let options;const{engine}=await setup(t,async o=>{options=o;return{output:'No actions'};});const run=engine.startRun({workflow:graph,input:{task:'Do work',directoryActions:'on'}});await engine.executions.get(run.id);const ledger=await engine.actionDirectories.get(run.id,'Work');const before=ledger.read();const result=await options.onToolCall({name:'relay_directory_action',arguments:{action:'plan',revision:before.revision,actions:[{id:'late',objective:'Late',dependsOn:[]}]}});assert.equal(result.success,false);assert.equal(result.code,'ABORT_ERR');assert.deepEqual(ledger.read(),before);});
