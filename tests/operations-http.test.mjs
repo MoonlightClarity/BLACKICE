@@ -13,7 +13,7 @@ const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;})
 const until=async(check,label='HTTP operation condition')=>{const end=Date.now()+7000;while(Date.now()<end){const result=await check();if(result)return result;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
 const workflow=(planningMode='off')=>({id:'http-operation-workflow',name:'HTTP deployed worker',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',prompt:'Write the isolated fixture result and independently read it.',model:'http-fixture-model'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode}});
 class Desktop extends EventEmitter{status(){return{available:false,enabled:false};}async setEnabled(){return this.status();}}
-async function fixture(t,{execute,readinessFailure,modelStatus,modelResolver,runtimeStart,maxConcurrentRuns=4,planningMode='off'}={}){
+async function fixture(t,{execute,readinessFailure,modelStatus,modelResolver,runtimeStart,maxConcurrentRuns=4,planningMode='off',expectCheckpoint=false}={}){
   const directory=await mkdtemp(path.join(tmpdir(),'relay-operations-http-')),dataDir=path.join(directory,'data'),cwd=path.join(directory,'workspace'),calls=[],readinessCalls=[],apps=[];
   let app,url,cookie;
   class Runtime extends EventEmitter{
@@ -34,15 +34,27 @@ async function fixture(t,{execute,readinessFailure,modelStatus,modelResolver,run
       assert.equal(write.success,true);
       const read=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'operation-proof.txt'}});
       assert.equal(read.success,true);assert.match(read.contentItems[0].text,/Verified operation side effect/);
-      // Voluntary current checkpoint records actual checked outcomes, not a retired plan review.
-      const prior=await options.onToolCall({name:'relay_task',arguments:{action:'read',view:'checkpoint'}});assert.equal(prior.success,true);
-      const continuity=JSON.parse(prior.contentItems[0].text);assert.match(continuity.context,/Historical task data/);
-      const checkpoint=await options.onToolCall({name:'relay_task',arguments:{action:'checkpoint',expectedRevision:continuity.revision,completed:[...(continuity.checkpoint?.completed||[]),content.trim()],decisions:continuity.checkpoint?.decisions||[],nextSteps:['Inspect the next scheduled request.']}});assert.equal(checkpoint.success,true,JSON.stringify(checkpoint));
+      assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_task'),expectCheckpoint,
+        'Only a schedule explicitly requesting the planning catalog can use checkpoints.');
+      if(expectCheckpoint){
+        // Voluntary current checkpoint records checked outcomes, not a retired review.
+        const prior=await options.onToolCall({name:'relay_task',arguments:{action:'read',view:'checkpoint'}});
+        assert.equal(prior.success,true,JSON.stringify(prior));
+        const continuity=JSON.parse(prior.contentItems[0].text);assert.match(continuity.context,/Historical task data/);
+        const checkpoint=await options.onToolCall({name:'relay_task',arguments:{action:'checkpoint',expectedRevision:continuity.revision,completed:[...(continuity.checkpoint?.completed||[]),content.trim()],decisions:continuity.checkpoint?.decisions||[],nextSteps:['Inspect the next scheduled request.']}});
+        assert.equal(checkpoint.success,true,JSON.stringify(checkpoint));
+      }
       assert.equal(typeof options.onBeforeFinal,'undefined','No retired automatic planning review runs.');
       return{output:content,threadId:options.threadId||'http-fixture-thread'};
     }
   }
-  async function boot(){app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,maxConcurrentRuns,runtime:new Runtime(),desktop:new Desktop()});apps.push(app);url=await app.listen();const home=await fetch(url);cookie=home.headers.get('set-cookie').split(';',1)[0];await home.arrayBuffer();return app;}
+  async function boot(){
+    app=await createHarnessServer({port:0,dataDir,defaultCwd:cwd,maxConcurrentRuns,runtime:new Runtime(),desktop:new Desktop()});
+    apps.push(app);
+    // Exercise the real poll path without spending a production polling interval per fixture tick.
+    app.operations.pollMs=50;
+    url=await app.listen();const home=await fetch(url);cookie=home.headers.get('set-cookie').split(';',1)[0];await home.arrayBuffer();return app;
+  }
   t.after(async()=>{for(const value of apps)await value.close();assert.match(path.basename(directory),/^relay-operations-http-/);await rm(directory,{recursive:true,force:true});});
   await boot();
   const request=async(route,{method='GET',body,auth=true,headers={}}={})=>{const response=await fetch(new URL(route,url),{method,headers:{...(auth?{Cookie:cookie}:{}),...(body===undefined?{}:{'Content-Type':'application/json'}),...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,data:await response.json()};};
@@ -161,8 +173,9 @@ test('authenticated HTTP config reports exact webhook URLs and requires explicit
 });
 
 for(const codexHistory of ['relay','codex']) test(`repeated cron occurrences retain revised instructions, conversation and saved task notes across pause and host restart (${codexHistory})`,async t=>{
-  const f=await fixture(t),schedule=await f.create({
+  const f=await fixture(t,{expectCheckpoint:true}),schedule=await f.create({
     name:'Recurring research continuity fixture',
+    input:'/plan Write and verify the isolated fixture result and record the checked outcome.',
     trigger:{type:'cron',expression:'*/30 * * * *',timezone:'America/New_York'},
     overlap:'skip'
   });
