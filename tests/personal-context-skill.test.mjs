@@ -36,7 +36,11 @@ test('both Past Chats modes can load Personal Context and obtain fresh evidence 
   const root=await realpath(tmpdir()),dir=await mkdtemp(path.join(root,'blackice-personal-context-test-'));
   const cwd=path.join(dir,'work');await mkdir(cwd);
   const current='FRESH EVIDENCE: Update takes 12 seconds; ordinary startup takes 2 seconds.';
-  const stale='Earlier assistant reported ordinary startup also takes 12 seconds.';
+  const priorMarker='Harbor tidal-clock 7Q19';
+  const priorTask=priorMarker+': validate the quarantine build until 6 AM EST.';
+  const staleMarker='Lantern 3X72';
+  const stale='Earlier assistant reported ordinary startup also takes 12 seconds for the '+staleMarker+' build.';
+  const currentTask='Use my usual approach to diagnose Harbor from new timing measurements.';
   await writeFile(path.join(cwd,'Harbor-current-report.txt'),current);
   let app,oldId,mode='seed',audits=[];
   t.after(async()=>{
@@ -53,8 +57,14 @@ test('both Past Chats modes can load Personal Context and obtain fresh evidence 
       if(mode==='seed')return {output:stale,threadId:'prior-thread'};
       const audit={mode,actions:[]};audits.push(audit);
       assert.equal(options.threadId,undefined);
-      assert.doesNotMatch(options.prompt,/Earlier assistant reported|until 6 AM|Separate relevance from authority/);
-      assert.doesNotMatch(options.developerInstructions,/Separate relevance from authority/,'no unconditional body injection');
+      assert.ok(options.prompt.includes('\nUSER TASK\n'+currentTask+'\n\nUPSTREAM RESULTS'));
+      assert.match(options.prompt,/HOST TURN AUTHORITY\n[^\n]*No Goal is admitted for this turn/);
+      // Bundled examples may also mention 6 AM. Only the saved turn's own text proves leakage.
+      for(const text of [options.prompt,options.developerInstructions]){
+        assert.ok(!text.includes(priorMarker),'no historical user task on the initial model request');
+        assert.ok(!text.includes(staleMarker),'no historical assistant claim on the initial model request');
+        assert.doesNotMatch(text,/Separate relevance from authority/,'no unconditional Personal Context body injection');
+      }
       const historyActions=options.dynamicTools.find(tool=>tool.name==='relay_history')?.inputSchema.properties.action.enum||[];
       assert.equal(historyActions.includes('search'),mode==='on');
       assert.equal(historyActions.includes('read'),mode==='on');
@@ -73,20 +83,25 @@ test('both Past Chats modes can load Personal Context and obtain fresh evidence 
       const profile=payload(await tool('relay_identity',{action:'read',kind:'user'}));
       assert.match(profile.content,/Clearly separate observed timings from estimates/);
       if(mode==='on'){
-        const found=payload(await tool('relay_history',{action:'search',scope:'workspace',query:'Harbor release validation',limit:3}));
+        const found=payload(await tool('relay_history',{action:'search',scope:'workspace',query:priorMarker,limit:3}));
         assert.ok(found.results.some(item=>item.id===oldId));
-        const prior=payload(await tool('relay_history',{action:'read',scope:'workspace',id:oldId,query:'validation',limit:3})).run;
-        assert.match(prior.input,/until 6 AM/);
-        assert.match(prior.output,/Earlier assistant reported ordinary startup also takes 12 seconds/);
+        const prior=payload(await tool('relay_history',{action:'read',scope:'workspace',id:oldId,query:priorMarker,limit:3})).run;
+        assert.equal(prior.id,oldId);
+        assert.equal(prior.input,priorTask);
+        assert.equal(prior.output,'[agent]\n'+stale);
       }else{
-        const denied=await tool('relay_history',{action:'read',scope:'workspace',id:oldId});
-        assert.equal(denied.success,false);
-        assert.equal(denied.code,'PAST_CHATS_OFF');
+        for(const args of [{action:'search',query:priorMarker},{action:'read',id:oldId}]){
+          const denied=await tool('relay_history',{scope:'workspace',...args});
+          assert.equal(denied.success,false);
+          assert.equal(denied.code,'PAST_CHATS_OFF');
+          assert.ok(!JSON.stringify(denied).includes(priorMarker));
+          assert.ok(!JSON.stringify(denied).includes(staleMarker));
+        }
       }
       const discovery=payload(await tool('relay_find_files',{query:'Harbor-current-report',path:cwd}));
       assert.equal(discovery.matches.length,1);
       const source=payload(await tool('relay_workspace',{action:'read',path:discovery.matches[0].path}));
-      assert.match(source.content,/Update takes 12 seconds; ordinary startup takes 2 seconds/);
+      assert.equal(source.content,'1: '+current);
       return {output:'Current Harbor report: '+source.content,threadId:'fixture-'+mode};
     }
   }
@@ -103,13 +118,14 @@ test('both Past Chats modes can load Personal Context and obtain fresh evidence 
     }
     assert.fail('Synthetic run did not settle.');
   };
-  const seed=await start('Harbor release validation: measure it today only until 6 AM EST. Compare the update with ordinary startup.','off');
+  const seed=await start(priorTask,'off');
+  assert.equal(seed.input,priorTask);
+  assert.equal(seed.output,'[agent]\n'+stale);
   oldId=seed.id;
   for(const setting of ['off','on']){
     mode=setting;
-    const run=await start('Use my usual approach to diagnose Harbor from new timing measurements.',setting);
-    assert.match(run.output,/FRESH EVIDENCE/);
-    assert.doesNotMatch(run.output,/6 AM|Earlier assistant reported/);
+    const run=await start(currentTask,setting);
+    assert.equal(run.output,'[agent]\nCurrent Harbor report: 1: '+current);
     assert.deepEqual(run.skillLoadReceipts,[{type:'skill_loaded',skillId:id,title:'Personal Context'}]);
     assert.equal(run.goal,undefined);
   }
