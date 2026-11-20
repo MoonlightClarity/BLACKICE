@@ -45,3 +45,19 @@ test('app setup explains shared endpoint and independent app connections',async 
 test('Config keeps troubleshooting out of General and opens it read-only',async t=>{const f=await fixture(t);assert.equal(f.mount.querySelector('h1').textContent,'Config');assert.equal(f.$('#next-native-recovery').closest('#next-settings-general'),null);await f.click('#next-settings-section-troubleshooting');await settle();assert.equal(f.$('#next-settings-troubleshooting').hidden,false);assert.equal(f.$('#next-settings-general').hidden,true);await f.click('#next-settings-section-general');assert.equal(f.$('#next-settings-troubleshooting').hidden,true);assert.ok(f.calls.every(x=>x.method==='GET'));});
 
 test('runtime save cannot silently rewrite Chat response choices',async t=>{const f=await fixture(t);await f.$('#next-runtime-settings-form').dispatch('submit');await settle();const write=f.calls.find(x=>x.route==='/api/runtime/settings'&&x.method==='POST');assert.ok(write);for(const field of ['defaultEffort','defaultServiceTier','verbosity'])assert.equal(Object.hasOwn(write.body,field),false);});
+
+test('Config saves only explicitly edited new Chat defaults and shows durable values',async t=>{
+ const f=await fixture(t);
+ const value=key=>f.$('#next-chat-default-'+key).value;
+ const choose=async(key,mode)=>{const setting=f.$('#next-chat-default-'+key);setting.value=mode;await setting.dispatch('change');};
+ assert.equal(f.$('#next-chat-default-directoryDiagnostics'),null);
+ assert.equal(value('pastChats'),'off');
+ await choose('directoryActions','on');await choose('pastChats','on');
+ await f.$('#next-chat-defaults-form').dispatch('submit');await settle();
+ const write=f.calls.find(x=>x.route==='/api/runtime/settings'&&x.method==='POST');
+ assert.deepEqual(write.body,{chatDefaults:{directoryActions:'on',pastChats:'on'}});
+ assert.equal(f.$('#next-chat-defaults-feedback').textContent,'Saved.');
+ assert.equal(value('directoryActions'),'on');assert.equal(value('pastChats'),'on');
+ f.workspace.updateStatus({runtimeSettings:{chatDefaults:{directoryActions:'off',pastChats:'off'}}});
+ assert.equal(value('directoryActions'),'off');assert.equal(value('pastChats'),'off');
+});

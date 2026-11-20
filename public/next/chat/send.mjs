@@ -42,7 +42,7 @@ export async function submitChat({ api, runs, task, model, effort = 'default', s
   }
   const saved=await api('/api/workflows','POST',workflow);
   const result=await api('/api/runs','POST',{ workflow:saved?.workflow||saved,
-    input:{task:content,cwd,directoryActions:directoryActions??'off',chatPlanning:chatPlanning??'off',directoryDiagnostics:directoryDiagnostics??'off',pastChats:pastChats??'off',...(goal?{goal:structuredClone(goal)}:{}),planningMode:chosenPlanningMode,planningExecutionMode,attachmentIds},requestId });
+    input:{task:content,cwd,...(directoryActions!==undefined?{directoryActions}:{}),...(chatPlanning!==undefined?{chatPlanning}:{}),...(directoryDiagnostics!==undefined?{directoryDiagnostics}:{}),...(pastChats!==undefined?{pastChats}:{}),...(goal?{goal:structuredClone(goal)}:{}),planningMode:chosenPlanningMode,planningExecutionMode,attachmentIds},requestId });
   return { mode:'started',run:result?.run||result,requestId };
 }
 export function replyState(runs) {

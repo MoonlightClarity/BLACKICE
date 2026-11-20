@@ -33,6 +33,11 @@ const connection=(state)=>{
 };
 const events=createEventBus({onConnection:connection});
 events.subscribe(receipt=>{
+  if(receipt.type==='runtime.settings'&&receipt.data){
+    status={...status,runtimeSettings:receipt.data};
+    spaces.get(current)?.instance?.updateStatus?.(status);
+    return;
+  }
   if(receipt.type!=='runtime.status'||!receipt.data)return;
   status=receipt.data;
   health.textContent=status.connected===false?'Model unavailable':'Connected';

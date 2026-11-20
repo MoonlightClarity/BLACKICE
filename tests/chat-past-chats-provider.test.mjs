@@ -38,6 +38,7 @@ test('Past Chats Off denies unrelated local history/model output; On demand enab
       requests.get(phase).push(body);
       const calls=(phase==='off'||phase==='on')&&step++===0?[
         toolCall('relay_history',{action:'read',scope:'global',id:oldRun.id},phase+'-history'),
+        toolCall('relay_history',{action:'search',scope:'global',query:titleMarker},phase+'-search'),
         toolCall('relay_agents',{action:'list',scope:'all'},phase+'-list'),
         toolCall('relay_agents',{action:'get',runId:oldRun.id},phase+'-get'),
         toolCall('relay_control',{action:'catalog'},phase+'-catalog'),
@@ -96,6 +97,7 @@ test('Past Chats Off denies unrelated local history/model output; On demand enab
   assert.deepEqual(offRequests[0].tools.find(t=>t.function?.name==='relay_history').function.parameters.properties.action.enum,['previous_turn_diagnostics']);
   assert.equal(available(offRequests[0],'relay_agents'),true);
   assert.match(receipt(offRequests[1],'off-history'),/Past Chats is Off/i);
+  assert.match(receipt(offRequests[1],'off-search'),/Past Chats is Off/i);
   assert.match(receipt(offRequests[1],'off-get'),/Past Chats is Off/i);
   assert.doesNotMatch(JSON.stringify(offRequests),new RegExp(oldMarker),'No unrelated output was delivered.');
   assert.doesNotMatch(receipt(offRequests[1],'off-list'),new RegExp(oldRun.id));
@@ -115,7 +117,7 @@ test('Past Chats Off denies unrelated local history/model output; On demand enab
   assert.match(JSON.stringify(onRequests[0].messages),new RegExp(continuityMarker));
   assert.equal(available(onRequests[0],'relay_history'),true);
   for(const id of ['on-history','on-get','on-list'])assert.match(receipt(onRequests[1],id),new RegExp(oldMarker));
-  for(const id of ['on-catalog','on-workflow'])assert.match(receipt(onRequests[1],id),new RegExp(titleMarker));
+  for(const id of ['on-search','on-catalog','on-workflow'])assert.match(receipt(onRequests[1],id),new RegExp(titleMarker));
   assert.match(receipt(onRequests[1],'on-own'),new RegExp(off.id));
   assert.equal(projectFamily(await app.conversations.family(on.id)).runs.at(-1).pastChats,'on');
 

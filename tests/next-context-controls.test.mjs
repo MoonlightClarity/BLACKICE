@@ -425,3 +425,19 @@ test('Chat shows actual live steer receipt '+message,async t=>{
  await f.open('a');await f.input('#next-chat-input','Preserve work');await f.$('#next-chat-form').dispatch('submit');
  await until(()=>f.$('#next-chat-hint').textContent===message);
 });
+
+test('new Chat selector reflects persisted defaults while saved Chat settings stay unchanged',async t=>{
+ const f=await chatFixture(t);
+ const controls={directoryActions:'#next-chat-directory-actions',chatPlanning:'#next-chat-planning-actions',pastChats:'#next-chat-past-chats'};
+ const actual=()=>Object.fromEntries(Object.entries(controls).map(([key,selector])=>[key,f.$(selector).value]));
+ const configured={directoryActions:'on',chatPlanning:'on',pastChats:'on'};
+ const saved={directoryActions:'off',chatPlanning:'off',pastChats:'off'};
+ Object.assign(f.families.get('a').runs[0],saved);
+ f.workspace.updateStatus({...f.status,runtimeSettings:{chatDefaults:configured}});
+ assert.deepEqual(actual(),configured);
+ assert.equal(f.$('#next-chat-directory-diagnostics'),null);
+ await f.open('a');
+ assert.deepEqual(actual(),saved);
+ f.workspace.updateStatus({...f.status,runtimeSettings:{chatDefaults:configured}});
+ assert.deepEqual(actual(),saved);
+});

@@ -4,6 +4,9 @@ import { createForceRestart } from './settings-restart.mjs';
 import { createGroupedModelPicker } from '../core/model-picker.mjs';
 import { enableProviderForModel } from '../../provider-availability.mjs';
 import { createContextControls } from '../core/context-controls.mjs';
+import {chatTurnMode} from '../../chat-turn-defaults.mjs';
+
+const chatDefaultFields=[['directoryActions','Directory',[['off','Off'],['on','On']]],['chatPlanning','Planning',[['off','Off'],['on','On']]],['pastChats','Search Previous Chats',[['off','Off'],['on','On demand']]]];
 
 export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{}}) {
   mount.innerHTML=[
@@ -26,6 +29,11 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     '<div class="next-row"><select id="next-settings-model" class="next-field" style="flex:1;width:auto"></select>',
     '<button type="button" class="next-primary" id="next-settings-save-model">Set default</button></div>',
     '<p id="next-settings-model-feedback" class="next-help" role="status"></p></section>',
+    '<section class="next-card"><h2>New Chat defaults</h2><p class="next-help">Existing chats keep their settings. Search Previous Chats controls BLACKICE lookups in other saved chats, not context in this chat.</p>',
+    '<form id="next-chat-defaults-form" class="next-stack"><div class="next-settings-grid">',
+    ...chatDefaultFields.map(([key,label,choices])=>'<label class="next-label">'+label+'<select class="next-field" id="next-chat-default-'+key+'">'+choices.map(([value,text])=>'<option value="'+value+'">'+text+'</option>').join('')+'</select></label>'),
+    '</div>',
+    '<div class="next-row"><button type="submit" class="next-primary">Save Chat defaults</button><span class="next-help" id="next-chat-defaults-feedback" role="status"></span></div></form></section>',
     '<section class="next-card"><h2>Runtime</h2><form id="next-runtime-settings-form" class="next-stack"><details class="next-compatibility"><summary>Task limits and access</summary><div class="next-settings-grid">',
     '<label class="next-label">Stop waiting after no model activity (minutes)<input class="next-field" type="number" id="next-runtime-idle" min="1" max="1440"></label>',
     '<label class="next-label">Maximum task runtime (minutes)<input class="next-field" type="number" id="next-runtime-timeout" min="1" max="1440" placeholder="No limit"></label>',
@@ -62,6 +70,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   const nativeRecovery=createNativeWriteRecovery({mount:$('next-native-recovery'),api});
   $('next-review-open').addEventListener('click',()=>void selectSection('recovery'));
   const f={
+    chatDefaults:$('next-chat-defaults-form'),chatDefaultsFeedback:$('next-chat-defaults-feedback'),
     cwd:$('next-settings-cwd'),choose:$('next-settings-choose'),saveCwd:$('next-settings-save-cwd'),
     model:$('next-settings-model'),saveModel:$('next-settings-save-model'),subscriptionStatus:$('next-settings-subscription-status'),
     status:$('next-settings-status'),modelFeedback:$('next-settings-model-feedback'),reconnectFeedback:$('next-settings-reconnect-feedback'),
@@ -75,6 +84,14 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     modelDirty=false,modelRevision=0,runtimeDirty=false,runtimeRevision=0,statusRead=0;
   const pending=new Set(),panels=new Map(),sectionButtons=[...mount.querySelectorAll('[data-settings-section]')];
   let runtimeSettings=status.runtimeSettings||{};
+  const chatDefaultsControls=new Map(chatDefaultFields.map(([key])=>[key,$('next-chat-default-'+key)]));
+  const editedChatDefaults=new Map();
+  let chatDefaultsRevision=0;
+  const drawChatDefaults=()=>{
+    for(const [key,control] of chatDefaultsControls)if(!editedChatDefaults.has(key))control.value=chatTurnMode(key,{defaults:runtimeSettings.chatDefaults});
+  };
+  for(const [key,control] of chatDefaultsControls) control.addEventListener('change',()=>{editedChatDefaults.set(key,++chatDefaultsRevision);f.chatDefaultsFeedback.textContent='';});
+  drawChatDefaults();
   const modelPicker=createGroupedModelPicker({select:f.model,label:'Default model',onSetupProvider:openModelProvider,onEnableProvider:async id=>{
     const fresh=await enableProviderForModel(api,status,id);
     if(destroyed||!active)return null;
@@ -85,6 +102,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   function updateRuntimeSettings(value){
     if(!value||typeof value!=='object'||Array.isArray(value))return;
     runtimeSettings=value;status={...status,runtimeSettings};panels.get('models')?.instance?.updateRuntimeSettings?.(value);refreshModelPicker();
+    drawChatDefaults();
     if(!runtimeDirty)contextDefaults.reconcile(value.defaultContext);
   }
   let restartStorage; try { restartStorage = globalThis.localStorage; } catch {}
@@ -203,6 +221,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     for(const option of nodes.values())option.remove();
     if(f.model.value!==selected)f.model.value=selected;
     refreshModelPicker();
+    drawChatDefaults();
     if(!runtimeDirty)contextDefaults.reconcile(runtimeSettings.defaultContext);
   }
   function drawRuntime(config={}){
@@ -277,6 +296,18 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
       runtimeDirty=true;runtimeRevision++;
     });
   }
+  f.chatDefaults.addEventListener('submit',event=>{
+    event.preventDefault();
+    if(!editedChatDefaults.size)return;
+    const submitted=new Map(editedChatDefaults);
+    const chatDefaults=Object.fromEntries([...submitted.keys()].map(key=>[key,chatDefaultsControls.get(key).value]));
+    void mutate('chat-defaults',f.chatDefaults.querySelector('button[type="submit"]'),async()=>{
+      const updated=await api('/api/runtime/settings','POST',{chatDefaults});
+      generation++;
+      for(const [key,revision] of submitted)if(editedChatDefaults.get(key)===revision)editedChatDefaults.delete(key);
+      updateRuntimeSettings(updated);
+    },f.chatDefaultsFeedback);
+  });
   f.runtime.addEventListener('submit',event=>{
     event.preventDefault();
     const idle=Number(f.idle.value),timeout=f.timeout.value?Number(f.timeout.value):null;

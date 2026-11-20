@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { RuntimeSettingsStore,validateRuntimeSettings } from '../lib/runtime-settings.mjs';
 import {normalizePlanningOntology} from '../public/planning-module-policy.mjs';
-const defaults = { codexHistory:'codex', runTimeoutMs:null, providerIdleTimeoutMs:300000, defaultEffort:'default', defaultServiceTier:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, subagentsEnabled:true, maxSubagents:3, connectedGmail:false, executionGuardrails:false, planningOntology:normalizePlanningOntology(), hiddenModelProviders:[] };
+const defaults = { codexHistory:'codex', runTimeoutMs:null, providerIdleTimeoutMs:300000, defaultEffort:'default', defaultServiceTier:'default', defaultContext:{preset:'model',windowTokens:null,autoCompact:true}, subagentsEnabled:true, maxSubagents:3, connectedGmail:false, executionGuardrails:false, planningOntology:normalizePlanningOntology(), hiddenModelProviders:[], chatDefaults:{directoryActions:'off',chatPlanning:'off',pastChats:'off'} };
 const prefs = codexHistory => ({ ...defaults, codexHistory });
 
 async function settingsStore(t,options={}){
@@ -154,3 +154,16 @@ test('retired subagent preferences load as defaults while explicit internal cont
 });
 
 test('retired opportunity input rejects without rewriting saved bytes',async t=>{const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),'blackice-retired-opportunity-'));t.after(()=>fs.rm(dataDir,{recursive:true,force:true}));const file=path.join(dataDir,'runtime-settings.json'),original=JSON.stringify({maxSubagents:2,subagentOpportunity:{enabled:true}},null,2);await fs.writeFile(file,original);await assert.rejects(new RuntimeSettingsStore({dataDir}).init(),/existing file was preserved/i);assert.throws(()=>validateRuntimeSettings({subagentOpportunity:{enabled:true}}),{code:'RUNTIME_SETTINGS_INVALID'});assert.equal(await fs.readFile(file,'utf8'),original);});
+
+test('Chat defaults are validated, merge independent saves, and reopen without a stored receipt preference',async t=>{
+ const {store,dataDir}=await settingsStore(t);
+ assert.deepEqual(store.get().chatDefaults,defaults.chatDefaults);
+ for(const chatDefaults of [{pastChats:true},{directoryDiagnostics:'maximal'},{planning:'on'},[],{},null]){
+  await assert.rejects(store.update({chatDefaults}),{code:'RUNTIME_SETTINGS_INVALID'});
+ }
+ await Promise.all([store.update({chatDefaults:{directoryActions:'on',chatPlanning:'on'}}),store.update({chatDefaults:{pastChats:'on'}})]);
+ const reopened=await new RuntimeSettingsStore({dataDir}).init();
+ t.after(()=>reopened.close());
+ assert.deepEqual(reopened.get().chatDefaults,{directoryActions:'on',chatPlanning:'on',pastChats:'on'});
+ assert.deepEqual((JSON.parse(await fs.readFile(reopened.file,'utf8'))).chatDefaults,reopened.get().chatDefaults);
+});

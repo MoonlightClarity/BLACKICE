@@ -10,6 +10,7 @@ import { summaries, filterSummaries, conversationRuns, rootId, lastRunId, runnin
 import { submitChat, submitFreshChatTask, replyState } from './send.mjs';
 import {createGoalControls,parseGoalCommand} from './goals.mjs';
 import { createConversationReader } from './reader-client.mjs';
+import {chatTurnMode} from '../../chat-turn-defaults.mjs';
 import { initAttachmentsUI } from '../../attachments-ui.mjs';
 import { escapeHTML, stableId } from '../core/dom.mjs';
 import { normalizeChatOptions, validateChatOptions, savedChatExecutionMode } from './options-model.mjs';
@@ -67,14 +68,13 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   const root = () => rootId(state.selected) || 'new';
   const actionDrafts=new Map(),planningDrafts=new Map();
   const actionOutline=createActionDirectory({frame:view.shell,api,getRuns:()=>state.runs});
-  const selectedActions=()=>actionDrafts.get(root())??state.runs.at(-1)?.directoryActions??'off';
-  const selectedPlanning=()=>planningDrafts.get(root())??state.runs.at(-1)?.chatPlanning??'off';
-  const directoryDrafts=new Map();
+  const selectedMode=(key,drafts)=>chatTurnMode(key,{draft:drafts.get(root()),saved:state.runs.at(-1)?.[key],defaults:runtimeStatus.runtimeSettings?.chatDefaults,existing:Boolean(state.selected)});
+  const selectedActions=()=>selectedMode('directoryActions',actionDrafts);
+  const selectedPlanning=()=>selectedMode('chatPlanning',planningDrafts);
   const turnReceiptsInspector=createTurnReceiptsInspector({frame:view.shell,api,getRuns:()=>state.runs,showLauncher:false,onBack:()=>activityInspector.open()});
   const activityInspector=createActivityInspector({frame:view.shell,api,events,getRunId:()=>state.runs.at(-1)?.id||null,onTurnReceipts:()=>turnReceiptsInspector.open()});
-  const selectedDirectory=()=>directoryDrafts.get(root())??state.runs.at(-1)?.directoryDiagnostics??'off';
   const pastChatsDrafts=new Map();
-  const selectedPastChats=()=>pastChatsDrafts.get(root())??state.runs.at(-1)?.pastChats??(state.selected?'on':'off');
+  const selectedPastChats=()=>selectedMode('pastChats',pastChatsDrafts);
   const visualMount=mount.ownerDocument.createElement('div');view.scroll.append(visualMount);
   const visuals=createVisualWorkspace({mount:visualMount,api,getConversationId:root,notify:message=>notify(message)});
   const selectedBucket=()=>state.selected?.state||state.bucket;
@@ -143,8 +143,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
     actionOutline.refresh(state.selected?state.runs.at(-1)?.id:null);
     view.directoryActions.value=selectedActions();view.chatPlanning.value=selectedPlanning();
     view.directoryActions.disabled=view.chatPlanning.disabled=Boolean(busy||state.loading||bucket!=='active'||state.runs.some(running));
-    view.directoryDiagnostics.value=selectedDirectory();
-    view.directoryDiagnostics.disabled=Boolean(busy||state.loading||bucket!=='active'||state.runs.some(running));
     view.pastChats.value=selectedPastChats();
     view.pastChats.disabled=Boolean(busy||state.loading||bucket!=='active'||state.runs.some(running));
     goalControls?.update({conversationId:root(),running:state.runs.some(run=>run.status==='running'&&run.settled!==true),readonly:bucket!=='active',busy:state.pending||state.managing||state.loading});
@@ -615,7 +613,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
       const context=active?undefined:contextControls.read();
       const submittedContextRevision=contextControls.revision;
       const result=await submitChat({api,runs:current,task,model:previous&&!submittedModel.explicit?undefined:options.model,
-        effort:options.effort,serviceTier:options.serviceTier,context,goal,pastChats:active?undefined:selectedPastChats(),directoryDiagnostics:active?undefined:selectedDirectory(),directoryActions:active?undefined:selectedActions(),chatPlanning:active?undefined:selectedPlanning(),
+        effort:options.effort,serviceTier:options.serviceTier,context,goal,pastChats:active?undefined:state.selected?selectedPastChats():pastChatsDrafts.get(root()),directoryActions:active?undefined:state.selected?selectedActions():actionDrafts.get(root()),chatPlanning:active?undefined:state.selected?selectedPlanning():planningDrafts.get(root()),
         planningMode:options.planningMode,planningExecutionMode:options.planningExecutionMode,attachmentIds:[...(state.attachmentIds.get(root())||[])],
         cwd:(()=>{try{return localStorage.getItem('blackice.next.cwd')||status?.cwd||'';}catch{return status?.cwd||'';}})()});
       const unchanged=consumeDraft&&state.inputOwner===submittedOwner&&state.inputRevision===submittedRevision;
@@ -626,7 +624,7 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
         hint(result.receipt.delivery==='rejected'?'Direction saved; live delivery was rejected.':result.receipt.delivery==='uncertain'?'Direction saved; live delivery is uncertain.':(result.receipt.queued===true||result.receipt.delivery==='queued')?'Direction queued.':'Direction delivered.');
       } else if(result.run?.id) {
         modelSelections.consume(submittedModel);
-        pastChatsDrafts.delete(submittedContextOwner);directoryDrafts.delete(submittedContextOwner);actionDrafts.delete(submittedContextOwner);planningDrafts.delete(submittedContextOwner);
+        pastChatsDrafts.delete(submittedContextOwner);actionDrafts.delete(submittedContextOwner);planningDrafts.delete(submittedContextOwner);
         const run=result.run;
         if(context!==undefined)contextControls.commit(submittedContextOwner,context,submittedContextRevision);
         const item=previous ? {...previous,runId:run.id,latestRunId:run.id}
@@ -816,7 +814,6 @@ export function createChatWorkspace({ mount, api, events, getStatus, notify = ()
   });
   view.directoryActions.addEventListener('change',()=>{if(!view.directoryActions.disabled)actionDrafts.set(root(),view.directoryActions.value);});
   view.chatPlanning.addEventListener('change',()=>{if(!view.chatPlanning.disabled)planningDrafts.set(root(),view.chatPlanning.value);});
-  view.directoryDiagnostics.addEventListener('change',()=>{if(!view.directoryDiagnostics.disabled)directoryDrafts.set(root(),view.directoryDiagnostics.value);});
   view.pastChats.addEventListener('change',()=>{if(!view.pastChats.disabled)pastChatsDrafts.set(root(),view.pastChats.value);});
   view.form.addEventListener('submit',event=>{event.preventDefault();void send();});
   view.input.addEventListener('keydown',event=>{

@@ -33,7 +33,7 @@ class Runtime extends EventEmitter {
   };
   const state=await use({action:'read'});
   assert.equal(state.actions[0].id,'inspect');
-  await use({action:'block',id:'inspect',claim:'Synthetic starter sighted'});
+  await use({action:'block',id:'inspect',blocker:'prerequisite-unavailable',claim:'Synthetic starter sighted; required fixture source unavailable'});
   options.onEvent?.({type:'message',text:'Offline fixture turn completed.'});
   return {output:'Offline fixture turn completed.'};
  }
@@ -45,12 +45,13 @@ class Runtime extends EventEmitter {
  const base=await server.listen({waitForRemote:false});
  win=new BrowserWindow({show:false,width:1200,height:650,webPreferences:{offscreen:true,backgroundThrottling:false}});
  await win.loadURL(base+'/next');
- const ids=['#next-chat-directory-actions','#next-chat-planning-actions','#next-chat-directory-diagnostics'];
+ const ids=['#next-chat-directory-actions','#next-chat-planning-actions'];
  await until('actual independent Chat selectors',()=>run(`[${ids.map(JSON.stringify).join(',')}].every(id=>!!document.querySelector(id))`));
  const values=()=>run(`[${ids.map(JSON.stringify).join(',')}].map(id=>document.querySelector(id).value)`);
- assert.deepEqual(await values(),['off','off','off']);
- await fill(ids[0],'on');await fill(ids[1],'on');await fill(ids[2],'maximal');
- assert.deepEqual(await values(),['on','on','maximal']);
+ assert.deepEqual(await values(),['off','off']);
+ assert.equal(await run('document.querySelector("#next-chat-directory-diagnostics")===null'),true);
+ await fill(ids[0],'on');await fill(ids[1],'on');
+ assert.deepEqual(await values(),['on','on']);
  await fill('#next-chat-input','Fixture: editable action outline');
  await run('document.querySelector("#next-chat-send").click()');
  const done=await until('admitted synthetic turn',()=>[...server.engine.runs.values()].find(row=>row.settled));
