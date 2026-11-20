@@ -15,6 +15,18 @@ const verification = {
 const signIn = { ...verification, origin: 'https://accounts.example.org', hostname: 'accounts.example.org',
   reason: 'sign-in', evidence: 'login-form' };
 
+function assertVerificationToolContract(tools) {
+  for (const name of ['relay_browser', 'relay_browser_signin']) {
+    const tool = tools.find(tool => tool.name === name);
+    assert.ok(tool, `Missing model-visible tool: ${name}`);
+    assert.match(tool.description, /provider script, branding badge .* or hidden frame alone is not an active challenge/);
+    assert.match(tool.description, /normal form controls are enabled and no challenge is shown, use those controls for the authorized task/);
+    assert.match(tool.description, /only when the page shows a visible challenge or the site response explicitly requires verification/);
+    assert.match(tool.description, /do not solve or bypass the challenge by guessing/);
+    assert.match(tool.description, /check the outcome before repeating any submit/);
+  }
+}
+
 test('browser blocker reason must match observed evidence, not misclassify CAPTCHA as sign-in', () => {
   assert.equal(normalizeBrowserSignIn({site:'https://jobs.lever.co/apply',reason:'verification',evidence:'verification-page'}).reason, 'verification');
   assert.throws(() => normalizeBrowserSignIn({site:'https://jobs.lever.co',reason:'sign-in',evidence:'verification-page'}));
@@ -70,6 +82,7 @@ test('completed run with an unresolved verification returns its browser scope fo
   class Runtime extends EventEmitter {
     status(){return{connected:true,authenticated:true,defaultModel:'test',models:[{id:'test',model:'test',available:true}]};}
     async runAgent(options){
+      assertVerificationToolContract(options.dynamicTools);
       const report=await options.onToolCall({name:'relay_browser_signin',arguments:{
         site:'https://jobs.lever.co',reason:'verification',evidence:'verification-page'
       }});
