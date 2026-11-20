@@ -7,6 +7,8 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProviderRuntime, ProviderStore } from '../lib/providers.mjs';
+import { HarnessEngine } from '../lib/engine.mjs';
+import { createMissionWorkflow } from '../public/mission-model.mjs';
 import { BLACKICE_HARNESS_INSTRUCTIONS } from '../lib/harness-identity.mjs';
 
 // Supplementary capacity lookup is covered by provider-model-fallback tests.
@@ -1398,4 +1400,63 @@ test('terminal Stop wins a race with steering while preserving the accepted dire
   controller.abort(); await steering; await rejected;
   assert.equal(requests.length, 1, 'terminal stop must not start another inference');
   assert.ok(state.record.messages.some(m => m.role === 'user' && m.content === 'Accepted new direction.'));
+});
+
+
+
+test('ordinary Chat holds an incomplete final and makes exactly one corrective provider continuation', async t => {
+  const partial = 'The workspace is visible. I haven’t yet created the result file.';
+  const file = 'review-result.txt';
+  const call = (id, args) => ({role:'assistant',content:null,tool_calls:[{id,type:'function',function:{name:'relay_workspace',arguments:JSON.stringify(args)}}]});
+  const answer = content => ({role:'assistant',content});
+  const read = call('workspace-list', {action:'list',path:'.'});
+  const write = call('workspace-write', {action:'write',path:file,text:'Verified fixture result.'});
+  for (const [label, input, messages, expected, changed, repairs] of [
+    ['progress', 'Create the result file. Do not contact anyone or upload any file.', [read,answer(partial),write,answer('Created the result file.')], 'Created the result file.', true, 1],
+    ['conflicting', 'Create the result file. Do not create the result file.', [read,answer(partial)], partial, false, 0],
+    ['bounded', 'Create the result file.', [read,answer(partial),answer(partial)], partial, false, 1],
+    ['budget', 'Create the result file.', [read,answer(partial)], partial, false, 0],
+    ['no-read', 'Create the result file.', [answer(partial)], partial, false, 0],
+    ['answer-only', 'Tell me how to create the result file.', [read,answer(partial)], partial, false, 0],
+    ['quoted', 'Assess this instruction: "Create the result file."', [read,answer(partial)], partial, false, 0],
+    ['blocker', 'Create the result file.', [read,answer('I haven’t created it because I need your approval.')], 'I haven’t created it because I need your approval.', false, 0],
+    ['write-already', 'Create the result file.', [read,write,answer(partial)], partial, true, 0],
+    ['failed-with-unknown', 'Create the result file.', [read,call('failed-write',{action:'write',path:file}),answer(partial)], partial, false, 0],
+    ['cancelled', 'Create the result file.', [read,answer(partial)], partial, false, 0],
+    ['saved', 'Create the result file.', [answer('This is the previous conversation turn.'),read,answer(partial)], partial, false, 0],
+  ]) await t.test(label, async t => {
+    let engine, activeId;
+    const {runtime,baseUrl,cwd,requests}=await harness(t, (_request,response,index)=>{
+      if(label==="cancelled"&&index===2) engine.cancelRun(activeId);
+      const message=messages[index-1];
+      if(!message)return json(response,{error:{message:'Unexpected extra provider request'}},500);
+      json(response,{choices:[{message,finish_reason:message.tool_calls?'tool_calls':'stop'}]});
+    });
+    await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl,models:['local-model'],...(label==='budget'?{maxSteps:2}:{})});
+    engine=await new HarnessEngine({runtime,dataDir:cwd,defaultCwd:cwd}).init();
+    try {
+      const workflow=createMissionWorkflow({task:input,id:'mission_chat_'+label,model:'fixture::local-model',cwd,planningMode:'off'});
+      const runOptions={directoryActions:'off',chatPlanning:'off',pastChats:'off'};
+      let run=engine.startRun({workflow,input:{task:label==='saved'?'Say hello.':input,...runOptions}});
+      activeId=run.id;
+      await engine.executions.get(run.id);
+      if(label==='saved'){
+        assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);
+        run=engine.continueRun(run.id,{nodeId:'agent',message:input,...runOptions});
+        await engine.executions.get(run.id);
+      }
+      const finished=engine.getRun(run.id);
+      assert.equal(finished.status,label==='cancelled'?'cancelled':'completed',finished.error);
+      if(label!=='cancelled') assert.equal(finished.nodes.agent.output,expected);
+      assert.equal(requests.length,messages.length);
+      assert.equal(finished.events.filter(e=>e.data?.type==='chat.execution-review').length,repairs);
+      if(repairs) assert(requests.some(r=>r.body.messages.some(m=>typeof m.content==='string'&&m.content.includes('[BLACKICE INTERNAL CONTINUATION]'))));
+      if(label==='progress'){
+        assert(!finished.events.some(e=>e.data?.type==='message'&&e.data?.text===partial));
+        assert.equal(finished.events.filter(e=>e.data?.type==='tool.result'&&e.data?.action==='write').length,1);
+      }
+      if(changed) assert.equal(await readFile(path.join(cwd,file),'utf8'),'Verified fixture result.');
+      else await assert.rejects(readFile(path.join(cwd,file),'utf8'),{code:'ENOENT'});
+    } finally { await engine.close(); }
+  });
 });
