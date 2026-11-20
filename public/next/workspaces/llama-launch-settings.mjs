@@ -45,18 +45,27 @@ export function createLlamaCppLaunchSettings({mount, advancedMount, api, onChang
  ['flashAttention','Flash Attention','select'],
  ['parallel','Parallel server slots','number'],
  ['cacheRamMiB','RAM prompt cache (MiB; 0 = off)','number'],
- ['poll','CPU polling percentage (0–100)','number']];
+ ['poll','CPU polling percentage (0–100)','number'],
+ ['threads','Generation CPU threads (optional)','number',true],
+ ['threadsBatch','Prompt processing CPU threads (optional)','number',true],
+ ['batchSize','Prompt batch size (tokens; optional)','number',true],
+ ['ubatchSize','Prompt microbatch size (tokens; optional)','number',true],
+ ['cacheTypeK','Key cache type (optional)','select',true],
+ ['cacheTypeV','Value cache type (optional)','select',true]];
+ const cacheTypes=['f32','f16','bf16','f8_e4m3','q8_0','q4_0','q4_1','iq4_nl','q5_0','q5_1'];
  const controls={};
- for(const [key,title,type] of definitions){
+ for(const [key,title,type,optional] of definitions){
   const c=make(type==='select'?'select':'input','','next-field');c.id='next-llama-default-'+key;
-  if(type==='select')for(const v of ['auto','on','off']){const o=make('option',v);o.setAttribute('value',v);c.append(o);}
-  else c.setAttribute('type',type);
+  if(type==='select')for(const v of key==='flashAttention'?['auto','on','off']:['',...cacheTypes]){const o=make('option',v||'Runtime default');o.setAttribute('value',v);c.append(o);}
+  else {c.setAttribute('type',type);if(optional){c.placeholder='Runtime default';c.min='1';c.max=key.startsWith('threads')?'1024':'262144';c.step='1';}}
   controls[key]=c;(key==='modelsDirectory'?directory:section).append(label(key==='modelsDirectory'?'Custom models folder (blank uses default)':title,c));
  }
+ section.append(make('p','Leave optional thread, batch and cache settings blank to use runtime defaults. Quantized caches reduce memory use; support and performance depend on the model and backend. Per-model overrides take precedence.','next-help'));
  const paths=make('textarea','','next-field');paths.id='next-llama-paths';paths.rows=4;
  const overrides=make('textarea','','next-field');overrides.id='next-llama-overrides';overrides.rows=4;
  const advanced=make('details','','next-provider-advanced');
- advanced.append(make('summary','Per-model configuration (JSON)'),label('Model file paths (JSON)',paths),label('Model-specific overrides (JSON)',overrides));
+ advanced.append(make('summary','Per-model configuration (JSON)'),label('Model file paths (JSON)',paths),label('Model-specific overrides (JSON)',overrides),
+  make('p','Optional tuning keys: threads, threadsBatch, batchSize, ubatchSize, cacheTypeK and cacheTypeV. Vision keys: mmprojPath and mmprojOffload. Remove a key to inherit the global or runtime default.','next-help'));
  const save=button('Save launch defaults'),reset=button('Restore recommended values');
  save.id='next-llama-default-save';reset.id='next-llama-default-reset';save.className='next-primary';
  const commands=make('div','','next-row');commands.append(save,reset);
@@ -70,7 +79,48 @@ export function createLlamaCppLaunchSettings({mount, advancedMount, api, onChang
  yarnSettings.append(make('summary','YaRN context extension (per model)'),
   make('p','Optional. Use the exact local model ID and original context specified by its publisher. Larger contexts need more memory and may reduce quality. BLACKICE derives the scaling factor; the actual runtime context can differ.','next-help'),
   label('Local model ID',yarnId),label('Original context (tokens)',yarnOriginal),label('Target context (tokens)',yarnTarget),yarnActions);
- section.append(yarnSettings,advanced,commands,preview);
+ const projectorSettings=make('details','','next-provider-advanced');projectorSettings.id='next-llama-projector';
+ const projectorId=input('next-llama-projector-model');projectorId.maxLength=256;
+ const projectorPath=input('next-llama-projector-path');projectorPath.placeholder='Absolute path to the matching projector (.gguf)';
+ const projectorOffload=make('select','','next-field');projectorOffload.id='next-llama-projector-offload';
+ for(const [value,title] of [['','Runtime default'],['on','GPU'],['off','CPU']]){const option=make('option',title);option.setAttribute('value',value);projectorOffload.append(option);}
+ const stageProjector=button('Set vision projector'),clearProjector=button('Clear vision projector');
+ stageProjector.id='next-llama-projector-set';clearProjector.id='next-llama-projector-clear';
+ const projectorActions=make('div','','next-row');projectorActions.append(stageProjector,clearProjector);
+ projectorSettings.append(make('summary','Vision projector (per model)'),
+  make('p','Use the matching projector published for the exact vision model. Keep it outside the models folder and bind it to that model ID here. The text model and projector are both required for images. CPU placement saves GPU memory but may slow image processing.','next-help'),
+  label('Local model ID',projectorId),label('Matching projector file',projectorPath),label('Projector placement',projectorOffload),projectorActions);
+ section.append(projectorSettings,yarnSettings,advanced,commands,preview);
+ function populateProjector(){
+  let config;try{config=read().modelOverrides?.[projectorId.value.trim()];}catch{}
+  projectorPath.value=config?.mmprojPath??'';
+  projectorOffload.value=typeof config?.mmprojOffload==='boolean'?(config.mmprojOffload?'on':'off'):'';
+ }
+ projectorId.addEventListener('change',populateProjector);
+ function stageProjectorChange(clear=false){
+  if(pending||picking||refreshing||revision===null||!alive||!active)return;
+  try{
+   const id=projectorId.value.trim(),config=read();
+   if(!id||id.length>256||/[=[\];#\x00-\x1f\x7f]/.test(id)||['__proto__','constructor','prototype'].includes(id))throw Error('Enter the exact local model ID.');
+   const existing=Object.hasOwn(config.modelOverrides,id)?{...config.modelOverrides[id]}:{};
+   if(clear){
+    if(!Object.hasOwn(existing,'mmprojPath')&&!Object.hasOwn(existing,'mmprojOffload'))throw Error('No vision projector override is configured for this model.');
+    delete existing.mmprojPath;delete existing.mmprojOffload;projectorPath.value='';projectorOffload.value='';
+   }else{
+    const filename=projectorPath.value.trim(),offload=projectorOffload.value;
+    if(!/^(?:[A-Za-z]:[\\/]|[\\/])/.test(filename)||!/\.gguf$/i.test(filename)||filename.length>4096||/[;#\x00-\x1f\x7f]/.test(filename))
+      throw Error('Enter an absolute path to a matching .gguf projector, without reserved INI characters.');
+    if(!['','on','off'].includes(offload))throw Error('Choose runtime default, GPU, or CPU projector placement.');
+    existing.mmprojPath=filename;
+    if(offload)existing.mmprojOffload=offload==='on';else delete existing.mmprojOffload;
+   }
+   if(Object.keys(existing).length)config.modelOverrides[id]=existing;else delete config.modelOverrides[id];
+   overrides.value=JSON.stringify(config.modelOverrides,null,2);
+   feedback.textContent=(clear?'Vision projector removal staged.':'Vision projector staged for '+id+'.')+' Choose Save launch defaults to apply on the next owned launch.';
+  }catch(error){feedback.textContent=error.message;}
+ }
+ stageProjector.addEventListener('click',()=>stageProjectorChange());
+ clearProjector.addEventListener('click',()=>stageProjectorChange(true));
  function populateYaRN(){
   let config;try{config=read().modelOverrides?.[yarnId.value.trim()]?.yarn;}catch{}
   yarnOriginal.value=String(config?.originalContext??'');yarnTarget.value=String(config?.targetContext??'');
@@ -120,7 +170,7 @@ export function createLlamaCppLaunchSettings({mount, advancedMount, api, onChang
  let alive=true,active=false,pending=false,picking=false,refreshing=false,generation=0,revision=null,recommended=null,baseline=null,pendingRestart=false,discoveryDirectory=null;
  const restartHint='Saved settings take effect the next time the idle router starts or restarts. Active work is not interrupted.';
  const valid=token=>alive&&active&&token===generation;
- const sync=()=>{start.disabled=pending||picking||refreshing||revision===null||!file.value.trim()||!name.value.trim();browse.disabled=pending||picking||refreshing||revision===null;reload.disabled=pending||picking||refreshing;save.disabled=pending||picking||refreshing||revision===null;saveDirectory.disabled=save.disabled;stageYaRN.disabled=clearYaRN.disabled=save.disabled;discoverModels.disabled=save.disabled||!discoveryDirectory?.available||controls.modelsDirectory.value.trim()!==(baseline?.modelsDirectory||'');reset.disabled=pending||picking||refreshing;file.disabled=pending;name.disabled=pending;};
+ const sync=()=>{start.disabled=pending||picking||refreshing||revision===null||!file.value.trim()||!name.value.trim();browse.disabled=pending||picking||refreshing||revision===null;reload.disabled=pending||picking||refreshing;save.disabled=pending||picking||refreshing||revision===null;saveDirectory.disabled=save.disabled;stageYaRN.disabled=clearYaRN.disabled=stageProjector.disabled=clearProjector.disabled=save.disabled;discoverModels.disabled=save.disabled||!discoveryDirectory?.available||controls.modelsDirectory.value.trim()!==(baseline?.modelsDirectory||'');reset.disabled=pending||picking||refreshing;file.disabled=pending;name.disabled=pending;};
  controls.modelsDirectory.addEventListener('input',sync);
  discoverModels.addEventListener('click',async()=>{
   if(!alive||!active||discoverModels.disabled)return;
@@ -139,7 +189,7 @@ export function createLlamaCppLaunchSettings({mount, advancedMount, api, onChang
  function fill(value){for(const [key]of definitions)controls[key].value=String(value[key]??'');paths.value=JSON.stringify(value.modelPaths||{},null,2);overrides.value=JSON.stringify(value.modelOverrides||{},null,2);}
  function draw(snapshot){
   pendingRestart=Boolean(snapshot.process?.pendingRestart);baseline=structuredClone(snapshot.settings||{});
-  revision=snapshot.revision;recommended=snapshot.recommended;fill(snapshot.settings||{});populateYaRN();
+  revision=snapshot.revision;recommended=snapshot.recommended;fill(snapshot.settings||{});populateYaRN();populateProjector();
   discoveryDirectory=snapshot.modelDirectory||null;
   controls.modelsDirectory.placeholder=snapshot.defaultModelsDirectory||'';
   directoryStatus.textContent=discoveryDirectory
@@ -153,9 +203,10 @@ export function createLlamaCppLaunchSettings({mount, advancedMount, api, onChang
   sync();
  }
  function read(){
-  const settings={};for(const [key,,type]of definitions){const v=controls[key].value.trim();settings[key]=type==='number'?Number(v):key==='gpuLayers'&&/^\d+$/.test(v)?Number(v):v;}
+  const settings={};for(const [key,,type,optional]of definitions){const v=controls[key].value.trim();if(optional&&!v)continue;settings[key]=type==='number'?Number(v):key==='gpuLayers'&&/^\d+$/.test(v)?Number(v):v;}
   try{settings.modelPaths=JSON.parse(paths.value||'{}');settings.modelOverrides=JSON.parse(overrides.value||'{}');}catch{throw Error('Model paths and overrides must be valid JSON objects.');}
   if(!settings.modelPaths||typeof settings.modelPaths!=='object'||Array.isArray(settings.modelPaths))throw Error('Model paths must be a JSON object.');
+  if(!settings.modelOverrides||typeof settings.modelOverrides!=='object'||Array.isArray(settings.modelOverrides))throw Error('Model overrides must be a JSON object.');
   return settings;
  }
  async function refresh({preserveDraft=false}={}){
@@ -227,7 +278,7 @@ export function createLlamaCppLaunchSettings({mount, advancedMount, api, onChang
       control.value=JSON.stringify(merged,null,2);
      } catch { control.value=raw; }
     }
-    populateYaRN();
+    populateYaRN();populateProjector();
    }
    if(!useSavedSettings||settings.modelPaths[id]!==filename){
     settings.modelPaths={...settings.modelPaths,[id]:filename};

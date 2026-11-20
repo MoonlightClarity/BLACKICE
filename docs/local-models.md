@@ -54,6 +54,52 @@ BLACKICE reads `GET /models` (router) or `GET /v1/models` (single process), send
 - Ollama, LM Studio and llama.cpp models vary in tool-calling support, context size and memory needs. Model availability does not by itself guarantee compatibility with every BLACKICE agent workflow.
 
 
+### Context capacity and active memory
+
+For managed local llama.cpp models, BLACKICE loads the selected model before checking the conversation budget and image capability. It refreshes the running model's per-slot context capacity, so an unloaded model's fallback estimate does not remain the admission limit. The same preparation applies to manual compaction. Existing conversations keep their saved provider address and model.
+
+`ctxSize: 0` asks the runtime to choose the model's native context. A requested or advertised maximum is not proof that this much context was allocated: GPU fitting can reduce it, and parallel slots can divide it. BLACKICE uses the actual per-slot limit and preserves a smaller explicit user context setting. The input budget also reserves room for output and safety headroom.
+
+### Vision projector (per model)
+
+Some multimodal GGUF models, including MiniCPM-V, need a separate matching projector GGUF. Under **Advanced runtime & model settings**, enter the exact saved model ID and the absolute projector path in the per-model vision section, stage the setting, and save the launch defaults. Store the projector outside the scanned language-model folder so it is not offered as a standalone chat model.
+
+The matching language model, projector, chat template, and runtime build must all support the same architecture. A projector from another model is not interchangeable. The optional placement setting selects GPU or CPU vision encoding; leaving it unspecified retains the runtime default. CPU placement can preserve GPU space for language inference and context, at the cost of image-encoding time.
+
+Saved settings take effect at the next owned launch. Independently managed servers retain their own launch configuration. Once the live model reports image support, the compatible provider can send images returned by BLACKICE tools through its existing image transport.
+
+The stored override is:
+
+```json
+{
+  "modelOverrides": {
+    "exact-model-id": {
+      "mmprojPath": "C:\\ModelProjectors\\matching-mmproj-F16.gguf",
+      "mmprojOffload": false
+    }
+  }
+}
+```
+
+### Optional llama.cpp tuning
+
+Advanced launch settings support these optional values globally or inside an exact model's `modelOverrides` entry. Blank optional controls omit the setting and retain the runtime's default.
+
+| Setting | Runtime option | Purpose |
+| --- | --- | --- |
+| `threads` | `--threads` | CPU threads used during generation |
+| `threadsBatch` | `--threads-batch` | CPU threads used during prompt processing |
+| `batchSize` | `--batch-size` | Logical prompt batch size |
+| `ubatchSize` | `--ubatch-size` | Physical prompt microbatch size |
+| `cacheTypeK` | `--cache-type-k` | Key-cache precision |
+| `cacheTypeV` | `--cache-type-v` | Value-cache precision |
+
+Supported cache names are validated before saving, but usable combinations still depend on the runtime, model architecture, and attention backend. KV-cache quantization changes inference-state precision; it does not rewrite the model weights. `cacheRamMiB` controls the separate RAM prompt cache and does not select KV-cache precision.
+
+Tune a small set of configurations on the actual machine. Keep the model, prompt, sampling, output allowance, and parallel-slot count fixed when comparing speed. Record actual context allocation, offloaded layers, memory headroom, time to first answer, prompt/generation throughput, and answer correctness. Cold initialization and steady inference need separate measurements. Include a real image when sizing a vision configuration: the runtime's fit estimate may not include all projector memory.
+
+A faster backend or larger window does not by itself improve coding accuracy. Keep reasoning/thinking behavior and answer quality visible when evaluating generation settings.
+
 ### Optional YaRN context extension
 
 Under **Config → Models → Local models → llama.cpp → Advanced runtime & model settings → YaRN context extension (per model)**, enter the exact local model ID, the original context documented for that GGUF, and a larger target (up to 262,144 tokens). Choose **Set YaRN**, then **Save launch defaults**. **Clear YaRN** removes that setting for the selected model only after saving. The bundled router applies the model-specific preset at its next owned launch; existing models and independently managed servers are not changed. No restart or load occurs while saving.
@@ -61,7 +107,7 @@ Under **Config → Models → Local models → llama.cpp → Advanced runtime & 
 The requested target is not a measured usable context. Use only a model that documents YaRN compatibility, and allow for additional memory use and potential quality loss. Verify the model's actual runtime context after loading before relying on the extension.
 ### Validation scope
 
-The adapter is covered by controlled HTTP and UI fixtures, including single-server mode, router lifecycle, and per-slot context metadata. A live llama.cpp model, GPU performance, and end-to-end agent tool use are not yet verified. Sleeping processes are shown as sleeping rather than resident in memory; inference can wake them.
+The adapter is covered by controlled HTTP and UI fixtures, including single-server mode, router lifecycle, context admission, image capabilities, and per-slot context metadata. A bounded MiniCPM-V 4.7 check also verified real managed-router startup and image-tool delivery with a full 262,144-token allocation; see [the measured profile and validation limits](minicpm-context-vision-runtime-20261120.md). This does not establish maximum-window recall or general coding quality. Sleeping processes are shown as sleeping rather than resident in memory; inference can wake them.
 
 Candidate bundled-runtime implementation and verification: [Bundled llama.cpp](BUNDLED-LLAMA.md). This is not an installed-release claim.
 

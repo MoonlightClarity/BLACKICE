@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {planningDOM} from './fixture-planning-dom.mjs';
 import {createLlamaCppLaunchSettings} from '../public/next/workspaces/llama-launch-settings.mjs';
-import {DEFAULT_LLAMA_CPP_SETTINGS} from '../lib/llama-cpp-launch-config.mjs';
+import {DEFAULT_LLAMA_CPP_SETTINGS,validateLlamaCppSettings} from '../lib/llama-cpp-launch-config.mjs';
 import {localModelHTTP} from '../lib/local-model-http.mjs';
 const tick=()=>new Promise(r=>setImmediate(r));
 const gate=()=>{let resolve;return {promise:new Promise(r=>resolve=r),resolve:v=>resolve(v)};};
@@ -33,6 +33,58 @@ test('optional YaRN UI stages one model override, validates bounds, and removes 
  await f.click('#next-llama-yarn-clear');await f.click('#next-llama-default-save');
  assert.deepEqual(f.writes()[1].body.settings.modelOverrides,{existing:{gpuLayers:7},other:{ctxSize:8192}});
  assert.ok(f.writes().every(c=>c.route==='/api/local-models/config'),'Settings changes never start or load a model');
+});
+
+test('vision projector UI stages, saves and clears one model without changing other settings or loading',async t=>{
+ const f=fixture(t);await f.enter();
+ const mmprojPath='C:\\Model projectors\\matching-mmproj-F16.gguf';
+ await f.input('#next-llama-overrides',JSON.stringify({existing:{gpuLayers:7,cacheTypeK:'q8_0'},other:{ctxSize:8192}}));
+ await f.input('#next-llama-projector-model','existing');
+ await f.input('#next-llama-projector-path','relative.gguf');
+ await f.click('#next-llama-projector-set');
+ assert.match(f.$('#next-llama-default-feedback').textContent,/absolute path/);assert.equal(f.writes().length,0);
+ await f.input('#next-llama-projector-path',mmprojPath);
+ await f.input('#next-llama-projector-model','bad[model');
+ await f.click('#next-llama-projector-set');
+ assert.match(f.$('#next-llama-default-feedback').textContent,/exact local model ID/);
+ await f.input('#next-llama-projector-model','existing');
+ await f.input('#next-llama-projector-offload','off');
+ await f.click('#next-llama-projector-set');
+ assert.equal(f.writes().length,0);assert.match(f.$('#next-llama-default-feedback').textContent,/Vision projector staged/);
+ await f.click('#next-llama-default-save');
+ const expected={existing:{gpuLayers:7,cacheTypeK:'q8_0',mmprojPath,mmprojOffload:false},other:{ctxSize:8192}};
+ assert.deepEqual(f.writes()[0].body.settings.modelOverrides,expected);
+ assert.deepEqual(validateLlamaCppSettings(f.writes()[0].body.settings).modelOverrides,expected);
+ await f.panel.refresh();
+ assert.equal(f.$('#next-llama-projector-path').value,mmprojPath);
+ assert.equal(f.$('#next-llama-projector-offload').value,'off');
+ await f.input('#next-llama-projector-offload','on');await f.click('#next-llama-projector-set');await f.click('#next-llama-default-save');
+ assert.equal(f.writes()[1].body.settings.modelOverrides.existing.mmprojOffload,true);
+ await f.input('#next-llama-projector-offload','');await f.click('#next-llama-projector-set');await f.click('#next-llama-default-save');
+ assert.equal(Object.hasOwn(f.writes()[2].body.settings.modelOverrides.existing,'mmprojOffload'),false);
+ await f.click('#next-llama-projector-clear');await f.click('#next-llama-default-save');
+ assert.deepEqual(f.writes()[3].body.settings.modelOverrides,{existing:{gpuLayers:7,cacheTypeK:'q8_0'},other:{ctxSize:8192}});
+ assert.deepEqual(f.writes()[3].body.settings.modelPaths,{existing:'C:\\Models\\existing.gguf'});
+ assert.ok(f.writes().every(c=>c.route==='/api/local-models/config'),'Staging and saving never launch or load a model');
+});
+
+test('optional tuning UI preserves native omission and selected values through save, refresh and reset',async t=>{
+ const f=fixture(t);await f.enter();
+ const values={threads:6,threadsBatch:12,batchSize:512,ubatchSize:128,cacheTypeK:'q8_0',cacheTypeV:'q8_0'};
+ await f.click('#next-llama-default-save');
+ for(const key of Object.keys(values))assert.equal(Object.hasOwn(f.writes()[0].body.settings,key),false,key+' omitted when blank');
+ for(const [key,value] of Object.entries(values))await f.input('#next-llama-default-'+key,String(value));
+ await f.input('#next-llama-overrides',JSON.stringify({existing:{threads:4,cacheTypeV:'f16'}}));
+ await f.click('#next-llama-default-save');
+ const saved=f.writes()[1].body.settings;
+ for(const [key,value] of Object.entries(values))assert.equal(saved[key],value);
+ assert.deepEqual(validateLlamaCppSettings(saved),saved);
+ await f.panel.refresh();
+ for(const [key,value] of Object.entries(values))assert.equal(f.$('#next-llama-default-'+key).value,String(value));
+ await f.click('#next-llama-default-reset');await f.click('#next-llama-default-save');
+ for(const key of Object.keys(values))assert.equal(Object.hasOwn(f.writes()[2].body.settings,key),false);
+ assert.deepEqual(f.writes()[2].body.settings.modelOverrides,{existing:{threads:4,cacheTypeV:'f16'}});
+ assert.ok(f.writes().every(c=>c.route==='/api/local-models/config'));
 });
 
 test('included runtime, CPU fallback, and simple file flow are visible; technical fields collapsed',async t=>{

@@ -38,6 +38,46 @@ test('v1.0.0 launcher: editable defaults, global presets and per-model overrides
   assert.equal(DEFAULT_LLAMA_CPP_SETTINGS.shutdownIdleSeconds,0,'untested full shutdown remains off');
 });
 
+test('optional runtime tuning preserves native defaults and writes global or per-model INI options',()=>{
+  const native=buildLlamaCppLaunch(settings());
+  assert.doesNotMatch(native.preset,/^(threads|threads-batch|batch-size|ubatch-size|cache-type-[kv]|mmproj(?:-offload)?) =/m);
+  for(const key of ['threads','threadsBatch','batchSize','ubatchSize','cacheTypeK','cacheTypeV'])
+    assert.equal(Object.hasOwn(native.effective,key),false,key+' stays unspecified');
+  const configured=settings({threads:6,threadsBatch:12,batchSize:512,ubatchSize:128,cacheTypeK:'q8_0',cacheTypeV:'q8_0',
+    modelOverrides:{small:{threads:4,threadsBatch:6,batchSize:256,ubatchSize:64,cacheTypeK:'f16',cacheTypeV:'f16'}}});
+  const launch=buildLlamaCppLaunch(configured);
+  const [global,small]=launch.preset.split('[small]\n');
+  assert.match(global,/threads = 6\nthreads-batch = 12\nbatch-size = 512\nubatch-size = 128\ncache-type-k = q8_0\ncache-type-v = q8_0\n$/);
+  assert.equal(small,'threads = 4\nthreads-batch = 6\nbatch-size = 256\nubatch-size = 64\ncache-type-k = f16\ncache-type-v = f16\n');
+  assert.doesNotMatch(launch.args.join(' '),/threads|batch-size|cache-type/);
+  assert.deepEqual(settings(JSON.parse(JSON.stringify(configured))),configured);
+  for(const [key,value] of [['threads',0],['threadsBatch',-1],['threads',1.5],['threads',1025],
+    ['batchSize',0],['ubatchSize',262145],['cacheTypeK','int8'],['cacheTypeV','q8_0\nmodel = x'],['cacheTypeV',null]]){
+    assert.throws(()=>settings({[key]:value}),{code:'LOCAL_LLAMA_SETTINGS_INVALID'});
+    assert.throws(()=>settings({modelOverrides:{small:{[key]:value}}}),{code:'LOCAL_LLAMA_SETTINGS_INVALID'});
+  }
+});
+
+test('vision projector binds only to its model with explicit GPU or CPU placement',()=>{
+  const mmprojPath='C:\\Model projectors\\matching-mmproj-F16.gguf';
+  const configured=settings({modelOverrides:{vision:{mmprojPath,mmprojOffload:false,ctxSize:65536},other:{ctxSize:8192}}});
+  const launch=buildLlamaCppLaunch(configured);
+  assert.doesNotMatch(launch.preset.split('[other]')[0],/mmproj/);
+  assert.match(launch.preset,/\[other\]\nc = 8192\n\[vision\]\nc = 65536\nmmproj = C:\\Model projectors\\matching-mmproj-F16\.gguf\nmmproj-offload = off\n$/);
+  assert.doesNotMatch(launch.args.join(' '),/mmproj/);
+  const gpu=buildLlamaCppLaunch(settings({modelOverrides:{vision:{mmprojPath,mmprojOffload:true}}}));
+  assert.match(gpu.preset,/mmproj-offload = on\n$/);
+  const automatic=buildLlamaCppLaunch(settings({modelOverrides:{vision:{mmprojPath}}}));
+  assert.match(automatic.preset,/mmproj = /);assert.doesNotMatch(automatic.preset,/mmproj-offload/);
+  assert.deepEqual(settings(JSON.parse(JSON.stringify(configured))),configured);
+  for(const invalid of ['relative.gguf','','C:\\Models\\wrong.bin','C:\\Models\\evil#comment.gguf','C:\\Models\\evil;comment.gguf','C:\\Models\\bad\nmodel.gguf'])
+    assert.throws(()=>settings({modelOverrides:{vision:{mmprojPath:invalid}}}),{code:'LOCAL_LLAMA_SETTINGS_INVALID'});
+  for(const invalid of ['off',0,null])
+    assert.throws(()=>settings({modelOverrides:{vision:{mmprojOffload:invalid}}}),{code:'LOCAL_LLAMA_SETTINGS_INVALID'});
+  assert.throws(()=>settings({mmprojPath}),{code:'LOCAL_LLAMA_SETTINGS_INVALID'});
+  assert.throws(()=>settings({mmprojOffload:false}),{code:'LOCAL_LLAMA_SETTINGS_INVALID'});
+});
+
 test('YaRN writes only exact per-model preset flags and rejects conflicting or invalid contexts',()=>{
  const yarn={originalContext:32768,targetContext:131072};
  const launch=buildLlamaCppLaunch(settings({ctxSize:16384,modelOverrides:{long:{yarn,gpuLayers:7},unchanged:{ctxSize:4096}}}));
@@ -55,11 +95,13 @@ test('revisioned settings persist atomically without running a model', async t =
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'blackice-llama-settings-'));
   t.after(() => fs.rm(dir,{recursive:true,force:true}));
   const store=await new LlamaCppSettingsStore({dataDir:dir}).init();
-  const result=await store.update({expectedRevision:0,settings:settings({sleepIdleSeconds:180})});
+  const configured=settings({sleepIdleSeconds:180,threads:6,cacheTypeK:'q8_0',
+    modelOverrides:{vision:{mmprojPath:'C:\\Projectors\\vision.gguf',mmprojOffload:false,cacheTypeV:'q8_0'}}});
+  const result=await store.update({expectedRevision:0,settings:configured});
   assert.equal(result.revision,1);
   await assert.rejects(store.update({expectedRevision:0,settings:settings()}),/changed elsewhere/);
   const reloaded=await new LlamaCppSettingsStore({dataDir:dir}).init();
-  assert.equal(reloaded.snapshot().settings.sleepIdleSeconds,180);
+  assert.deepEqual(reloaded.snapshot().settings,configured);
   assert.equal(reloaded.snapshot().recommended.sleepIdleSeconds,120);
 });
 

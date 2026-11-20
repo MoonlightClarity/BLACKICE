@@ -41,3 +41,19 @@ test('llama.cpp single-model metadata verifies ID before reading active /props',
   assert.equal(result[0].maxOutputTokens, undefined);
   assert.deepEqual(paths, ['/models', '/v1/models', '/props']);
 });
+
+test('an explicit llama.cpp refresh replaces a catalog maximum with the allocated slot even when both catalog limits are known', async () => {
+  const paths = [], resolver = new ModelLimitResolver();
+  const result = await resolver.enrich(config, [{
+    id: 'active.gguf', contextWindowTokens: 262144, contextWindowSource: 'provider-reported',
+    maxOutputTokens: 4096, maxOutputTokensSource: 'provider-reported',
+  }], { refresh: true, request: async path => {
+    paths.push(path);
+    assert.equal(path, '/models');
+    return { data: [{ id: 'active.gguf', status: { value: 'loaded' }, meta: { n_ctx: 8192 }, memory: { effective: { n_ctx: 32768 } } }] };
+  } });
+  assert.equal(result[0].contextWindowTokens, 8192);
+  assert.equal(result[0].contextWindowSource, 'runtime-reported');
+  assert.equal(result[0].maxOutputTokens, 4096);
+  assert.deepEqual(paths, ['/models']);
+});
