@@ -14,7 +14,7 @@ import {submitChat} from '../public/next/chat/send.mjs';
 const id='library-job-search';
 const example='Find three current U.S. remote intelligence roles posted within the last week. Do not apply.';
 const heading='JOB SEARCH (advisory execution method; not permission)';
-const accepted={type:'skill_context_submitted',skillId:id,title:'Job Search',source:'bundled',sourceRevision:'2'};
+const accepted={type:'skill_context_submitted',skillId:id,title:'Job Search',source:'bundled',sourceRevision:'3'};
 
 test('current actionable job requests select only the job skill, not the general intent skill',()=>{
  for(const input of [example,'Apply for jobs until 6 AM EST.','Job search for me. Stop at 3 jobs.','Can you shortlist remote open roles?','Please load the Job Search skill.','Search job boards for research roles.']){
@@ -41,29 +41,34 @@ test('the discoverable packaged skill checks recency and live requisition separa
   /direct and adjacent searches in parallel from the first pass/,/do not require exhausting every primary search/,
   /venture firm.s public portfolio jobs page/,/funding announcement proves none of these/,/Do not assume all contracts are gig work/,
   /exact requisition\/posting ID/,/verify it reaches the same live form/,/elapsed submission deadline/,
-  /archived mirror is not enough/,/hard filters and genuine role gates[\s\S]*preferred qualifications/,/gap in years, title, or a named tool is not by itself a rejection/,/do not require a perfect match/i,/Candidates almost never meet every listed requirement/,/credible transfer and no concrete blocker/,/three years in research operations[\s\S]*do not claim five years/,/cycle|cycling through copies/,/search is not permission to apply/,
+  /archived mirror is not enough/,/genuine role gates/,/Candidates almost never meet every listed requirement/,/cycle|cycling through copies/,/search is not permission to apply/,
   /never repeat an effect/i,/"Up to N" is a cap, not a completion minimum/,/Find and verify each promising exact vacancy as you go/,/report the honest shortfall/,/count only a confirmed submission/])assert.match(content,expected);
 });
 
-test('hiring guidance separates screening, real analogous examples, and exact factual attestations',async()=>{
+test('fit ignores listed years even for director roles and credits work under adjacent titles',async()=>{
  const {content,provenance}=await createSkillsCatalog().detail({id});
- assert.equal(provenance.revision,'2');
- for(const expected of [/\*\*Listing:\*\*[\s\S]*not a test of r.sum. word matching/,
-  /\*\*Written prompt:\*\*[\s\S]*strongest real example[\s\S]*personally did/,
-  /do not relabel the work or invent a metric, ownership, or outcome/,/Hiring ads and applications are pitches, not neutral or exhaustive disclosures/,/Make the strongest truthful case with relevant facts/,/not conceal information necessary to make a direct answer accurate/,
-  /\*\*Attestation:\*\*[\s\S]*permits evidence of comparable duties; it does not require the exact title/,
-  /do not answer yes unless the evidence supports the claim as written/,
-  /different plausible readings would change a mandatory answer[\s\S]*check the next eligible opening/,
-  /assessed supplier markets[\s\S]*without pretending it was competitor analysis/,
-  /A generic r.sum. title does not settle the certification[\s\S]*verify a different substantive analysis opening/])assert.match(content,expected);
+ assert.equal(provenance.revision,'3');
+ for(const expected of [/Ignore every numerical years-of-experience requirement when evaluating fit/,
+  /Do not use it to filter, rank, downlevel, or decide not to apply/,
+  /director role lists 10\+ years/,/actual results[\s\S]*interview outcomes/,
+  /administrative titles has evaluated conflicting sources[\s\S]*do not claim a formal director or intelligence analyst title/,
+  /Never claim a license or clearance the candidate does not hold/,
+  /add nonoverlapping periods in adjacent roles/,/Do not turn three years of supported work into zero/,
+  /fill it accurately and let the employer decide; do not self-reject/])assert.match(content,expected);
 });
-test('experience duration follows actual comparable work without inventing exact credentials',async()=>{
+
+test('routine fields use known answers without added friction and behavioral essays are an effort decision',async()=>{
  const {content}=await createSkillsCatalog().detail({id});
- for(const expected of [/add nonoverlapping periods in adjacent roles/,/Do not turn three years of supported work into zero/,
-  /do not apologize or volunteer unrelated gaps/,/answer three years[\s\S]*Do not double count overlapping periods/,
-  /years directly using Platform X[\s\S]*answer zero if they never used it/,
-  /describe the substantiated comparable workflow in the platform they did use/])assert.match(content,expected);
+ for(const expected of [/A job application is not a deposition/,
+  /do not ask for documents to prove every routine answer/,
+  /Relatives at the employer:[\s\S]*leave an unresolved answer blank/,
+  /Sponsorship:[\s\S]*authorized to work now[\s\S]*need sponsorship now or in the future/,
+  /Privacy:[\s\S]*acknowledge the notice[\s\S]*Leave optional marketing and unrelated sharing unchecked/,
+  /Do not mistake a separate waiver/,
+  /Behavioral questions in the application are the effort exception/,
+  /a decision about time, not a verdict on fit/,/Save deeper interview preparation for a screen or interview/])assert.match(content,expected);
 });
+
 class Native extends EventEmitter {
  status(){return {connected:false,authenticated:false,models:[]};}
  async close(){}

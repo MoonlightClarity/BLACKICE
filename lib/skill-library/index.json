@@ -133,7 +133,7 @@
       "description": "Find and verify live job openings across job boards and employer sites; separate a shortlist from authorized applications.",
       "tags": ["research", "jobs", "web"],
       "aliases": ["find open roles", "job boards", "verify a posting", "job applications", "career search"],
-      "source": {"kind": "first-party", "revision": "2"},
+      "source": {"kind": "first-party", "revision": "3"},
       "bodyFile": "job-search.md"
     },
     {
