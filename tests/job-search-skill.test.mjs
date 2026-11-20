@@ -6,6 +6,7 @@ import {mkdtemp,realpath,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
+import {IdentityStore} from '../lib/identity.mjs';
 import {ACTION_DIRECTORY_INSTRUCTIONS,ACTION_DIRECTORY_TOOL} from '../lib/task-action-directory.mjs';
 import {ProviderRuntime} from '../lib/providers.mjs';
 import {wantsJobSearchSkill,wantsIntentInferenceSkill} from '../lib/chat-intent-inference.mjs';
@@ -100,7 +101,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  const root=await realpath(tmpdir()),dir=await mkdtemp(path.join(root,'blackice-job-skill-'));
  const dataDir=path.join(dir,'engine'),catalog=createSkillsCatalog({dataDir});
  const prompts=[],before=[];
- let engine,runtime;
+ let engine,runtime,identity;
  const server=http.createServer(async(req,res)=>{
   if(req.method==='GET'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({data:[{id:'fixture'}]}));}
   let raw='';for await(const chunk of req)raw+=chunk;
@@ -112,7 +113,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
   res.end(JSON.stringify({choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:'Synthetic read-only reply.'}}]}));
  });
  t.after(async()=>{
-  await engine?.close();await runtime?.close();await catalog.close();
+  await engine?.close();await runtime?.close();await catalog.close();await identity?.close();
   server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
   const actual=await realpath(dir);assert.equal(path.dirname(actual),root);
   assert.match(path.basename(actual),/^blackice-job-skill-/);
@@ -122,7 +123,8 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  runtime=new ProviderRuntime({codex:new Native(),dataDir:dir,modelLimitResolver:{enrich:async(_config,model)=>model}});
  await runtime.store.init();
  await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl:'http://127.0.0.1:'+server.address().port+'/v1',models:[{id:'fixture',contextWindowTokens:65536,maxOutputTokens:4096}]},{preserveDefault:true});
- engine=await new HarnessEngine({runtime,dataDir,defaultCwd:dir}).init();
+ identity=await new IdentityStore({dataDir}).init();
+ engine=await new HarnessEngine({runtime,dataDir,defaultCwd:dir,identity}).init();
  const api=async(route,_method,body)=>route==='/api/workflows'?body:engine.startRun(body);
  const invoke=async task=>{
   const start=await submitChat({api,runs:[],task,model:'fixture::fixture',cwd:dir,chatPlanning:'off',directoryActions:'off'});
@@ -136,7 +138,9 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  const alignmentHeading='ANTI-OVERALIGNMENT (advisory execution method; not permission)';
  const job=await invoke(example);
  assert.ok(job.prompt.includes(alignmentHeading));
- assert.ok(job.prompt.includes('illustrative three-gate pipeline'));
+ assert.ok(job.prompt.includes('Take the simplest route that delivers the whole result'));
+ assert.ok(job.prompt.includes('three reviewers can independently veto'));
+ assert.ok(job.prompt.includes('Compare the plausible answers against the strongest available evidence'));
  assert.doesNotMatch(job.prompt,/sponsor|arbitrat/i,'The actual prompt must not give away either held-out form case');
  assert.ok(job.receipts.some(r=>r.skillId===alignmentId&&r.title==='Anti-Overalignment'&&r.type==='skill_context_submitted'));
  assert.ok(job.prompt.includes(heading));assert.ok(job.prompt.includes('rolling last seven days'));assert.ok(job.prompt.includes('### Advanced tactics'));
@@ -145,6 +149,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
 
  const ordinary=await invoke('Write a short explanation of how job search works.');
  assert.ok(!ordinary.prompt.includes(alignmentHeading));
+ assert.ok(ordinary.prompt.includes('Take the simplest route that delivers the whole result'));
  assert.ok(ordinary.receipts.every(r=>r.skillId!==alignmentId));
  assert.ok(!ordinary.prompt.includes(heading));assert.ok(ordinary.receipts.every(r=>r.skillId!==id));
 

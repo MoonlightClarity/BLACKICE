@@ -13,7 +13,8 @@ test('approved skill ships the exact bundled revision and gives the model a fres
  const root=await mkdtemp(path.join(tmpdir(),'approved-skill-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const catalog=createSkillsCatalog({dataDir:root}),base=readReleaseSkill(id),entry=await catalog.detail({id});
  assert.equal(base.title,'Anti-Overalignment');
- assert.equal(hash(base.content),'54b3c2849f75c26922acb3582bd4a8b87070322b4cf89434ac3604dca1b01c2f');
+ assert.equal(base.content,await readFile(new URL('./fixtures/anti-overalignment-general-operational.md',import.meta.url),'utf8'));
+ assert.equal(hash(base.content),'56c729d6ed74b073df340c1640500e7dac43e57418f52c8b292bd0b94737ed5d');
  assert.ok(base.content.startsWith('# Anti-Overalignment\n'));
  assert.equal(entry.content,base.content);assert.equal(entry.source,'bundled');
  const handler=createRetrievalToolHandler({cwd:root,dataDir:root});

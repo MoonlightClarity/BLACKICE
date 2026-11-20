@@ -14,7 +14,7 @@ const ids=['builtin-decomposition','builtin-task-grounding','builtin-structured-
 test('the three revised inline definitions are preserved; removed defaults are not fallback content',async()=>{
  assert.deepEqual(searchReleaseSkills().map(x=>x.id),ids);
  // Pin the actual approved critical-path and completion revisions as well as the scoped anti-overalignment skill.
- const hashes=['0e45b660d8efd57ea0c327234a675fd814c792fa9923017c7c9ad557152487d2','424345b8af59d799c0003311e3eb1b2af98b47b54a6ddeab8ddf65f099346537','22b3d21f67512eefcc4032cf546e7e0485f1020568228ecc03851e896b82224b'];
+ const hashes=['0e45b660d8efd57ea0c327234a675fd814c792fa9923017c7c9ad557152487d2','56c729d6ed74b073df340c1640500e7dac43e57418f52c8b292bd0b94737ed5d','22b3d21f67512eefcc4032cf546e7e0485f1020568228ecc03851e896b82224b'];
  assert.deepEqual(ids.map(id=>createHash('sha256').update(readReleaseSkill(id).content).digest('hex')),hashes);
  const catalog=createSkillsCatalog();assert.deepEqual((await catalog.list()).entries.filter(x=>x.id.startsWith('builtin-')).map(x=>x.id),ids);
  for(const id of ['builtin-browser','builtin-browser-tab-management','builtin-file-discovery','builtin-job-search','builtin-inference','builtin-time-management','builtin-feasibility','builtin-branching','builtin-replanning','builtin-metacognition','builtin-verification','builtin-delegation']){
@@ -75,9 +75,9 @@ test('explicit folder mutation removes orphan placements only, preserving actual
 
 test('over-alignment calibration connects three reward incentives to the delivered scope',()=>{
  const {content}=readReleaseSkill('builtin-task-grounding');
- for(const pattern of [/Categorical compression/,/Asymmetric review/,/An occasional bottom score/,/4 - 3p/,/Do not treat a downside as a blocker/,/Find where the restriction came from/])assert.match(content,pattern);
+ for(const pattern of [/F\/\(M\+F\)/,/three reviewers can independently veto/,/4 - 3p/,/Check what the source prevents/,/indirect evidence/,/Conflicting documents/])assert.match(content,pattern);
  const brief=CHAT_PLANNING_MODULES.find(module=>module.id==='builtin-task-grounding').brief;
- assert.match(brief,/A downside is not a blocker/);
- assert.match(brief,/an observed tool limit rather than an assumption/);
- assert.doesNotMatch(content,/under-alignment|underalignment/i);
+ assert.match(brief,/what supposedly blocks it/);
+ assert.match(brief,/an observed tool response/);
+ assert.doesNotMatch(content,/under-alignment|underalignment|circana|sponsor|arbitrat/i);
 });

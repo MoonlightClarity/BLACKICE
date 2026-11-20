@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { IdentityStore, DEFAULT_SOUL } from '../lib/identity.mjs';
 
-const approved = await fs.readFile(new URL('./fixtures/soul-default-completion-20261119.md', import.meta.url), 'utf8');
+const approved = await fs.readFile(new URL('./fixtures/soul-default-general-operational.md', import.meta.url), 'utf8');
 const old = await fs.readFile(new URL('./fixtures/soul-default-20261029.md', import.meta.url), 'utf8');
 async function fixture(t, content = old, provenance = { source: 'seed' }) {
   const dataDir = await fs.mkdtemp(path.join(tmpdir(), 'blackice-soul-refresh-'));
@@ -19,7 +19,7 @@ async function fixture(t, content = old, provenance = { source: 'seed' }) {
 }
 test('identity default and prior seed are exact', () => {
   assert.equal(createHash('sha256').update(old).digest('hex'), '18658fa7e02228a5288c9e66c73e08991b192b4735f344ae7e7988ab92928039');
-  assert.equal(createHash('sha256').update(DEFAULT_SOUL).digest('hex'), '72cbb253e68f154b22dfac278c6f035c4999e32b64dcb2e43f571761312d469f');
+  assert.equal(createHash('sha256').update(DEFAULT_SOUL).digest('hex'), 'ac47ab80d581d3aa67acb4891d3764363b50b00bc6160d82473740c1bc474da8');
   assert.equal(DEFAULT_SOUL, approved);
 });
 for (const provenance of [{source:'seed'}, {source:'development', reason:'Updated the unchanged starter identity to the fixed BLACKICE identity.'}]) {
