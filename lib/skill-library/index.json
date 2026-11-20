@@ -128,6 +128,15 @@
       "bodyFile": "data-reconciliation.md"
     },
     {
+      "id": "library-job-search",
+      "title": "Job Search",
+      "description": "Find and verify live job openings across job boards and employer sites; separate a shortlist from authorized applications.",
+      "tags": ["research", "jobs", "web"],
+      "aliases": ["find open roles", "job boards", "verify a posting", "job applications", "career search"],
+      "source": {"kind": "first-party", "revision": "1"},
+      "bodyFile": "job-search.md"
+    },
+    {
       "id": "library-public-source-brief",
       "title": "Research a public question",
       "description": "Answer a research question with primary sources, dates, coverage, and explicit gaps.",
