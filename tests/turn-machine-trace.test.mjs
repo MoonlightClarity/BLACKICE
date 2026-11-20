@@ -196,3 +196,21 @@ test('workspace search coverage matches the same call in maximal export, safely 
  assert.equal(replayed.metadata.resultPreviewOnly,true);
  assert.equal(replayed.metadata.returnedMatches,undefined);
 });
+
+
+test('browser observations rehydrate as bounded returned evidence without unrelated claims or raw data',()=>{
+ const run=fixture();
+ const data={type:'browser.observation',action:'click',phase:'returned',tool:'relay_browser',
+  callRef:'abcd'.repeat(6),frameCount:1,contentFrameCount:1,enabledControlCount:2};
+ for(const key of ['url','frameText','values','screenshot','callId'])
+  Object.defineProperty(data,key,{get(){assert.fail('browser payload must not be read: '+key);}});
+ recordTurnMachineEvent(run,wrap(data));
+ const restored=JSON.parse(JSON.stringify(run));
+ Object.assign(restored.turnMachineTrace.head[0].metadata,{url:'PRIVATE_URL',text:'PRIVATE_TEXT',
+  phase:'delivered',success:true,actionDispatched:true,frameCount:999,enabledControlCount:'PRIVATE_VALUE'});
+ const evidence=projectTurnMachineTrace(restored).entries[0];
+ assert.equal(evidence.kind,'browser.observation');
+ assert.equal(evidence.callRef,data.callRef);
+ assert.deepEqual(evidence.metadata,{tool:'relay_browser',phase:'returned',action:'click',contentFrameCount:1});
+ assert.doesNotMatch(JSON.stringify(evidence),/PRIVATE_|dispatch|deliver|success/);
+});
