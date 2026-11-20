@@ -232,6 +232,9 @@ test('a finished source read gets one bounded Directory reconciliation turn, wit
   assert.equal(next.continue,true);
   assert.match(next.prompt,/receipt-1/);
   assert.match(next.prompt,/do not reopen or reread/i);
+  assert.match(next.prompt,/result list or snippet, open one promising source/);
+  assert.match(next.prompt,/record the concrete reason and its receipt with note, then check a different option in this turn/);
+  assert.match(next.prompt,/record a stable source locator and the facts the next step needs, observe the action with its receipts, and do the next ready step/);
   const state=await dir({action:'read'});
   assert.equal(state.actions[0].state,'active','A successful read is not an observed milestone.');
   if(current===1){
