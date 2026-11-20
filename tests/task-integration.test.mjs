@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { HarnessEngine } from '../lib/engine.mjs';
@@ -14,6 +14,7 @@ import { missionProgress } from '../public/mission-model.mjs';
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const wait = async predicate => { const end = Date.now() + 5000; while (Date.now() < end) { const value = predicate(); if (value) return value; await new Promise(resolve => setTimeout(resolve, 10)); } assert.fail('Integration state did not settle.'); };
 const graph = { id: 'task-integration', name: 'Durable task integration', nodes: [{ id: 'input', type: 'input', name: 'Task' }, { id: 'agent', type: 'agent', name: 'Agent', prompt: 'Finish and verify the task.' }, { id: 'output', type: 'output', name: 'Result' }], edges: [{ id: 'a', source: 'input', target: 'agent' }, { id: 'b', source: 'agent', target: 'output' }], settings: { maxParallel: 1 } };
+const planningGraph={...graph,planning:{shared:true,coordinatorNodeId:'agent'}};
 class Runtime extends EventEmitter {
   constructor(execute = async () => ({ output: 'Done.', threadId: 'provider_test-thread' })) { super(); this.execute = execute; this.calls = []; }
   status() { return { connected: true, authenticated: true, defaultModel: 'test-model', activeTurns: 0 }; }
@@ -75,7 +76,7 @@ for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent s
   });
   const { engine, tasks, engines, cwd, dataDir } = await engineHarness(t, runtime);
   await writeFile(path.join(cwd, 'source.txt'), 'Fixture source for project ALPHA.');
-  const original = engine.startRun({ workflow: graph, input: 'Finish project ALPHA.', planningOntology:{version:2,modules:{decomposition:true}} });
+  const original = engine.startRun({ workflow: planningGraph, input: 'Finish project ALPHA.', planningOntology:{version:2,modules:{decomposition:true}} });
   try {
     await wait(() => { if (started) return true; const run = engine.getRun(original.id); assert.ok(!run.settled, run.error || run.nodes.agent?.error || 'Fixture settled before recording partial work.'); return false; });
     if (ending === 'cancelled') { engine.cancelRun(original.id); assert.throws(() => engine.continueRun(original.id, { nodeId: 'agent', message: 'Too soon.' }), /active|stopping|finish/i); }
@@ -95,7 +96,7 @@ for (const ending of ['cancelled', 'failed']) test(`${ending} real saved agent s
   assert.deepEqual(restored.getRun(original.id).taskState, stoppedSnapshot.taskState); assert.equal(restored.getRun(followup.id).taskState.contract.workItems.length, 1); assert.equal((await tasks.get(original.id)).contract.workItems.length, 1);
 });
 
-test('current native threads retain their original tool catalog while new tasks receive relay_task', async t => {
+test('current native threads retain their original tool catalog while only explicit new Planning tasks receive relay_task', async t => {
   const nativeThread = 'legacy-native-thread', runtime = new Runtime(async options => ({ output: 'Original native result.', threadId: options.threadId || nativeThread }));
   const { engine, tasks, cwd, dataDir, engines } = await engineHarness(t, runtime, { withTasks: false });
   const original = engine.startRun({ workflow: graph, input: 'Keep the original user objective.', planningMode: 'off' }); await settled(engine, original.id); assert.deepEqual(runtime.calls[0].dynamicTools.map(tool => tool.name), ['relay_workspace', 'relay_find_files', 'relay_control', 'relay_agents','relay_skills','relay_history']);
@@ -104,7 +105,14 @@ test('current native threads retain their original tool catalog while new tasks 
   const continuation = restored.continueRun(original.id, { nodeId: 'agent', message: 'Refine the original result.' }); const run = await settled(restored, continuation.id); const resumed = nextRuntime.calls[0];
   assert.equal(resumed.threadId, nativeThread); assert.deepEqual(resumed.dynamicTools.map(tool => tool.name), originalTools); assert.match(run.nodes.agent.capabilitiesNote, /original tools/); assert.match(resumed.prompt,/SAVED TOOL CATALOG/);assert.match(resumed.prompt,/Only call tools actually attached to this saved conversation: relay_workspace/); assert.ok(!resumed.prompt.includes('Read relay_task for full state before editing.'), 'a legacy thread must not be told to call an unattached tool');
   assert.equal((await tasks.get(original.id)).goal, 'Keep the original user objective.');
-  const fresh = restored.startRun({ workflow: graph, input: 'A new task has the new gateway.', planningMode: 'off' }); await settled(restored, fresh.id); assert.ok(nextRuntime.calls[1].dynamicTools.some(tool => tool.name === 'relay_task')); assert.ok(nextRuntime.calls[1].dynamicTools.some(tool => tool.name === 'relay_control')); assert.notEqual(fresh.taskId, original.id);
+  const ordinary=restored.startRun({workflow:graph,input:'A new ordinary task.',planningMode:'off'});
+  assert.equal((await settled(restored,ordinary.id)).status,'completed');
+  assert.ok(!nextRuntime.calls[1].dynamicTools.some(tool=>tool.name==='relay_task'));
+  const fresh=restored.startRun({workflow:planningGraph,input:'A new explicit Planning task.',planningMode:'off'});
+  assert.equal((await settled(restored,fresh.id)).status,'completed');
+  assert.ok(nextRuntime.calls[2].dynamicTools.some(tool=>tool.name==='relay_task'));
+  assert.ok(nextRuntime.calls[2].dynamicTools.some(tool=>tool.name==='relay_control'));
+  assert.notEqual(fresh.taskId,original.id);
 });
 
 async function application(t) {
@@ -129,7 +137,7 @@ test('authenticated HTTP artifact previews and downloads return verified actual 
 test('large real deliverables retain a usable metadata preview and deleted files return404', async t => {
   const { app, request, cookie } = await application(t), cwd = app.engine.defaultCwd, large = Buffer.alloc(33 * 1024 * 1024 + 1, 65); await writeFile(path.join(cwd, 'large.txt'), large);
   let state = await app.tasks.ensure({ taskId: 'large-task', runId: 'large-run', nodeId: 'agent', cwd, goal: 'A real large result.' }); state = await app.tasks.addArtifact('large-task', { path: 'large.txt' }, { expectedRevision: state.revision }); const route = `/api/tasks/large-task/artifacts/${state.artifacts[0].id}`;
-  const preview = await request(route + '/preview', { cookie }); assert.equal(preview.status, 200); assert.equal(preview.data.previewKind, 'download'); assert.match(preview.data.message, /too large.*preview/i); assert.equal(preview.data.size, large.length); assert.equal(preview.data.artifact.path, path.join(cwd, 'large.txt'));
+  const preview = await request(route + '/preview', { cookie }); assert.equal(preview.status, 200); assert.equal(preview.data.previewKind, 'download'); assert.match(preview.data.message, /too large.*preview/i); assert.equal(preview.data.size, large.length); assert.equal(preview.data.artifact.path, await realpath(path.join(cwd, 'large.txt')));
   const download = await request(route + '/content', { cookie }); assert.equal(download.status, 200); assert.deepEqual(download.buffer, large);
   await rm(path.join(cwd, 'large.txt')); const missing = await request(route + '/preview', { cookie }); assert.equal(missing.status, 404); assert.equal((await request(route + '/content', { cookie })).status, 404);
 });

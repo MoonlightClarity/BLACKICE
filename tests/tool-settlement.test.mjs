@@ -80,9 +80,11 @@ test('API Stop keeps a real pending patch leased, preserves its late receipt, an
   // Explicitly authored historical outlines remain optional; settlement uses the independent host effect receipt.
   const settings = await new RuntimeSettingsStore({ dataDir: f.dataDir }).init(); await settings.update({ executionGuardrails: true }); engine.runtimeSettings = settings;
   f.cleanups.push(() => engine.close(), () => tasks.close(), () => settings.close());
-  const file = path.join(f.cwd, 'result.txt'), entered = deferred(), release = f.hold(); await fs.writeFile(file, 'before');
+  const rawFile=path.join(f.cwd,'result.txt'),entered=deferred(),release=f.hold();
+  await fs.writeFile(rawFile,'before');const file=await fs.realpath(rawFile);
   engine.filePatches.io = { ...fs, rename: async (from, to) => { if (to === file) { entered.resolve(); await release.promise; } return fs.rename(from, to); } };
-  const first = engine.startRun({ workflow: graph('fixture::primary'), input: 'Apply the controlled patch once.' }), execution = engine.executions.get(first.id);
+  const planningWorkflow={...graph('fixture::primary','off'),planning:{shared:true,coordinatorNodeId:'agent'}};
+  const first = engine.startRun({ workflow: planningWorkflow, input: 'Apply the controlled patch once.' }), execution = engine.executions.get(first.id);
   await admitted(entered, execution);
   const initial = engine.getRun(first.id), threadId = initial.nodes.agent.threadId;
   const authored = await tasks.get(initial.taskId);
