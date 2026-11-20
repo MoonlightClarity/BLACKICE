@@ -17,6 +17,10 @@ async function main() {
   const { ElectronBrowserDriver } = await import(pathToFileURL(path.resolve(__dirname, '../../desktop/browser-driver.mjs')));
   server = http.createServer((req, res) => {
     res.setHeader('content-type', 'text/html');
+    if (req.url === '/compose-visibility') {
+      res.end('<main style="visibility:hidden">Hidden wrapper text <button>Hidden control</button><div style="display:none"><button style="visibility:visible">Display none control</button></div><div><section style="visibility:visible"><input aria-label="To"><input aria-label="Subject"><div contenteditable="true" role="textbox" aria-label="Message Body"></div><button>Attach files</button><button onclick="window.fixtureSends++">Send</button></section></div></main><script>window.fixtureSends=0</script>');
+      return;
+    }
     if (req.url.startsWith('/spa-bootstrap')) {
       res.end('<button>Temporary control</button><script>addEventListener("load",()=>setTimeout(()=>{history.replaceState({}, "", "/spa-ready");document.querySelector("button").textContent="Ready control"},130))</script>');
       return;
@@ -103,6 +107,24 @@ async function main() {
   expectReady(await driver.perform({ action: 'navigate', tabId: tab.id, url: base + '/spa-bootstrap' }));
   expectReady(await driver.perform({ action: 'open', url: base + '/spa-bootstrap' }));
   report.checks.push('open and navigate publish controls only after synthetic SPA commits');
+  snapshot = await driver.perform({ action: 'navigate', tabId: tab.id, url: base + '/compose-visibility' });
+  const names = ['To', 'Subject', 'Message Body', 'Attach files', 'Send'];
+  const main = snapshot.frames.find(frame => frame.elements.some(element => element.name === 'Subject'));
+  assert.deepEqual(main.observationDiagnostics, { visibleControlsUnderHiddenAncestor: 5 });
+  assert.doesNotMatch(JSON.stringify(snapshot), /Hidden wrapper text|Hidden control|Display none control/);
+  const subjects = [];
+  for (const name of names) {
+    const queried = await driver.perform({ action: 'snapshot', tabId: tab.id, query: name });
+    const frame = queried.frames.find(value => value.elements.some(element => element.name === name));
+    assert.deepEqual(frame.observationDiagnostics, { visibleControlsUnderHiddenAncestor: 1 });
+    const target = frame.elements.find(element => element.name === name);
+    assert.equal(target.ref, main.elements.find(element => element.name === name).ref);
+    if (name === 'Subject') subjects.push(target);
+  }
+  await driver.perform({ action: 'fill', tabId: tab.id, ref: subjects[0].ref, text: 'Synthetic text' });
+  assert.equal(await wc.executeJavaScript("document.querySelector('[aria-label=Subject]').value"), 'Synthetic text');
+  assert.equal(await wc.executeJavaScript('window.fixtureSends'), 0);
+  report.checks.push('visible compose controls under hidden ancestors produce stable actionable refs; hidden and display-none controls omitted');
   report.ok = true;
 }
 let finished = false;

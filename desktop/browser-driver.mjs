@@ -134,7 +134,7 @@ const bounded = (promise, signal, ms = 12000) => new Promise((resolve, reject) =
 function pageSnapshot(key, prefix, query, readContext = false) {
   let state = globalThis[key];
   if (!state || state.document !== document || state.prefix !== prefix) state = globalThis[key] = { document, prefix, documentId: Math.random().toString(36).slice(2), elements: new Map(), identities: new Map(), descriptors: new WeakMap(), ids: new WeakMap(), next: 0 };
-  const items = [], text = []; let scanned = 0, truncated = false;
+  const items = [], text = []; let scanned = 0, truncated = false, visibleControlsUnderHiddenAncestor = 0;
   const normalized = value => String(value || '').replace(/\s+/g, ' ').trim();
   const contextual = Boolean(readContext && query), needle = String(query || '').toLowerCase();
   let previousText, following = 0, matches = 0, textScanned = 0, textIndex = 0, textChars = 0, lastTextIndex = -1;
@@ -167,12 +167,19 @@ function pageSnapshot(key, prefix, query, readContext = false) {
     }
     previousText = { value: excerpt(value, 'before'), index };
   };
-  function walk(root) {
+  function walk(root, hiddenAncestor = false) {
     for (const el of root.children || []) {
       if (++scanned > 16000 || items.length >= 300) { truncated = true; return; }
       if (['SCRIPT','STYLE','NOSCRIPT','TEMPLATE'].includes(el.tagName)) continue;
       const style = getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      if (style.display === 'none') continue;
+      // Unlike display:none, visibility is inherited and descendants can
+      // override it. Keep walking without exposing the hidden node itself.
+      if (style.visibility === 'hidden') {
+        if (el.shadowRoot) walk(el.shadowRoot, true);
+        walk(el, true);
+        continue;
+      }
       const role = el.getAttribute('role') || ({ A: 'link', BUTTON: 'button', INPUT: el.type === 'checkbox' ? 'checkbox' : el.type === 'radio' ? 'radio' : 'textbox', TEXTAREA: 'textbox', SELECT: 'combobox', SUMMARY: 'button' }[el.tagName]) || (/^H[1-6]$/.test(el.tagName) ? 'heading' : '');
       const namedContainer = !!(el.getAttribute('aria-label') || el.getAttribute('aria-labelledby'));
       const control = (!!role && (namedContainer || !/^(main|navigation|region|list|listitem|article|group|presentation|none|rowgroup|table|grid)$/.test(role))) || el.isContentEditable || el.tabIndex >= 0 || el.tagName === 'CANVAS';
@@ -190,6 +197,7 @@ function pageSnapshot(key, prefix, query, readContext = false) {
         }
         if (!query || `${label} ${'value' in el ? el.value : ''}`.toLowerCase().includes(query.toLowerCase())) {
           state.elements.delete(ref); state.elements.set(ref, el); state.identities.set(ref, descriptor);
+          if (hiddenAncestor) visibleControlsUnderHiddenAncestor++;
           items.push({ ref, role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...('value' in el ? { value: String(el.value).slice(0, 300) } : {}), disabled: Boolean(el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true'), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
         }
       }
@@ -197,8 +205,8 @@ function pageSnapshot(key, prefix, query, readContext = false) {
         if (contextual && (textScanned >= 16000 || textChars >= 22000)) { truncated = true; break; }
         collectText(node);
       }
-      if (el.shadowRoot) walk(el.shadowRoot);
-      walk(el);
+      if (el.shadowRoot) walk(el.shadowRoot, hiddenAncestor);
+      walk(el, hiddenAncestor);
     }
   }
   walk(document.documentElement);
@@ -234,7 +242,7 @@ function pageSnapshot(key, prefix, query, readContext = false) {
   }));
   const validation = [...document.querySelectorAll('input,select,textarea')].filter(field => (field.validity?.valid === false || field.getAttribute('aria-invalid') === 'true')).slice(0, 100)
     .map(field => ({ name: String(field.name || field.id || '').slice(0, 256), message: String(field.validationMessage || field.getAttribute('aria-errormessage') || '').slice(0, 1000) }));
-  return { title: document.title, url: location.href, elements: query ? items.filter(i => `${i.name} ${i.value || ''}`.toLowerCase().includes(query.toLowerCase())) : items, text: text.join('\n').slice(0, 22000), truncated, ...(semanticRecords.length ? { semanticRecords, semanticTruncated } : {}), ...(forms.length ? { forms } : {}), ...(validation.length ? { validation } : {}), readyState: document.readyState, ...(contextual ? { textContext: { matches, before: 1, after: 8 } } : {}) };
+  return { title: document.title, url: location.href, elements: query ? items.filter(i => `${i.name} ${i.value || ''}`.toLowerCase().includes(query.toLowerCase())) : items, text: text.join('\n').slice(0, 22000), truncated, ...(visibleControlsUnderHiddenAncestor ? { observationDiagnostics: { visibleControlsUnderHiddenAncestor } } : {}), ...(semanticRecords.length ? { semanticRecords, semanticTruncated } : {}), ...(forms.length ? { forms } : {}), ...(validation.length ? { validation } : {}), readyState: document.readyState, ...(contextual ? { textContext: { matches, before: 1, after: 8 } } : {}) };
 }
 
 async function smoothPageScroll(target, top, left) {

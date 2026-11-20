@@ -195,3 +195,24 @@ test('replacement during a read publishes only a fresh observation and repeated 
   await assert.rejects(repeated.driver.perform({ action: 'snapshot', tabId: repeated.tab.id }), { code: 'BROWSER_SNAPSHOT_DOCUMENT_CHANGED' });
   assert.equal(churn, 2); assert.equal(repeated.tab.refs.has('never-publish'), false); singleAdmission(repeated);
 });
+
+test('snapshot traverses hidden visibility for visible overrides but never display-none subtrees', () => {
+  const subject = element('input', '', { type: 'text', attributes: { 'aria-label': 'Subject' } });
+  const body = element('div', 'Visible message text', { isContentEditable: true, attributes: { 'aria-label': 'Message Body' } });
+  const displayNone = element('div', '', { hidden: true, children: [element('button', 'DISPLAY_NONE_TEXT')] });
+  const hiddenInput = element('input', 'HIDDEN_TEXT', { invisible: true, type: 'text', attributes: { 'aria-label': 'HIDDEN_INPUT' } });
+  const hidden = element('div', 'HIDDEN_WRAPPER_TEXT', { invisible: true, children: [
+    hiddenInput, displayNone, element('div', 'HIDDEN_NESTED_TEXT', { invisible: true, children: [subject, body] }),
+  ], shadowRoot: {children: [element('button', 'Attach files')]} });
+  const f = domFixture([hidden]);
+  const all = f.run();
+  assert.deepEqual(all.elements.map(i => i.name), ['Attach files', 'Subject', 'Message Body']);
+  assert.deepEqual(all.observationDiagnostics, {visibleControlsUnderHiddenAncestor:3});
+  assert.match(all.text, /Visible message text/);
+  assert.doesNotMatch(JSON.stringify(all), /HIDDEN_|DISPLAY_NONE_/);
+  const matches = f.run('Subject');
+  assert.deepEqual(matches.elements, all.elements.filter(item => item.name === 'Subject'));
+  assert.deepEqual(matches.observationDiagnostics, {visibleControlsUnderHiddenAncestor:1});
+  assert.equal(f.run('no match').observationDiagnostics, undefined);
+  assert.equal(f.context[f.key].elements.get(matches.elements[0].ref), subject);
+});
