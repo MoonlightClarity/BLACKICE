@@ -855,6 +855,11 @@ test('a diagnostic correction cannot resume a pending Directory task and a named
  const more=engine.continueRun(follow.id,{nodeId:'agent',message:'contniue',directoryActions:'on',chatPlanning:'on'});
  await engine.executions.get(more.id);
  assert.equal(engine.getRun(more.id).status,'completed',engine.getRun(more.id).error);
+ // Simulate the previously installed build: an old bare follow-up
+ // did not persist its scope, and a later Continue must skip over it.
+ delete engine.runs.get(more.id).chatCorrectionScope;
+ delete engine.runs.get(more.id).chatCorrectionSourceRunId;
+ delete engine.runs.get(more.id).nodes.agent.chatCorrectionScope;
  const repeat=engine.continueRun(more.id,{nodeId:'agent',message:'Continue',directoryActions:'on',chatPlanning:'on'});
  await engine.executions.get(repeat.id);
  assert.equal(engine.getRun(repeat.id).status,'completed',engine.getRun(repeat.id).error);
