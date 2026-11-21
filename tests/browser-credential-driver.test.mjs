@@ -19,7 +19,7 @@ const secret = { credentialId: 'credential_owned', revision: 2, origin, username
 
 function fixture() {
   const writes = [], events = [], evaluations = [];
-  const context = vm.createContext({ origin, location: { origin, href: url }, writes, events });
+  const context = vm.createContext({ origin, location: { origin, href: url }, writes, events, innerWidth: 1280, innerHeight: 900, devicePixelRatio: 1 });
   vm.runInContext(`
     window=globalThis; top=window; parent=window;
     document={forms:[]}; document.defaultView=window;
@@ -39,7 +39,7 @@ function fixture() {
     __fixture={document,elements:new Map([['password-ref',password],['confirmation-ref',confirmation],['username-ref',username]])};
   `, context);
   const frame = { url, executeJavaScript: async code => { evaluations.push(code); return vm.runInContext(code, context); } };
-  const tab = { id: 'owned-tab', revision: 3, refs: new Map(['password-ref', 'confirmation-ref', 'username-ref'].map(ref => [ref, frame])), suspendedWork: new Set(), window: { isDestroyed: () => false, webContents: { getURL: () => context.top.location.href } } };
+  const tab = { id: 'owned-tab', revision: 3, refs: new Map(['password-ref', 'confirmation-ref', 'username-ref'].map(ref => [ref, frame])), suspendedWork: new Set(), window: { isDestroyed: () => false, webContents: { getURL: () => context.top.location.href, executeJavaScript: frame.executeJavaScript } } };
   const driver = Object.create(ElectronBrowserDriver.prototype);
   Object.assign(driver, { key: '__fixture', tabs: new Map([[tab.id, tab]]), activeTab: tab.id, closed: false, activate: async () => {}, ensureContained: async () => {}, pageWork: async (_tab, promise) => promise });
   const args = { browser: 'relay', origin, credentialId: secret.credentialId, revision: secret.revision, tabId: tab.id, expectedUrl: url, expectedDocumentId: `${tab.id}:${tab.revision}`, passwordRef: 'password-ref', confirmationRef: 'confirmation-ref', usernameRef: 'username-ref' };

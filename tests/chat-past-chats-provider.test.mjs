@@ -20,14 +20,44 @@ const toolCall=(name,args,id)=>({id,type:'function',function:{name,arguments:JSO
 const receipt=(body,id)=>body.messages.findLast(item=>item.role==='tool'&&item.tool_call_id===id)?.content;
 const available=(body,name)=>body.tools.some(tool=>tool.function?.name===name);
 
+const outcomeMarker='BLACKICE ORDINARY TASK OUTCOME REVIEW';
+function syntheticOutcomeAssessment(request,turn){
+  const prompt=request.messages?.find(message=>typeof message.content==='string'&&message.content.includes(outcomeMarker))?.content;
+  if(!prompt)return null;
+  assert.ok(turn.workers.length,'assessment follows a worker request on this provider');
+  const {snapshot}=JSON.parse(prompt.split('\nREVIEW DATA (JSON):\n').at(-1));
+  assert.equal(snapshot.request,turn.task,'assessment retains the unchanged current request');
+  assert.equal(request.model,turn.workers[0].model,'assessment uses the worker model');
+  assert.equal(request.reasoning_effort,turn.workers[0].reasoning_effort,'assessment preserves worker effort');
+  assert.equal(request.service_tier,turn.workers[0].service_tier,'assessment preserves worker service tier');
+  assert.deepEqual(request.tools||[],[],'inline-evidence assessment has no action tools');
+  turn.assessors.push(request);
+  // This mock disposition tests transport, not model judgment or an external outcome.
+  return {decision:'respond',summary:'Synthetic transport assessment; no real external outcome is verified.',
+    remaining:[],nextAction:'',evidenceRefs:snapshot.evidence.records.length?[snapshot.evidence.records.at(-1).citationRef]:['user-request'],blockers:[]};
+}
+function assertTransport(turn,workers,assessors){
+  assert.equal(turn.workers.length,workers,'exact scripted worker and completion-check requests');
+  assert.equal(turn.assessors.length,assessors,'exact read-only outcome assessment requests');
+  assert.equal(turn.all.length,workers+assessors,'every provider request is accounted for');
+  if(assessors){
+    const prompt=turn.workers.at(-1).messages.findLast(message=>message.role==='user').content;
+    const parts=prompt.split('\n\nCURRENT USER REQUEST (unchanged JSON string):\n');
+    assert.equal(parts.length,2,'the extra worker request is the completion evidence check');
+    assert.equal(JSON.parse(parts[1]),turn.task,'completion check retains the current request');
+  }
+}
+
 test('Past Chats Off denies unrelated local history/model output; On demand enables it without changing same-chat identity', {timeout:25000}, async t=>{
   const root=await realpath(tmpdir()),dir=await mkdtemp(path.join(root,'blackice-past-chats-test-'));
   const cwd=path.join(dir,'workspace');await mkdir(cwd);
   const oldMarker='unrelated-output-past-chats-fixture-7531';
   const continuityMarker='same-chat-continuity-fixture-4397';
   const titleMarker='Prior title marker 20581';
-  let phase='old',step=0,oldRun,activeRun,app,runtime;
+  let phase='old',step=0,oldRun,activeRun,app,runtime,currentTurn;
   const requests=new Map();
+  const beginTurn=task=>(currentTurn={task,workers:[],assessors:[],all:[]});
+  const counts={old:[2,1],off:[3,1],on:[2,0],post:[1,0],'legacy-off':[2,0],'legacy-retry':[2,0],'legacy-on':[2,0]};
   const provider=http.createServer(async(req,res)=>{
     const send=value=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));};
     try {
@@ -36,6 +66,10 @@ test('Past Chats Off denies unrelated local history/model output; On demand enab
       const body=JSON.parse(raw);
       if(!requests.has(phase))requests.set(phase,[]);
       requests.get(phase).push(body);
+      currentTurn.all.push(body);
+      const assessment=syntheticOutcomeAssessment(body,currentTurn);
+      if(assessment)return send({choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:JSON.stringify(assessment)}}]});
+      currentTurn.workers.push(body);
       const calls=['off','on','legacy-off','legacy-retry','legacy-on'].includes(phase)&&step++===0?[
         toolCall('relay_history',{action:'read',scope:'global',id:oldRun.id},phase+'-history'),
         toolCall('relay_history',{action:'search',scope:'global',query:titleMarker},phase+'-search'),
@@ -64,7 +98,7 @@ test('Past Chats Off denies unrelated local history/model output; On demand enab
   await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl:'http://127.0.0.1:'+provider.address().port+'/v1',models:[{id:'fixture',contextWindowTokens:196608,maxOutputTokens:4096}]},{preserveDefault:true});
   const runAgent=runtime.runAgent.bind(runtime);
   runtime.runAgent=async options=>{
-    if(phase==='off'){
+    if(phase==='off'&&!String(options.prompt||'').includes(outcomeMarker)){
       const result=await options.onToolCall({name:'relay_history',arguments:{action:'read',scope:'global',id:oldRun.id},callId:'fixture-native-dispatch'});
       assert.equal(result.success,false);
       assert.equal(result.code,'PAST_CHATS_OFF');
@@ -76,11 +110,16 @@ test('Past Chats Off denies unrelated local history/model output; On demand enab
   const api=async(route,_method,body)=>route==='/api/workflows'?app.engine.saveWorkflow(body):route==='/api/runs'?app.engine.startRun(body):
     app.engine.continueRun(route.split('/')[3],body);
   const run=async(task,runs=[],pastChats)=>{
-    step=0;
+    step=0;const turn=beginTurn(task);
     const started=await submitChat({api,runs,task,model:'fixture::fixture',cwd,pastChats});
     for(let i=0;i<1000;i++){
       const done=app.engine.getRun(started.run.id);
-      if(done.settled){assert.equal(done.status,'completed',done.error);return done;}
+      if(done.settled){
+        assert.equal(done.status,'completed',done.error);
+        assertTransport(turn,...(phase==='warm'?(runs.length?[1,0]:[2,1]):counts[phase]));
+        t.diagnostic(JSON.stringify({phase,workers:turn.workers.length,assessors:turn.assessors.length,total:turn.all.length}));
+        return done;
+      }
       await delay(10);
     }
     throw Error('Synthetic Chat did not settle.');
@@ -152,11 +191,13 @@ test('Past Chats Off denies unrelated local history/model output; On demand enab
   assertBlockedWire('legacy-off');
 
   const failed=await legacy('retry',{retry:true});
-  phase='legacy-retry';step=0;
+  phase='legacy-retry';step=0;const retryTurn=beginTurn(failed.input);
   const retried=app.engine.retryRun(failed.id,{historyRuns:[failed]});
   await app.engine.executions.get(retried.id);
   const retriedDone=app.engine.getRun(retried.id);
   assert.equal(retriedDone.status,'completed',retriedDone.error);
+  assertTransport(retryTurn,...counts['legacy-retry']);
+  t.diagnostic(JSON.stringify({phase,workers:retryTurn.workers.length,assessors:retryTurn.assessors.length,total:retryTurn.all.length}));
   assert.equal(retriedDone.pastChats,'off');assert.equal(retriedDone.nodeHandoffs.agent.reason,'past-chats-scope');
   assert.notEqual(retriedDone.nodes.agent.threadId,failed.nodes.agent.threadId);assert.equal(failed.pastChats,undefined);
   assertBlockedWire('legacy-retry');

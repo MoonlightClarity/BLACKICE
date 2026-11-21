@@ -20,9 +20,37 @@ class Native extends EventEmitter {
   async runAgent(){throw Error('No native inference in this test');}
 }
 
+const outcomeMarker='BLACKICE ORDINARY TASK OUTCOME REVIEW';
+function syntheticOutcomeAssessment(request,turn){
+  const prompt=request.messages?.find(message=>typeof message.content==='string'&&message.content.includes(outcomeMarker))?.content;
+  if(!prompt)return null;
+  assert.ok(turn.workers.length,'assessment follows a worker request on this provider');
+  const {snapshot}=JSON.parse(prompt.split('\nREVIEW DATA (JSON):\n').at(-1));
+  assert.equal(snapshot.request,turn.task,'assessment retains the unchanged current request');
+  assert.equal(request.model,turn.workers[0].model,'assessment uses the worker model');
+  assert.equal(request.reasoning_effort,turn.workers[0].reasoning_effort,'assessment preserves worker effort');
+  assert.equal(request.service_tier,turn.workers[0].service_tier,'assessment preserves worker service tier');
+  assert.deepEqual(request.tools||[],[],'inline-evidence assessment has no action tools');
+  turn.assessors.push(request);
+  // This mock disposition tests transport, not model judgment or an external outcome.
+  return {decision:'respond',summary:'Synthetic transport assessment; no real external outcome is verified.',
+    remaining:[],nextAction:'',evidenceRefs:snapshot.evidence.records.length?[snapshot.evidence.records.at(-1).citationRef]:['user-request'],blockers:[]};
+}
+function assertTransport(turn,workers,assessors){
+  assert.equal(turn.workers.length,workers,'exact scripted worker and completion-check requests');
+  assert.equal(turn.assessors.length,assessors,'exact read-only outcome assessment requests');
+  assert.equal(turn.all.length,workers+assessors,'every provider request is accounted for');
+  if(assessors){
+    const prompt=turn.workers.at(-1).messages.findLast(message=>message.role==='user').content;
+    const parts=prompt.split('\n\nCURRENT USER REQUEST (unchanged JSON string):\n');
+    assert.equal(parts.length,2,'the extra worker request is the completion evidence check');
+    assert.equal(JSON.parse(parts[1]),turn.task,'completion check retains the current request');
+  }
+}
+
 test('Skill loaded corresponds to a real model tool result, not discovery or a missing skill', {timeout:20000}, async t=>{
   const root=await realpath(tmpdir()),dir=await mkdtemp(path.join(root,'blackice-skill-provider-'));
-  const requests=[],observed=[];
+  const requests=[],observed=[],turns=new Map();
   const skillId='library-pdf-evidence', title='Read a PDF for evidence';
   const [pdfSkill,completionSkill,antiCompletionSkill]=await Promise.all([readBundledSkill(skillId),readBundledSkill('library-what-makes-done'),readBundledSkill('library-anti-completion-bias')]);
   const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:antiCompletionSkill.provenance.revision};
@@ -34,14 +62,18 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
     ['load',{action:'read',id:skillId}],
     ['repeat',{action:'read',id:skillId}],
   ];
-  let engine,runtime,catalog;
+  let engine,runtime,catalog,currentTurn;
   const server=http.createServer(async(req,res)=>{
     const send=value=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));};
     try {
       if(req.method==='GET')return send({data:[{id:'fixture'}]});
       let raw='';for await(const part of req)raw+=part;
       const body=JSON.parse(raw);
-      const current=[...engine.runs.values()][0];
+      currentTurn.all.push(body);
+      const assessment=syntheticOutcomeAssessment(body,currentTurn);
+      if(assessment)return send({choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:JSON.stringify(assessment)}}]});
+      currentTurn.workers.push(body);
+      const current=[...engine.runs.values()].at(-1);
       observed.push(structuredClone(current?.skillLoadReceipts??[]));
       const call=calls[requests.length];requests.push(body);
       send({choices:[{index:0,finish_reason:call?'tool_calls':'stop',message:call?{
@@ -63,12 +95,23 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   engine=await new HarnessEngine({runtime,dataDir:path.join(dir,'engine'),defaultCwd:dir}).init();
   const api=async(route,_method,body)=>route==='/api/workflows'?body:engine.startRun(body);
   const run=async task=>{
+    const turn=currentTurn={task,workerStart:requests.length,workers:[],assessors:[],all:[]};
     const started=await submitChat({api,runs:[],task,model:'fixture::fixture',cwd:dir});
-    for(let i=0;i<1000;i++){const done=engine.getRun(started.run.id);if(done.settled){assert.equal(done.status,'completed',done.error);return done;}await delay(10);}
+    for(let i=0;i<1000;i++){
+      const done=engine.getRun(started.run.id);
+      if(done.settled){
+        assert.equal(done.status,'completed',done.error);
+        assertTransport(turn,turn.workerStart===0?6:2,1);
+        turns.set(done.id,turn);
+        t.diagnostic(JSON.stringify({workerStart:turn.workerStart,workers:turn.workers.length,assessors:turn.assessors.length,total:turn.all.length}));
+        return done;
+      }
+      await delay(10);
+    }
     throw Error('Fixture run did not settle.');
   };
   const done=await run('Read a PDF for evidence.');
-  assert.equal(requests.length,5);
+  assert.equal(requests.length,6,'four scripted skill calls, final response, and one completion evidence check');
   const audit=Object.values(done.nodes).find(node=>node.instructionAudit)?.instructionAudit;
   assert.equal(audit.captureStage,'adapter-prepared');
   assert.equal(audit.adapter,'compatible');
@@ -103,10 +146,11 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   assert.equal(packaged.provenance.revision,completionSkill.provenance.revision);
   const edited=await catalog.save({id:completion,value:{expectedRevision:packaged.revision,content:'# What Makes Done\nOwner completion fixture 9321.'}});
   const editedRun=await run('Use the current completion method.');
-  assertCore(wire(5));
+  const editedWire=wire(turns.get(editedRun.id).workerStart);
+  assertCore(editedWire);
   // Both task execution and supported model skill lookup use the owner-facing choice.
-  assert.match(wire(5),/WHAT MAKES DONE \(owner-edited execution method\)[\s\S]*local revision 2[\s\S]*Owner completion fixture 9321/);
-  assert.ok(!wire(5).includes(completionSkill.content));
+  assert.match(editedWire,/WHAT MAKES DONE \(owner-edited execution method\)[\s\S]*local revision 2[\s\S]*Owner completion fixture 9321/);
+  assert.ok(!editedWire.includes(completionSkill.content));
   assert.ok(wire(0).includes('packaged revision '+completionSkill.provenance.revision+'.'));
   assert.ok(wire(0).includes(completionSkill.content));
   const ownerReceipt={...automatic,source:'user',sourceRevision:2};
@@ -115,9 +159,10 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
 
   const removed=await catalog.delete({id:completion,value:{expectedRevision:edited.revision}});
   const deletedRun=await run('Keep the core completion contract only.');
-  assertCore(wire(6));
-  assert.doesNotMatch(wire(6),/WHAT MAKES DONE \((?:bundled|owner-edited) execution method\)|Owner completion fixture 9321/);
-  assert.ok(!wire(6).includes(completionSkill.content));
+  const deletedWire=wire(turns.get(deletedRun.id).workerStart);
+  assertCore(deletedWire);
+  assert.doesNotMatch(deletedWire,/WHAT MAKES DONE \((?:bundled|owner-edited) execution method\)|Owner completion fixture 9321/);
+  assert.ok(!deletedWire.includes(completionSkill.content));
   assert.deepEqual(deletedRun.skillLoadReceipts,[antiCompletion]);
   await assert.rejects(catalog.detail({id:completion}),{status:404});
   const restored=await catalog.restore({id:completion,value:{expectedRevision:removed.revision}});

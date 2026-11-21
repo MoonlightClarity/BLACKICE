@@ -62,6 +62,31 @@ test('host metadata only: bound snapshot + applied mutation, opaque correlation 
   assert.equal(trace.entries[4].metadata.status,'completed');
 });
 
+test('Directory model-tool refusal codes survive projection and restore without arbitrary payload',()=>{
+  const run=fixture();
+  const known=['DIRECTORY_TOOL_ACTION','DIRECTORY_TOOL_ARGUMENTS','DIRECTORY_TOOL_SCHEMA'];
+  const unknown=['DIRECTORY_TOOL_UNRECOGNIZED','PRIVATE_ERROR_CODE'];
+  for(const code of [...known,...unknown]){
+    const raw={type:'directory.mutation',phase:'rejected',operation:'plan',code,actionDispatched:false,secret:'PRIVATE_VALUE'};
+    for(const name of ['arguments','claim','message','result','prompt','error','reasoning','text'])
+      Object.defineProperty(raw,name,{enumerable:true,get(){assert.fail(name+' must not be read');}});
+    recordTurnMachineEvent(run,wrap(raw));
+  }
+  const expected=[
+    ...known.map(code=>({phase:'rejected',operation:'plan',code,actionDispatched:false})),
+    ...unknown.map(()=>({phase:'rejected',operation:'plan',actionDispatched:false}))
+  ];
+  const projected=value=>projectTurnMachineTrace(value).entries.map(entry=>entry.metadata);
+  assert.deepEqual(projected(run),expected);
+  assert.doesNotMatch(JSON.stringify(run.turnMachineTrace),/PRIVATE|DIRECTORY_TOOL_UNRECOGNIZED/);
+  const restored=JSON.parse(JSON.stringify(run));
+  for(const entry of restored.turnMachineTrace.head)
+    Object.assign(entry.metadata,{arguments:'PRIVATE_ARGUMENTS',message:'PRIVATE_MESSAGE',result:'PRIVATE_RESULT',prompt:'PRIVATE_PROMPT',reason:'PRIVATE_REASON'});
+  unknown.forEach((code,index)=>{restored.turnMachineTrace.head[known.length+index].metadata.code=code;});
+  assert.deepEqual(projected(restored),expected);
+  assert.doesNotMatch(JSON.stringify(projectTurnMachineTrace(restored)),/PRIVATE|DIRECTORY_TOOL_UNRECOGNIZED/);
+});
+
 test('workspace run action survives JSON round-trip without command or output',()=>{
   const run=fixture();
   const workspace={type:'workspace.action',action:'run'};
