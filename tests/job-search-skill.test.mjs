@@ -22,6 +22,24 @@ test('browser continuity applies to current navigation or a bare continuation of
 });
 const id='library-job-search';
 const example='Find three current U.S. remote intelligence roles posted within the last week. Do not apply.';
+const application='Find one suitable job using my existing résumé and preferences. Apply through the employer’s site and verify that the application was received.';
+const historyContract=[
+ "Before choosing an application target, discover and read available application history, trackers, and submission receipts",
+ "Do this even when the current request does not mention earlier applications",
+ "A missing or stale index is not evidence that no application was made",
+ "Reconcile each candidate by employer and exact requisition/posting ID",
+ "using the authoritative URL and receipt evidence to resolve aliases",
+ "another requisition at the same employer is a separate candidate",
+ "Preserve positive earlier confirmation even when a newer summary omits it or labels it unchecked",
+ "Do not submit again to a confirmed requisition unless the user specifically requested reapplication",
+ "Earlier confirmations do not count toward this request's new applications",
+ "For an uncertain earlier attempt, check the destination and available receipt before replaying",
+ "pursue another eligible role allowed by the request without asking about the blocked option",
+ "Before submission, recheck the chosen requisition against the reconciled history and any attempts made during this task",
+ "Count only a confirmed submission made for this request as a new application",
+ "Record the requisition, outcome, timestamp, and confirmation evidence in the application history",
+];
+const assertHistoryMethod=content=>{for(const expected of historyContract)assert.ok(content.includes(expected),expected);};
 const heading='JOB SEARCH (advisory execution method; not permission)';
 const accepted={type:'skill_context_submitted',skillId:id,title:'Job Search',source:'bundled',sourceRevision:'clarity-20261121'};
 
@@ -67,6 +85,13 @@ test('the discoverable packaged skill checks recency and live requisition separa
   /honest shortfall/,
   /Count only a confirmed submission/,
  ])assert.match(content,expected);
+});
+
+test('new applications discover history before selecting targets and reconcile exact requisitions before submission',async()=>{
+ const {content}=await createSkillsCatalog().detail({id});
+ assertHistoryMethod(content);
+ assert.ok(content.indexOf('## Reconcile application history')<content.indexOf('## Search current openings'),'history discovery precedes target selection');
+ assert.doesNotMatch(content,/Before repeating an application, check any known/,'history discovery must not depend on already knowing this is a repeat');
 });
 
 test('fit ignores listed years even for director roles and credits work under adjacent titles',async()=>{
@@ -180,7 +205,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
   assert.equal(prompts.length-requestOffset,expectedCalls,'only the main request and the expected single evidence review may run');
   assert.deepEqual(before[requestOffset],[],'transport has not yet accepted the main prompt');
   if(expectedCalls===2)assert.deepEqual(before[requestOffset+1],run.skillLoadReceipts,'the review follows accepted main-turn skill delivery');
-  return {prompt:JSON.stringify(prompts[requestOffset]),receipts:run.skillLoadReceipts||[],events:run.events.map(event=>event.data)};
+  return {prompt:JSON.stringify(prompts[requestOffset]),requests:prompts.slice(requestOffset),input:run.input,receipts:run.skillLoadReceipts||[],events:run.events.map(event=>event.data)};
  };
  const alignmentId='builtin-task-grounding';
  const alignmentHeading='ANTI-OVERALIGNMENT (advisory execution method; not permission)';
@@ -206,6 +231,12 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.deepEqual(job.receipts.filter(r=>r.skillId===id),[accepted]);
  assert.ok(job.receipts.every(r=>r.skillId!=='library-intent-inference'));
 
+ const applicationRun=await invoke(application);
+ assert.equal(applicationRun.input,application,'the admitted task remains the unchanged ordinary request');
+ assert.ok(applicationRun.requests.every(messages=>JSON.stringify(messages).includes(application)),'the unchanged user task reaches each real provider request');
+ assertHistoryMethod(applicationRun.prompt);
+ assert.deepEqual(applicationRun.receipts.filter(r=>r.skillId===id),[accepted]);
+
  await catalog.save({id:antiCompletion,value:{expectedRevision:1,content:'# Anti-Completion Bias\nUse the owner-defined next-action instruction.'}});
  const ordinary=await invoke('Write a short explanation of how job search works.');
  assert.ok(!ordinary.prompt.includes('BROWSER NAVIGATION AND CONTINUITY ('));
@@ -228,7 +259,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.ok(!deleted.prompt.includes(alignmentHeading));
  assert.ok(deleted.receipts.every(r=>r.skillId!==alignmentId));
  assert.ok(!deleted.prompt.includes(heading));assert.ok(deleted.receipts.every(r=>r.skillId!==id));
- assert.equal(prompts.length,6,'three ordinary Chat requests each get one review; skill selection adds no calls');
+ assert.equal(prompts.length,8,'four ordinary Chat requests each get one review; skill selection adds no calls');
  const instrumented=await invoke('Apply to one job for me: Senior Product Manager.','maximal',2);
  const decisions=instrumented.events.filter(event=>event.type==='chat.execution-review');
  const evidenceFingerprint=decisions[0]?.evidenceFingerprint;

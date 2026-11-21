@@ -2,6 +2,14 @@
 
 Use to find, shortlist, or apply to open roles. Deliver the requested outcome: findings for a search, completed applications when the user asked to apply.
 
+## Reconcile application history
+
+Before choosing an application target, discover and read available application history, trackers, and submission receipts in the user's existing records and prior task outcomes. Do this even when the current request does not mention earlier applications. A missing or stale index is not evidence that no application was made.
+
+Reconcile each candidate by employer and exact requisition/posting ID, using the authoritative URL and receipt evidence to resolve aliases. URL spelling and title alone do not establish duplicates; another requisition at the same employer is a separate candidate. Preserve positive earlier confirmation even when a newer summary omits it or labels it unchecked. Do not submit again to a confirmed requisition unless the user specifically requested reapplication. Earlier confirmations do not count toward this request's new applications.
+
+For an uncertain earlier attempt, check the destination and available receipt before replaying. If its outcome remains uncertain, keep that status and pursue another eligible role allowed by the request without asking about the blocked option.
+
 ## Search current openings
 
 1. Read the user's desired work, required conditions, preferences, exclusions, count, and cutoff. Use work history as evidence of ability, not as a requirement to repeat old work.
@@ -46,7 +54,7 @@ Read the question, make the best supported call, and enter it. Use the resume an
 - Lead with the candidate's strongest real evidence. Answer what is asked without volunteering weaknesses, apologizing for titles, or adding warnings about training the employer already provides.
 - For a quick behavioral prompt, use a relevant real example. Compare lengthy essays, take-homes, and extensive tailoring with the opportunity and other live options. This is an effort decision, not a verdict on fit. Save deeper company preparation for a screen or interview.
 
-Before repeating an application, check any known uncertain or confirmed attempt for the same employer and requisition in records available to this task. URL spelling and title alone do not establish duplicates. If nothing prevents submission, submit and inspect the result. Count only a confirmed submission as submitted; a timeout calls for checking the destination before retrying.
+Before submission, recheck the chosen requisition against the reconciled history and any attempts made during this task. Submit when eligible and inspect the result. Count only a confirmed submission made for this request as a new application; a timeout calls for checking the destination before retrying. Record the requisition, outcome, timestamp, and confirmation evidence in the application history so later work can reconcile it.
 
 ## Finish the requested work
 
