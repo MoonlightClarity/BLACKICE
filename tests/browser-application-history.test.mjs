@@ -33,7 +33,7 @@ async function history(f){
  await writeFile(path.join(f.cwd,name),content);
  return {name,content};
 }
-function browserFixture({observedUrl}={}){
+function browserFixture({observedUrl,formLabel}={}){
  const calls=[];let current,owner;
  return {calls,
   status:()=>({available:true,contained:true,tabs:current?[{tabId:'history-tab',url:current,documentId:'history-document',...(owner?{owner}:{})}]:[]}),
@@ -41,7 +41,9 @@ function browserFixture({observedUrl}={}){
    calls.push({...args});owner=context.owner||owner;current=observedUrl||args.url||current;
    return {tabId:'history-tab',url:current,title:'Research Specialist | ExampleCo',documentId:'history-document',
     ...(args.action==='click'?{actionDispatched:true}:{}),
-    frames:[{frameId:'main',documentId:'history-document',url:current,readyState:'complete',observation:'content-observed',text:'Current page.',elements:[]}]};
+    frames:[{frameId:'main',documentId:'history-document',url:current,readyState:'complete',observation:'content-observed',text:'Current page.',
+      forms:formLabel?[{action:current,method:'post',fields:[{name:'role',type:'select-one'}]}]:[],
+      elements:formLabel?[{tag:'button',type:'submit',role:'button',name:formLabel,disabled:false}]:[]}]};
   },
  };
 }
@@ -158,5 +160,102 @@ test('ordinary engine Chat delivers history facts in the real compatible browser
  assert.equal(observed.applicationHistory.target.key,applicationTarget(url).key);
  assert.deepEqual(observed.applicationHistory.matches,[{source:source.name,record:241,reason:'reported-prior-requisition'}]);
  assert.ok(requests.every(request=>JSON.stringify(request.messages).includes(task)),'the task prompt stays unchanged');
+ assert.equal(await readFile(path.join(f.cwd,source.name),'utf8'),source.content);
+});
+
+const customPage='https://careers.fixture.invalid/careers';
+const customUrl=customPage+'?access_token=private-query#private-fragment';
+async function customHistory(f){
+ const name='applications_custom.jsonl';
+ const rows=Array.from({length:240},()=>({url:'https://elsewhere.invalid/careers',status:'draft'}));
+ rows.push({url:customUrl,employer:'ExampleCo',role:'Research Analyst',status:'submitted_confirmed'});
+ rows.push({url:customPage,employer:'ExampleCo',role:'Training Specialist',status:'uncertain'});
+ const content=rows.map(row=>JSON.stringify(row)).join('\n')+'\n';
+ await writeFile(path.join(f.cwd,name),content);
+ return {name,content};
+}
+
+test('custom application browser observations deliver stable sanitized related history without gating',async t=>{
+ const f=await temporary();t.after(()=>f.cleanup());const source=await customHistory(f);
+ const browser=browserFixture({observedUrl:customUrl,formLabel:'Submit application'}),handler=createBrowserToolHandler({browser,cwd:f.cwd});
+ const first=body(await handler(call('custom-open',{action:'open',url:customUrl}))),facts=first.applicationHistory;
+ assert.ok(facts,'observed custom application forms receive normal local history');
+ assert.equal(facts.target.kind,'application-page-context');
+ assert.equal(facts.target.precision,'origin-and-path-context-only');
+ assert.equal(facts.target.url,customPage);
+ assert.equal(facts.target.observedUrl,customPage);
+ assert.equal(Object.hasOwn(facts.target,'key'),false);
+ assert.equal(Object.hasOwn(facts.target,'employer'),false);
+ assert.equal(facts.basis,'reported-local-history');
+ assert.equal(facts.coverage,coverage);
+ assert.deepEqual(facts.matches,[]);
+ assert.deepEqual(facts.related.map(row=>({source:row.source,record:row.record,role:row.reported.role})),[
+  {source:source.name,record:241,role:'Research Analyst'},{source:source.name,record:242,role:'Training Specialist'}
+ ]);
+ assert.equal(facts.relatedTruncated,false);
+ assert.doesNotMatch(JSON.stringify(facts),/private-query|private-fragment/);
+ assert.deepEqual(body(await handler(call('custom-repeat',{action:'snapshot',tabId:'history-tab'}))).applicationHistory,facts);
+ const submitted=await handler(call('custom-explicit-action',{action:'click',tabId:'history-tab',ref:'submit',expectedDocumentId:'history-document',expectedUrl:customUrl}));
+ assert.equal(submitted.success,true,'context never creates a duplicate or permission gate, including explicit reapplication');
+ assert.equal(browser.calls.length,3);
+ assert.equal(await readFile(path.join(f.cwd,source.name),'utf8'),source.content);
+ assert.deepEqual(await readdir(f.cwd),[source.name]);
+});
+
+test('custom application history is absent on contact login and bare Apply forms',async t=>{
+ const f=await temporary();t.after(()=>f.cleanup());await customHistory(f);
+ for(const formLabel of ['Send message','Sign in','Apply','Apply now','Submit']){
+  const browser=browserFixture({observedUrl:customUrl,formLabel}),handler=createBrowserToolHandler({browser,cwd:f.cwd});
+  const result=body(await handler(call('unrelated-'+formLabel,{action:'open',url:customUrl})));
+  assert.equal(Object.hasOwn(result,'applicationHistory'),false,formLabel);
+  assert.equal(browser.calls.length,1);
+ }
+});
+
+test('ordinary engine Chat delivers custom application history through the actual compatible browser response',{timeout:20000},async t=>{
+ const f=await temporary(),source=await customHistory(f),requests=[],browser=browserFixture({observedUrl:customUrl,formLabel:'Submit application'});
+ let engine,runtime,identity;
+ const reply=message=>({choices:[{index:0,finish_reason:message.tool_calls?'tool_calls':'stop',message:{role:'assistant',...message}}]});
+ const final='Fixture page observed. No application outcome is claimed.';
+ const script=[
+  reply({content:null,tool_calls:[{id:'open-custom-form',type:'function',function:{name:'relay_browser',arguments:JSON.stringify({browser:'relay',action:'open',url:customUrl})}}]}),
+  reply({content:final}),reply({content:final})
+ ];
+ const server=http.createServer(async(req,res)=>{
+  res.setHeader('Content-Type','application/json');
+  if(req.method==='GET')return res.end(JSON.stringify({data:[{id:'fixture'}]}));
+  let raw='';for await(const chunk of req)raw+=chunk;requests.push(JSON.parse(raw));
+  const response=script[requests.length-1];
+  if(!response){res.statusCode=500;return res.end(JSON.stringify({error:{message:'Unexpected fixture request'}}));}
+  res.end(JSON.stringify(response));
+ });
+ t.after(async()=>{
+  await engine?.close();await runtime?.close();await identity?.close();server.closeAllConnections();
+  await new Promise(resolve=>server.close(resolve));await f.cleanup();
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ runtime=new ProviderRuntime({codex:new NoNative(),dataDir:path.join(f.directory,'provider'),modelLimitResolver:{enrich:async(_config,model)=>model}});
+ await runtime.store.init();
+ await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl:'http://127.0.0.1:'+server.address().port+'/v1',models:[{id:'fixture',contextWindowTokens:65536,maxOutputTokens:4096}]},{preserveDefault:true});
+ const dataDir=path.join(f.directory,'engine');identity=await new IdentityStore({dataDir}).init();
+ engine=await new HarnessEngine({runtime,dataDir,defaultCwd:f.cwd,identity,browser}).init();
+ const workflow=createMissionWorkflow({id:'mission_chat_custom_history_fixture',task,cwd:f.cwd,model:'fixture::fixture',planningMode:'off'});
+ const start=engine.startRun({workflow,input:{task,cwd:f.cwd,planningMode:'off',chatPlanning:'off',directoryActions:'off'}});
+ await engine.executions.get(start.id);const run=engine.getRun(start.id);
+ assert.equal(run.status,'completed',run.error||run.nodes.agent.error);
+ assert.equal(run.input,task);
+ assert.equal(requests.length,3);
+ assert.equal(browser.calls.length,1);
+ const delivered=requests[1].messages.find(message=>message.role==='tool');
+ assert.ok(delivered);
+ const facts=JSON.parse(delivered.content).applicationHistory;
+ assert.ok(facts,'custom context reaches the provider without a requested history lookup');
+ assert.equal(facts.workspace,f.cwd);
+ assert.equal(facts.target.kind,'application-page-context');
+ assert.deepEqual(facts.matches,[]);
+ assert.deepEqual(facts.related.map(row=>row.record),[241,242]);
+ assert.ok(facts.related.every(row=>row.source===source.name));
+ assert.doesNotMatch(JSON.stringify(facts),/private-query|private-fragment/);
+ assert.ok(requests.every(request=>JSON.stringify(request.messages).includes(task)),'the ordinary task bytes stay unchanged');
  assert.equal(await readFile(path.join(f.cwd,source.name),'utf8'),source.content);
 });
