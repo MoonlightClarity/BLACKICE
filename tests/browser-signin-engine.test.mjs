@@ -6,6 +6,7 @@ import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
+import {BROWSER_SIGNIN_INSTRUCTIONS} from '../lib/browser-signin.mjs';
 import {persistedRunRows} from './fixture-persisted-runs.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 
@@ -22,8 +23,7 @@ test('contained sign-in blocks external browser fallback while independent works
  class Runtime extends EventEmitter {
   status(){return{connected:true,authenticated:true,defaultModel:'model-test',models:[{id:'model-test',model:'model-test',available:true}]};}
   async runAgent(options){
-   assert.match(options.prompt,/WEBSITE SIGN-IN AND VERIFICATION/);
-   assert.match(options.dynamicTools.find(tool=>tool.name==='relay_browser').description,/employer-direct ATS route and any observed email or magic-link login option/);
+   assert.ok(options.prompt.includes(BROWSER_SIGNIN_INSTRUCTIONS), 'The active sign-in mechanics reach the coordinator.');
    assert.doesNotMatch(options.developerInstructions,/BROWSER STATE RECOVERY/);
    assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_browser_signin'),true);
    const reported=await options.onToolCall({name:'relay_browser_signin',arguments:{site:'https://www.linkedin.com/feed/',reason:'sign-in',evidence:'login-redirect'}});
@@ -86,7 +86,7 @@ test('native social-login report inspects an owned email alternative and keeps t
  class Runtime extends EventEmitter{
   status(){return{connected:true,authenticated:true,defaultModel:'fixture',models:[{id:'fixture',model:'fixture',available:true}]};}
   async runAgent(options){
-   assert.match(options.prompt,/Recover the existing applicant email from a verified saved resume/);
+   assert.ok(options.prompt.includes(BROWSER_SIGNIN_INSTRUCTIONS), 'The current optional-helper and observed-email mechanics are delivered.');
    const result=await options.onToolCall({name:'relay_browser_signin',arguments:{site:'https://www.linkedin.com/login',reason:'sign-in',evidence:'login-form'}});
    assert.equal(result.success,true);
    const finding=JSON.parse(result.contentItems[0].text);

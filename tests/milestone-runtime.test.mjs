@@ -8,6 +8,7 @@ import {HarnessEngine} from '../lib/engine.mjs';
 import {TaskStateStore,TASK_SCHEMA_VERSION} from '../lib/task-state.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 import {capabilityGuidance} from '../lib/tool-routing.mjs';
+import {createInstructionAudit} from '../lib/instruction-audit.mjs';
 import {newerTaskState,reduceRunEvent,adoptFetchedRun} from '../public/run-state-model.mjs';
 
 const deferred=()=>{let resolve;return{promise:new Promise(done=>resolve=done),resolve:value=>resolve(value)};};
@@ -95,8 +96,18 @@ test('milestone stream and HTTP merges keep revision order and reject another ta
  assert.equal(newerTaskState(current,undefined,'task'),current);assert.equal(newerTaskState(current,{...current,revision:8},'task').revision,8);
 });
 
-test('milestone guidance uses only the fields attached to the selected tool schema',()=>{
- const legacy={name:'relay_task',inputSchema:{properties:{action:{enum:['read','plan','step']},steps:{items:{properties:{title:{type:'string'}}}}}}};
- assert.doesNotMatch(capabilityGuidance([legacy],{executionGuardrails:true}),/Give milestones an observable doneWhen/);
- const current=structuredClone(legacy);current.inputSchema.properties.steps.items.properties.doneWhen={type:'string'};assert.match(capabilityGuidance([current],{executionGuardrails:true}),/Give milestones an observable doneWhen/);assert.match(capabilityGuidance([current],{executionGuardrails:true}),/never an approval gate/);
+test('milestone fields are documented only by the selected attached tool schema',()=>{
+ const legacy={name:'relay_task',description:'Manage the attached milestone outline.',inputSchema:{properties:{action:{enum:['read','plan','step']},steps:{items:{properties:{title:{type:'string',description:'Milestone title.'}}}}}}};
+ const current=structuredClone(legacy),description='Observable condition required for this milestone.';
+ current.inputSchema.properties.steps.items.properties.doneWhen={type:'string',description};
+ for(const selected of [legacy,current]){
+  const guidance=capabilityGuidance([selected],{executionGuardrails:true});
+  assert.match(guidance,/ATTACHED TOOLS\nrelay_task\nADAPTER NOTES\nrelay_task:/);
+  assert.doesNotMatch(guidance,/Give milestones an observable doneWhen|never an approval gate/);
+  const capture=createInstructionAudit({tools:[selected]}),definitions=capture.sections.filter(section=>section.layer==='tool-definition');
+  assert.deepEqual(capture.tools.names,['relay_task']);assert.equal(definitions.length,1);
+  assert.ok(definitions[0].text.includes(selected.description));assert.ok(definitions[0].text.includes('Milestone title.'));
+  if(selected===legacy)assert.doesNotMatch(definitions[0].text,/doneWhen/);
+  else {assert.match(definitions[0].text,/doneWhen/);assert.ok(definitions[0].text.includes(description));}
+ }
 });

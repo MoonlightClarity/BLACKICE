@@ -985,7 +985,7 @@ test('models declaring no tool support receive an explicit limitation and persis
     assert.match(options.prompt, /Plain chat model does not support tools/);
     assert.match(options.prompt, /clearly say it was not performed/);
     assert.match(options.prompt, /Never claim to browse, edit, post or execute anything without tools/);
-    assert.match(options.developerInstructions, /ACTUAL ATTACHED CATALOG\n\[\]/);
+    assert.match(options.developerInstructions, /ATTACHED TOOLS\n\s*$/);
     return { output: 'This model cannot edit files because it has no tool support.', threadId: 'plain-no-tools' };
   });
   runtime.status = () => ({ connected: true, authenticated: true, defaultModel: 'plain::text', models: [{ id: 'plain::text', displayName: 'Plain chat model', supportsTools: false }, { id: 'other::tools', supportsTools: true }] });

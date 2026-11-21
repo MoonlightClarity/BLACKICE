@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarnessEngine } from '../lib/engine.mjs';
+import { BROWSER_CREDENTIAL_INSTRUCTIONS } from '../lib/browser-credential-tools.mjs';
 import { RuntimeSettingsStore } from '../lib/runtime-settings.mjs';
 import { TaskStateStore } from '../lib/task-state.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
@@ -51,8 +52,7 @@ const done = run => assert.equal(run.status, 'completed', run.error || Object.va
 test('a fresh coordinator receives opaque credentials and retries generation with one stable trusted request owner', async t => {
   const f = await fixture(t, async (options, context) => {
     assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_credentials'));
-    assert.match(options.prompt, /generate and durably save a password/);
-    assert.match(options.prompt, /optional, not a prerequisite to ordinary browser work/);
+    assert.ok(options.prompt.includes(BROWSER_CREDENTIAL_INSTRUCTIONS), 'The active credential mechanics reach the coordinator.');
     const result = await call(options, generation); assert.equal(result.success, true);
     assert.equal(payload(result).saved, true); assert.equal(payload(result).passwordReturned, false);
     assert.equal(payload(result).existing, context.calls.length > 1);
@@ -76,7 +76,7 @@ test('a fresh coordinator receives opaque credentials and retries generation wit
 test('unavailable encrypted storage does not advertise a credential tool', async t => {
   const f = await fixture(t, async options => {
     assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_credentials'));
-    assert.doesNotMatch(options.prompt, /WEBSITE ACCOUNT CONTINUITY/);
+    assert.ok(!options.prompt.includes(BROWSER_CREDENTIAL_INSTRUCTIONS), 'An unavailable credential tool does not inject its addendum.');
     await assert.rejects(call(options, generation), /Unknown knowledge tool/);
     return { output: 'Protected credentials are unavailable.' };
   }, { available: false });
@@ -99,7 +99,7 @@ test('delegated workers receive the protected flow with a distinct trusted owner
     if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
       assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_credentials'));
       assert.ok(!options.dynamicTools.some(tool => ['relay_delegate', 'relay_control'].includes(tool.name)));
-      assert.match(options.prompt, /WEBSITE ACCOUNT CONTINUITY/);
+      assert.ok(options.prompt.includes(BROWSER_CREDENTIAL_INSTRUCTIONS), 'The active credential mechanics reach the delegated worker.');
       if (options.prompt.includes('Inspect the protected credential tool schema only.')) {
         assert.ok(options.dynamicTools.find(tool => tool.name === 'relay_credentials').inputSchema);
         return { output: 'The protected credential schema is attached independently of signup.' };

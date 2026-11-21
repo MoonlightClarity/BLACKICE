@@ -60,6 +60,8 @@ test('ordinary Chat omits and cannot call planning tools; /plan explicitly opts 
   await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl:'http://127.0.0.1:'+provider.address().port+'/v1',models:[{id:'fixture',contextWindowTokens:196608,maxOutputTokens:4096}]},{preserveDefault:true});
   await runtime.saveProvider({id:'local_llamacpp',type:'compatible',baseUrl:'http://127.0.0.1:'+provider.address().port+'/v1',models:[{id:'fixture',contextWindowTokens:196608,maxOutputTokens:4096}]},{preserveDefault:true});
   app=await createHarnessServer({runtime,remoteAccess:false,dataDir:path.join(dir,'data'),defaultCwd:cwd,port:0});await app.listen();
+  const initialCore=await app.engine.instructionSettings.read();
+  await app.engine.instructionSettings.update({content:'OWNER_SCOPE_CORE\n',expectedRevision:initialCore.revision,expectedHash:initialCore.hash});
   const api=async(route,_method,body)=>route==='/api/workflows'?body:route==='/api/runs'?app.engine.startRun(body):
     app.engine.continueRun(route.split('/')[3],body);
   const run=async(task,runs=[],options={},expected='completed')=>{
@@ -98,6 +100,7 @@ test('ordinary Chat omits and cannot call planning tools; /plan explicitly opts 
   assert.notEqual(after.nodes.agent.threadId,explicit.nodes.agent.threadId);
   const local={model:'local_llamacpp::fixture'};
   for(const directoryActions of ['off','on']){
+    if(directoryActions==='on'){const current=await app.engine.instructionSettings.read();await app.engine.instructionSettings.update({content:'',expectedRevision:current.revision,expectedHash:current.hash});}
     phase='probe-'+directoryActions;
     const result=await run('test',[],{...local,directoryActions});
     const wire=requests.get(phase);
@@ -107,6 +110,11 @@ test('ordinary Chat omits and cannot call planning tools; /plan explicitly opts 
     assert.deepEqual(wire[0].messages.filter(m=>m.role==='user').map(m=>m.content),['test']);
     assert.equal(result.directoryActions,directoryActions,'this turn does not change the saved mode');
     assert.equal(result.nodes.agent.localConnectivityProbe,true);
+    const audit=result.nodes.agent.instructionAudit,core=audit.sections.find(row=>row.id==='core');
+    assert.equal(core.text,directoryActions==='on'?'':'OWNER_SCOPE_CORE\n');
+    assert.equal(core.revision,(await app.engine.instructionSettings.read()).revision);
+    assert.ok(audit.sections.some(row=>row.id==='response-only-contract'));
+    assert.equal(audit.sections.filter(row=>row.layer==='developer').map(row=>row.text).join(''),wire[0].messages[0].content);
     if(directoryActions==='off'){
       phase='probe-followup';
       const next=await run('Test the file parser in this project.',[result],local);

@@ -87,9 +87,13 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
   run.events=run.events.filter(e=>!['skill_loaded','skill_context_submitted'].includes(e.data?.type));
   await archive.capture(engine.getRun(started.id));await archive.close();
   const raw=await readFile(path.join(archiveDir,'conversations',started.id+'.json'),'utf8');
-  assert.ok(!raw.includes(JSON.stringify(catalogBody).slice(1,-1)),'private body never enters the archived receipt');
-  assert.deepEqual(JSON.parse(raw).skillLoadReceipts,[automatic,antiCompletion,receipt]);
+  const persisted=JSON.parse(raw),capturedAudit=persisted.nodes.agent.instructionAudit;
+  assert.ok(capturedAudit.sections.some(section=>section.text===catalogBody),'the instruction audit retains the exact delivered skill body');
+  const metadataOnly=JSON.stringify(persisted,(key,value)=>key==='instructionAudit'?undefined:value);
+  assert.ok(!metadataOnly.includes(JSON.stringify(catalogBody).slice(1,-1)),'skill receipt metadata and ordinary archived fields do not duplicate the skill body');
+  assert.deepEqual(persisted.skillLoadReceipts,[automatic,antiCompletion,receipt]);
   const reopened=await new ConversationArchive({dataDir:archiveDir,engine:new EmptyEngine()}).init();archives.push(reopened);
   const saved=(await reopened.family(started.id)).runs[0];
   assert.deepEqual(saved.skillLoadReceipts,[automatic,antiCompletion,receipt]);
+  assert.deepEqual(saved.nodes.agent.instructionAudit,capturedAudit,'archive reopen preserves the captured instruction snapshot');
 });

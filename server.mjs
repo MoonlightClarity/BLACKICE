@@ -1,6 +1,8 @@
 import {handleTaskActionDirectoryHttp} from './lib/task-action-directory-http.mjs';
 import {handleTurnReceiptsHttp} from './lib/turn-receipts-http.mjs';
-import {BLACKICE_CLIENT_INFO,BLACKICE_HARNESS_INSTRUCTIONS} from './lib/harness-identity.mjs';
+import {BLACKICE_CLIENT_INFO} from './lib/harness-identity.mjs';
+import { InstructionStore } from './lib/instruction-store.mjs';
+import { handleInstructionSettingsHttp } from './lib/instruction-settings-http.mjs';
 import { stoppedBrowserOwnerStatus, activeBrowserOwnerStatus, readStoppedTabEffects } from './lib/browser-stopped-adoption.mjs';
 import {VisualArtifacts,visualTool,nativeVisualTools,handleVisualHttp} from './lib/visual-artifacts.mjs';
 import {handleConversationActivityHttp} from './lib/conversation-activity-http.mjs';
@@ -138,6 +140,7 @@ export async function createHarnessServer(options = {}) {
   const planningBrowserRuntime = options.planningBrowserRuntime || new PlanningBrowserRuntime({ store: planningBrowser, runtime, getSettings: () => runtimeSettings.get(), defaultCwd, onUpdated: event => sendEvent(event) });
   const prompts = options.prompts || new PromptTemplateStore({ dataDir }); await prompts.init();
   const identity = options.identity || new IdentityStore({ dataDir }); await identity.init();
+  const instructionSettings = options.instructionSettings || options.engine?.instructionSettings || new InstructionStore({ dataDir }); await instructionSettings.init();
   const connections = options.connections || new ConnectionManager({ dataDir, ...options.secretStorage, persistenceDiagnostics:process.env.BLACKICE_PERSISTENCE_DIAGNOSTICS==='1'?event=>diagnostics.record(event):null }); await connections.init();
   const browserProfiles = options.browserProfiles || await new BrowserProfileStore({ dataDir: path.resolve(dataDir) }).init();
   let browserProfileState = { sources: [], imports: [], loaded: false };
@@ -162,8 +165,9 @@ export async function createHarnessServer(options = {}) {
   const email = options.email || null;
   const emailSnapshot = req => email ? ({ ...email.snapshot(), localManagement: req?.headers['x-blackice-remote'] !== '1', setupHints: {} }) : ({ available: false, retired: true });
   const ownerRecovery=createOwnerRecovery({enabled:options.nativeOwnerRecovery===true});
-  const engine = options.engine || new HarnessEngine({ ownerRecovery, runtime, dataDir, defaultCwd, desktop, browser, identity, connections, tasks, attachments, email, ...(options.maxConcurrentRuns !== undefined ? {maxConcurrentRuns:options.maxConcurrentRuns} : {}) });
+  const engine = options.engine || new HarnessEngine({ ownerRecovery, runtime, dataDir, defaultCwd, desktop, browser, identity, instructionSettings, connections, tasks, attachments, email, ...(options.maxConcurrentRuns !== undefined ? {maxConcurrentRuns:options.maxConcurrentRuns} : {}) });
   engine.ownerRecovery=ownerRecovery;
+  engine.instructionSettings=instructionSettings;
   const activeBrowserCleanupRunIds = () => {
     const ids = new Set(engine.executionStatus().activeRunIds || []);
     // Live/unsettled work protects the entire task. A *settled* failed or
@@ -449,7 +453,7 @@ export async function createHarnessServer(options = {}) {
   directExecution = options.directExecution || await startupPhase(diagnostics, 'direct-jobs', () => new DirectExecutionAPI({
     onStartupDiagnostics: value => diagnostics.record(value),
     startupTrace: diagnostics.startupTrace || null,
-    dataDir: path.resolve(dataDir), managedStores:{identity}, allowedRoot: defaultCwd, browser, patchStore: engine.filePatches, taskStore:tasks,
+    dataDir: path.resolve(dataDir), managedStores:{identity,instructionSettings}, allowedRoot: defaultCwd, browser, patchStore: engine.filePatches, taskStore:tasks,
     isClosing: connectorClosing, onChange: connectorChanged,
     resolveBrowserConversationOwner: id => resolveBrowserConversationOwner(id, conversations),
     getBrowserConversations: () => browserConversationStatus(browser.status(), conversations).conversations,
@@ -1372,6 +1376,7 @@ export async function createHarnessServer(options = {}) {
         const results=await Promise.allSettled(pending),failures=results.filter(result=>result.status==='rejected').map(result=>String(result.reason?.message||result.reason));
         return json(res,failures.length?500:200,{cancelled,...(restartCancellationRequested?{restartCancellationRequested:true}:{}),...(failures.length?{error:'Some stop actions need attention.',details:failures}:{})});
       }
+      if(await handleInstructionSettingsHttp({req,res,pathname,store:instructionSettings,body,json,mutate:mutateStorage,onChange:data=>sendEvent({type:'instructions.updated',data,at:new Date().toISOString()})}))return;
       if(pathname==='/api/instructions'&&req.method==='GET'){
         const runs=conversations.list('active').slice(0,80).map(row=>{
           const id=row.lastRunId||row.runId||row.id,live=engine.runs.get(id);
@@ -1379,7 +1384,7 @@ export async function createHarnessServer(options = {}) {
             status:live?.status||row.status,captured:live?Object.values(live.nodes||{}).some(node=>node?.instructionAudit?.version===1):null};
         });
         return json(res,200,{version:BLACKICE_CLIENT_INFO.version,
-          core:{source:'lib/harness-identity.mjs',text:BLACKICE_HARNESS_INSTRUCTIONS},runs});
+          core:await instructionSettings.read(),runs});
       }
       const instructionAuditMatch=pathname.match(/^\/api\/runs\/([a-zA-Z0-9_-]+)\/instructions$/);
       if(instructionAuditMatch&&req.method==='GET'){
@@ -1440,7 +1445,7 @@ export async function createHarnessServer(options = {}) {
         'workspaces/workflow-overview-model.mjs','workspaces/workflow-canvas-model.mjs','workspaces/workflow-canvas.mjs','workspaces/workflow-graph-author.mjs',
         'workspaces/workflow-graph-edit.mjs','workspaces/browser-folders.mjs','workspaces/browser-model.mjs','workspaces/browser-ownership-ui.mjs','workspaces/browser-usage-ui.mjs','workspaces/browser-scoped-cleanup-ui.mjs','workspaces/browser-native.mjs',
         'browser.css','skills.css','workspaces/skills.mjs','core/folder-tree.mjs',
-        'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-instructions.mjs','workspaces/instruction-audit.mjs','instruction-audit.css','workspaces/settings-passwords.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-mcp-apps.mjs','workspaces/settings-restart.mjs',
+        'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-instructions.mjs','workspaces/settings-instruction-editor.mjs','workspaces/instruction-audit.mjs','instruction-audit.css','workspaces/settings-passwords.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-mcp-apps.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-passwords.css','settings-identity.css','settings-providers.css',
         'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/llama-launch-settings.mjs','workspaces/settings-providers.mjs','workspaces/native-write-recovery.mjs'];
       for (const file of nextFiles) files['/next/' + file] = 'next/' + file;
@@ -1557,6 +1562,7 @@ export async function createHarnessServer(options = {}) {
         await cleanup(() => browserProfiles.close());
         await cleanup(() => connections.close());
         await cleanup(() => identity.close());
+        await cleanup(() => instructionSettings.close());
         await cleanup(() => tasks.close());
         await cleanup(() => attachments.close());
         await cleanup(() => browser.close());

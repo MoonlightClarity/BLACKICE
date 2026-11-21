@@ -207,6 +207,8 @@ test('delegated execution has a separate exact audit with frozen SOUL and assign
    options.onInstructionAuditPrepared?.({developerInstructions:options.developerInstructions+(child?'\nCHILD_ADAPTER':'\nPARENT_ADAPTER'),adapter:'fixture',role:'system',source:'offline delegate test'});
    options.onPromptAccepted?.(options.prompt);
    if(child){childCall=options;return {output:'Worker checked the assigned fixture.'};}
+   const currentCore=await engine.instructionSettings.read();
+   await engine.instructionSettings.update({content:'FUTURE_WORKER_CORE',expectedRevision:currentCore.revision,expectedHash:currentCore.hash});
    const result=await options.onToolCall({name:'relay_delegate',arguments:{tasks:[{id:'review',prompt:'Inspect the synthetic fixture and report its result.',readOnly:true},{id:'reference',prompt:'Inspect a separate reference fixture and report its result.',readOnly:true}]}});
    assert.equal(result.success,true,result.contentItems?.[0]?.text);
    return {output:'Coordinator combined the result.'};
@@ -214,6 +216,8 @@ test('delegated execution has a separate exact audit with frozen SOUL and assign
  }
  const runtime=new Runtime(),engine=await new HarnessEngine({runtime,dataDir,defaultCwd:cwd,identity}).init();
  engine.runtimeSettings={get:()=>({subagentsEnabled:true,maxSubagents:2,executionGuardrails:false})};
+ const initialCore=await engine.instructionSettings.read();
+ const ownerCore=await engine.instructionSettings.update({content:'ADMITTED_WORKER_CORE\n',expectedRevision:initialCore.revision,expectedHash:initialCore.hash});
  t.after(async()=>{await engine.close();await identity.close();await catalog.close();await rm(dir,{recursive:true,force:true});});
  const workflow={id:'mission_chat_delegate_audit',description:'A focused task started from Mission.',name:'Delegated instruction audit',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',model:'fixture::remote',prompt:'Delegate an independent fixture check.'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{planningMode:'off'}};
  const started=engine.startRun({workflow,input:{task:'Use the job search skill. Inspect a synthetic fixture.',directoryMode:'off'}});await engine.executions.get(started.id);
@@ -222,6 +226,10 @@ test('delegated execution has a separate exact audit with frozen SOUL and assign
  assert.equal(delegate.label,'review');assert.ok(delegate.nodeId);assert.equal(delegate.audit.captureStage,'adapter-prepared');assert.equal(delegate.audit.delivery,'accepted');
  assert.equal(delegate.audit.sections.filter(item=>item.layer==='developer').map(item=>item.text).join(''),childCall.developerInstructions+'\nCHILD_ADAPTER');
  assert.equal(delegate.audit.sections.find(item=>item.id==='soul').revision,soul.revision);
+ assert.equal(delegate.audit.sections.find(item=>item.id==='core').text,ownerCore.content);
+ assert.equal(delegate.audit.sections.find(item=>item.id==='core').revision,ownerCore.revision);
+ assert.equal(parent.sections.find(item=>item.id==='core').text,ownerCore.content);
+ assert.doesNotMatch(childCall.developerInstructions,/FUTURE_WORKER_CORE/);
  assert.match(childCall.prompt,/DELEGATE_FROZEN_SOUL|OWNER_SHARED_COMPLETION/);
  assert.doesNotMatch(childCall.prompt,/PRIVATE_DELEGATE_PROFILE|OWNER_JOB_ONLY/);
  assert.match(parent.sections.find(item=>item.id==='skill-library-job-search').text,/OWNER_JOB_ONLY/);

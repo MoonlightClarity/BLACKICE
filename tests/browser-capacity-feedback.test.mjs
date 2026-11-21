@@ -52,9 +52,9 @@ test('fresh/recovery guidance reaches the model without replacing the saved brow
   const savedCatalog=structuredClone(BROWSER_TOOL);
   assert.ok(BROWSER_TOOL.inputSchema.properties.query);
   const guidance=capabilityGuidance([BROWSER_TOOL],{planningMode:'off'});
-  assert.match(guidance,/same persistent browser profile and sign-ins/);
-  assert.match(guidance,/tabs with query:"stopped-task-recovery"/);
-  assert.match(guidance,/before a conflicting repeat only/);
+  assert.match(guidance,/empty task-owned tabs list is not sign-out/);
+  assert.match(guidance,/tabs query:"stopped-task-recovery"/);
+  assert.match(guidance,/For stale refs with no input sent, take a fresh snapshot and retry/);
   assert.deepEqual(BROWSER_TOOL,savedCatalog,'Out-of-band guidance must not edit the attached tool.');
   assert.deepEqual(validateProviderExecutionContract({providerExecutionContract:contract,dynamicTools:[BROWSER_TOOL]}),contract);
   assert.equal(providerExecutionContractRequiresFreshSession(contract,createProviderExecutionContract({dynamicTools:[BROWSER_TOOL],planningContractVersion:14})),false);

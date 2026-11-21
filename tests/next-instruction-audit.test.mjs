@@ -9,7 +9,7 @@ import {createInstructionSettings} from '../public/next/workspaces/settings-inst
 import {createIdentitySettings} from '../public/next/workspaces/settings-identity.mjs';
 import {planningDOM} from './fixture-planning-dom.mjs';
 import {createHarnessServer} from '../server.mjs';
-import {BLACKICE_HARNESS_INSTRUCTIONS} from '../lib/harness-identity.mjs';
+import {createHash} from 'node:crypto';
 
 const settle=async()=>{for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));};
 const deferred=()=>{let resolve;const promise=new Promise(yes=>{resolve=yes;});return{promise,resolve};};
@@ -20,7 +20,8 @@ const audit=(content='Act on the requested outcome.')=>({
   notes:['Provider-owned instructions are outside this capture.']
 });
 const snapshot=(id,content)=>({runId:id,status:'completed',nodes:[{nodeId:'agent',name:'Agent',audit:audit(content)}]});
-const index=(runs=[])=>({version:'2.40.68',core:{source:'lib/harness-identity.mjs',text:'Built-in execution mechanics.'},runs});
+const core=()=>{const content='Profile saved execution instructions.';return{content,text:content,revision:0,hash:createHash('sha256').update(content).digest('hex'),source:'initial-default',path:'instructions/core.md',characters:content.length,updatedAt:'2026-11-20T23:00:00Z'};};
+const index=(runs=[])=>({version:'2.40.68',core:core(),runs});
 const identity=kind=>({kind,revision:1,content:kind+' saved',hash:'a'.repeat(64),diskHash:'a'.repeat(64),path:kind+'.md'});
 
 test('readable export preserves complete captured text and labels missing historic snapshots',()=>{
@@ -93,6 +94,7 @@ test('Instructions sits beside SOUL and USER without discarding a draft or writi
     calls.push({route,method});
     if(route==='/api/identity/soul')return identity('soul');
     if(route==='/api/identity/user')return identity('user');
+    if(route==='/api/instructions/core')return core();
     if(route==='/api/instructions')return index([{id:'captured',title:'Captured turn',captured:true}]);
     if(route==='/api/runs/captured/instructions')return snapshot('captured','Captured SOUL revision 3.');
     throw Error('Unexpected route: '+route);
@@ -118,13 +120,14 @@ test('late audit responses cannot overwrite another selected turn',async t=>{
   const api=async(route,method,payload,options)=>{
     calls.push({route,signal:options?.signal});
     if(route==='/api/instructions')return index([{id:'a',title:'First',captured:true},{id:'b',title:'Second',captured:true}]);
+    if(route==='/api/instructions/core')return core();
     if(route==='/api/runs/a/instructions')return a.promise;
     if(route==='/api/runs/b/instructions')return b.promise;
     throw Error(route);
   };
   const panel=createInstructionSettings({mount:f.mount,api});
   t.after(()=>panel.destroy());panel.enter();await settle();
-  await f.input('#next-instructions-run-id','b');await f.$('form').dispatch('submit');
+  await f.input('#next-instructions-run-id','b');await f.$('#next-instructions-audit-form').dispatch('submit');
   b.resolve(snapshot('b','Correct second turn'));await settle();
   a.resolve(snapshot('a','Stale first turn'));await settle();
   assert.match(f.mount.textContent,/Correct second turn/);
@@ -136,13 +139,13 @@ test('late audit responses cannot overwrite another selected turn',async t=>{
 
 test('missing historical snapshots stay unavailable and cannot be exported as current text',async t=>{
   const f=planningDOM(t);
-  const panel=createInstructionSettings({mount:f.mount,api:async route=>route==='/api/instructions'?
+  const panel=createInstructionSettings({mount:f.mount,api:async route=>route==='/api/instructions/core'?core():route==='/api/instructions'?
     index([{id:'old',title:'Old run',captured:false}]):{runId:'old',status:'completed',nodes:[{nodeId:'agent',name:'Agent',audit:null}]}});
   t.after(()=>panel.destroy());panel.enter();await settle();
   assert.match(f.$('#next-instructions-content').textContent,/no saved instruction snapshot/);
   assert.equal(f.$('#next-instructions-download').disabled,true);
   assert.doesNotMatch(f.$('#next-instructions-content').textContent,/Built-in execution mechanics/);
-  assert.match(f.$('#next-instructions-core').textContent,/current configuration/);
+  assert.equal(f.$('#next-instructions-text').value,core().content);
 });
 
 test('delegated workers have separate readable sections and complete exports',t=>{
@@ -156,8 +159,55 @@ test('delegated workers have separate readable sections and complete exports',t=
   assert.match(result,/This delegated worker has no saved instruction snapshot/);
   renderInstructionAudit(f.mount,parent);
   assert.equal(f.mount.querySelectorAll('.next-instruction-worker').length,2);
-  assert.match(f.$('.next-instruction-worker').textContent,/separate instruction snapshot/);
+  assert.match(f.$('.next-instruction-worker').textContent,/Separate instruction snapshot/);
   assert.deepEqual(parent,original,'Reading and exporting do not fold worker sources into parent totals.');
+});
+
+
+test('planning preparations remain distinct from parent and delegated worker captures',t=>{
+  const f=planningDOM(t),parent=audit('Parent execution instructions.');
+  const preparation='<script>Do not execute this.</script>\nExact planning procedure.';
+  parent.preparations=[{id:'preparation-one',label:'Task planning',audit:audit(preparation)},
+    {id:'preparation-missing',label:'Earlier uncaptured preparation',audit:null}];
+  parent.delegates=[{id:'worker',label:'Review',audit:audit('Worker procedure.')}];
+  const original=structuredClone(parent);
+  renderInstructionAudit(f.mount,parent);
+  const preparations=[...f.mount.querySelectorAll('.next-instruction-preparation')];
+  assert.equal(preparations.length,2);
+  assert.match(preparations[0].querySelector('summary').textContent,/Planning preparation · Task planning/);
+  assert.equal(preparations[0].querySelector('.next-instruction-text').textContent,preparation);
+  assert.equal(f.$('script'),null);
+  assert.match(preparations[1].textContent,/This planning preparation has no saved instruction snapshot/);
+  assert.equal(f.mount.querySelectorAll('.next-instruction-worker').length,1);
+  const exported=instructionAuditText({runId:'prepared',nodes:[{nodeId:'agent',audit:parent}]});
+  assert.match(exported,/PLANNING PREPARATION: Task planning/);
+  assert.ok(exported.includes(preparation));
+  assert.match(exported,/DELEGATED WORKER: Review/);
+  assert.match(exported,/This planning preparation has no saved instruction snapshot/);
+  assert.deepEqual(parent,original,'Nested preparation text never changes parent totals or other snapshots.');
+});
+
+test('context summaries stay separate from planning and preserve the main snapshot revision',t=>{
+  const f=planningDOM(t),main=audit('Main execution instructions.'),planning=audit('Planning preparation instructions.'),summary=audit('Context compaction instructions.');
+  main.sections[0].revision=7;planning.sections[0].revision=8;summary.sections[0].revision=9;
+  main.preparations=[{id:'planning',label:'Plan request',audit:planning},
+    {id:'summary',kind:'context-summary',label:'Compact retained context',audit:summary}];
+  const original=structuredClone(main);
+  renderInstructionAudit(f.mount,main);
+  const nested=[...f.mount.querySelectorAll('.next-instruction-nested')];
+  assert.equal(nested.length,2);
+  const planned=nested.find(item=>item.querySelector('summary').textContent.startsWith('Planning preparation'));
+  const compacted=nested.find(item=>item.querySelector('summary').textContent.startsWith('Context summary'));
+  assert.ok(planned);assert.ok(compacted);assert.notEqual(planned,compacted);
+  assert.ok(planned.textContent.includes(planning.sections[0].text));assert.ok(!planned.textContent.includes(summary.sections[0].text));
+  assert.ok(compacted.textContent.includes(summary.sections[0].text));assert.ok(!compacted.textContent.includes(planning.sections[0].text));
+  assert.match(f.$('.next-instruction-layer').textContent,/Revision7/);
+  const exported=instructionAuditText({runId:'context-summary',nodes:[{nodeId:'agent',audit:main}]});
+  assert.match(exported,/PLANNING PREPARATION: Plan request/);
+  assert.match(exported,/CONTEXT SUMMARY: Compact retained context/);
+  assert.doesNotMatch(exported,/PLANNING PREPARATION: Compact retained context/);
+  assert.match(exported.split('PLANNING PREPARATION:')[0],/Revision: 7/);
+  assert.equal(main.sections[0].revision,7);assert.deepEqual(main,original,'Reading internal captures does not replace or mutate the main execution snapshot.');
 });
 
 class QuietRuntime extends EventEmitter {
@@ -177,7 +227,9 @@ test('real audit HTTP routes return captured sources without returning task/prof
   assert.ok(cookie);
   const get=route=>fetch(new URL(route,url),{headers:{Cookie:cookie}});
   const current=await get('/api/instructions');assert.equal(current.status,200);
-  const config=await current.json();assert.equal(config.core.text,BLACKICE_HARNESS_INSTRUCTIONS);assert.ok(Array.isArray(config.runs));
+  const config=await current.json(),saved=await (await get('/api/instructions/core')).json();
+  assert.deepEqual(config.core,saved);assert.equal(saved.text,saved.content);assert.equal(saved.revision,0);assert.equal(saved.source,'initial-default');
+  assert.equal(saved.hash,createHash('sha256').update(saved.content).digest('hex'));assert.ok(Array.isArray(config.runs));
   const source=audit('Saved instruction text');
   app.engine.runs.set('fixture-instructions',{id:'fixture-instructions',createdAt:'2026-11-20T23:00:00Z',status:'completed',settled:true,
     input:'PRIVATE TASK BODY',output:'PRIVATE RESULT',events:[],workflow:{nodes:[{id:'agent',name:'Agent'}],edges:[]},
@@ -188,7 +240,7 @@ test('real audit HTTP routes return captured sources without returning task/prof
   assert.doesNotMatch(JSON.stringify(payload),/PRIVATE TASK|PRIVATE RESULT|PRIVATE NODE/);
   app.engine.runs.get('fixture-instructions').nodes.agent.instructionAudit=null;
   const old=await (await get('/api/runs/fixture-instructions/instructions')).json();assert.equal(old.nodes[0].audit,null);
-  for(const route of ['/next/workspaces/settings-instructions.mjs','/next/workspaces/instruction-audit.mjs','/next/instruction-audit.css']){
+  for(const route of ['/next/workspaces/settings-instruction-editor.mjs','/next/workspaces/settings-instructions.mjs','/next/workspaces/instruction-audit.mjs','/next/instruction-audit.css']){
     const result=await get(route);assert.equal(result.status,200,route);assert.ok((await result.text()).length>30);
   }
   app.engine.runs.delete('fixture-instructions');

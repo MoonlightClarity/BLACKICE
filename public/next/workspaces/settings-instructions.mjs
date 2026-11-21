@@ -1,4 +1,5 @@
 import {renderInstructionAudit, instructionAuditText} from './instruction-audit.mjs';
+import {createInstructionEditor} from './settings-instruction-editor.mjs';
 
 const make = (doc, tag, value = '', className = '') => {
   const node = doc.createElement(tag); node.textContent = value;
@@ -7,27 +8,25 @@ const make = (doc, tag, value = '', className = '') => {
 };
 const validAudit = value => value?.version === 1 && Array.isArray(value.sections);
 
-/** Config's read-only instruction sources and exact execution snapshots. */
+/** Config's saved owner instructions and exact execution snapshots. */
 export function createInstructionSettings({mount, api, onSelectFile}) {
   const doc = mount.ownerDocument;
   const heading = make(doc, 'h3', 'Instructions');
   const description = make(doc, 'p',
-    'SOUL.md owns behavior. USER.md holds your profile. Selected skills supply task procedures. Built-in instructions contain BLACKICE tool mechanics.', 'next-help');
+    'SOUL.md controls behavior, USER.md holds your profile, and selected skills supply task procedures. Edit the shared instructions below; saved changes apply to the next execution.', 'next-help');
   const sourceLinks = make(doc, 'div', '', 'next-instruction-controls');
   for (const [kind, label] of [['soul', 'Edit SOUL.md'], ['user', 'Edit USER.md']]) {
     const button = make(doc, 'button', label); button.type = 'button';
     button.addEventListener('click', () => onSelectFile?.(kind)); sourceLinks.append(button);
   }
-  const current = make(doc, 'details', '', 'next-instruction-section');
+  const current = make(doc, 'section', '', 'next-instruction-editor');
   current.id = 'next-instructions-core';
-  const currentTitle = make(doc, 'summary', 'Built-in mechanics · current configuration');
-  const currentMeta = make(doc, 'p', '', 'next-help');
-  const currentText = make(doc, 'div', '', 'next-instruction-text');
-  current.append(currentTitle, currentMeta, currentText);
+  const editor = createInstructionEditor({mount:current, api});
   const label = make(doc, 'h3', 'Captured executions');
   const explanation = make(doc, 'p',
     'Inspect the instructions captured for a particular execution, including their source and layer. Later edits do not rewrite a saved snapshot.', 'next-help');
   const form = make(doc, 'form', '', 'next-instruction-controls'), recent = make(doc, 'select'), runInput = make(doc, 'input');
+  form.id = 'next-instructions-audit-form';
   recent.id = 'next-instructions-recent'; recent.className = 'next-field'; recent.setAttribute('aria-label', 'Recent execution');
   runInput.id = 'next-instructions-run-id'; runInput.className = 'next-field'; runInput.type = 'text'; runInput.placeholder = 'Turn ID';
   runInput.setAttribute('aria-label', 'Execution turn ID'); runInput.maxLength = 120;
@@ -93,10 +92,6 @@ export function createInstructionSettings({mount, api, onSelectFile}) {
       const result = await api('/api/instructions', 'GET', undefined, {signal:indexController.signal});
       if (!active || destroyed || token !== indexRead) return;
       if (!Array.isArray(result?.runs)) throw Error('BLACKICE returned an unreadable instruction index.');
-      currentText.textContent = typeof result.core?.text === 'string' ? result.core.text : 'Built-in mechanics unavailable.';
-      currentMeta.textContent = 'Read-only · ' + (result.core?.source || 'Source not recorded') +
-        (typeof result.core?.text === 'string' ? ' · ' + result.core.text.length.toLocaleString() + ' characters' : '') +
-        (result.version ? ' · BLACKICE ' + result.version : '');
       recent.replaceChildren();
       for (const run of result.runs) {
         const name = [run.createdAt ? new Date(run.createdAt).toLocaleString() : '', run.title || run.id, run.captured === true ? 'captured' : run.captured === false ? 'no snapshot' : 'inspect snapshot'].filter(Boolean).join(' · ');
@@ -109,7 +104,7 @@ export function createInstructionSettings({mount, api, onSelectFile}) {
       if (runInput.value.trim()) await loadAudit();
       else { status.textContent = 'No executions are available yet. A new execution will capture its active instruction sources.'; content.replaceChildren(); }
     } catch (error) {
-      if (active && !destroyed && token === indexRead && error.name !== 'AbortError') status.textContent = error.message || 'Could not read instruction configuration.';
+      if (active && !destroyed && token === indexRead && error.name !== 'AbortError') { status.textContent = error.message || 'Could not read instruction configuration.'; }
     }
   }
   form.addEventListener('submit', event => { event.preventDefault(); void loadAudit(); });
@@ -128,8 +123,8 @@ export function createInstructionSettings({mount, api, onSelectFile}) {
     finally { link.remove(); setTimeout(() => urlApi.revokeObjectURL(url), 1000); }
   });
   return {
-    enter() { if (active || destroyed) return; active = true; void loadIndex(); },
-    leave() { active = false; invalidate(); },
-    destroy() { this.leave(); destroyed = true; mount.replaceChildren(); },
+    enter() { if (active || destroyed) return; active = true; editor.enter(); void loadIndex(); },
+    leave() { active = false; invalidate(); editor.leave(); },
+    destroy() { this.leave(); destroyed = true; editor.destroy(); mount.replaceChildren(); },
   };
 }

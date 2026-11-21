@@ -98,8 +98,13 @@ test('ambiguous fresh deadline gets a tool-free advice pass without committing a
  const decomposition=active.calls.find(x=>x.prep&&!x.inference);
  assert.match(decomposition.input,/Start by checking current postings\./);
  assert.deepEqual(toolCalls,[['relay_find_files',null],['relay_workspace','read'],['relay_workspace','read']]);
- assert.match(main.input,/For a fresh search or application, go to the sources needed for the task\./);
- assert.match(main.input,/Do not inventory open browser tabs for a fresh task; open the relevant source directly\./);
+ assert.doesNotMatch(main.input,/For a fresh search or application, go to the sources needed for the task\./);
+ assert.doesNotMatch(main.input,/Do not inventory open browser tabs for a fresh task; open the relevant source directly\./);
+ const intentAudit=active.run.nodes.agent.instructionAudit.preparations.find(row=>row.id===id).audit;
+ const method=intentAudit.sections.find(row=>row.id==='skill-library-intent-inference');
+ assert.equal(method.source,'Bundled skill: library-intent-inference');
+ assert.ok(infer[0].input.includes(method.text));
+ assert.equal(intentAudit.captureStage,'engine-prepared');
  assert.equal(active.run.goal?.deadlineAt,undefined);
  assert.deepEqual(active.run.planningModuleReceipts.filter(x=>x.moduleId===id).map(x=>x.phase),['started','completed']);
  const ledger=await engine.actionDirectories.get(active.run.id,active.run.input);

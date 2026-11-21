@@ -57,11 +57,16 @@ export function instructionAuditText(record, seen = new Set()) {
       'Names: ' + list(audit.tools.names).filter(value => typeof value === 'string').join(', '),
       ...(string(audit.tools.sha256) ? ['Schema SHA-256: ' + audit.tools.sha256] : []));
     lines.push('');
-    for (const delegate of list(audit.delegates)) {
-      lines.push('DELEGATED WORKER: ' + (string(delegate.label) || string(delegate.id) || 'Worker'));
-      if (!validAudit(delegate.audit)) lines.push('This delegated worker has no saved instruction snapshot.', '');
-      else lines.push(instructionAuditText({runId:record?.runId,nodes:[{nodeId:delegate.nodeId || delegate.id,name:delegate.label || delegate.id,audit:delegate.audit}]},seen));
+    for (const [key, label, missing] of [
+      ['preparations', 'PLANNING PREPARATION', 'This planning preparation has no saved instruction snapshot.'],
+      ['delegates', 'DELEGATED WORKER', 'This delegated worker has no saved instruction snapshot.'],
+    ]) for (const child of list(audit[key])) {
+      const childLabel = key === 'preparations' && child.kind === 'context-summary' ? 'CONTEXT SUMMARY' : label;
+      lines.push(childLabel + ': ' + (string(child.label) || string(child.id) || 'Execution'));
+      if (!validAudit(child.audit)) lines.push(missing, '');
+      else lines.push(instructionAuditText({runId:record?.runId,nodes:[{nodeId:child.nodeId || child.id,name:child.label || child.id,audit:child.audit}]},seen));
     }
+
     seen.delete(audit);
   }
   return lines.join('\n');
@@ -119,13 +124,18 @@ export function renderInstructionAudit(container, audit, seen = new Set()) {
     if (audit.tools) metadata.append(make(doc, 'p', 'Attached tools: ' + list(audit.tools.names).filter(value => typeof value === 'string').join(', '), 'next-help'));
     container.append(metadata);
   }
-  for (const delegate of list(audit.delegates)) {
-    const detail=make(doc,'details','','next-instruction-section next-instruction-worker');
-    detail.append(make(doc,'summary','Delegated worker · '+(string(delegate.label)||string(delegate.id)||'Worker')));
-    detail.append(make(doc,'p','Worker '+(string(delegate.nodeId)||string(delegate.id))+' · separate instruction snapshot','next-help'));
+  for (const [key, label, missing] of [
+    ['preparations', 'Planning preparation', 'This planning preparation has no saved instruction snapshot.'],
+    ['delegates', 'Delegated worker', 'This delegated worker has no saved instruction snapshot.'],
+  ]) for (const child of list(audit[key])) {
+    const detail=make(doc,'details','','next-instruction-section next-instruction-nested '+(key==='preparations'?'next-instruction-preparation':'next-instruction-worker'));
+    const childLabel=key==='preparations'&&child.kind==='context-summary'?'Context summary':label;
+    detail.append(make(doc,'summary',childLabel+' · '+(string(child.label)||string(child.id)||'Execution')));
+    detail.append(make(doc,'p','Separate instruction snapshot · '+(string(child.nodeId)||string(child.id)),'next-help'));
     const body=make(doc,'div');detail.append(body);container.append(detail);
-    if(validAudit(delegate.audit))renderInstructionAudit(body,delegate.audit,seen);
-    else body.append(make(doc,'p','This delegated worker has no saved instruction snapshot.','next-help'));
+    if(validAudit(child.audit))renderInstructionAudit(body,child.audit,seen);
+    else body.append(make(doc,'p',missing,'next-help'));
   }
+
   seen.delete(audit);
 }

@@ -10,6 +10,7 @@ import {ProviderRuntime} from '../lib/providers.mjs';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {TaskActionDirectory} from '../lib/task-action-directory.mjs';
 import {commitChatPlanningProposal} from '../lib/chat-planning-engine.mjs';
+import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 
 class Native extends EventEmitter {
   status(){return {connected:false,authenticated:false,models:[]};}
@@ -31,7 +32,7 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   const root=await realpath(tmpdir()), dir=await mkdtemp(path.join(root,'blackice-planning-provider-'));
   const requests=[];
   let answerToPlanning=JSON.stringify(plan), heldResponse;
-  let engine,runtime;
+  let engine,runtime,skillCatalog;
   const server=http.createServer(async(req,res)=>{
     if(req.method==='GET'){res.end(JSON.stringify({data:[{id:'fixture'}]}));return;}
     let raw='';for await(const part of req)raw+=part;
@@ -48,7 +49,7 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
     respond(prep?answerToPlanning:'Ordinary synthetic final, not an action receipt.');
   });
   t.after(async()=>{
-    await engine?.close();await runtime?.close();
+    await engine?.close();await runtime?.close();await skillCatalog?.close();
     server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
     const resolved=await realpath(dir);
     assert.equal(path.dirname(resolved),root);
@@ -60,6 +61,11 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   await runtime.store.init();
   await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl:'http://127.0.0.1:'+server.address().port+'/v1',models:[{id:'fixture',contextWindowTokens:65536,maxOutputTokens:4096}]},{preserveDefault:true});
   engine=await new HarnessEngine({runtime,dataDir:path.join(dir,'engine'),defaultCwd:dir}).init();
+  const seed=await engine.instructionSettings.read();
+  const ownerCore=await engine.instructionSettings.update({content:'OWNER_PROVIDER_CORE\n',expectedRevision:seed.revision,expectedHash:seed.hash});
+  skillCatalog=createSkillsCatalog({dataDir:engine.dataDir});
+  const method=await skillCatalog.detail({id:'builtin-decomposition'});
+  const editedMethod=await skillCatalog.save({id:method.id,value:{expectedRevision:method.revision,content:'# Owner decomposition\nOWNER_PREPARATION_METHOD'}});
   const start=(task,fields)=>engine.startRun({input:{task,cwd:dir,...fields},workflow:{id:'mission_chat_fixture',
     name:'Fixture',nodes:[{id:'input',type:'input',name:'Request'},{id:'agent',type:'agent',name:'Assistant',model:'fixture::fixture',prompt:'Answer directly.'},{id:'output',type:'output',name:'Result'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}]}});
   const done=run=>wait(()=>{const latest=engine.getRun(run.id);return latest.settled?latest:null;});
@@ -68,8 +74,8 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   assert.equal(requests.length,1);
   assert.equal(requests[0].prep,false);
   assert.doesNotMatch(requests[0].allText,/CRITICAL PATH|LONG-TERM JUDGMENT/);
-  assert.match(requests[0].allText,/Say what to do, what to check in the result, and what to do when the check fails/);
-  assert.match(requests[0].allText,/EXECUTION COMPLETION[\s\S]*Do not end the turn until you are really done/);
+  assert.match(requests[0].allText,/OWNER_PROVIDER_CORE/);
+  assert.doesNotMatch(requests[0].body.messages[0].content,/EXECUTION COMPLETION|BLACKICE AGENT HARNESS/);
   assert.match(requests[0].allText,/WHAT MAKES DONE \(bundled execution method\)[\s\S]*What just happened\?/);
   assert.equal(off.planningModuleReceipts,undefined);
   const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:'blackice-anti-completion-bias-v2'};
@@ -82,26 +88,34 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   assert.deepEqual(requests.map(row=>row.prep),[false,true,false]);
   assert.ok(!requests[1].body.tools?.length);
   assert.equal(requests[1].body.model,'fixture');
-  assert.match(requests[1].allText,/Say what to do, what to check in the result, and what to do when the check fails/);
+  assert.match(requests[1].allText,/OWNER_PROVIDER_CORE/);
   assert.match(requests[2].allText,/ADVISORY PLANNING CHOICE/);
-  assert.match(requests[1].allText,/WHAT MAKES DONE[\s\S]*Do not put the final chat reply in the receipt-backed plan[\s\S]*take it now instead of returning a status-only answer/);
+  assert.match(requests[1].allText,/OWNER_PREPARATION_METHOD/);
   assert.match(requests[2].allText,/WHAT MAKES DONE \(bundled execution method\)[\s\S]*What just happened\?/);
-  assert.match(requests[1].allText,/CRITICAL PATH[\s\S]*unmet prerequisite controlling the outcome/);
-  assert.match(requests[2].allText,/CRITICAL PATH[\s\S]*Do not cut requested work or necessary verification/);
-  assert.match(requests[1].allText,/keep that step open until an option works/);
-  assert.match(requests[2].allText,/Take the next promising option now/);
-  assert.match(requests[1].allText,/LONG-TERM JUDGMENT \(advisory\)[\s\S]*exact undo path/);
-  assert.match(requests[2].allText,/LONG-TERM JUDGMENT \(advisory\)[\s\S]*Irreversibility calls for proportionate verification, not passivity/);
+  assert.doesNotMatch(requests[1].allText,/CRITICAL PATH|LONG-TERM JUDGMENT/);
+  const parentAudit=on.nodes.agent.instructionAudit,preparation=parentAudit.preparations[0];
+  assert.equal(parentAudit.preparations.length,1);
+  assert.equal(preparation.id,'builtin-decomposition');assert.equal(preparation.audit.delivery,'accepted');
+  assert.equal(preparation.audit.sections.find(row=>row.id==='core').text,ownerCore.content);
+  assert.equal(preparation.audit.sections.find(row=>row.id==='core').revision,ownerCore.revision);
+  assert.equal(preparation.audit.sections.find(row=>row.id==='skill-builtin-decomposition').revision,editedMethod.revision);
+  assert.equal(preparation.audit.sections.filter(row=>row.layer==='developer').map(row=>row.text).join(''),requests[1].body.messages[0].content);
+  assert.equal(parentAudit.sections.filter(row=>row.layer==='developer').map(row=>row.text).join(''),requests[2].body.messages[0].content);
+  assert.doesNotMatch(JSON.stringify(preparation.audit),/Check the startup route/);
   assert.deepEqual(on.planningModuleReceipts.map(row=>[row.moduleId,row.phase]),[[catalog[0],'started'],[catalog[0],'completed']]);
   const ledger=await engine.actionDirectories.get(on.taskId||on.id,on.input);
   assert.equal(ledger.read().revision,1);
   assert.equal(ledger.read().actions[0].state,'pending');
   assert.equal(ledger.read().actions[0].reason,plan.reason);
   assert.equal(ledger.read().receipts.length,0);
+  await skillCatalog.delete({id:method.id,value:{expectedRevision:editedMethod.revision}});
   answerToPlanning='A normal transport final but not a structured artifact.';
   const failed=await done(await start('Prove malformed prep is visible',{chatPlanning:'on'}));
   assert.equal(failed.status,'completed',failed.error);
   assert.deepEqual(failed.planningModuleReceipts.map(row=>row.phase),['started','failed']);
+  const skipped=failed.nodes.agent.instructionAudit.preparations[0].audit.sections.find(row=>row.id==='skill-builtin-decomposition');
+  assert.equal(skipped.status,'unavailable');assert.equal(skipped.text,'');
+  assert.doesNotMatch(requests.at(-2).allText,/OWNER_PREPARATION_METHOD/);
   assert.ok(!requests.at(-1).allText.includes('ADVISORY PLANNING CHOICE'));
   const cancelledStart=await start('PAUSE FOR CANCEL',{chatPlanning:'on'});
   await wait(()=>heldResponse);

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
 import { ApplicationWorkspace } from '../lib/application-workspace.mjs';
-import { APPLICATION_TOOL, APPLICATION_SCHEMA_VERSION } from '../lib/application-tools.mjs';
+import { APPLICATION_TOOL, APPLICATION_SCHEMA_VERSION, APPLICATION_INSTRUCTIONS } from '../lib/application-tools.mjs';
 
 const EDITOR = 'uia_abcdef123456_1';
 const catalog = [{ appId: 'notepad-classic', name: 'Notepad', available: true, executable: 'C:\\Windows\\System32\\notepad.exe', args: [] }];
@@ -201,13 +201,13 @@ test('unsupported application catalogs reject continuation and retry without edi
 test('native version two application catalogs retain saved-text actions through continuation and retry', async t => {
   const f = await fixture(t); await f.app.runtimeSettings.update({ codexHistory: 'codex' }); let turns = 0;
   f.model.execute = async options => {
-    turns++; assert.deepEqual(options.dynamicTools.find(item => item.name === APPLICATION_TOOL.name), APPLICATION_TOOL); assert.match(options.prompt, /save_text/); assert.match(options.developerInstructions, /read_document/);
+    turns++; assert.deepEqual(options.dynamicTools.find(item => item.name === APPLICATION_TOOL.name), APPLICATION_TOOL); assert.ok(options.prompt.includes(APPLICATION_INSTRUCTIONS), 'Current application mechanics are delivered in the prompt; the saved tool catalog remains intact.');
     options.onEvent({ type: 'thread', threadId: 'native-v2-application-thread' });
     if (turns > 1) assert.equal(options.threadId, 'native-v2-application-thread');
     if (turns === 2) throw Error('Fixture interruption with the version two catalog.');
     return { output: 'Retained the attached version two application schema.', threadId: 'native-v2-application-thread', codexHistory: 'codex' };
   };
-  const first = f.app.engine.startRun({ workflow: graph, input: 'Start a new saved-text capable native conversation.' }); await f.app.engine.executions.get(first.id); assert.equal(f.app.engine.getRun(first.id).nodes.agent.applicationSchemaVersion, 2);
+  const first = f.app.engine.startRun({ workflow: graph, input: 'Start a new saved-text capable native conversation.' }); await f.app.engine.executions.get(first.id); const initial = f.app.engine.getRun(first.id); assert.equal(initial.status, 'completed', initial.error); assert.equal(initial.nodes.agent.applicationSchemaVersion, 2);
   const continued = f.app.engine.continueRun(first.id, { nodeId: 'agent', message: 'Continue the saved-text capable native conversation.' }); await f.app.engine.executions.get(continued.id); const interrupted = f.app.engine.getRun(continued.id); assert.equal(interrupted.status, 'failed'); assert.equal(interrupted.nodes.agent.applicationSchemaVersion, 2); assert.equal(interrupted.nodes.agent.resumeApplicationSchemaVersion, 2);
   const retry = f.app.engine.retryRun(continued.id); await f.app.engine.executions.get(retry.id); const finished = f.app.engine.getRun(retry.id); assert.equal(finished.status, 'completed', finished.error); assert.equal(finished.nodes.agent.applicationSchemaVersion, 2); assert.equal(finished.nodes.agent.resumeApplicationSchemaVersion, 2); assert.equal(turns, 3); assert.equal(f.runtime.calls.length, 0);
 });
