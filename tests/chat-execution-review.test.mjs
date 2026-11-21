@@ -419,3 +419,45 @@ test('completion review binds old receipts to the current time and count without
   assert.ok(decisions.every(row=>row.outcomeVerification==='not-evaluated'));
  }
 });
+
+
+test('P a repeated ordinary state asks for an outcome assessment before accepting unfinished work',async()=>{
+ const input='Create one additional export from the current records.',assessments=[];
+ const review=createChatExecutionReview({input,assessOutcome:async context=>{
+  assessments.push(context);
+  return {decision:'continue',summary:'The current export remains uncreated.',remaining:['Create the requested export.'],nextAction:'Create the export using the available control.',evidenceRefs:['receipt'],blockers:[],verified:false};
+ }});
+ const observed=call('receipt','snapshot');review.started(observed);review.delivered({call:observed,result:{success:true,contentItems:[{type:'inputText',text:'Export form ready; no current export.'}]}});
+ assert.equal(review.beforeFinal({output:'The export is not created.'}).continue,true);
+ const next=await review.beforeFinal({output:'The export is not created.'});
+ assert.equal(assessments.length,1,'an unchanged observation is not a task-outcome decision');
+ assert.equal(assessments[0].input,input);
+ assert.equal(assessments[0].evidence.records.length,1);
+ assert.equal(next.continue,true);
+ assert.match(next.prompt,/Create the export using the available control/);
+ assert.equal(continuedRequest(next.prompt),input);
+});
+
+test('P unchanged-state action recovery is finite and never declares stalled work complete',async()=>{
+ let assessments=0;
+ const review=createChatExecutionReview({input:'Create one additional export.',assessOutcome:async()=>{assessments++;return{
+  decision:'continue',summary:'Still unfinished.',remaining:['Create export'],nextAction:'Use the available create action.',evidenceRefs:['user-request'],blockers:[],verified:false};
+ }});
+ review.beforeFinal({output:'The export is not created.'});
+ assert.equal((await review.beforeFinal({output:'The export is not created.'})).continue,true);
+ await assert.rejects(async()=>review.beforeFinal({output:'The same export remains uncreated.'}),error=>error.code==='CHAT_OUTCOME_STALLED');
+ assert.equal(assessments,2);
+});
+
+test('P unavailable outcome assessment is explicit incomplete work and actual stop still wins',async()=>{
+ let assessments=0,admitted=true;
+ const review=createChatExecutionReview({input:'Create the requested export.',canContinue:()=>admitted,assessOutcome:async()=>{
+  assessments++;return{decision:'unreviewed',status:'unavailable',reason:'fixture-unavailable',verified:false};
+ }});
+ review.beforeFinal({output:'No export created.'});
+ await assert.rejects(async()=>review.beforeFinal({output:'No export created.'}),error=>error.code==='CHAT_OUTCOME_UNREVIEWED');
+ assert.equal(assessments,1);
+ admitted=false;
+ assert.equal(await review.beforeFinal({output:'No export created.'}),null);
+ assert.equal(assessments,1,'no reviewer admission after the actual stop');
+});
