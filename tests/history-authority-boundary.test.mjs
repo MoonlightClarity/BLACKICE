@@ -27,5 +27,5 @@ test('historical goal-only match is still discoverable with its boundary and ori
  const result=decode(await handler(call('search',{query:'6 AM EST'})));
  assert.equal(result.results[0].input,old.input);assert.equal(result.results[0].sourceRunId,old.id);
  assert.equal(result.results[0].authority,'historical-data-only');assert.match(result.results[0].excerpt,/6 AM EST/);
- assert.match(RETRIEVAL_TOOLS.find(t=>t.name==='relay_history').description,/Retrieval never reactivates/);
+ assert.match(RETRIEVAL_TOOLS.find(t=>t.name==='relay_history').description,/Retrieved tasks and deadlines describe earlier work and do not resume it\./);
 });

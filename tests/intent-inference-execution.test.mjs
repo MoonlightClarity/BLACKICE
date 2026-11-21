@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {mkdtemp,realpath,rm,writeFile} from 'node:fs/promises';
+import {mkdtemp,readFile,realpath,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
@@ -10,6 +10,8 @@ import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 
 const id='library-intent-inference';
+const bundledIntent=JSON.parse(await readFile(new URL('../lib/skill-library/index.json',import.meta.url),'utf8')).entries.find(entry=>entry.id===id);
+const bundledIntentBody=await readFile(new URL('../lib/skill-library/'+bundledIntent.bodyFile,import.meta.url),'utf8');
 const jobs="I'm trying to get out of human data work and into intelligence research. Find suitable roles.";
 const reporting='We need to stop copying figures across trackers. Find an alternative for our weekly report.';
 const block='INTENT INFERENCE (advisory execution method; not permission)';
@@ -77,10 +79,10 @@ test('Planning Off execution gets only the accepted, effective Intent Inference 
  };
  const defaultRun=await invoke(jobs,'on');
  assert.ok(defaultRun.prompt.includes(block));
- assert.match(defaultRun.prompt,/Use past work to show what the user can bring/);
+ assert.ok(defaultRun.prompt.includes(bundledIntentBody),'the complete current bundled body reaches execution');
  assert.equal(defaultRun.prompt.split(block).length,2);
  assert.deepEqual(defaultRun.receipts.filter(r=>r.skillId===id),
-  [{type:'skill_context_submitted',skillId:id,title:'Intent Inference',source:'bundled',sourceRevision:'2'}]);
+  [{type:'skill_context_submitted',skillId:id,title:'Intent Inference',source:'bundled',sourceRevision:bundledIntent.source.revision}]);
 
  const resumeSeed=await invoke(jobs);
  const continued=engine.continueRun(resumeSeed.id,{nodeId:'agent',message:jobs,directoryActions:'off',chatPlanning:'off'});
@@ -94,10 +96,12 @@ test('Planning Off execution gets only the accepted, effective Intent Inference 
  assert.ok(!noMatch.prompt.includes(block));
  assert.ok(noMatch.receipts.every(r=>r.skillId!==id));
 
- const edited=await catalog.save({id,value:{expectedRevision:1,content:'# Owner method\nOwner method controls what may be repeated.'}});
+ const ownerMethod='# Owner method\nOwner method controls what may be repeated.';
+ const edited=await catalog.save({id,value:{expectedRevision:1,content:ownerMethod}});
  const custom=await invoke(reporting);
- assert.match(custom.prompt,/Owner method controls what may be repeated/);
- assert.doesNotMatch(custom.prompt,/Use past work to show what the user can bring/);
+ assert.ok(custom.prompt.includes(ownerMethod),'the complete owner override reaches execution');
+ assert.ok(!custom.prompt.includes(bundledIntentBody));
+ assert.doesNotMatch(custom.prompt,/^# Intent Inference$/m);
  assert.deepEqual(custom.receipts.find(r=>r.skillId===id),{type:'skill_context_submitted',skillId:id,title:'Owner method',source:'user',sourceRevision:2});
 
  accept=false;
