@@ -1299,6 +1299,10 @@ export async function createHarnessServer(options = {}) {
         const query=new URL(req.url,`http://${host}`).searchParams;
         return json(res,200,await skillsCatalog.list({cwd:query.get('cwd')||undefined,query:query.get('query')||'',source:query.get('source')||'all',refresh:query.get('refresh')==='true'}));
       }
+      if(pathname==='/api/skills'&&req.method==='POST'){
+        if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Create skills in BLACKICE on this computer.'});
+        const created=await skillsCatalog.create({value:await body(req)});sendEvent({type:'skills.updated',id:created.id});return json(res,201,created);
+      }
       const restoreSkillId=pathname.endsWith('/restore')?skillIdFromRequestPath(pathname.slice(0,-8)):null;
       if(restoreSkillId&&req.method==='POST'){
         if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Edit skills in BLACKICE on this computer.'});
