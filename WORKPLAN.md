@@ -29,7 +29,7 @@ Text-only changes use explicit content inspection plus existing behavior checks.
 
 - Verified current source and installed version.
 - Created isolated worktree from the current source; confirmed absolute root and absence of inherited AGENTS.md files in inspected ancestors.
-- Inventory, parallel audits, source edits, owner-editor updates, and final tests are complete. Local candidate packaging is complete; activation is the remaining step.
+- Inventory, parallel audits, source edits, owner-editor updates, and final tests are complete. Local candidate packaging, installation, and live verification are complete.
 
 ## Expanded scope from user corrections
 
@@ -55,7 +55,7 @@ Text-only changes use explicit content inspection plus existing behavior checks.
 - Direct current live catalog shape comparison: 46 tools matched base excluding description strings.
 - Final affected-scope integration: 653/653 tests passed across 79 files, zero skipped/cancelled/TODO. Historical text snapshots remain immutable where they describe historical captures.
 - Seven active owner overrides and the common instruction revision were saved through the owner editors and read back exactly. The independent test user skill remains unchanged.
-- No live model/provider benchmark is used or claimed. The unsigned local 2.40.71 candidate is built and verified; publication was not performed. Installation is pending.
+- No live model/provider benchmark is used or claimed. The unsigned local 2.40.71 candidate is built, installed and verified; publication was not performed.
 
 ## Final candidate
 
@@ -63,3 +63,12 @@ Text-only changes use explicit content inspection plus existing behavior checks.
 - Status capabilities now list actual registered model-starting tools while preserving modelStarted:false/providerTurns:false for the read-only status call.
 - Candidate application fingerprint: 5428c23b8786aa1523f2068370c150150eb6d544fb1f127a13de0688da3c47e9.
 - Installer SHA-256: 24f4298df76c02e395c249817173441e4f4590bf9cf92c947a0a17db5a21d481.
+
+## Completed activation
+
+- BLACKICE 2.40.71 is installed and running; installed/source/candidate fingerprints match.
+- The same saved connection returned. Live catalog: 46 tools, SHA-256 ad560bc59ec7c2249e1ddf9491fecc24464e3e2ac188839b5b108dcc11d995e7.
+- Installed Skills UI: 37 bundled skills plus the preserved custom test skill. Modular Development is searchable and its displayed body matches source.
+- Seven saved overrides and common revision 1 still match after installation.
+- The external calling conversation still has cached older connector metadata; a supported host refresh control was not exposed.
+- Public verification: verification/instruction-clarity-activation.json.

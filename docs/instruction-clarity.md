@@ -71,6 +71,8 @@ No live model/provider benchmark was run or claimed.
 
 The seven substantive saved skill overrides were updated through the owner editor; the unrelated custom test skill was preserved. Common instructions were also updated through the owner editor. The saved common text and all seven overrides were read back and match the intended source; the custom test skill remains unchanged.
 
-The local installer and installed application are verified separately. Final activation details are recorded in [the activation receipt](../verification/instruction-clarity-activation.json) when complete.
+BLACKICE **2.40.71 is installed and running**. The installer exited successfully; the installed application, packaged candidate, and source share fingerprint `5428c23b8786aa1523f2068370c150150eb6d544fb1f127a13de0688da3c47e9`. The same connection grant returned, and the live 46-tool catalog matches the candidate. The Skills UI lists 37 bundled skills plus the preserved custom test skill, and the displayed Modular Development body matches installed source. See [the activation receipt](../verification/instruction-clarity-activation.json).
 
-An external client's already-attached connector metadata can remain older than the live server. The runtime fix refreshes BLACKICE's native provider sessions; it does not itself replace metadata already cached in an external ChatGPT conversation.
+The first installation attempt stopped before launching the installer because its process check counted the persistent connection helper as the main app. The completed attempt used native quit, the existing per-profile helper stop interface, and the verified NSIS installer. No application source change was needed for this correction.
+
+The current external ChatGPT conversation still exposes cached older connector metadata: its workspace reader lacks current discovery fields, start-chat advertises retired Planning values, and a retired planning-cycle tool remains attached. The updated live server and native catalog are verified. BLACKICE cannot replace descriptors already cached by its external client; no supported client-refresh control was exposed in this session.
