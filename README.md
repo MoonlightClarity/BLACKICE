@@ -10,7 +10,7 @@ The goal is to reduce the work of managing the agent: copying instructions betwe
 
 ## Source version and Windows releases
 
-This is **BLACKICE 2.40.72 source**, integrating clearer instructions and connector metadata, owner-managed skill creation, ordinary Chat continuation, guarded browser observation recovery, and local benchmark infrastructure. See the [2.40.72 release notes](RELEASE-NOTES-2.40.72.md), [instruction clarity guide](docs/instruction-clarity.md), and [instruction audit guide](docs/instruction-audit.md) for the changes and their limits.
+This is **BLACKICE 2.40.73 source**, integrating ordinary Chat outcome assessment, application-history reconciliation, measured browser screenshot coordinates, and MiniCPM trace and benchmark infrastructure. See the [2.40.73 release notes](RELEASE-NOTES-2.40.73.md), [instruction clarity guide](docs/instruction-clarity.md), and [instruction audit guide](docs/instruction-audit.md) for the changes and their qualification limits.
 
 Published Windows installers, build manifests, and tagged source archives are listed on the [Releases page](https://github.com/MoonlightClarity/BLACKICE/releases). A release tag identifies its source snapshot; the current branch and an installed version can differ. The earlier [v2.40.57 Windows release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.57) remains pinned to [commit `67c94d8`](https://github.com/MoonlightClarity/BLACKICE/commit/67c94d87dc99f91c946b7d48082c1d75c50033ea). Subsequent source includes model-readiness and browser-recovery work as well as the instruction audit.
 
@@ -20,7 +20,7 @@ Published Windows installers, build manifests, and tagged source archives are li
 
 ## Current capability and evidence boundaries
 
-The distinction between an implemented tool, a verified integration, and a reliably completed real-world task matters. These boundaries describe the **2.40.72 source**; installed versions and provider capabilities can differ.
+The distinction between an implemented tool, a verified integration, and a reliably completed real-world task matters. These boundaries describe the **2.40.73 source**; installed versions and provider capabilities can differ.
 
 | Area | What the current source provides | What is **not** established |
 | --- | --- | --- |

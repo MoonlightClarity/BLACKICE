@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.72 source.** Package version is **2.40.72**. Start with the [2.40.72 notes](RELEASE-NOTES-2.40.72.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.73 source.** Package version is **2.40.73**. Start with the [2.40.73 notes](RELEASE-NOTES-2.40.73.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.73](RELEASE-NOTES-2.40.73.md) - Chat outcome review, application history, browser geometry, and native tracing
 
 - [2.40.72](RELEASE-NOTES-2.40.72.md) - integrated instructions, skills, Chat continuity, browser observations, and benchmark infrastructure
 
