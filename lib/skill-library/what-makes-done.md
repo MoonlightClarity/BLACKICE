@@ -39,11 +39,13 @@ Do not copy Directory action names or argument fields from old examples or sourc
 
 ## Effects that may already have happened
 
+Match evidence to the current request's time and count. Distinguish a new or additional action from checking an existing state or reporting past work. Reading an old receipt now does not make its action new. Earlier effects can satisfy a state or history request; they do not count as new work when another action is requested. Count effects produced for this same request once, including earlier or resumed attempts.
+
 Check the exact target and operation in current authorized records when there is a reason to suspect a duplicate.
 
 | Observation | Next action |
 | --- | --- |
-| Verified effect | Count it once and continue. |
+| Verified effect within the current request's time and count | Count it once and continue. |
 | Reported effect without confirmation | Check a stronger source, or set that item aside while continuing others. |
 | Unknown after timeout/lost response | Inspect the destination before repeating the action. |
 | This attempt was not dispatched | Repair it and retry if still needed; consider any other known attempts. |

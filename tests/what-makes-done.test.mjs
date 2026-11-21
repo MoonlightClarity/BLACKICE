@@ -64,7 +64,7 @@ test('What Makes Done reconciles exact duplicate risk without importing old conv
  assert.match(content,/Check the exact target and operation in current authorized records/);
  assert.match(content,/Respect the current Past Chats setting/);
  assert.match(content,/current service record or separately authorized task ledger can establish an effect without looking up old conversations/);
- assert.match(content,/Verified effect \| Count it once and continue/);
+ assert.match(content,/Verified effect within the current request's time and count \| Count it once and continue/);
  assert.match(content,/Reported effect without confirmation \| Check a stronger source, or set that item aside while continuing others/);
  assert.match(content,/Unknown after timeout\/lost response \| Inspect the destination before repeating the action/);
  assert.match(content,/This attempt was not dispatched \| Repair it and retry if still needed; consider any other known attempts/);
@@ -117,4 +117,18 @@ test('Long-Term Judgment teaches action under uncertainty without making reversi
   /later compensating action does not erase an earlier effect/,
   /do not silently discard the result/
  ])assert.match(content,expected);
+});
+
+test('shared completion distinguishes new effects from existing-state and history requests',async()=>{
+ const {content}=await readCurrentGuidance('library-what-makes-done');
+ for(const expected of [
+  "Match evidence to the current request's time and count",
+  "Distinguish a new or additional action from checking an existing state or reporting past work",
+  "Reading an old receipt now does not make its action new",
+  "Earlier effects can satisfy a state or history request",
+  "they do not count as new work when another action is requested",
+  "Count effects produced for this same request once, including earlier or resumed attempts",
+  "| Verified effect within the current request's time and count | Count it once and continue. |"
+ ])assert.ok(content.includes(expected),expected);
+ assert.match(content,/Unknown after timeout\/lost response \| Inspect the destination before repeating the action/);
 });

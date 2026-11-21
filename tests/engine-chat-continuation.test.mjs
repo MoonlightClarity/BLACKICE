@@ -224,3 +224,72 @@ test('prepare-only continuation preserves scope and dispatches no tool itself',a
   assert.match(run.nodes.agent.output,/has not been submitted/);
   assert.equal(run.nodes.agent.toolSummary?.completed,1);
 });
+
+test('real compatible continuations preserve temporal scope for new exports and historical reports',{timeout:20000},async t=>{
+ for(const scenario of [
+  {name:'new action',input:'Create one additional export from the current records.',create:true},
+  {name:'past information',input:'Report when the previous export was produced. Do not create another export.',create:false}
+ ])await t.test(scenario.name,async t=>{
+  const cwd=await tempFixture(t,'blackice-chat-continuation-provider-'),requests=[],actions=[];
+  let engine,runtime,identity,index=0,opened=false,tabOwner,created=false;
+  const oldReceipt='Historical export receipt old-export: completed on 2026-01-01.';
+  const newReceipt='Current requested export receipt new-export: completed.';
+  const response=message=>({choices:[{index:0,finish_reason:message.tool_calls?'tool_calls':'stop',message:{role:'assistant',...message}}]});
+  const tool=(id,args)=>response({content:null,tool_calls:[{id,type:'function',function:{name:'relay_browser',arguments:JSON.stringify({browser:'relay',...args})}}]});
+  const script=[
+   tool('read-export',{action:'open',url:'https://fixture.invalid/exports'}),
+   response({content:oldReceipt}),
+   ...(scenario.create?[
+    tool('create-export',{action:'click',tabId:'export-tab',ref:'create-export'}),
+    response({content:newReceipt}),response({content:newReceipt})
+   ]:[response({content:oldReceipt})])
+  ];
+  const server=http.createServer(async(req,res)=>{
+   res.setHeader('Content-Type','application/json');
+   if(req.method==='GET'){res.end(JSON.stringify({data:[{id:'fixture'}]}));return;}
+   let raw='';for await(const chunk of req)raw+=chunk;requests.push(JSON.parse(raw));
+   const reply=script[index++];
+   if(!reply){res.statusCode=500;res.end(JSON.stringify({error:{message:'Unexpected extra fixture request'}}));return;}
+   res.end(JSON.stringify(reply));
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(async()=>{await engine?.close();await runtime?.close();await identity?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await removeFixture(cwd);});
+  runtime=new ProviderRuntime({codex:new NoLiveNative(),dataDir:cwd,modelLimitResolver:{enrich:async(_config,model)=>model}});
+  await runtime.store.init();
+  await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl:'http://127.0.0.1:'+server.address().port+'/v1',
+   models:[{id:'fixture',contextWindowTokens:65536,maxOutputTokens:4096}]},{preserveDefault:true});
+  const dataDir=path.join(cwd,'engine');identity=await new IdentityStore({dataDir}).init();
+  engine=await new HarnessEngine({runtime,dataDir,defaultCwd:cwd,identity,browser:{
+   status:()=>({available:true,contained:true,tabs:opened?[{tabId:'export-tab',owner:tabOwner,url:'https://fixture.invalid/exports'}]:[]}),
+   perform:async(args,context)=>{
+    actions.push({...args});if(args.action==='open'){opened=true;tabOwner=context.owner;}
+    if(args.action==='click')created=true;
+    return{tabId:'export-tab',documentId:'export-document',url:'https://fixture.invalid/exports',
+     text:created?newReceipt:oldReceipt,
+     frames:[{frameId:'main',documentId:'export-document',url:'https://fixture.invalid/exports',observation:'content-observed',
+      text:created?newReceipt:oldReceipt,elements:[{ref:'create-export',tag:'button',type:'button',name:'Create export'}]}]};
+   }
+  }}).init();
+  const run=await settled(engine,begin(engine,cwd,scenario.input));
+  assert.equal(run.status,'completed',run.error||run.nodes.agent.error);
+  assert.equal(run.input,scenario.input);
+  assert.equal(requests.length,scenario.create?5:3);
+  assert.deepEqual(actions.map(row=>row.action),scenario.create?['open','click']:['open'],'historical reporting does not dispatch new work or replay an effect');
+  const continuations=requests.map(body=>body.messages.at(-1)).filter(message=>message?.role==='user'&&message.content.startsWith('[BLACKICE INTERNAL CONTINUATION]'));
+  assert.equal(continuations.length,scenario.create?2:1);
+  for(const message of continuations){
+   assert.equal(continuedRequest(message.content),scenario.input);
+   assert.match(message.content,/Match evidence to the current request's time and count/);
+   assert.match(message.content,/Reading an old receipt now does not make its action new/);
+   assert.match(message.content,/Earlier effects can satisfy a state or history request/);
+   assert.match(message.content,/including earlier or resumed attempts/);
+  }
+  assert.ok(requests.every(body=>JSON.stringify(body.messages).includes("Verified effect within the current request's time and count")),'the shared completion skill reaches the actual provider');
+  const reviews=run.events.filter(row=>row.data?.type==='chat.execution-review').map(row=>row.data);
+  assert.deepEqual(reviews.map(row=>row.reviewDecision),scenario.create?['continue','continue','accepted']:['continue','accepted']);
+  assert.equal(reviews.at(-1).reason,'no-new-task-evidence');
+  assert.ok(reviews.every(row=>row.outcomeVerification==='not-evaluated'));
+  assert.equal(run.nodes.agent.output,scenario.create?newReceipt:oldReceipt);
+  if(scenario.create)assert.doesNotMatch(JSON.stringify(publicAnswers(run)),/Historical export receipt old-export/,'superseded historical candidate stays out of the public final');
+ });
+});

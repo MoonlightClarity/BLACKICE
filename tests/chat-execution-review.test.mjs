@@ -396,3 +396,26 @@ test('completed native observations do not clear an uncertain external effect',(
  review.observe(nativeSearch(2));
  assert.equal(review.beforeFinal({output:partial}),null);
 });
+
+test('completion review binds old receipts to the current time and count without forcing new work',()=>{
+ for(const input of [
+  'Create one additional export from the current records.',
+  'Check whether the current export already exists.',
+  'Report when the previous export was produced. Do not create another export.',
+  'Resume the interrupted export request and verify its existing attempt before repeating it.'
+ ]){
+  const decisions=[],review=setup(input,()=>true,decision=>decisions.push(decision));
+  settle(review,call('old-receipt','read'),{receipt:{id:'historical-export',createdAt:'2026-01-01T00:00:00Z',status:'completed'}});
+  const next=review.beforeFinal({output:'A previous export receipt exists.'});
+  assert.equal(next.continue,true);
+  assert.equal(continuedRequest(next.prompt),input);
+  assert.match(next.prompt,/Match evidence to the current request's time and count/);
+  assert.match(next.prompt,/Distinguish a new or additional action from checking an existing state or reporting past work/);
+  assert.match(next.prompt,/Reading an old receipt now does not make its action new/);
+  assert.match(next.prompt,/Earlier effects can satisfy a state or history request/);
+  assert.match(next.prompt,/Count effects produced for this same request once, including earlier or resumed attempts/);
+  assert.equal(review.beforeFinal({output:'The same historical fact, rephrased.'}),null,'temporal scope does not remove the no-progress bound');
+  assert.deepEqual(decisions.map(row=>row.reason),['current-task-evidence-check','no-new-task-evidence']);
+  assert.ok(decisions.every(row=>row.outcomeVerification==='not-evaluated'));
+ }
+});
