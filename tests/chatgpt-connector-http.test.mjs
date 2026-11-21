@@ -524,3 +524,58 @@ test('authenticated tool receipt capture is wired after setup and an optional wr
   const withoutObserver = await fixture(t, { serverOptions: { chatGPTSetup: setupStub() } });
   await assert.doesNotReject(withoutObserver.app.chatGPTConnector.onAuthenticatedToolCall(receipt));
 });
+
+test('registered execution context reads actual owner stores and context failure never gates ordinary tools', async t => {
+  const f = await fixture(t), [grant] = await approvedDirectGrants(f);
+  const store = f.app.engine.instructionSettings, initial = await store.read();
+  const saved = await store.update({ content: 'Wire owner Instructions\nPreserve my current constraints.', expectedRevision: initial.revision, expectedHash: initial.hash });
+  const nativeRead = store.read, readCurrent = nativeRead.bind(store); let reads = 0, unavailable = false;
+  store.read = async () => { reads++; if (unavailable) throw Object.assign(Error('Saved Instructions unavailable'), { code: 'INSTRUCTIONS_STORAGE_INVALID' }); return readCurrent(); };
+  try {
+    const handshake = async () => {
+      const payload = JSON.stringify({ jsonrpc: '2.0', id: 'context-initialize', method: 'initialize', params: {
+        protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'context-wire-test', version: '1' },
+      } });
+      return new Promise((resolve, reject) => {
+        const req = http.request({ hostname: '127.0.0.1', port: f.app.remoteAccess.gateway.port, path: '/mcp/chatgpt', method: 'POST',
+          headers: { Host: new URL(f.app.chatGPTConnector.origin).host, Authorization: 'Bearer ' + grant.token, Accept: 'application/json, text/event-stream', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, res => {
+          let body = ''; res.setEncoding('utf8'); res.on('data', chunk => { body += chunk; }); res.once('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+        });
+        req.once('error', reject); req.end(payload);
+      });
+    };
+    const initialized = await handshake();
+    assert.equal(initialized.status, 200); assert.ok(initialized.body.result.instructions.endsWith(saved.content));
+    assert.match(initialized.body.result.instructions, /"status":"included"/);
+    const advertised = f.app.chatGPTConnector.tools().find(tool => tool.name === 'blackice_execution_context');
+    assert.ok(advertised); assert.equal(advertised.annotations.readOnlyHint, true);
+    assert.equal(advertised.inputSchema.properties?.taskContext, undefined);
+    const runContext = async args => {
+      const started = await connectorTool(f, grant, 'blackice_execution_context', args);
+      assert.equal(started.isError, false);
+      return settledConnectorJob(f, grant, started.structuredContent.jobId);
+    };
+    const completed = await runContext({ requestId: 'context-wire-read', action: 'instructions' });
+    assert.equal(completed.status, 'succeeded');
+    const value = JSON.parse(completed.result.text.text);
+    assert.equal(value.content, saved.content); assert.equal(value.source.revision, saved.revision); assert.equal(value.source.hash, saved.hash);
+    const identity = await runContext({ requestId: 'context-wire-profile', action: 'identity', kind: 'user' });
+    assert.equal(identity.status, 'succeeded'); assert.equal(JSON.parse(identity.result.text.text).source.identityKind, 'user');
+    const skills = await runContext({ requestId: 'context-wire-skills', action: 'skill_search', query: 'personal context', limit: 3 });
+    assert.equal(skills.status, 'succeeded');
+    const matches = JSON.parse(skills.result.text.text).entries;
+    assert.ok(matches.some(entry => entry.id === 'library-personal-context')); assert.ok(matches.every(entry => !Object.hasOwn(entry, 'content')));
+    unavailable = true;
+    const failed = await runContext({ requestId: 'context-wire-unavailable', action: 'instructions' });
+    assert.equal(failed.status, 'failed'); assert.equal(failed.error.code, 'INSTRUCTIONS_STORAGE_INVALID');
+    const beforeStatus = reads, status = await connectorTool(f, grant, 'blackice_direct_status', { nonce: 'context-wire-status' });
+    assert.equal(status.isError, false); assert.equal(reads, beforeStatus, 'Status does not read owner stores.');
+    assert.deepEqual(status.structuredContent.executionContext, { available: true, version: 1, tool: 'blackice_execution_context' });
+    const ordinary = await connectorTool(f, grant, 'blackice_workspace_read', { requestId: 'context-wire-independent-read', action: 'list', path: f.root });
+    assert.equal(ordinary.isError, false);
+    assert.equal((await settledConnectorJob(f, grant, ordinary.structuredContent.jobId)).status, 'succeeded');
+    const stillInitializes = await handshake();
+    assert.equal(stillInitializes.status, 200); assert.match(stillInitializes.body.result.instructions, /"status":"unavailable"/);
+    assert.equal(f.runtime.agentCalls, 0); assert.equal(f.app.engine.listRuns().length, 0);
+  } finally { store.read = nativeRead; }
+});

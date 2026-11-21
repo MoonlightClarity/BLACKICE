@@ -7,6 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { ChatGPTConnector } from '../lib/chatgpt-connector.mjs';
+import { createDirectExecutionContextTool } from '../lib/direct-execution-context.mjs';
 import { DirectExecutionAPI, DIRECT_EXECUTION_SCOPES } from '../lib/direct-execution-api.mjs';
 import { ChatGPTPlanningAPI } from '../lib/chatgpt-planning.mjs';
 import { chatGPTFileImportTool } from '../lib/chatgpt-file-import.mjs';
@@ -646,3 +647,217 @@ test('a stalled optional setup observer does not delay delivery of a completed a
   await connector.close();
   release();
 });
+
+function executionContextMetadata(instructions) {
+  return JSON.parse(instructions.split('\n').find(line => line.startsWith('{"version":1,"tool":"blackice_execution_context"')));
+}
+
+test('authenticated initialization and modern discovery deliver current saved owner Instructions without a default fallback', async t => {
+  const f = await fixture(t); let reads = 0, saved = { content: 'First owner policy\nUse my saved constraints.', revision: 7, source: 'user' };
+  const adapter = createDirectExecutionContextTool({ instructionSettings: { read: async () => { reads++; return saved; } } });
+  const original = f.execution.tools;
+  f.execution.tools = () => [...original(), adapter.definition]; f.connector.executionContext = adapter;
+  const initialize = rpc('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'context-test', version: '1' } });
+  assert.equal((await post(f.connector, initialize)).statusCode, 401); assert.equal(reads, 0, 'Anonymous discovery cannot read owner context.');
+  f.setClient({ id: 'context-owner', scopes: ['read'] });
+  const first = (await post(f.connector, initialize)).json().result.instructions;
+  assert.ok(first.endsWith(saved.content));
+  assert.equal(executionContextMetadata(first).instructions.revision, 7);
+  assert.equal(executionContextMetadata(first).instructions.hash, createHash('sha256').update(saved.content).digest('hex'));
+  assert.match(first, /new requestId for a different action or fresh read/);
+  saved = { content: 'Updated owner policy', revision: 8, source: 'user' };
+  const modern = rpc('server/discover', { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {} } });
+  const second = (await post(f.connector, modern, { 'mcp-protocol-version': '2026-07-28', 'mcp-method': 'server/discover' })).json().result.instructions;
+  assert.ok(second.endsWith(saved.content)); assert.equal(second.includes('First owner policy'), false);
+  assert.equal(executionContextMetadata(second).instructions.revision, 8);
+  saved = { content: '', revision: 9, source: 'user' };
+  const empty = (await post(f.connector, initialize)).json().result.instructions;
+  assert.equal(executionContextMetadata(empty).instructions.status, 'empty');
+  assert.equal(executionContextMetadata(empty).instructions.characters, 0);
+  assert.equal(empty.includes('Updated owner policy'), false); assert.doesNotMatch(empty, /An ordinary request delegates/);
+  assert.equal(reads, 3); assert.deepEqual(f.calls, []);
+});
+
+test('context failure does not break discovery or metadata-only direct status', async t => {
+  const f = await fixture(t); let reads = 0;
+  const adapter = createDirectExecutionContextTool({ instructionSettings: { read: async () => {
+    reads++; throw Object.assign(Error('Saved record unavailable'), { code: 'INSTRUCTIONS_STORAGE_INVALID' });
+  } } });
+  const original = f.execution.tools;
+  f.execution.tools = () => [...original(), adapter.definition]; f.connector.executionContext = adapter;
+  f.setClient({ id: 'context-owner', scopes: ['read'] });
+  const response = await post(f.connector, rpc('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'context-test', version: '1' } }));
+  assert.equal(response.statusCode, 200);
+  assert.equal(executionContextMetadata(response.json().result.instructions).instructions.status, 'unavailable');
+  assert.equal(executionContextMetadata(response.json().result.instructions).instructions.code, 'INSTRUCTIONS_STORAGE_INVALID');
+  assert.equal(reads, 1);
+  const status = (await post(f.connector, rpc('tools/call', { name: 'blackice_direct_status', arguments: { nonce: 'context-metadata' } }))).json().result;
+  assert.equal(status.isError, false);
+  assert.deepEqual(status.structuredContent.executionContext, { available: true, version: 1, tool: 'blackice_execution_context' });
+  assert.equal(reads, 1, 'Direct status must not read profile or Instructions stores.');
+  assert.equal(Object.hasOwn(status.structuredContent.executionContext, 'revision'), false, 'Availability does not claim client delivery or application.');
+});
+
+const contextDiscoveryProbes = [
+  { name: 'initialize', payload: rpc('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'context-race-test', version: '1' } }), headers: {} },
+  { name: 'server/discover', payload: rpc('server/discover', { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {} } }), headers: { 'mcp-protocol-version': '2026-07-28', 'mcp-method': 'server/discover' } },
+];
+const privateDiscoveryInstructions = 'Private held owner policy must never be delivered after access or lifetime changes.';
+function attachDiscoveryContext(f, read) {
+  const adapter = createDirectExecutionContextTool({ instructionSettings: { read } });
+  const original = f.execution.tools;
+  f.execution.tools = () => [...original(), adapter.definition];
+  f.connector.executionContext = adapter;
+}
+function discoveryRequest(probe, stream = Readable.from([Buffer.from(JSON.stringify(probe.payload))])) {
+  return Object.assign(stream, { method: 'POST', url: '/mcp/chatgpt', headers: {
+    accept: 'application/json, text/event-stream', 'content-type': 'application/json',
+    authorization: 'Bearer context-race-fixture', ...probe.headers,
+  } });
+}
+async function contextDiscovery(f, probe, response = new Response()) {
+  await f.connector.handle(discoveryRequest(probe), response);
+  return response;
+}
+function discoveryBarrier() {
+  let enter, release;
+  const started = new Promise(resolve => { enter = resolve; });
+  const wait = new Promise(resolve => { release = resolve; });
+  return { started, wait, enter, release };
+}
+function assertContextWithheld(response, status, code) {
+  assert.equal(response.statusCode, status);
+  assert.equal(response.body.includes(privateDiscoveryInstructions), false);
+  assert.equal(response.json().result?.instructions, undefined);
+  if (code) assert.equal(response.json().code, code);
+  else assert.match(response.json().error.message, /closing|disabled/i);
+}
+
+for (const probe of contextDiscoveryProbes) {
+  test(probe.name + ' requires the existing read scope before reading saved instructions', async t => {
+    const f = await fixture(t); let reads = 0;
+    attachDiscoveryContext(f, async () => { reads++; return { content: privateDiscoveryInstructions }; });
+    f.oauth.challenge = (scopes, error) => 'Bearer error="' + error + '", scope="' + scopes.join(' ') + '"';
+    f.setClient({ id: 'context-owner', kind: 'mcp', scopes: ['browser:write', 'files:read'] });
+    const response = await contextDiscovery(f, probe);
+    assertContextWithheld(response, 403, 'CHATGPT_SCOPE_REQUIRED');
+    assert.match(response.headers['www-authenticate'], /error="insufficient_scope"/);
+    assert.match(response.headers['www-authenticate'], /scope="read"/);
+    assert.equal(reads, 0);
+    assert.equal((await post(f.connector, rpc('tools/list'))).statusCode, 200);
+    f.setClient({ id: 'context-owner', kind: 'mcp', scopes: ['read', 'browser:write', 'files:read'] });
+    const unrelated = await post(f.connector, rpc('tools/call', { name: 'blackice_browser_upload', arguments: {} }));
+    assert.equal(unrelated.statusCode, 200);
+    assert.equal(unrelated.json().result.isError, false, 'Context discovery must not gate an unrelated scoped operation.');
+    assert.equal(f.calls.length, 1);
+    assert.equal(reads, 0);
+  });
+
+  test(probe.name + ' checks access and lifetime after a partially received request body', { timeout: 10000 }, async t => {
+    for (const change of ['revoked', 'disabled', 'closed']) await t.test(change, async t => {
+      const f = await fixture(t); let reads = 0;
+      attachDiscoveryContext(f, async () => { reads++; return { content: privateDiscoveryInstructions }; });
+      f.setClient({ id: 'context-owner', kind: 'mcp', scopes: ['read'] });
+      const entered = discoveryBarrier(), originalReadBody = f.connector.readBody.bind(f.connector);
+      f.connector.readBody = req => { entered.enter(); return originalReadBody(req); };
+      const stream = new Readable({ read() {} }), serialized = JSON.stringify(probe.payload);
+      const cut = Math.floor(serialized.length / 2);
+      stream.push(Buffer.from(serialized.slice(0, cut)));
+      const response = new Response();
+      const pending = f.connector.handle(discoveryRequest(probe, stream), response);
+      await entered.started;
+      if (change === 'revoked') f.setClient(null);
+      else if (change === 'disabled') await f.connector.setEnabled(false);
+      else await f.connector.close();
+      stream.push(Buffer.from(serialized.slice(cut))); stream.push(null);
+      await pending;
+      assertContextWithheld(response, change === 'revoked' ? 401 : 503, change === 'revoked' ? 'CHATGPT_AUTH_REQUIRED' : null);
+      assert.equal(reads, 0, 'No private read starts after body parsing resumes without access.');
+      assert.deepEqual(f.calls, []);
+    });
+  });
+
+  test(probe.name + ' withholds a held Core read after grant or lifetime changes', { timeout: 10000 }, async t => {
+    for (const change of ['revoked', 'narrowed', 'replaced', 'disabled']) await t.test(change, async t => {
+      const f = await fixture(t), gate = discoveryBarrier(); let reads = 0;
+      t.after(() => gate.release());
+      attachDiscoveryContext(f, async () => { reads++; gate.enter(); await gate.wait; return { content: privateDiscoveryInstructions }; });
+      f.setClient({ id: 'context-owner', kind: 'mcp', scopes: ['read'] });
+      f.oauth.challenge = (scopes, error) => 'Bearer error="' + error + '", scope="' + scopes.join(' ') + '"';
+      const pending = contextDiscovery(f, probe);
+      await gate.started;
+      assert.equal(f.connector.inflight.size, 1);
+      if (change === 'revoked') f.setClient(null);
+      else if (change === 'narrowed') f.setClient({ id: 'context-owner', kind: 'mcp', scopes: [] });
+      else if (change === 'replaced') f.setClient({ id: 'different-grant', kind: 'mcp', scopes: ['read'] });
+      else await f.connector.setEnabled(false);
+      gate.release();
+      const response = await pending;
+      assertContextWithheld(response, change === 'disabled' ? 503 : change === 'narrowed' ? 403 : 401,
+        change === 'disabled' ? null : change === 'narrowed' ? 'CHATGPT_SCOPE_REQUIRED' : 'CHATGPT_ACCESS_REVOKED');
+      if (change !== 'disabled') assert.match(response.headers['www-authenticate'], change === 'narrowed' ? /insufficient_scope/ : /invalid_token/);
+      assert.equal(reads, 1);
+      assert.equal(f.connector.inflight.size, 0);
+      assert.deepEqual(f.calls, []);
+    });
+  });
+
+  test(probe.name + ' drains delayed admission on close without starting a Core read', { timeout: 10000 }, async t => {
+    for (const stage of ['authenticate', 'revalidate']) await t.test(stage, async t => {
+      const f = await fixture(t), gate = discoveryBarrier(), events = []; let reads = 0;
+      t.after(() => gate.release());
+      const grant = { id: 'context-owner', kind: 'mcp', scopes: ['read'] };
+      f.setClient(grant);
+      attachDiscoveryContext(f, async () => { reads++; return { content: privateDiscoveryInstructions }; });
+      if (stage === 'authenticate') {
+        const authenticate = f.oauth.authenticateRequest.bind(f.oauth); let authentications = 0;
+        f.oauth.authenticateRequest = async req => {
+          const client = await authenticate(req);
+          if (++authentications === 2) { gate.enter(); await gate.wait; }
+          return client;
+        };
+      } else {
+        f.oauth.getClient = async () => { gate.enter(); await gate.wait; return grant; };
+      }
+      f.execution.close = async () => { events.push('execution closed'); };
+      f.oauth.close = async () => { events.push('oauth closed'); };
+      const response = new Response(), end = response.end.bind(response);
+      response.end = value => { assert.equal(f.connector.inflight.size, 1); events.push('response'); end(value); };
+      const pending = contextDiscovery(f, probe, response);
+      await gate.started;
+      const closing = f.connector.close();
+      await Promise.resolve();
+      assert.deepEqual(events, []);
+      assert.equal(f.connector.inflight.size, 1);
+      assert.equal(reads, 0);
+      gate.release();
+      await pending; await closing;
+      assertContextWithheld(response, 503);
+      assert.equal(reads, 0);
+      assert.deepEqual(events, ['response', 'execution closed', 'oauth closed']);
+      assert.equal(f.connector.inflight.size, 0);
+    });
+  });
+
+  test(probe.name + ' drains a held Core read through its guarded response before closing dependencies', { timeout: 10000 }, async t => {
+    const f = await fixture(t), gate = discoveryBarrier(), events = [];
+    t.after(() => gate.release());
+    f.setClient({ id: 'context-owner', kind: 'mcp', scopes: ['read'] });
+    attachDiscoveryContext(f, async () => { events.push('read'); gate.enter(); await gate.wait; return { content: privateDiscoveryInstructions }; });
+    f.execution.close = async () => { events.push('execution closed'); };
+    f.oauth.close = async () => { events.push('oauth closed'); };
+    const response = new Response(), end = response.end.bind(response);
+    response.end = value => { assert.equal(f.connector.inflight.size, 1); events.push('response'); end(value); };
+    const pending = contextDiscovery(f, probe, response);
+    await gate.started;
+    const closing = f.connector.close();
+    await Promise.resolve();
+    assert.deepEqual(events, ['read']);
+    assert.equal(f.connector.inflight.size, 1);
+    gate.release();
+    await pending; await closing;
+    assertContextWithheld(response, 503);
+    assert.deepEqual(events, ['read', 'response', 'execution closed', 'oauth closed']);
+    assert.equal(f.connector.inflight.size, 0);
+  });
+}
