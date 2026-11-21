@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {BROWSER_TOOL} from '../lib/browser.mjs';
+import {BLACKICE_HARNESS_INSTRUCTIONS} from '../lib/harness-identity.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 
 test('contained browser exposes screenshot-relative visual control input with its document guard', () => {
@@ -27,12 +28,13 @@ test('contained ownership and sign-in pause retain BLACKICE-only task browser ro
   status(){return{connected:true,authenticated:true,defaultModel:'demo',models:[{id:'demo',model:'demo',available:true}]};}
   async runAgent(options){
    assert.match(options.prompt,/BACKGROUND WORKSPACE/);assert.match(options.developerInstructions,/contained (?:relay_browser|browser)/);
-   assert.match(options.developerInstructions,/contained relay_browser for website interaction/);
+   assert.ok(options.developerInstructions.includes(BLACKICE_HARNESS_INSTRUCTIONS));
    const browserTool=options.dynamicTools.find(tool=>tool.name==='relay_browser');
-   assert.match(browserTool.description,/contained BLACKICE browser/);
-   assert.match(browserTool.description,/Foreign ownershipCandidates are not readable tabs/);
-   assert.match(browserTool.description,/Adoption preserves the existing page without reloading or submitting/);
-   assert.match(browserTool.description,/empty tabs list means this task has no visible pages/);
+   assert.equal(browserTool.description,BROWSER_TOOL.description);
+   assert.match(browserTool.description,/foreign ownershipCandidates are not readable through this tool/);
+   assert.match(browserTool.description,/take_ownership adopts an eligible stopped task's page/);
+   assert.match(browserTool.description,/copy ownerKey to expectedOwnerKey, url to expectedUrl and documentId to expectedDocumentId from the same ownershipCandidates entry/);
+   assert.match(browserTool.description,/tabs lists this task's visible pages; an empty list does not mean the profile is signed out/);
    assert.doesNotMatch(browserTool.description,/First decompose|critical-path|relevant job boards|known webmail service/);
    assert.doesNotMatch(options.prompt,/Do not call (?:host )?Chrome|Preserve an in-progress form/);
    assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_connections'),false);

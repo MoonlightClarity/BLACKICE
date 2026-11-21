@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -10,7 +10,8 @@ import { scoreHandoff } from './fixtures/document-skill-acceptance.mjs';
 import { writeHandoffFixture } from './fixtures/synthetic-handoff.mjs';
 
 const skillId = 'library-document-comparison';
-const skillMarker = 'Identify the version pair and align equivalent sections';
+// Match the complete bundled skill body at the actual delivery boundary.
+const skillMarker = await readFile(new URL('../lib/skill-library/document-comparison.md', import.meta.url), 'utf8');
 
 test('same synthetic handoff separates actual evidence, skill delivery, and calls', {timeout:20000}, async () => {
   const temporaryRoot = await realpath(tmpdir());
@@ -44,7 +45,7 @@ test('same synthetic handoff separates actual evidence, skill delivery, and call
             assert.ok(found.entries.every(entry => !Object.hasOwn(entry,'content')));
             events.push({op:'skills.search',success:true,ids:found.entries.map(entry=>entry.id)});
             const {entry} = await call('relay_skills',{action:'read',id:skillId});
-            assert.match(entry.content,new RegExp(skillMarker));
+            assert.equal(entry.content,skillMarker);
             events.push({op:'skills.read',success:true,id:entry.id,text:entry.content});
           }
           let pdf,docx;

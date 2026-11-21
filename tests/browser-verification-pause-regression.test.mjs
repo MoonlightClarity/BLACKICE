@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { normalizeBrowserSignIn, browserBlockerInterruption, createBrowserSignInHandler } from '../lib/browser-signin.mjs';
+import { BROWSER_VERIFICATION_GUIDANCE, normalizeBrowserSignIn, browserBlockerInterruption, createBrowserSignInHandler } from '../lib/browser-signin.mjs';
 import { HarnessEngine } from '../lib/engine.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
 
@@ -19,11 +19,12 @@ function assertVerificationToolContract(tools) {
   for (const name of ['relay_browser', 'relay_browser_signin']) {
     const tool = tools.find(tool => tool.name === name);
     assert.ok(tool, `Missing model-visible tool: ${name}`);
-    assert.match(tool.description, /provider script, branding badge .* or hidden frame alone is not an active challenge/);
-    assert.match(tool.description, /normal form controls are enabled and no challenge is shown, use those controls for the authorized task/);
-    assert.match(tool.description, /only when the page shows a visible challenge or the site response explicitly requires verification/);
-    assert.match(tool.description, /do not solve or bypass the challenge by guessing/);
-    assert.match(tool.description, /check the outcome before repeating any submit/);
+    assert.ok(tool.description.includes(BROWSER_VERIFICATION_GUIDANCE), 'Model-visible tools receive the shared verification guidance');
+    assert.match(tool.description, /script, badge or hidden frame alone is not a visible challenge/);
+    assert.match(tool.description, /When normal controls are enabled, continue through them/);
+    assert.match(tool.description, /page displays a challenge or a site response requires verification, inspect that prerequisite/);
+    assert.match(tool.description, /Report a blocker only when that prerequisite still prevents the next action/);
+    assert.match(tool.description, /After a submit, inspect its result before submitting again/);
   }
 }
 
