@@ -84,8 +84,9 @@ test('actual engine wiring supplies concise mechanics and only the contained bro
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS));
     assert.doesNotMatch(options.developerInstructions, /FORM COMPLETION/);
     assert.match(options.developerInstructions, /Use SOUL\.md for behavior and relevant skills for task methods/);
-    assert.match(options.developerInstructions, /without adding approval questions or prerequisites/);
-    assert.match(options.developerInstructions, /Carry the request through its ordinary steps/);
+    assert.match(options.developerInstructions, /An ordinary request delegates the actions and choices needed to complete it within the user's scope/);
+    assert.match(options.developerInstructions, /no extra autonomy or no-questions wording is required/);
+    assert.match(options.developerInstructions, /routine uncertainty alone does not require reconfirmation/);
     assert.equal(options.onApproval, undefined);
     const connectionTool = options.dynamicTools.find(tool => tool.name === 'relay_connections');
     assert.equal(connectionTool, undefined);

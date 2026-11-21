@@ -36,7 +36,7 @@ test('capped-search completion review keeps work open until the live checks are 
  const {engine,root}=await setup(t,async o=>{
   let seq=0;
   const call=(name,args)=>o.onToolCall({name,arguments:args,callId:'checklist-'+(++seq)});
-  const dir=(action,rest={})=>call('relay_directory_action',{id:'scope',action,...rest});
+  const dir=(action,rest={})=>call('relay_directory_action',{action,...rest});
   const checked=async name=>{
    const r=await call('relay_workspace',{action:'read',path:path.join(root,name+'.txt')});
    assert.equal(r.success,true);
@@ -48,9 +48,9 @@ test('capped-search completion review keeps work open until the live checks are 
    {id:'one',parentId:'sources',check:'Was source one checked?'},
    {id:'two',parentId:'sources',check:'Was source two checked?'},
   ]}]})).success,true);
-  assert.equal((await dir('focus')).success,true);
+  assert.equal((await dir('focus',{id:'scope'})).success,true);
   const one=await checked('one');
-  const close=checkResults=>dir('observe',{outcome:'objective-met',claim:output,receipts:checkResults.filter(x=>x.yes).map(x=>x.receipt),checkResults});
+  const close=checkResults=>dir('observe',{id:'scope',outcome:'objective-met',claim:output,receipts:checkResults.filter(x=>x.yes).map(x=>x.receipt),checkResults});
   const first={id:'one',yes:true,receipt:one};
   const rejection=await close([first,{id:'two',yes:false}]);
   assert.equal(rejection.success,false);
@@ -145,7 +145,10 @@ test('typed partial observation retains live search evidence without closing or 
     const before=await accepted('read');
     for(const outcome of [undefined,'unrecognized']){
      const missing=await dir('observe',{...observation,...(outcome===undefined?{}:{outcome})});
-     assert.equal(missing.success,false);assert.equal(missing.code,'DIRECTORY_OUTCOME');assert.match(missing.contentItems[0].text,/This call made no changes/);
+     assert.equal(missing.success,false);assert.equal(missing.code,'DIRECTORY_TOOL_ARGUMENTS');
+     assert.match(missing.contentItems[0].text,outcome===undefined?/Action observe requires field "outcome"\./:/Action observe\.outcome must be one of "objective-met", "partial"\./);
+     assert.match(missing.contentItems[0].text,/No changes were made\./);
+     assert.deepEqual(await accepted('read'),before);
     }
     assert.deepEqual(await accepted('read'),before);
     const partial=await accepted('observe',{...observation,outcome:'partial',candidateRows:[row('first',first)]});
@@ -161,7 +164,11 @@ test('typed partial observation retains live search evidence without closing or 
     assert.equal((await dir('focus',{id:'report'})).code,'DIRECTORY_NOT_READY');
     if(scenario==='exhausted'){
      const block=(receipts,claim='The initial ten-minute window elapsed.')=>dir('block',{id:'find_two',blocker:'search-limit-reached',claim,receipts});
-     assert.equal((await block([])).code,'DIRECTORY_SEARCH_SCOPE');
+     const noReceipts=await block([]);
+     assert.equal(noReceipts.success,false);assert.equal(noReceipts.code,'DIRECTORY_TOOL_ARGUMENTS');
+     assert.match(noReceipts.contentItems[0].text,/Action block\.receipts needs at least 1 item\(s\)\./);
+     assert.match(noReceipts.contentItems[0].text,/No changes were made\./);
+     assert.deepEqual(await accepted('read'),partial);
      assert.equal((await block([first])).code,'DIRECTORY_SEARCH_SCOPE');
      const missing=await call('relay_workspace',{action:'read',path:path.join(root,'missing-source.txt')});
      assert.equal(missing.success,false);
@@ -227,15 +234,18 @@ test('qualification diagnostics repair the exact field; exhausted Directory retr
     const accepted=async(action,args={})=>{const r=await dir(action,args);assert.equal(r.success,true,JSON.stringify(r));return JSON.parse(r.contentItems[0].text);};
     const base={id:'find',objective:'Verify two qualifying candidates',dependsOn:[]};
     for(const [qualifying,description] of [
-     [{minQualifyingCount:2,requiredChecks:'remote'},/qualifying\.requiredChecks to an array/],
-     [{minQualifyingCount:2,requiredChecks:['PRIVATE SECRET TOKEN']},/per qualifying\.requiredChecks ID/],
-     [{minQualifyingCount:'2',requiredChecks:['remote']},/qualifying\.minQualifyingCount to an integer/],
-     [{minQualifyingCount:2,requiredChecks:['remote','remote']},/each qualifying\.requiredChecks ID once/],
-     [{minQualifyingCount:2,requiredChecks:['remote'],secret:'PRIVATE SECRET TOKEN'},/with only minQualifyingCount and requiredChecks/]
+     [{minQualifyingCount:2,requiredChecks:'remote'},/Action plan\.actions\[0\]\.qualifying\.requiredChecks must be an array\./],
+     [{minQualifyingCount:2,requiredChecks:['PRIVATE SECRET TOKEN']},/Action plan\.actions\[0\]\.qualifying\.requiredChecks\[0\] does not match its declared format\./],
+     [{minQualifyingCount:'2',requiredChecks:['remote']},/Action plan\.actions\[0\]\.qualifying\.minQualifyingCount must be an integer\./],
+     [{minQualifyingCount:2,requiredChecks:['remote','remote']},/Action plan\.actions\[0\]\.qualifying\.requiredChecks must not repeat items\./],
+     [{minQualifyingCount:2,requiredChecks:['remote'],secret:'PRIVATE SECRET TOKEN'},/Action plan\.actions\[0\]\.qualifying does not accept field\(s\) "secret"\. Allowed: minQualifyingCount, requiredChecks\./]
     ]){
+     const before=await accepted('read');
      const bad=await dir('plan',{actions:[{...base,qualifying}]});
-     assert.equal(bad.code,'DIRECTORY_QUALIFICATION');assert.match(bad.contentItems[0].text,description);
+     assert.equal(bad.success,false);assert.equal(bad.code,'DIRECTORY_TOOL_ARGUMENTS');assert.match(bad.contentItems[0].text,description);
+     assert.match(bad.contentItems[0].text,/No changes were made\./);
      assert.doesNotMatch(bad.contentItems[0].text,/PRIVATE SECRET TOKEN/);
+     assert.deepEqual(await accepted('read'),before);
     }
     assert.deepEqual((await accepted('read')).actions,[]);
     await accepted('plan',{actions:[{...base,qualifying:{minQualifyingCount:2,requiredChecks:['remote']}}]});
@@ -267,7 +277,7 @@ test('qualification diagnostics repair the exact field; exhausted Directory retr
    assert.doesNotMatch(String(done.output),/UNVERIFIED FINAL CLAIM/);
    const ledger=await engine.actionDirectories.get(run.id,'Unchanged objective');
    assert.deepEqual(ledger.read().actions[0].notes.map(note=>note.claim),[1,2,3].map(i=>'Agent-recorded partial check '+i+'.'));
-   assert.deepEqual(trace.filter(e=>e.kind==='directory.mutation'&&e.metadata?.qualifyingIssue).map(e=>e.metadata.qualifyingIssue),['check-count','check-id','count-range','duplicate-check','contract-shape']);
+   assert.deepEqual(trace.filter(e=>e.kind==='directory.mutation'&&e.metadata?.operation==='plan'&&e.metadata.phase==='rejected').map(e=>e.metadata.code),Array(5).fill('DIRECTORY_TOOL_ARGUMENTS'));
    assert.doesNotMatch(JSON.stringify(trace),/PRIVATE SECRET TOKEN|UNVERIFIED FINAL CLAIM/);
   });
  }
@@ -291,7 +301,10 @@ test('a search-only receipt can preserve zero candidate partial progress and con
    const args={id:'find',claim:'The index was checked; no individual source evaluated yet.',receipts:[found],...(candidateRows===undefined?{}:{candidateRows})};
    const before=await accepted('read');
    assert.equal((await dir('observe',{...args,outcome:'objective-met'})).code,'DIRECTORY_QUALIFICATION');
-   assert.equal((await dir('observe',{...args,outcome:'partial',candidateRows:null})).code,'DIRECTORY_QUALIFICATION');
+   const malformed=await dir('observe',{...args,outcome:'partial',candidateRows:null});
+   assert.equal(malformed.success,false);assert.equal(malformed.code,'DIRECTORY_TOOL_ARGUMENTS');
+   assert.match(malformed.contentItems[0].text,/Action observe\.candidateRows must be an array\./);
+   assert.match(malformed.contentItems[0].text,/No changes were made\./);
    assert.deepEqual(await accepted('read'),before);
    const partial=await accepted('observe',{...args,outcome:'partial'});
    assert.equal(partial.focus,'find');assert.equal(partial.actions[0].state,'active');assert.deepEqual(partial.ready,[]);
@@ -328,10 +341,13 @@ test('blocked dependency replay permits an honest final after one recovery but d
  const{engine,root}=await setup(t,async o=>{
   const call=(args,i)=>o.onToolCall({name:'relay_directory_action',arguments:args,callId:'dir-'+i});
   assert.equal((await call({action:'plan',actions:[{id:'route',objective:'Verify route',dependsOn:[]},{id:'dependent',objective:'Run only after verification',dependsOn:['route']}]},1)).success,true);
-  const outOfOrder=await call({action:'observe',outcome:'objective-met',id:'route',claim:'Candidate observed',receipts:[]},2);assert.equal(outOfOrder.code,'DIRECTORY_OBSERVATION');assert.match(outOfOrder.contentItems[0].text,/not focused/);
+  const outOfOrder=await call({action:'observe',outcome:'objective-met',id:'route',claim:'Candidate observed',receipts:['receipt-unissued']},2);assert.equal(outOfOrder.code,'DIRECTORY_OBSERVATION');assert.match(outOfOrder.contentItems[0].text,/not focused/);
   assert.equal((await o.onBeforeFinal({signal:o.signal})).continue,true);
   assert.equal((await call({action:'focus',id:'route'},3)).success,true);
-  assert.equal((await call({action:'block',id:'route',blocker:'prerequisite-unavailable',claim:'No source was checked.'},4)).code,'DIRECTORY_BLOCKER');
+  const missingReceipt=await call({action:'block',id:'route',blocker:'prerequisite-unavailable',claim:'No source was checked.'},4);
+  assert.equal(missingReceipt.success,false);assert.equal(missingReceipt.code,'DIRECTORY_TOOL_ARGUMENTS');
+  assert.match(missingReceipt.contentItems[0].text,/Action block requires field "receipts"\./);
+  assert.match(missingReceipt.contentItems[0].text,/No changes were made\./);
   const missing=await o.onToolCall({name:'relay_workspace',arguments:{action:'list',path:path.join(root,'required-input')},callId:'verify-unavailable'});
   assert.equal(missing.success,false);
   assert.equal((await call({action:'block',id:'route',blocker:'prerequisite-unavailable',claim:'The required input directory does not exist.',receipts:['receipt-1']},5)).success,true);
@@ -365,7 +381,7 @@ test('focus-after-read live trace replay advances without repeating the successf
   const [receipt]=note.match(/receipt-[0-9]+/);
   const obs=()=>dir('observe',{outcome:'objective-met',id:'find',claim:'Read the local inputs',receipts:[receipt]});
   assert.equal((await obs()).code,'DIRECTORY_OBSERVATION');
-  const stopped=await dir('block',{id:'find',blocker:'prerequisite-unavailable',claim:'I found the input but the work is incomplete.'});
+  const stopped=await dir('block',{id:'find',blocker:'prerequisite-unavailable',claim:'I found the input but the work is incomplete.',receipts:[receipt]});
   assert.equal(stopped.code,'DIRECTORY_BLOCKER');
   assert.match(stopped.contentItems[0].text,/already found or read/);
   assert.equal((await dir('focus',{id:'find'})).success,true);
@@ -577,7 +593,11 @@ test('an unsuitable option is recorded without closing a shared prerequisite',as
   assert.equal(failed.success,false);
   const withFailed=state(await dir('read'));
   const receipt=withFailed.receipts.at(-1).id;
-  assert.equal((await dir('block',{id:'source',claim:'First source is missing'})).code,'DIRECTORY_BLOCKER');
+  const malformed=await dir('block',{id:'source',claim:'First source is missing'});
+  assert.equal(malformed.success,false);assert.equal(malformed.code,'DIRECTORY_TOOL_ARGUMENTS');
+  assert.match(malformed.contentItems[0].text,/Action block requires field "blocker"\./);
+  assert.match(malformed.contentItems[0].text,/No changes were made\./);
+  assert.deepEqual(state(await dir('read')),withFailed);
   const noted=state(await dir('note',{id:'source',claim:'First source is missing; try the working folder',receipts:[receipt]}));
   assert.equal(noted.focus,'source');
   assert.deepEqual(noted.actions[0].notes[0].receipts,[receipt]);
@@ -700,7 +720,7 @@ test('Directory returns once for a newly delivered checked block while an indepe
 
 test('Directory serializes parallel form preparation before receipt reservation without admitting submit',async t=>{
  for(const uncertain of [false,true])await t.test(uncertain?'unknown write blocks the next field':'settled writes permit the next field',async t=>{
-  let tab,started,release;const firstStarts=new Promise(r=>{started=r;}),holdFirst=new Promise(r=>{release=r;});
+  let tab,started,release,concurrencyChecked=false;const firstStarts=new Promise(r=>{started=r;}),holdFirst=new Promise(r=>{release=r;});
   const seen=[];const firstSignal=new AbortController();
   const browser={
    status:()=>({available:true,contained:true,tabs:tab?[tab]:[]}),
@@ -713,9 +733,9 @@ test('Directory serializes parallel form preparation before receipt reservation 
   };
   const {engine}=await setup(t,async o=>{
    const call=(name,args,context)=>o.onToolCall({name,arguments:args,callId:'queue-'+(args.ref||args.action)},context);
-   const dir=(action,args={})=>call('relay_directory_action',{action,id:'prepare',...args});
+   const dir=(action,args={})=>call('relay_directory_action',{action,...args});
    assert.equal((await dir('plan',{actions:[{id:'prepare',objective:'Prepare the fixture form',dependsOn:[]}]})).success,true);
-   assert.equal((await dir('focus')).success,true);
+   assert.equal((await dir('focus',{id:'prepare'})).success,true);
    assert.equal((await call('relay_browser',{action:'open',url:'https://example.test/form'})).success,true);
    const args={tabId:'fixture-tab',expectedUrl:'https://example.test/form',expectedDocumentId:'fixture-document'};
    const first=call('relay_browser',{...args,action:'fill',ref:'first',text:'Fixture A'},{signal:firstSignal.signal}).catch(error=>error);
@@ -736,13 +756,15 @@ test('Directory serializes parallel form preparation before receipt reservation 
     assert.equal(b.success,true);
     assert.deepEqual(seen,['fill:first','select:second']);
     const receipts=[a,b].map(r=>r.contentItems.at(-1).text.match(/receipt-[0-9]+/)[0]);
-    assert.equal((await dir('observe',{outcome:'objective-met',claim:'Fixture fields prepared, not submitted.',receipts})).success,true);
+    assert.equal((await dir('observe',{id:'prepare',outcome:'objective-met',claim:'Fixture fields prepared, not submitted.',receipts})).success,true);
    }
+   concurrencyChecked=true;
    return {output:'Fixture only.'};
   },browser);
   const run=engine.startRun({workflow:graph,input:{task:'Prepare the fixture form, do not submit',directoryActions:'on'}});
   await engine.executions.get(run.id);
   const result=engine.getRun(run.id);
+  assert.equal(concurrencyChecked,true,'The fixture reached and checked both queued browser outcomes.');
   assert.equal(result.status,uncertain?'failed':'completed',result.error);
  });
 });

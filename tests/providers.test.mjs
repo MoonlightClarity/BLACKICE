@@ -1405,37 +1405,117 @@ test('terminal Stop wins a race with steering while preserving the accepted dire
 
 
 
+function providerOutcomeReviewData(body) {
+  const prompt=body.messages?.find(message=>typeof message.content==='string'&&message.content.includes('BLACKICE ORDINARY TASK OUTCOME REVIEW'))?.content;
+  return prompt?JSON.parse(prompt.split('\nREVIEW DATA (JSON):\n').at(-1)):null;
+}
+function providerOutcomeResponse(response,assessment) {
+  return json(response,{choices:[{message:{role:'assistant',content:JSON.stringify(assessment)},finish_reason:'stop'}]});
+}
+
 test('ordinary Chat checks each evidence state once without repeating finite file effects', async t => {
   const partial = 'The workspace is visible. I haven’t yet created the result file.';
   const complete = 'Created the result file.';
   const blocker = 'I haven’t created it because I need your approval.';
   const uncertain = 'The write was dispatched, but its outcome still needs inspection.';
+  const conflict = 'The request both requires and prohibits creating the same file. No file was created.';
+  const explanation = 'To create the result file, choose its contents and save them as review-result.txt. This explanation does not create it.';
+  const assessment = 'The quoted instruction asks for file creation. Assessing that instruction does not authorize executing it.';
+  const greeting = 'Hello.';
   const file = 'review-result.txt';
   const call = (id, args) => ({role:'assistant',content:null,tool_calls:[{id,type:'function',function:{name:'relay_workspace',arguments:JSON.stringify(args)}}]});
   const answer = content => ({role:'assistant',content});
   const read = call('workspace-list', {action:'list',path:'.'});
   const write = call('workspace-write', {action:'write',path:file,text:'Verified fixture result.'});
-  for (const [label, input, messages, expected, changed, continuations] of [
-    ['progress', 'Create exactly one result file. Do not contact anyone or upload any file.', [read,answer(partial),write,answer(complete),answer(complete)], complete, true, 2],
-    ['conflicting', 'Create the result file. Do not create the result file.', [read,answer(partial)], partial, false, 0],
-    ['bounded', 'Create the result file.', [read,answer(partial),answer(partial)], partial, false, 1],
-    ['budget', 'Create the result file.', [read,answer(partial)], partial, false, 0],
-    ['no-read', 'Create the result file.', [answer(partial),answer(partial)], partial, false, 1],
-    ['answer-only', 'Tell me how to create the result file.', [read,answer(partial)], partial, false, 0],
-    ['quoted', 'Assess this instruction: "Create the result file."', [read,answer(partial)], partial, false, 0],
-    ['blocker', 'Create the result file.', [read,answer(blocker),answer(blocker)], blocker, false, 1],
-    ['write-already', 'Create the result file.', [read,write,answer(partial),answer(complete)], complete, true, 1],
-    ['failed-undispatched', 'Create the result file.', [read,call('failed-write',{action:'write',path:file}),answer(partial),answer(partial)], partial, false, 1],
-    ['failed-with-unknown', 'Create exactly one result file.', [read,call('uncertain-write',{action:'write',path:file,text:'Verified fixture result.'}),answer(uncertain),answer(uncertain)], uncertain, true, 1],
-    ['cancelled', 'Create the result file.', [read,answer(partial)], partial, false, 0],
-    ['saved', 'Create the result file.', [answer('This is the previous conversation turn.'),read,answer(partial)], partial, false, 0],
+  for (const [label,input,messages,expected,changed,expectedRevisions,verdict,nextAction] of [
+    ['progress','Create exactly one result file. Do not contact anyone or upload any file.',
+      [read,answer(partial),write,answer(complete),answer(complete)],complete,true,[1,2],'respond'],
+    ['conflicting','Create the result file. Do not create the result file.',
+      [read,answer(conflict),answer(conflict)],conflict,false,[1],'blocked'],
+    ['bounded','Create the result file.',
+      [read,answer(partial),answer(partial),answer(partial)],partial,false,[1],'continue','Create the requested result file with its intended contents.'],
+    ['budget','Create the result file.',[read,answer(partial)],partial,false,[],null],
+    ['no-read','Create the result file.',
+      [answer(partial),answer(partial),answer(partial)],partial,false,[0],'continue','Inspect the current target and create the requested result file without overwriting unrelated work.'],
+    ['answer-only','Tell me how to create the result file.',
+      [read,answer(explanation),answer(explanation)],explanation,false,[1],'respond'],
+    ['quoted','Assess this instruction: "Create the result file."',
+      [read,answer(assessment),answer(assessment)],assessment,false,[1],'respond'],
+    ['blocker','Create the result file.',
+      [read,answer(blocker),answer(blocker),answer(blocker)],blocker,false,[1],'continue','Create the file under the existing request; no additional approval is required.'],
+    ['write-already','Create the result file.',
+      [read,write,answer(partial),answer(complete)],complete,true,[2],'respond'],
+    ['failed-undispatched','Create the result file.',
+      [read,call('failed-write',{action:'write',path:file}),answer(partial),answer(partial),answer(partial)],partial,false,[2],'continue','Repair the missing text argument and perform the requested write that was not dispatched.'],
+    ['failed-with-unknown','Create exactly one result file.',
+      [read,call('uncertain-write',{action:'write',path:file,text:'Verified fixture result.'}),answer(uncertain),answer(uncertain),answer(uncertain)],uncertain,true,[2],'continue','Read the existing destination to reconcile the dispatched write. Do not repeat the write.'],
+    ['cancelled','Create the result file.',[read,answer(partial)],partial,false,[],null],
+    ['saved','Create the result file.',[answer(greeting),answer(greeting),read,answer(partial)],partial,false,[],null],
   ]) await t.test(label, async t => {
-    let engine, activeId, dispatchedWrites=0;
-    const {runtime,baseUrl,cwd,requests}=await harness(t, (_request,response,index)=>{
-      if(label==="cancelled"&&index===2) engine.cancelRun(activeId);
-      const message=messages[index-1];
-      if(!message)return json(response,{error:{message:'Unexpected extra provider request'}},500);
-      json(response,{choices:[{message,finish_reason:message.tool_calls?'tool_calls':'stop'}]});
+    let engine,activeId,dispatchedWrites=0;
+    const workerRequests=[],reviewRequests=[],assessments=[];
+    const stalled=verdict==='continue';
+    const {runtime,codex,baseUrl,cwd,requests}=await harness(t,async(request,response)=>{
+      const review=providerOutcomeReviewData(request.body);
+      if(review){
+        reviewRequests.push(request);
+        const {snapshot,candidate}=review,records=snapshot.evidence.records;
+        assert.equal(snapshot.request,label==='saved'?'Say hello.':input);
+        assert.equal(candidate.output,label==='saved'?greeting:expected);
+        assert.equal(request.body.model,'local-model');
+        assert.equal(request.body.reasoning_effort,workerRequests[0].body.reasoning_effort);
+        assert.equal(request.body.service_tier,workerRequests[0].body.service_tier);
+        assert.deepEqual(request.body.tools||[],[],'the outcome assessment cannot dispatch task effects');
+        assert.equal(snapshot.evidence.omitted,0);
+        let decision=verdict||'respond',summary,remaining=[],evidenceRefs=['user-request','candidate'],blockers=[];
+        if(label==='progress'||label==='write-already'){
+          const receipt=records.find(record=>record.tool==='relay_workspace'&&record.action==='write');
+          assert.ok(receipt,'completion requires the actual admitted write receipt');
+          assert.equal(receipt.success,true);
+          assert.deepEqual(receipt.arguments,{action:'write',path:file,text:'Verified fixture result.'});
+          assert.equal(await readFile(path.join(cwd,file),'utf8'),'Verified fixture result.');
+          evidenceRefs=[receipt.citationRef];summary='The requested local file was created once and the candidate reports it accurately.';
+        }else if(label==='conflicting'){
+          summary='The current request simultaneously requires and prohibits creation of the same file.';
+          remaining=['Create the requested result file.'];
+          blockers=[{scope:'Creation of the requested result file',evidenceRefs:['user-request'],
+            whyNotRepairable:'Creating it violates the explicit prohibition; no available tool repair resolves the mutually exclusive user constraints.'}];
+        }else if(stalled){
+          summary=label==='failed-with-unknown'?'The dispatched write remains unresolved and needs inspection without replay.':
+            label==='failed-undispatched'?'The write was rejected before dispatch and its missing argument is repairable.':
+            label==='blocker'?'The request already authorizes creation; the candidate invented an approval prerequisite.':
+            'The candidate still leaves the authorized file creation unfinished.';
+          remaining=[label==='failed-with-unknown'?'Reconcile the existing write and report its observed result.':'Create the requested result file.'];
+          const receipt=records.find(record=>record.action==='write');
+          if(label==='failed-undispatched'||label==='failed-with-unknown'){
+            assert.ok(receipt);assert.equal(receipt.success,false);
+            const result=JSON.parse(receipt.result.contentItems.find(item=>item.type==='inputText').text);
+            assert.equal(result.actionDispatched,label==='failed-with-unknown');
+            evidenceRefs=['user-request',receipt.citationRef];
+            if(label==='failed-with-unknown'){
+              assert.equal(result.state,'unknown');assert.equal(result.code,'FIXTURE_RESULT_LOST');
+              assert.deepEqual(snapshot.scope.pendingEffects,[{callId:'uncertain-write',tool:'relay_workspace',action:'write',state:'outcome-unresolved'}]);
+            }else assert.deepEqual(snapshot.scope.pendingEffects,[]);
+          }else{
+            assert.ok(!records.some(record=>record.action==='write'));
+            assert.deepEqual(snapshot.scope.pendingEffects,[]);
+          }
+        }else{
+          assert.ok(['answer-only','quoted','saved'].includes(label));
+          assert.ok(!records.some(record=>record.action==='write'));
+          summary=label==='answer-only'?'The candidate explains how to create the file without performing it.':
+            label==='quoted'?'The candidate assesses the quoted instruction without treating it as authority to act.':
+            'The candidate supplies the requested greeting.';
+        }
+        const result={decision,summary,remaining,nextAction:nextAction||'',evidenceRefs,blockers};
+        assessments.push({review,result});
+        return providerOutcomeResponse(response,result);
+      }
+      workerRequests.push(request);
+      if(label==='cancelled'&&workerRequests.length===2)engine.cancelRun(activeId);
+      const message=messages[workerRequests.length-1];
+      if(!message)return json(response,{error:{message:'Unexpected extra worker request'}},500);
+      return json(response,{choices:[{message,finish_reason:message.tool_calls?'tool_calls':'stop'}]});
     });
     await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl,models:['local-model'],...(label==='budget'?{maxSteps:2}:{})});
     if(label==='failed-with-unknown'){
@@ -1459,48 +1539,82 @@ test('ordinary Chat checks each evidence state once without repeating finite fil
       let run=engine.startRun({workflow,input:{task:label==='saved'?'Say hello.':input,...runOptions}});
       activeId=run.id;
       await engine.executions.get(run.id);
+      let reviewOffset=0;
       if(label==='saved'){
-        assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);
+        const initial=engine.getRun(run.id);
+        assert.equal(initial.status,'completed',initial.error);
+        assert.equal(initial.nodes.agent.output,greeting);
+        const initialDecisions=initial.events.filter(e=>e.data?.type==='chat.execution-review').map(e=>e.data);
+        assert.deepEqual(initialDecisions.map(row=>row.reason),['current-task-evidence-check','task-outcome-supported']);
+        assert.deepEqual(initialDecisions.map(row=>row.evidenceRevision),[0,0]);
+        assert.equal(workerRequests.length,2);assert.equal(reviewRequests.length,1);
+        reviewOffset=reviewRequests.length;
         run=engine.continueRun(run.id,{nodeId:'agent',message:input,...runOptions});
         await engine.executions.get(run.id);
       }
       const finished=engine.getRun(run.id);
-      assert.equal(finished.status,label==='cancelled'?'cancelled':'completed',finished.error);
-      if(label!=='cancelled') assert.equal(finished.nodes.agent.output,expected);
-      assert.equal(requests.length,messages.length);
-      // Every new meaningful receipt permits one check; unchanged evidence must stop the loop.
+      assert.equal(finished.status,label==='cancelled'?'cancelled':stalled?'failed':'completed',finished.error);
+      if(stalled){
+        assert.equal(finished.errorCode,'CHAT_OUTCOME_STALLED');
+        assert.match(finished.error,/outcome-directed recovery produced no new observed work/);
+      }else if(label!=='cancelled')assert.equal(finished.nodes.agent.output,expected);
+      assert.equal(workerRequests.length,messages.length);
+      assert.equal(reviewRequests.length,label==='saved'?1:stalled?2:verdict?1:0);
+      assert.equal(requests.length,workerRequests.length+reviewRequests.length);
+      assert.equal(codex.calls.length,0,'compatible fixtures must never invoke a live native model');
+      // Each evidence state receives one initial check. One outcome-directed recovery
+      // may revisit that state; unchanged evidence must then remain incomplete.
       const decisions=finished.events.filter(e=>e.data?.type==='chat.execution-review').map(e=>e.data);
-      const continued=decisions.filter(decision=>decision.reviewDecision==='continue');
-      assert.equal(continued.length,continuations);
-      assert.equal(new Set(continued.map(decision=>decision.evidenceFingerprint)).size,continuations);
-      const expectedRevisions={progress:[1,2],bounded:[1],'no-read':[0],blocker:[1],'write-already':[2],'failed-undispatched':[2],'failed-with-unknown':[2]}[label]||[];
-      assert.deepEqual(continued.map(decision=>decision.evidenceRevision),expectedRevisions);
-      for(const decision of continued){
+      const checks=decisions.filter(row=>['current-task-evidence-check','outcome-reconciliation-check'].includes(row.reason));
+      const recoveries=decisions.filter(row=>row.reason==='task-outcome-continue');
+      assert.equal(checks.length,expectedRevisions.length);
+      assert.equal(new Set(checks.map(row=>row.evidenceFingerprint)).size,checks.length);
+      assert.deepEqual(checks.map(row=>row.evidenceRevision),expectedRevisions);
+      assert.equal(recoveries.length,stalled?1:0);
+      assert.equal(decisions.filter(row=>row.reviewDecision==='continue').length,checks.length+recoveries.length);
+      for(const decision of decisions){
         assert.match(decision.evidenceFingerprint,/^[a-f0-9]{64}$/);
         assert.equal(decision.pendingToolCount,0);
         assert.equal(decision.uncertainToolCount,label==='failed-with-unknown'?1:0);
-        assert.equal(decision.reason,label==='failed-with-unknown'?'outcome-reconciliation-check':'current-task-evidence-check');
         assert.equal(decision.outcomeVerification,'not-evaluated');
         assert.equal(decision.effectReplayEnforcement,'existing-host-controls');
       }
-      if(continuations){
-        assert(requests.some(r=>r.body.messages.some(m=>typeof m.content==='string'&&m.content.includes('[BLACKICE INTERNAL CONTINUATION]'))));
-        assert.equal(decisions.at(-1).reviewDecision,'accepted');
-        assert.equal(decisions.at(-1).reason,'no-new-task-evidence');
-        assert.equal(decisions.at(-1).evidenceFingerprint,continued.at(-1).evidenceFingerprint);
-        assert.equal(decisions.at(-1).outcomeVerification,'not-evaluated');
-        assert.equal(decisions.at(-1).uncertainToolCount,label==='failed-with-unknown'?1:0);
+      for(const decision of checks){
+        assert.equal(decision.reviewDecision,'continue');
+        assert.equal(decision.reason,label==='failed-with-unknown'?'outcome-reconciliation-check':'current-task-evidence-check');
+      }
+      if(checks.length){
+        assert(workerRequests.some(r=>r.body.messages.some(m=>typeof m.content==='string'&&m.content.includes('[BLACKICE INTERNAL CONTINUATION]'))));
+        const last=decisions.at(-1);
+        assert.equal(last.reviewDecision,stalled?'stopped':'accepted');
+        assert.equal(last.reason,stalled?'task-outcome-stalled':verdict==='blocked'?'task-outcome-blocked':'task-outcome-supported');
+        assert.equal(last.evidenceFingerprint,checks.at(-1).evidenceFingerprint);
+        const validations=finished.events.filter(e=>e.data?.type==='chat.outcome-review'&&e.data.status==='validated').map(e=>e.data);
+        assert.deepEqual(validations.map(row=>row.decision),stalled?['continue','continue']:[verdict]);
+        assert.ok(validations.every(row=>row.verified===false));
+      }
+      if(stalled){
+        assert.equal(recoveries[0].evidenceFingerprint,checks.at(-1).evidenceFingerprint);
+        assert.deepEqual(assessments.map(row=>row.review.snapshot.scope.evidenceFingerprint),
+          [checks.at(-1).evidenceFingerprint,checks.at(-1).evidenceFingerprint]);
+        assert(workerRequests.some(r=>r.body.messages.some(m=>typeof m.content==='string'&&m.content.includes('Next useful action: '+nextAction))));
+        assert.ok(!decisions.some(row=>row.reason==='task-outcome-supported'||row.reason==='task-outcome-blocked'));
+      }
+      if(label==='budget')assert.equal(decisions.at(-1).reason,'review-budget-low');
+      if(label==='saved'){
+        assert.equal(reviewRequests.length-reviewOffset,0,'the resumed route does not acquire a fresh ordinary review');
+        assert.deepEqual(decisions,[]);
       }
       if(label==='failed-undispatched'||label==='failed-with-unknown'){
         const callId=label==='failed-undispatched'?'failed-write':'uncertain-write';
-        const delivered=requests.flatMap(r=>r.body.messages).find(message=>message.role==='tool'&&message.tool_call_id===callId);
+        const delivered=workerRequests.flatMap(r=>r.body.messages).find(message=>message.role==='tool'&&message.tool_call_id===callId);
         assert.ok(delivered,'the actual failure receipt reaches the provider');
         const receipt=JSON.parse(delivered.content);
         assert.equal(receipt.actionDispatched,label==='failed-with-unknown');
         if(label==='failed-with-unknown'){
           assert.equal(receipt.state,'unknown');assert.equal(receipt.code,'FIXTURE_RESULT_LOST');
           assert.equal(dispatchedWrites,1);
-          assert(requests.some(r=>r.body.messages.some(m=>typeof m.content==='string'&&m.content.includes('Pending or uncertain receipt identities:')&&m.content.includes(callId))));
+          assert(workerRequests.some(r=>r.body.messages.some(m=>typeof m.content==='string'&&m.content.includes('Pending or uncertain receipt identities:')&&m.content.includes(callId))));
         }
       }
       const writes=finished.events.filter(e=>e.data?.type==='tool.result'&&e.data?.action==='write');
@@ -1516,21 +1630,47 @@ test('ordinary Chat checks each evidence state once without repeating finite fil
 });
 
 test('Maximal native workspace search receipt joins the real provider tool result and does not modify its payload',async t=>{
-  const privateFile='PRIVATE_TAP_NAME.txt', privateQuery='PRIVATE_LOOKUP', privateMatch='PRIVATE_TRACE_LINE';
-  const {runtime,baseUrl,cwd,requests}=await harness(t,(_request,response,index)=>{
-    const message=index===1?{role:'assistant',tool_calls:[{id:'fixture-search-call',type:'function',function:{name:'relay_workspace',
+  const privateFile='PRIVATE_TAP_NAME.txt',privateQuery='PRIVATE_LOOKUP',privateMatch='PRIVATE_TRACE_LINE';
+  const task='Find the fixture matches',workerRequests=[],reviewRequests=[];
+  const {runtime,codex,baseUrl,cwd,requests}=await harness(t,(request,response)=>{
+    const review=providerOutcomeReviewData(request.body);
+    if(review){
+      reviewRequests.push(request);
+      assert.equal(review.snapshot.request,task);
+      assert.equal(review.candidate.output,'The fixture has two matches.');
+      assert.equal(request.body.model,'local-model');
+      assert.equal(request.body.reasoning_effort,workerRequests[0].body.reasoning_effort);
+      assert.equal(request.body.service_tier,workerRequests[0].body.service_tier);
+      assert.deepEqual(request.body.tools||[],[]);
+      const receipts=review.snapshot.evidence.records;
+      assert.equal(receipts.length,1);
+      const receipt=receipts[0];
+      assert.equal(receipt.tool,'relay_workspace');assert.equal(receipt.action,'search');assert.equal(receipt.success,true);
+      assert.deepEqual(receipt.arguments,{action:'search',path:privateFile,query:privateQuery});
+      const contents=receipt.result.contentItems.find(item=>item.type==='inputText').text;
+      assert.ok(contents.includes(privateMatch+' 1'));assert.ok(contents.includes(privateMatch+' 2'));
+      return providerOutcomeResponse(response,{decision:'respond',summary:'The actual search receipt contains the two requested matches.',
+        remaining:[],nextAction:'',evidenceRefs:[receipt.citationRef],blockers:[]});
+    }
+    workerRequests.push(request);
+    if(workerRequests.length>3)return json(response,{error:{message:'Unexpected extra worker request'}},500);
+    const message=workerRequests.length===1?{role:'assistant',tool_calls:[{id:'fixture-search-call',type:'function',function:{name:'relay_workspace',
       arguments:JSON.stringify({action:'search',path:privateFile,query:privateQuery})}}]}:{role:'assistant',content:'The fixture has two matches.'};
-    json(response,{choices:[{message,finish_reason:index===1?'tool_calls':'stop'}]});
+    return json(response,{choices:[{message,finish_reason:message.tool_calls?'tool_calls':'stop'}]});
   });
   await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl,models:['local-model']});
   await writeFile(path.join(cwd,privateFile),[1,2].map(i=>privateQuery+' '+privateMatch+' '+i).join('\n'));
   const engine=await new HarnessEngine({runtime,dataDir:cwd,defaultCwd:cwd}).init();
   try{
-    const task='Find the fixture matches';
     const workflow=createMissionWorkflow({task,id:'mission_chat_search_coverage',model:'fixture::local-model',cwd,planningMode:'off'});
     const {id}=engine.startRun({workflow,input:{task,directoryActions:'off',chatPlanning:'off',pastChats:'off',directoryDiagnostics:'maximal'}});
     await engine.executions.get(id);
-    assert.equal(engine.getRun(id).status,'completed',engine.getRun(id).error);
+    const finished=engine.getRun(id);
+    assert.equal(finished.status,'completed',finished.error);
+    assert.equal(workerRequests.length,3);assert.equal(reviewRequests.length,1);assert.equal(requests.length,4);
+    assert.equal(codex.calls.length,0,'compatible fixtures must never invoke a live native model');
+    assert.equal(finished.events.filter(e=>e.data?.type==='tool.result'&&e.data.action==='search').length,1);
+    assert.equal(finished.events.filter(e=>e.data?.type==='chat.execution-review').at(-1).data.reason,'task-outcome-supported');
     const exported=projectTurnMachineTrace(engine.runs.get(id));
     const coverage=exported.entries.find(row=>row.kind==='workspace.search.coverage');
     const result=exported.entries.find(row=>row.kind==='tool.result'&&row.metadata?.action==='search');
@@ -1539,7 +1679,7 @@ test('Maximal native workspace search receipt joins the real provider tool resul
     assert.equal(coverage.callRef,result.callRef);
     assert.match(coverage.callRef,/^[a-f0-9]{24}$/);
     assert.doesNotMatch(JSON.stringify(exported),/PRIVATE_|fixture-search-call/);
-    const delivered=requests[1].body.messages.find(message=>message.role==='tool').content;
+    const delivered=workerRequests[1].body.messages.find(message=>message.role==='tool').content;
     assert.match(delivered,/PRIVATE_TRACE_LINE/);
     assert.doesNotMatch(delivered,/returnedMatches|searchScope/);
   }finally{await engine.close();}

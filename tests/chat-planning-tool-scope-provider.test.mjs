@@ -26,11 +26,40 @@ const names=body=>body.tools.map(tool=>tool.function?.name);
 const toolCall=({name,args,id})=>({id,type:'function',function:{name,arguments:JSON.stringify(args)}});
 const receipt=(body,id)=>body.messages.findLast(item=>item.role==='tool'&&item.tool_call_id===id)?.content;
 
+const outcomeMarker='BLACKICE ORDINARY TASK OUTCOME REVIEW';
+function syntheticOutcomeAssessment(request,turn){
+  const prompt=request.messages?.find(message=>typeof message.content==='string'&&message.content.includes(outcomeMarker))?.content;
+  if(!prompt)return null;
+  assert.ok(turn.workers.length,'assessment follows a worker request on this provider');
+  const {snapshot}=JSON.parse(prompt.split('\nREVIEW DATA (JSON):\n').at(-1));
+  assert.equal(snapshot.request,turn.task,'assessment retains the unchanged current request');
+  assert.equal(request.model,turn.workers[0].model,'assessment uses the worker model');
+  assert.equal(request.reasoning_effort,turn.workers[0].reasoning_effort,'assessment preserves worker effort');
+  assert.equal(request.service_tier,turn.workers[0].service_tier,'assessment preserves worker service tier');
+  assert.deepEqual(request.tools||[],[],'inline-evidence assessment has no action tools');
+  turn.assessors.push(request);
+  // This mock disposition tests transport, not model judgment or an external outcome.
+  return {decision:'respond',summary:'Synthetic transport assessment; no real external outcome is verified.',
+    remaining:[],nextAction:'',evidenceRefs:snapshot.evidence.records.length?[snapshot.evidence.records.at(-1).citationRef]:['user-request'],blockers:[]};
+}
+function assertTransport(turn,workers,assessors){
+  assert.equal(turn.workers.length,workers,'exact scripted worker and completion-check requests');
+  assert.equal(turn.assessors.length,assessors,'exact read-only outcome assessment requests');
+  assert.equal(turn.all.length,workers+assessors,'every provider request is accounted for');
+  if(assessors){
+    const prompt=turn.workers.at(-1).messages.findLast(message=>message.role==='user').content;
+    const parts=prompt.split('\n\nCURRENT USER REQUEST (unchanged JSON string):\n');
+    assert.equal(parts.length,2,'the extra worker request is the completion evidence check');
+    assert.equal(JSON.parse(parts[1]),turn.task,'completion check retains the current request');
+  }
+}
+
 test('ordinary Chat omits and cannot call planning tools; /plan explicitly opts in for that turn', {timeout:25000}, async t=>{
   const root=await realpath(tmpdir()), dir=await mkdtemp(path.join(root,'blackice-chat-tool-scope-'));
   const cwd=path.join(dir,'workspace');await mkdir(cwd);
-  let phase='ordinary', step=0, app, runtime;
+  let phase='ordinary', step=0, app, runtime,currentTurn;
   const requests=new Map();
+  const counts={ordinary:[3,1],explicit:[2,0],after:[1,0],'probe-off':[1,0],'probe-on':[1,0],'probe-followup':[1,0],'probe-failure':[1,0]};
   const provider=http.createServer(async(req,res)=>{
     const send=value=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));};
     try {
@@ -39,6 +68,10 @@ test('ordinary Chat omits and cannot call planning tools; /plan explicitly opts 
       const body=JSON.parse(raw);
       if(!requests.has(phase))requests.set(phase,[]);
       requests.get(phase).push(body);
+      currentTurn.all.push(body);
+      const assessment=syntheticOutcomeAssessment(body,currentTurn);
+      if(assessment)return send({choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:JSON.stringify(assessment)}}]});
+      currentTurn.workers.push(body);
       if(phase==='probe-failure'){res.statusCode=400;return send({error:{message:'Fixture probe failed'}});}
       const calls=step++ ? [] : phase==='ordinary' ? graphCalls : phase==='explicit' ? [graphCalls[1],graphCalls[3]] : [];
       send({choices:[{index:0,finish_reason:calls.length?'tool_calls':'stop',message:calls.length?
@@ -65,11 +98,16 @@ test('ordinary Chat omits and cannot call planning tools; /plan explicitly opts 
   const api=async(route,_method,body)=>route==='/api/workflows'?body:route==='/api/runs'?app.engine.startRun(body):
     app.engine.continueRun(route.split('/')[3],body);
   const run=async(task,runs=[],options={},expected='completed')=>{
-    step=0;
+    step=0;const turn=currentTurn={task,workers:[],assessors:[],all:[]};
     const started=await submitChat({api,runs,task,model:'fixture::fixture',cwd,...options});
     for(let i=0;i<1000;i++){
       const done=app.engine.getRun(started.run.id);
-      if(done.settled){assert.equal(done.status,expected,done.error);return done;}
+      if(done.settled){
+        assert.equal(done.status,expected,done.error);
+        assertTransport(turn,...counts[phase]);
+        t.diagnostic(JSON.stringify({phase,workers:turn.workers.length,assessors:turn.assessors.length,total:turn.all.length}));
+        return done;
+      }
       await delay(10);
     }
     throw Error('Synthetic Chat did not settle.');
@@ -79,7 +117,7 @@ test('ordinary Chat omits and cannot call planning tools; /plan explicitly opts 
   const off=requests.get('ordinary');
   assert.deepEqual(names(off[0]).filter(name=>graphCalls.some(([tool])=>tool===name)),[]);
   assert.ok(names(off[0]).includes('relay_skills'));
-  assert.equal(off.length,2);
+  assert.equal(off.length,4,'three worker requests, including the completion check, plus one read-only assessment');
   for(let i=0;i<graphCalls.length;i++)assert.match(receipt(off[1],'ordinary-'+i),/not attached/i);
   assert.equal((await app.planningBrowser.list({conversationId:initial.taskId})).requests.length,0);
 

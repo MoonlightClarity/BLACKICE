@@ -32,7 +32,7 @@ test('a verified same-tab navigate after an undispatched stale click advances an
    const dir=(action,rest={})=>call('relay_directory_action',{action,id:'search',...rest});
    const review=()=>o.onBeforeFinal({output:'The requested result is not done.',signal:o.signal});
    const receipt=r=>{assert.equal(r.success,true);return r.contentItems.at(-1).text.match(/receipt-[0-9]+/)[0];};
-   assert.equal((await dir('plan',{actions:[{id:'search',objective:'Read the fixture result',dependsOn:[]}]})).success,true);
+   assert.equal((await call('relay_directory_action',{action:'plan',actions:[{id:'search',objective:'Read the fixture result',dependsOn:[]}]})).success,true);
    assert.equal((await dir('focus')).success,true);
    await call('relay_browser',{action:'open',url});
    assert.equal((await review()).continue,true);
