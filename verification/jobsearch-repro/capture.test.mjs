@@ -198,7 +198,7 @@ test('audited answer preserves a long actual-shaped fill with earlier field prov
     assert.equal(audit.observed.callId,'observation');assert.equal(audit.observed.documentId,'tab-a:9');assert.equal(audit.observed.frame,'7-11');
     assert.equal(audit.originalLength,text.length);assert.equal(audit.retainedLength,text.length);
     assert.equal(audit.textComplete,true);assert.match(audit.meaning,/not.*submitted/i);
-    assert.equal(c.snapshot().schemaVersion,3);
+    assert.equal(c.snapshot().schemaVersion,4);
     assert.equal(c.snapshot().events.at(-1).data.item.arguments.text.redacted,true);
   }
 });
@@ -241,6 +241,66 @@ test('observed password OTP credential and autocomplete fields never disclose an
     assert.doesNotMatch(JSON.stringify(c.snapshot()),/credential-value-must-stay-hidden/);
   }
 });
+
+
+for(const field of [
+  {tag:'textarea',type:'textarea',name:'Describe how you document source code.'},
+  {tag:'input',type:'text',name:'Code description'},
+  {tag:'textarea',type:'textarea',name:'Project notes',label:'Explain the organization of your code examples.'},
+]){
+  test('H3 retains successful prose field: '+(field.label || field.name),()=>{
+    const text='The guide connects each example with its component documentation and expected behavior.';
+    const {c,audit}=capturedAnswer(text,{prior:{field},returned:{field},expectations:false});
+    assert.equal(audit?.text,text);assert.equal(audit.redacted,false);assert.equal(audit.textComplete,true);
+    assert.equal(audit.field.name,field.name);assert.equal(audit.field.label,field.label);
+    assert.equal(audit.observed.callId,'observation');assert.equal(audit.field.ref,answerRef);
+    assert.equal(c.snapshot().events.at(-1).data.item.arguments.text.redacted,true);
+    assert.match(audit.meaning,/not.*submitted/i);
+  });
+}
+
+test('H3 keeps ambiguous code labels and credential cues secret on either observed field',()=>{
+  const fields=[
+    ...['Code',' Code: ','Code *','* Code','Code (required)','Code [required]','Code: (required) *',
+      'Login code','Sign-in code','Access code','SMS code','Email code','Security code','OTP code']
+      .flatMap(value=>[{tag:'input',type:'text',name:value},{tag:'input',type:'text',name:'Account field',label:value}]),
+    {tag:'input',type:'password',name:'Describe how you document source code.'},
+    {tag:'input',type:'text',name:'Code description',autocomplete:'one-time-code'},
+  ];
+  const text='h3-private-field-value';
+  for(const field of fields){
+    for(const side of ['both','prior','returned']){
+      const ordinary={tag:'input',type:'text',name:'Project narrative'};
+      const {c,audit}=capturedAnswer(text,{
+        prior:{field:side==='returned'?ordinary:field},
+        returned:{field:side==='prior'?ordinary:field},
+      });
+      assert.equal(audit?.reason,'secret-field',JSON.stringify({field,side}));
+      assert.equal(audit.secret,true);assert.equal(audit.redacted,true);
+      assert.doesNotMatch(JSON.stringify(c.snapshot()),/h3-private-field-value/);
+    }
+  }
+});
+
+for(const label of ['Enter code','Enter the code']){
+  test('H3 keeps ambiguous code-entry label secret: '+label,()=>{
+    const text='739164',ordinary={tag:'input',type:'text',name:'Project narrative'};
+    for(const field of [
+      {tag:'input',type:'text',name:label},
+      {tag:'input',type:'text',name:'Account field',label},
+    ]){
+      for(const side of ['both','prior','returned']){
+        const {c,audit}=capturedAnswer(text,{
+          prior:{field:side==='returned'?ordinary:field},
+          returned:{field:side==='prior'?ordinary:field},
+        });
+        assert.equal(audit?.reason,'secret-field',JSON.stringify({label,field,side}));
+        assert.equal(audit.secret,true);assert.equal(audit.redacted,true);
+        assert.doesNotMatch(JSON.stringify(c.snapshot()),/739164/);
+      }
+    }
+  });
+}
 
 test('answer cleanup preserves literal JSON and exposes token redaction and text truncation',()=>{
   const literal='{"experience":"analysis and research","years":3}';
@@ -365,9 +425,17 @@ test('H2 unknown public native item retains only identity and explicit unsupport
   assert.doesNotMatch(JSON.stringify(record),/unreviewed body|private chain/);
 });
 
-test('H2 generated observer identifies new policy and rejects an active older schema',async()=>{
+test('H3 generated observer identifies the new schema and policy',async()=>{
   const f=bootstrapFixture(),pending=f.start();f.subscription.onopen();const ready=await pending;
-  assert.equal(ready.schemaVersion,3);assert.equal(ready.redactionPolicy,'public-native-actions-v3');
-  f.capture.schemaVersion=2;
+  assert.equal(ready.schemaVersion,4);assert.equal(ready.redactionPolicy,'public-native-actions-v4');
+});
+
+test('H3 rejects an active schema-3 observer without replacing or relabeling its evidence',async()=>{
+  const f=bootstrapFixture(),pending=f.start();f.subscription.onopen();await pending;
+  const previous=f.capture;previous.schemaVersion=3;previous.redactionPolicy='public-native-actions-v3';previous.bind(run);
+  f.subscription.onmessage({data:JSON.stringify(event({type:'message',itemId:'old-evidence',text:'Original public evidence.'}))});
+  const before=JSON.stringify(previous.snapshot());
   await assert.rejects(f.start(),/another capture schema/);
+  assert.equal(f.capture,previous);assert.equal(f.constructions,1);
+  assert.equal(JSON.stringify(previous.snapshot()),before);assert.equal(f.subscription.closed,false);
 });

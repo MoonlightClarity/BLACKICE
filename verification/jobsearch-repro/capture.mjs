@@ -111,8 +111,10 @@ export function answerEvidence(event, item, history, limits) {
   base.field = field;
   base.observed = {runId:event.runId,nodeId:event.nodeId,callId:prior.event.data.item.id,at:prior.event.at,
     tabId:observed.tabId,documentId:observed.documentId,url:observed.url,frame:before[0].frame};
-  const secret = /password|passwd|passphrase|passcode|one[\s_-]*time[\s_-]*(?:code|password)|verification[\s_-]*code|security[\s_-]*(?:code|answer|question)|recovery[\s_-]*(?:code|key)|backup[\s_-]*code|api[\s_-]*key|private[\s_-]*key|access[\s_-]*token|refresh[\s_-]*token|client[\s_-]*secret|auth(?:entication|orization)?[\s_-]*(?:code|token|key)|(?:^|\W)(?:otp|pin|mfa|2fa|secret|token|credentials?|code)(?:$|\W)/i;
-  if ([field,current].some(value => secret.test([value.type,value.name,value.label,value.autocomplete].filter(v => typeof v === 'string').join(' '))))
+  const secret = /password|passwd|passphrase|passcode|one[\s_-]*time[\s_-]*(?:code|password)|verification[\s_-]*code|security[\s_-]*(?:code|answer|question)|recovery[\s_-]*(?:code|key)|backup[\s_-]*code|api[\s_-]*key|private[\s_-]*key|access[\s_-]*token|refresh[\s_-]*token|client[\s_-]*secret|auth(?:entication|orization)?[\s_-]*(?:code|token|key)|(?:^|\W)(?:otp|pin|mfa|2fa|secret|token|credentials?)(?:$|\W)|(?:^|\W)(?:log[\s_-]*in|sign[\s_-]*in|access|sms|e[\s_-]*mail)[\s_-]*code(?:$|\W)/i;
+  const codeLabel = /^\W*(?:required\W+)?(?:enter\W+(?:the\W+)?)?code\W*(?:required\W*)?$/i;
+  if ([field,current].some(value => secret.test([value.type,value.name,value.label,value.autocomplete].filter(v => typeof v === 'string').join(' '))
+      || [value.name,value.label].some(label => typeof label === 'string' && codeLabel.test(label))))
     return reject('secret-field',true);
   if (!['input','textarea'].includes(field.tag) || field.role !== 'textbox' || field.disabled !== false
       || !['text','textarea','search','email','url','tel','number'].includes(field.type) || !present(field.name)) return reject('unknown-field');
@@ -178,7 +180,7 @@ export function summarize(events) {
     scoring: 'manual evidence review required; no automatic application-success verdict' };
 }
 export function createCapture(options = {}) {
-  const state = { schemaVersion: 3, redactionPolicy: 'public-native-actions-v3', active: true, runId: null, startedAt: new Date().toISOString(), records: [], bytes: 0, dropped: 0,
+  const state = { schemaVersion: 4, redactionPolicy: 'public-native-actions-v4', active: true, runId: null, startedAt: new Date().toISOString(), records: [], bytes: 0, dropped: 0,
     errors: 0, limitationEvents: 0, maxEvents: options.maxEvents ?? 3000, maxBytes: options.maxBytes ?? 16000000,
     source: 'authenticated-app-event-stream' };
   const bytes = value => new TextEncoder().encode(JSON.stringify(value)).length;
@@ -218,7 +220,7 @@ export function createCapture(options = {}) {
 export async function browserBootstrap() {
   const key = '__blackiceJobSearchEvidence';
   if (window[key]?.active) {
-    if (window[key].schemaVersion !== 3) throw Error('Existing observer uses another capture schema; stop it before replacing it.');
+    if (window[key].schemaVersion !== 4) throw Error('Existing observer uses another capture schema; stop it before replacing it.');
     if (!window[key].ready) throw Error('Existing observer has no stream readiness receipt; stop it before replacing it.');
     return { ...(await window[key].ready), alreadyActive: true };
   }

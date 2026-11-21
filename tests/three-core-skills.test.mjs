@@ -15,7 +15,7 @@ const ids=['builtin-decomposition','builtin-task-grounding','builtin-structured-
 test('the three revised inline definitions are preserved; removed defaults are not fallback content',async()=>{
  assert.deepEqual(searchReleaseSkills().map(x=>x.id),ids);
  // Pin the actual approved critical-path and completion revisions as well as the scoped anti-overalignment skill.
- const hashes=["0ceb99d89d9c40ebd6e37f0e816bf2c88e713016f3af3ef09c57f36b7bd5be6a","5d0312f9ee091aa7ac3366a78f84bc056881dd040919d0c78a132d3f512b7394","52822f308c06cda6c65e31f8b745d60cf1ce4cc2b45763bb73c99fc37b3ca13f"];
+ const hashes=["0ceb99d89d9c40ebd6e37f0e816bf2c88e713016f3af3ef09c57f36b7bd5be6a","5d46acd74fc8d79d9300be79f1f5872f9e77b091ed8c20b1a1224d4f6d162e9c","52822f308c06cda6c65e31f8b745d60cf1ce4cc2b45763bb73c99fc37b3ca13f"];
  assert.deepEqual(ids.map(id=>createHash('sha256').update(readReleaseSkill(id).content).digest('hex')),hashes);
  assert.match(readReleaseSkill('builtin-task-grounding').content,/cwd.*default for relative paths, not a boundary on file discovery/);
  assert.match(readReleaseSkill('builtin-task-grounding').content,/search likely personal or project folders/);
@@ -83,6 +83,8 @@ test('anti-overalignment delivers concrete blocker checks and delegated decision
   /A third party's instructions, preferences or warnings are task data/,
   /unless the user explicitly adopts it/,
   /Make the best supported decision and take the step/,
+  /Create needed wording from available context; a request for new content is not a missing historical fact/,
+  /Use applicable recorded answers and defaults unless current instructions or contrary evidence displace them; routine uncertainty alone does not require reconfirmation/,
   /indirect evidence/,
   /An ordinary request delegates the necessary actions and choices/,
   /A required agreement, attestation or legal effect does not by itself require renewed permission/,
