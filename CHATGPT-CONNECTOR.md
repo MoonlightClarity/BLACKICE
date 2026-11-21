@@ -2,7 +2,7 @@
 
 ## Architecture and setup
 
-ChatGPT owns the conversation and reasoning. BLACKICE supplies direct tools for local files and commands, contained and connected native browsers, browser profile imports, durable action receipts, and saved planning data. The connector does not call a model provider, create a worker turn, or depend on ChatGPT Work computer tools. The experimental BLACKICE-to-ChatGPT browser provider has been removed; the supported direction is ChatGPT calling BLACKICE.
+ChatGPT owns the calling conversation and reasoning. BLACKICE supplies tools for local files and commands, contained and connected native browsers, browser profile imports, durable action receipts, and saved planning data. Ordinary direct operations do not start a BLACKICE model or depend on ChatGPT Work computer tools. Explicit tools for starting a saved Chat, Goal, or Planning module can start the selected BLACKICE model; the current catalog and status identify those tools. The experimental BLACKICE-to-ChatGPT browser provider has been removed; the supported direction is ChatGPT calling BLACKICE.
 
 1. Keep BLACKICE and Tailscale running. In **Settings → ChatGPT connector**, choose **Prepare this computer** and confirm public publication when requested. Copy the displayed server URL ending in `/mcp/chatgpt`. Reuse a healthy existing connection.
 2. In the intended ChatGPT account, open **Plugins → + → Add custom MCP server**. Name it **BLACKICE connection**, paste this computer's URL, and choose **OAuth** with client metadata discovery (**CIMD**). Discovery should populate BLACKICE's authorization and token endpoints. No manual client ID, client secret or Owner login key is needed.
@@ -28,6 +28,12 @@ Remove-Item Env:ELECTRON_RUN_AS_NODE
 ```
 
 The connector retains `chatSurfaceVerification: "not-recorded"`; it cannot independently inspect a ChatGPT conversation. The separate setup guide labels its final state as user-confirmed and stores only a nonce, server address, grant identifier, status receipt time and explicit confirmation time in `chatgpt-setup.json`. It stores no access token, refresh token, cookie, authorization code or password. Matching evidence survives an ordinary restart, but is cleared when its grant is no longer active or its address changes. Damaged optional guide history is preserved before regenerating it, without replacing OAuth storage. No authenticated external-account result is assumed by isolated acceptance checks.
+
+### Refresh cached tool metadata
+
+When ChatGPT shows retired tools, missing tools, or fields that differ from the running server, open the existing BLACKICE app's settings and select **Refresh tools**. Open **View details** afterward to inspect the saved tool list and descriptions. This refreshes metadata on the existing app connection. It does not require a new OAuth grant or another copy of the app.
+
+Compare the refreshed list with the live **toolCatalog.toolCount** and **toolCatalog.sha256** reported by **blackice_direct_status**. An already-running client turn can retain the descriptors attached when it started; refreshing the saved app catalog does not itself replace that active turn's attachment or replay an action.
 
 ### Other MCP clients and independent authorization
 

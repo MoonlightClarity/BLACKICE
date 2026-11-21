@@ -1,0 +1,53 @@
+{
+  "fixture": {
+    "kind": "synthetic-idle-runtime",
+    "synthetic": true,
+    "description": "Fabricated offline regression data. These paths, identities, timestamps and hashes describe no user, machine, model file or observed runtime."
+  },
+  "capturedAt": "2026-01-01T00:00:00.000Z",
+  "appVersion": "2.40.71",
+  "connectionId": "synthetic-idle-fixture",
+  "localConfig": {
+    "revision": 18,
+    "process": {
+      "owned": false,
+      "appliedRevision": null,
+      "pendingRestart": false
+    }
+  },
+  "router": {
+    "at": "2026-01-01T00:00:01.000Z",
+    "code": "ECONNREFUSED"
+  },
+  "loadedRuntimeObservation": {
+    "available": false
+  },
+  "identities": {
+    "sourceDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+    "runtimeDigest": "2222222222222222222222222222222222222222222222222222222222222222",
+    "sourceFiles": [
+      {
+        "path": "lib/engine.mjs",
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "stable": true
+      }
+    ],
+    "modelFiles": [
+      {
+        "path": "C:/synthetic-benchmark/models/original.gguf",
+        "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      {
+        "path": "C:/synthetic-benchmark/models/edited.gguf",
+        "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+      }
+    ]
+  },
+  "core": {
+    "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "provider": {
+    "maxTokens": 8192,
+    "maxSteps": null
+  }
+}
