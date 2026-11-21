@@ -1,7 +1,7 @@
 {
   "format": 1,
-  "version": "2.40.72",
+  "version": "2.40.73",
   "publish": true,
-  "appFingerprint": "d2f770ed6bb8e65f517354cf7dfd3205b8f98ee57cc4c826069745c24d604ef3",
-  "sourceTestReceipt": "verification/integration-source-publication-2.40.72.json"
+  "appFingerprint": "0d6a7f371f8fbac38f2f971a653d20efa5f6bec24e758f7636301fcd2171aa24",
+  "sourceTestReceipt": "verification/integration-source-publication-2.40.73.json"
 }
