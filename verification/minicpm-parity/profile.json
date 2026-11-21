@@ -1,0 +1,50 @@
+{
+  "schema": "blackice.minicpm.runtime-parity-profile.v1",
+  "modelAlias": "minicpm-parity",
+  "runtime": {
+    "ctxSize": 262144,
+    "parallel": 1,
+    "threads": 6,
+    "threadsBatch": 6,
+    "batch": 2048,
+    "ubatch": 512,
+    "gpuLayers": 25,
+    "cacheK": "q8_0",
+    "cacheV": "q8_0",
+    "flashAttention": "on",
+    "jinja": true
+  },
+  "sampling": {
+    "seed": 1234,
+    "temperature": 0.8,
+    "topK": 40,
+    "topP": 0.95,
+    "minP": 0.05
+  },
+  "requests": {
+    "completionPredict": 32,
+    "toolPredict": 128,
+    "answerPredict": 32,
+    "cachePrompt": true,
+    "enableThinking": false
+  },
+  "limits": {
+    "totalMs": 105000,
+    "startupMs": 40000,
+    "requestMs": 15000,
+    "cleanupMs": 8000,
+    "postHashMs": 12000,
+    "responseBytes": 8388608,
+    "logBytes": 67108864
+  },
+  "trace": {
+    "tensorSelection": [
+      "attn_norm",
+      "attn_post_norm",
+      "ffn_out",
+      "l_out"
+    ],
+    "maxBytes": 268435456,
+    "logitVectorSteps": 8
+  }
+}
