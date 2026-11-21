@@ -6,7 +6,8 @@ import path from 'node:path';
 import os from 'node:os';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {RuntimeSettingsStore} from '../lib/runtime-settings.mjs';
-import {CHAT_DEFAULTS,NEW_CHAT_RECEIPT_DEPTH,chatTurnMode} from '../public/chat-turn-defaults.mjs';
+import {CHAT_DEFAULTS,NEW_CHAT_RECEIPT_DEPTH,chatTurnMode,ordinaryChatWorkflow,ordinaryChatPastChats} from '../public/chat-turn-defaults.mjs';
+import {pastChatsWorkflowVisible} from '../lib/past-chats.mjs';
 import {submitChat} from '../public/next/chat/send.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 
@@ -72,4 +73,21 @@ test('ordinary new Chat defaults are permanent per run, explicit choices win, an
  const continuedGroup=engine.continueRun(grouped.id,{nodeId:'agent',message:'Continue isolated fresh task'});
  await engine.executions.get(continuedGroup.id);
  assert.equal(engine.getRun(continuedGroup.id).pastChats,'off','Grouped fresh tasks retain their isolated Off choice even when new Chat defaults are On.');
+});
+
+test('direct Chat shares ordinary mode and history visibility without changing authored workflows or groups',()=>{
+ const hidden={pastChats:'off',workflowId:'current-task'};
+ for(const prefix of ['mission_chat_','chatgpt_mission_']){
+  const workflow=createMissionWorkflow({task:'Ordinary task',model:'fixture',cwd:'C:/fixture',id:prefix+'fixture'});
+  assert.equal(ordinaryChatWorkflow(workflow),true);
+  assert.equal(ordinaryChatPastChats({workflow},{pastChats:'off'}),'off');
+  assert.equal(ordinaryChatPastChats({workflow,pastChats:'on'},{pastChats:'off'}),'on','saved choice stays authoritative');
+  assert.equal(pastChatsWorkflowVisible(hidden,workflow),false,'another ordinary conversation remains outside Past Chats Off');
+  assert.equal(pastChatsWorkflowVisible({...hidden,workflowId:workflow.id},workflow),true,'the current conversation remains visible');
+  assert.equal(ordinaryChatWorkflow(workflow,'display-group'),false,'display-group semantics are preserved');
+  const authored={...workflow,description:'An explicitly authored workflow'};
+  assert.equal(ordinaryChatWorkflow(authored),false);
+  assert.equal(pastChatsWorkflowVisible(hidden,authored),true);
+ }
+ assert.equal(ordinaryChatWorkflow(createMissionWorkflow({task:'Authored task',model:'fixture',cwd:'C:/fixture',id:'authored-workflow'})),false);
 });

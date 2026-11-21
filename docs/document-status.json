@@ -73,7 +73,9 @@
     "docs/browser-stability-20261118.md",
     "docs/browser-folder-app-integration.md",
     "docs/HUMAN-SKILL-EDITOR-20261118.md",
-    "docs/minicpm-context-vision-runtime-20261120.md"
+    "docs/minicpm-context-vision-runtime-20261120.md",
+    "docs/instruction-clarity.md",
+    "docs/tool-responsibilities.md"
   ],
   "historical": [
     "APPLICATION-COMPATIBILITY.md",
@@ -115,6 +117,7 @@
     "docs/task-relative-accuracy-20261030.md",
     "docs/three-subscription-runtimes-20261031.md",
     "docs/MODULAR-PLANNING-ONTOLOGY.md",
-    "docs/swarm-project-lifecycle.md"
+    "docs/swarm-project-lifecycle.md",
+    "WORKPLAN.md"
   ]
 }

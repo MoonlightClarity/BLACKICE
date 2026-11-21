@@ -10,7 +10,7 @@ The goal is to reduce the work of managing the agent: copying instructions betwe
 
 ## Source version and Windows releases
 
-This is **BLACKICE 2.40.68 source**, including a shorter execution core and a readable audit of the instruction sources used for each captured turn. See the [2.40.68 release notes](RELEASE-NOTES-2.40.68.md) and [instruction audit guide](docs/instruction-audit.md) for the changes and their limits.
+This is **BLACKICE 2.40.72 source**, integrating clearer instructions and connector metadata, owner-managed skill creation, ordinary Chat continuation, guarded browser observation recovery, and local benchmark infrastructure. See the [2.40.72 release notes](RELEASE-NOTES-2.40.72.md), [instruction clarity guide](docs/instruction-clarity.md), and [instruction audit guide](docs/instruction-audit.md) for the changes and their limits.
 
 Published Windows installers, build manifests, and tagged source archives are listed on the [Releases page](https://github.com/MoonlightClarity/BLACKICE/releases). A release tag identifies its source snapshot; the current branch and an installed version can differ. The earlier [v2.40.57 Windows release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.57) remains pinned to [commit `67c94d8`](https://github.com/MoonlightClarity/BLACKICE/commit/67c94d87dc99f91c946b7d48082c1d75c50033ea). Subsequent source includes model-readiness and browser-recovery work as well as the instruction audit.
 
@@ -20,11 +20,11 @@ Published Windows installers, build manifests, and tagged source archives are li
 
 ## Current capability and evidence boundaries
 
-The distinction between an implemented tool, a verified integration, and a reliably completed real-world task matters. These boundaries describe the **2.40.68 source**; installed versions and provider capabilities can differ.
+The distinction between an implemented tool, a verified integration, and a reliably completed real-world task matters. These boundaries describe the **2.40.72 source**; installed versions and provider capabilities can differ.
 
 | Area | What the current source provides | What is **not** established |
 | --- | --- | --- |
-| **Direct external-assistant tools** | An authenticated MCP connection can let a configured ChatGPT conversation call BLACKICE file, command, browser, and planning tools. Direct tool calls return to the originating assistant without starting a second BLACKICE model. | Every external client, installation, grant, or remote connection working automatically. Gemini and Claude have separate documented setup and compatibility requirements. |
+| **Direct external-assistant tools** | An authenticated MCP connection can let a configured ChatGPT conversation call BLACKICE file, command, browser, and planning tools. Ordinary direct tools return to the originating assistant without starting a second BLACKICE model; explicit start tools can launch the selected BLACKICE model. | Every external client, installation, grant, or remote connection working automatically. Gemini and Claude have separate documented setup and compatibility requirements. |
 | **Browser, file, and command actions** | A contained browser with observed controls; bounded file operations and patches; command execution; durable action IDs and readable receipts. | Universal website compatibility, uninterrupted multi-page forms, failure-free filename discovery, or exactly-once effects on external sites. |
 | **Conversation and work records** | Saved conversations, explicit task/graph records, retained-event Activity views, and captured instruction-source audits; configured model/provider identity persists with a conversation. | Reconstruction of instructions never captured in older runs, an always-running Swarm coordinator, or proof that long-running tasks cannot encounter context or state contamination. |
 | **Continuing work** | Goal controls and editable Cronjobs with run records; compatible single-agent queue/skip schedules can continue an existing task and conversation. | Fully unattended, end-to-end job-search reliability or execution while the Windows host is off. |

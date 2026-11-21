@@ -507,3 +507,65 @@ test('automatic browser refresh never follows an ambiguous failure or uses a pag
     assert.deepEqual(calls,['click']);
   }
 });
+
+test('filtered browser inspection tells the model to take an unfiltered same-tab snapshot only when nothing matches', async () => {
+  const tab={tabId:'fixture-tab',documentId:'fixture-document',url:'https://example.test/form'};
+  const options=[
+    { action:'snapshot',query:'contact details',frames:[{readyState:'complete',observation:'unknown',text:'',elements:[]}], expected:'no-filter-match' },
+    { action:'read',query:'contact details',frames:[{readyState:'complete',observation:'unknown',text:'',elements:[]}], frameErrors:[{error:'fixture frame unavailable'}],expected:'capture-unknown' },
+    { action:'snapshot',query:'contact details',frames:[{readyState:'loading',observation:'unknown',text:'',elements:[]}], expected:'capture-unknown' },
+    { action:'snapshot',query:'contact details',frames:[{readyState:'complete',observation:'unknown',text:'',elements:[{name:'Contact details'}]}] },
+    { action:'read',query:'contact details',frames:[{readyState:'complete',observation:'unknown',text:'Contact details',elements:[]}] },
+    { action:'snapshot',frames:[{readyState:'complete',observation:'no-content-observed',text:'',elements:[]}] },
+    { action:'snapshot',query:'contact details',frames:[],protectedContent:true },
+  ];
+  for(const {action,query,expected,...fixture} of options){
+    const calls=[];
+    const handler=createBrowserToolHandler({browser:{
+      status:()=>({available:true,contained:true,tabs:[tab]}),
+      perform:async request=>{calls.push(request);return {...tab,...fixture};},
+    }});
+    const result=await handler({name:'relay_browser',arguments:{action,tabId:tab.tabId,...(query?{query}:{})}});
+    assert.equal(result.success,true);
+    const payload=JSON.parse(result.contentItems[0].text);
+    assert.equal(payload.filterRecovery?.reason,expected);
+    if(expected){
+      assert.deepEqual(payload.filterRecovery.nextCall,{action:'snapshot',browser:'relay',tabId:tab.tabId});
+      assert.match(payload.filterRecovery.hint,/no .*page is empty|does not show the page is empty/i);
+      assert.match(payload.filterRecovery.hint,/Do not repeat any prior input/);
+      assert.equal(Object.keys(payload)[0],'filterRecovery');
+    }
+    assert.equal(calls.length,1,'the host does not repeat or dispatch a recovery action');
+  }
+});
+
+test('a genuine pending chooser publishes a compact guarded upload call before large observations', async () => {
+  const tab={tabId:'fixture-tab',documentId:'fixture-document',url:'https://example.test/form'};
+  const chooser={...tab,kind:'file_chooser',status:'pending',id:'browser_input_7aae8b0a-49f5-4d35-85e1-125c4568eb00'};
+  for(const [interaction,flags,expected] of [
+    [chooser,{},true],
+    [{...chooser,status:'blocked'}, {},false],
+    [{...chooser,documentId:'earlier-document'}, {},false],
+    [{...chooser,url:'https://example.test/older'}, {},false],
+    [{...chooser,tabId:'another-tab'}, {},false],
+    [{...chooser,kind:'confirm'}, {},false],
+    [chooser,{protectedContent:true},false],
+  ]){
+    const requests=[];
+    const handler=createBrowserToolHandler({browser:{
+      status:()=>({available:true,contained:true,tabs:[tab]}),
+      perform:async args=>{requests.push(args);return {...tab,...flags,pendingInteraction:interaction,frames:[{text:'x'.repeat(4000)}]};},
+    }});
+    const result=await handler({name:'relay_browser',arguments:{action:'snapshot',tabId:tab.tabId}});
+    assert.equal(Boolean(result.success&&JSON.parse(result.contentItems[0].text).chooserUpload),expected);
+    if(expected){
+      const payload=JSON.parse(result.contentItems[0].text);
+      assert.equal(Object.keys(payload)[0],'chooserUpload');
+      assert.deepEqual(payload.chooserUpload.nextCall,{action:'upload',browser:'relay',tabId:tab.tabId,chooserId:chooser.id,expectedDocumentId:tab.documentId,expectedUrl:tab.url});
+      assert.match(payload.chooserUpload.hint,/authorized absolute local paths/);
+      assert.match(payload.chooserUpload.hint,/Do not supply ref or reopen the chooser/);
+    }
+    assert.equal(requests.length,1);
+    assert.equal(requests[0].action,'snapshot');
+  }
+});

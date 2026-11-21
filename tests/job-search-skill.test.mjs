@@ -167,13 +167,16 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  identity=await new IdentityStore({dataDir}).init();
  engine=await new HarnessEngine({runtime,dataDir,defaultCwd:dir,identity,browser:{status:()=>({available:true,contained:true,tabs:[]}),perform:()=>assert.fail('No real browser action is part of this test')}}).init();
  const api=async(route,_method,body)=>route==='/api/workflows'?body:engine.startRun(body);
- const invoke=async (task, directoryDiagnostics)=>{
+ const invoke=async (task, directoryDiagnostics, expectedCalls=1)=>{
+  const requestOffset=prompts.length;
   const start=await submitChat({api,runs:[],task,model:'fixture::fixture',cwd:dir,chatPlanning:'off',directoryActions:'off',directoryDiagnostics});
   await engine.executions.get(start.run.id);
   const run=engine.getRun(start.run.id);
   assert.equal(run.status,'completed',run.error);
-  assert.deepEqual(before.at(-1),[],'transport has not yet accepted the prompt');
-  return {prompt:JSON.stringify(prompts.at(-1)),receipts:run.skillLoadReceipts||[],events:run.events.map(event=>event.data)};
+  assert.equal(prompts.length-requestOffset,expectedCalls,'only the main request and the expected single evidence review may run');
+  assert.deepEqual(before[requestOffset],[],'transport has not yet accepted the main prompt');
+  if(expectedCalls===2)assert.deepEqual(before[requestOffset+1],run.skillLoadReceipts,'the review follows accepted main-turn skill delivery');
+  return {prompt:JSON.stringify(prompts[requestOffset]),receipts:run.skillLoadReceipts||[],events:run.events.map(event=>event.data)};
  };
  const alignmentId='builtin-task-grounding';
  const alignmentHeading='ANTI-OVERALIGNMENT (advisory execution method; not permission)';
@@ -220,9 +223,17 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.ok(deleted.receipts.every(r=>r.skillId!==alignmentId));
  assert.ok(!deleted.prompt.includes(heading));assert.ok(deleted.receipts.every(r=>r.skillId!==id));
  assert.equal(prompts.length,3,'no extra provider calls for skill selection');
- const instrumented=await invoke('Apply to one job for me: Senior Product Manager.','maximal');
+ const instrumented=await invoke('Apply to one job for me: Senior Product Manager.','maximal',2);
  const decisions=instrumented.events.filter(event=>event.type==='chat.execution-review');
- assert.deepEqual(decisions,[{type:'chat.execution-review',reviewMode:'ordinary-chat',reason:'no-read-only-evidence',reviewDecision:'accepted'}]);
- const ordinaryDepth=await invoke('Apply to one job for me: Senior Product Manager.','off');
- assert.ok(ordinaryDepth.events.every(event=>event.type!=='chat.execution-review'));
+ const evidenceFingerprint=decisions[0]?.evidenceFingerprint;
+ assert.match(evidenceFingerprint,/^[a-f0-9]{64}$/);
+ const evidence={type:'chat.execution-review',reviewMode:'ordinary-chat',evidenceRevision:0,pendingToolCount:0,uncertainToolCount:0,evidenceFingerprint,outcomeVerification:'not-evaluated',effectReplayEnforcement:'existing-host-controls'};
+ assert.deepEqual(decisions,[
+  {...evidence,reason:'current-task-evidence-check',reviewDecision:'continue'},
+  {...evidence,reason:'no-new-task-evidence',reviewDecision:'accepted'},
+ ]);
+ const ordinaryDepth=await invoke('Apply to one job for me: Senior Product Manager.','off',2);
+ assert.deepEqual(ordinaryDepth.events.filter(event=>event.type==='chat.execution-review'),[
+  {...evidence,reason:'current-task-evidence-check',reviewDecision:'continue'},
+ ],'ordinary receipt depth retains the continuation without the diagnostic accepted-state event');
 });

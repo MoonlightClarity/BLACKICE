@@ -3,7 +3,7 @@ export const CHAT_DEFAULTS=Object.freeze({directoryActions:'off',chatPlanning:'o
 export const NEW_CHAT_RECEIPT_DEPTH='maximal';
 const modes=Object.freeze({directoryActions:['off','on'],chatPlanning:['off','on'],pastChats:['off','on']});
 export const ordinaryChatWorkflow=(workflow,groupId)=>groupId===undefined&&
-  typeof workflow?.id==='string'&&workflow.id.startsWith('mission_chat_')&&workflow.description==='A focused task started from Mission.';
+  typeof workflow?.id==='string'&&(workflow.id.startsWith('mission_chat_')||workflow.id.startsWith('chatgpt_mission_'))&&workflow.description==='A focused task started from Mission.';
 export const ordinaryChatRun=run=>ordinaryChatWorkflow(run?.workflow,run?.chatDisplayGroupId);
 // Resolve only an unrecorded ordinary Chat mode when admitting new work.
 export const ordinaryChatPastChats=(run,defaults)=>run?.pastChats??

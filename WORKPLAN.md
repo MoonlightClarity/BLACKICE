@@ -1,3 +1,5 @@
+> **Status: Historical documentation.** This is the completed 2.40.71 instruction-clarity implementation record; current release scope is in RELEASE-NOTES.md.
+
 # Instruction clarity work plan
 
 User request: simplify and clarify every BLACKICE skill, tool description and related model-facing instruction. Prefer observable actions and outcomes over abstractions. Length follows usefulness. Remove unrequested guardrail language. Add Modular Development to BLACKICE.
