@@ -218,6 +218,21 @@ test('Directory models capped and required searches differently in the instructi
  assert.match(ACTION_DIRECTORY_TOOL.inputSchema.properties.actions.items.properties.qualifying.properties.minQualifyingCount.description,/Required lower bound only/);
 });
 
+
+function syntheticOutcomeAssessment(request,expectedInput,workerRequest){
+ const prompt=request.messages?.find(message=>typeof message.content==='string'&&message.content.includes('BLACKICE ORDINARY TASK OUTCOME REVIEW'))?.content;
+ if(!prompt)return null;
+ const {snapshot}=JSON.parse(prompt.split('\nREVIEW DATA (JSON):\n').at(-1));
+ assert.equal(snapshot.request,expectedInput,'the readonly assessment retains the unchanged ordinary request');
+ assert.equal(request.model,workerRequest.model,'assessment uses the same model as the worker');
+ assert.equal(request.reasoning_effort,workerRequest.reasoning_effort,'assessment preserves the worker effort');
+ assert.deepEqual(request.tools||[],[],'these small inline-evidence fixtures expose no reviewer action tools');
+ // This explicit mock disposition exercises transport, not model judgment or
+ // a real application outcome. All original worker/history assertions remain.
+ return {decision:'respond',summary:'Synthetic transport assessment. No real application outcome is claimed.',
+  remaining:[],nextAction:'',evidenceRefs:snapshot.evidence.records.length?[snapshot.evidence.records.at(-1).citationRef]:['user-request'],blockers:[]};
+}
+
 class Native extends EventEmitter {
  status(){return {connected:false,authenticated:false,models:[]};}
  async close(){}
@@ -227,14 +242,19 @@ class Native extends EventEmitter {
 test('actual Compatible main-turn transport submits the job skill selectively and respects owner deletion',{timeout:15000},async t=>{
  const root=await realpath(tmpdir()),dir=await mkdtemp(path.join(root,'blackice-job-skill-'));
  const dataDir=path.join(dir,'engine'),catalog=createSkillsCatalog({dataDir});
- const prompts=[],before=[];
+ const prompts=[],before=[],allRequests=[],workerRequests=[],assessmentRequests=[];
  let engine,runtime,identity;
  const server=http.createServer(async(req,res)=>{
   if(req.method==='GET'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({data:[{id:'fixture'}]}));}
   let raw='';for await(const chunk of req)raw+=chunk;
-  const body=JSON.parse(raw);
-  prompts.push(body.messages);
-  const run=[...engine.runs.values()].at(-1);
+  const body=JSON.parse(raw),run=[...engine.runs.values()].at(-1);
+  allRequests.push(body);
+  const assessment=syntheticOutcomeAssessment(body,run.input,workerRequests.at(-1));
+  if(assessment){
+   assessmentRequests.push(body);res.setHeader('Content-Type','application/json');
+   return res.end(JSON.stringify({choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:JSON.stringify(assessment)}}]}));
+  }
+  workerRequests.push(body);prompts.push(body.messages);
   before.push(structuredClone(run.skillLoadReceipts||[]));
   res.setHeader('Content-Type','application/json');
   res.end(JSON.stringify({choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:'Synthetic read-only reply.'}}]}));
@@ -254,15 +274,17 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  engine=await new HarnessEngine({runtime,dataDir,defaultCwd:dir,identity,browser:{status:()=>({available:true,contained:true,tabs:[]}),perform:()=>assert.fail('No real browser action is part of this test')}}).init();
  const api=async(route,_method,body)=>route==='/api/workflows'?body:engine.startRun(body);
  const invoke=async (task, directoryDiagnostics, expectedCalls=2)=>{
-  const requestOffset=prompts.length;
+  const requestOffset=prompts.length,allOffset=allRequests.length,assessmentOffset=assessmentRequests.length;
   const start=await submitChat({api,runs:[],task,model:'fixture::fixture',cwd:dir,chatPlanning:'off',directoryActions:'off',directoryDiagnostics});
   await engine.executions.get(start.run.id);
   const run=engine.getRun(start.run.id);
   assert.equal(run.status,'completed',run.error);
-  assert.equal(prompts.length-requestOffset,expectedCalls,'only the main request and the expected single evidence review may run');
+  assert.equal(prompts.length-requestOffset,expectedCalls,'the original main request and single worker evidence check remain');
+  assert.equal(assessmentRequests.length-assessmentOffset,1,'one explicit read-only outcome assessment follows');
+  assert.equal(allRequests.length-allOffset,expectedCalls+1,'all provider calls are counted');
   assert.deepEqual(before[requestOffset],[],'transport has not yet accepted the main prompt');
   if(expectedCalls===2)assert.deepEqual(before[requestOffset+1],run.skillLoadReceipts,'the review follows accepted main-turn skill delivery');
-  return {prompt:JSON.stringify(prompts[requestOffset]),requests:prompts.slice(requestOffset),input:run.input,receipts:run.skillLoadReceipts||[],events:run.events.map(event=>event.data)};
+  return {prompt:JSON.stringify(prompts[requestOffset]),requests:allRequests.slice(allOffset).map(request=>request.messages),input:run.input,receipts:run.skillLoadReceipts||[],events:run.events.map(event=>event.data)};
  };
  const alignmentId='builtin-task-grounding';
  const alignmentHeading='ANTI-OVERALIGNMENT (advisory execution method; not permission)';
@@ -282,7 +304,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
   assertSharedConfirmationDelivery(job);
  assert.ok(job.prompt.includes('An empty tab list means there is no tab to reuse'));
  assert.ok(job.prompt.includes('the link opened a new tab'));
- assert.ok(job.receipts.some(r=>r.skillId===browserSkill&&r.sourceRevision==='clarity-20261121'));
+ assert.ok(job.receipts.some(r=>r.skillId===browserSkill&&r.sourceRevision==='rendered-obstacles-20261121'));
  assert.equal(job.prompt.split('ANTI-COMPLETION BIAS (bundled execution method)').length,2);
  assert.ok(job.prompt.includes('Compare the request with the last result you actually observed'));
  assert.deepEqual(job.receipts.filter(r=>r.skillId===antiCompletion),[completionReceipt('bundled','clarity-20261121')]);
@@ -336,7 +358,9 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.ok(!deleted.prompt.includes(alignmentHeading));
  assert.ok(deleted.receipts.every(r=>r.skillId!==alignmentId));
  assert.ok(!deleted.prompt.includes(heading));assert.ok(deleted.receipts.every(r=>r.skillId!==id));
- assert.equal(prompts.length,8,'four ordinary Chat requests each get one review; skill selection adds no calls');
+ assert.equal(prompts.length,8,'four ordinary worker conversations retain their original two requests');
+ assert.equal(assessmentRequests.length,4,'one isolated assessment per ordinary conversation');
+ assert.equal(allRequests.length,12,'skill selection adds no unaccounted provider calls');
  const instrumented=await invoke('Apply to one job for me: Senior Product Manager.','maximal',2);
  const decisions=instrumented.events.filter(event=>event.type==='chat.execution-review');
  const evidenceFingerprint=decisions[0]?.evidenceFingerprint;
@@ -344,7 +368,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  const evidence={type:'chat.execution-review',reviewMode:'ordinary-chat',evidenceRevision:0,pendingToolCount:0,uncertainToolCount:0,evidenceFingerprint,outcomeVerification:'not-evaluated',effectReplayEnforcement:'existing-host-controls'};
  assert.deepEqual(decisions,[
   {...evidence,reason:'current-task-evidence-check',reviewDecision:'continue'},
-  {...evidence,reason:'no-new-task-evidence',reviewDecision:'accepted'},
+  {...evidence,reason:'task-outcome-supported',reviewDecision:'accepted'},
  ]);
  const ordinaryDepth=await invoke('Apply to one job for me: Senior Product Manager.','off',2);
  assert.deepEqual(ordinaryDepth.events.filter(event=>event.type==='chat.execution-review'),[

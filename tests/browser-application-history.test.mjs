@@ -12,6 +12,21 @@ import { IdentityStore } from '../lib/identity.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
 
+
+function syntheticOutcomeAssessment(request,expectedInput,workerRequest){
+ const prompt=request.messages?.find(message=>typeof message.content==='string'&&message.content.includes('BLACKICE ORDINARY TASK OUTCOME REVIEW'))?.content;
+ if(!prompt)return null;
+ const {snapshot}=JSON.parse(prompt.split('\nREVIEW DATA (JSON):\n').at(-1));
+ assert.equal(snapshot.request,expectedInput,'the readonly assessment retains the unchanged ordinary request');
+ assert.equal(request.model,workerRequest.model,'assessment uses the same model as the worker');
+ assert.equal(request.reasoning_effort,workerRequest.reasoning_effort,'assessment preserves the worker effort');
+ assert.deepEqual(request.tools||[],[],'these small inline-evidence fixtures expose no reviewer action tools');
+ // This explicit mock disposition exercises transport, not model judgment or
+ // a real application outcome. All original worker/history assertions remain.
+ return {decision:'respond',summary:'Synthetic transport assessment. No real application outcome is claimed.',
+  remaining:[],nextAction:'',evidenceRefs:snapshot.evidence.records.length?[snapshot.evidence.records.at(-1).citationRef]:['user-request'],blockers:[]};
+}
+
 const first='11111111-1111-4111-8111-111111111111',second='22222222-2222-4222-8222-222222222222';
 const url='https://jobs.ashbyhq.com/exampleco/'+first,other='https://jobs.ashbyhq.com/exampleco/'+second;
 const task='Find one suitable job using my existing résumé and preferences. Apply through the employer’s site and verify that the application was received.';
@@ -120,7 +135,7 @@ class NoNative extends EventEmitter{
  async runAgent(){assert.fail('This fixture cannot call a live model.');}
 }
 test('ordinary engine Chat delivers history facts in the real compatible browser tool response',{timeout:20000},async t=>{
- const f=await temporary(),source=await history(f),requests=[],browser=browserFixture();
+ const f=await temporary(),source=await history(f),requests=[],assessments=[],allRequests=[],browser=browserFixture();
  let engine,runtime,identity;
  const reply=message=>({choices:[{index:0,finish_reason:message.tool_calls?'tool_calls':'stop',message:{role:'assistant',...message}}]});
  const final='Fixture page observed. No application outcome is claimed.';
@@ -131,7 +146,11 @@ test('ordinary engine Chat delivers history facts in the real compatible browser
  const server=http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json');
   if(req.method==='GET')return res.end(JSON.stringify({data:[{id:'fixture'}]}));
-  let raw='';for await(const chunk of req)raw+=chunk;requests.push(JSON.parse(raw));
+  let raw='';for await(const chunk of req)raw+=chunk;
+  const request=JSON.parse(raw);allRequests.push(request);
+  const assessment=syntheticOutcomeAssessment(request,task,requests.at(-1));
+  if(assessment){assessments.push(request);return res.end(JSON.stringify(reply({content:JSON.stringify(assessment)})));}
+  requests.push(request);
   const response=script[requests.length-1];
   if(!response){res.statusCode=500;return res.end(JSON.stringify({error:{message:'Unexpected fixture request'}}));}
   res.end(JSON.stringify(response));
@@ -151,7 +170,10 @@ test('ordinary engine Chat delivers history facts in the real compatible browser
  await engine.executions.get(start.id);const run=engine.getRun(start.id);
  assert.equal(run.status,'completed',run.error||run.nodes.agent.error);
  assert.equal(run.input,task);
- assert.equal(requests.length,3);
+ assert.equal(requests.length,3,'all original worker requests remain');
+ assert.equal(assessments.length,1,'one explicit read-only outcome assessment');
+ assert.equal(allRequests.length,4,'every provider call is accounted for');
+ assert.equal(run.events.filter(row=>row.data?.type==='chat.outcome-review'&&row.data.status==='validated').length,1);
  assert.equal(browser.calls.length,1);
  const delivered=requests[1].messages.find(message=>message.role==='tool');
  assert.ok(delivered,'the provider receives the actual browser tool result');
@@ -159,7 +181,7 @@ test('ordinary engine Chat delivers history facts in the real compatible browser
  assert.equal(observed.applicationHistory.workspace,f.cwd,'the engine wires the actual run cwd');
  assert.equal(observed.applicationHistory.target.key,applicationTarget(url).key);
  assert.deepEqual(observed.applicationHistory.matches,[{source:source.name,record:241,reason:'reported-prior-requisition'}]);
- assert.ok(requests.every(request=>JSON.stringify(request.messages).includes(task)),'the task prompt stays unchanged');
+ assert.ok(allRequests.every(request=>JSON.stringify(request.messages).includes(task)),'the task prompt stays unchanged');
  assert.equal(await readFile(path.join(f.cwd,source.name),'utf8'),source.content);
 });
 
@@ -213,7 +235,7 @@ test('custom application history is absent on contact login and bare Apply forms
 });
 
 test('ordinary engine Chat delivers custom application history through the actual compatible browser response',{timeout:20000},async t=>{
- const f=await temporary(),source=await customHistory(f),requests=[],browser=browserFixture({observedUrl:customUrl,formLabel:'Submit application'});
+ const f=await temporary(),source=await customHistory(f),requests=[],assessments=[],allRequests=[],browser=browserFixture({observedUrl:customUrl,formLabel:'Submit application'});
  let engine,runtime,identity;
  const reply=message=>({choices:[{index:0,finish_reason:message.tool_calls?'tool_calls':'stop',message:{role:'assistant',...message}}]});
  const final='Fixture page observed. No application outcome is claimed.';
@@ -224,7 +246,11 @@ test('ordinary engine Chat delivers custom application history through the actua
  const server=http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json');
   if(req.method==='GET')return res.end(JSON.stringify({data:[{id:'fixture'}]}));
-  let raw='';for await(const chunk of req)raw+=chunk;requests.push(JSON.parse(raw));
+  let raw='';for await(const chunk of req)raw+=chunk;
+  const request=JSON.parse(raw);allRequests.push(request);
+  const assessment=syntheticOutcomeAssessment(request,task,requests.at(-1));
+  if(assessment){assessments.push(request);return res.end(JSON.stringify(reply({content:JSON.stringify(assessment)})));}
+  requests.push(request);
   const response=script[requests.length-1];
   if(!response){res.statusCode=500;return res.end(JSON.stringify({error:{message:'Unexpected fixture request'}}));}
   res.end(JSON.stringify(response));
@@ -244,7 +270,10 @@ test('ordinary engine Chat delivers custom application history through the actua
  await engine.executions.get(start.id);const run=engine.getRun(start.id);
  assert.equal(run.status,'completed',run.error||run.nodes.agent.error);
  assert.equal(run.input,task);
- assert.equal(requests.length,3);
+ assert.equal(requests.length,3,'all original worker requests remain');
+ assert.equal(assessments.length,1,'one explicit read-only outcome assessment');
+ assert.equal(allRequests.length,4,'every provider call is accounted for');
+ assert.equal(run.events.filter(row=>row.data?.type==='chat.outcome-review'&&row.data.status==='validated').length,1);
  assert.equal(browser.calls.length,1);
  const delivered=requests[1].messages.find(message=>message.role==='tool');
  assert.ok(delivered);
@@ -256,6 +285,6 @@ test('ordinary engine Chat delivers custom application history through the actua
  assert.deepEqual(facts.related.map(row=>row.record),[241,242]);
  assert.ok(facts.related.every(row=>row.source===source.name));
  assert.doesNotMatch(JSON.stringify(facts),/private-query|private-fragment/);
- assert.ok(requests.every(request=>JSON.stringify(request.messages).includes(task)),'the ordinary task bytes stay unchanged');
+ assert.ok(allRequests.every(request=>JSON.stringify(request.messages).includes(task)),'the ordinary task bytes stay unchanged');
  assert.equal(await readFile(path.join(f.cwd,source.name),'utf8'),source.content);
 });
