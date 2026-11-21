@@ -1,0 +1,50 @@
+{
+  "files": [
+    {
+      "file": "lib/visual-craft-guide.mjs",
+      "beforeChars": 20044,
+      "afterChars": 12113,
+      "sha256": "f248e532415f2bdfab201ebef09d486ad23c524cd60a77f4b0aaf891d03b02a1"
+    },
+    {
+      "file": "lib/visual-art-direction.mjs",
+      "beforeChars": 2258,
+      "afterChars": 1182,
+      "sha256": "19ba8f56b2390a7192a4b856fe7266b520a1771037025da25999a819c6ba06a2"
+    },
+    {
+      "file": "lib/visual-design-checklist.mjs",
+      "beforeChars": 10988,
+      "afterChars": 7542,
+      "sha256": "9c5bc63948254ae7a7ec677a58c3780433046f1ca61a14436c081935579a5446"
+    },
+    {
+      "file": "lib/visual-design-guide.mjs",
+      "beforeChars": 7662,
+      "afterChars": 4429,
+      "sha256": "4941e11399c3e94a9bedb9649057396105be9c5f547693fb6438bb83c2a317e3"
+    },
+    {
+      "file": "lib/visual-drawing-guide.mjs",
+      "beforeChars": 6141,
+      "afterChars": 4375,
+      "sha256": "9453d40385c04a1db3948d9a13fe6fdf68df62b6c5a9dba81db0f4a6b85f2964"
+    }
+  ],
+  "purpose": "Clarify on-demand visual guidance without imposing a style or copying unavailable tool recipes.",
+  "beforeCharacters": 47093,
+  "afterCharacters": 29641,
+  "actualLimitsVerifiedFrom": [
+    "public/visual-document.mjs",
+    "public/visual-paint.mjs"
+  ],
+  "status": "verified-source",
+  "finalVerification": {
+    "log": "verification/instruction-clarity-skills-composed-final.tap",
+    "tests": 169,
+    "pass": 169,
+    "fail": 0,
+    "skip": 0,
+    "jobId": "direct_56d6187e15f62af82f02b21ad2c7eb0ef6aded33781c5134ca01f3e75dbb041b"
+  }
+}

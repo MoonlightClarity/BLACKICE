@@ -40,12 +40,15 @@ test('the model browses the paginated effective skill catalog and cannot mutate 
 test('browser API documentation omits task-specific advice and recovery routing is limited to attached browser tools',()=>{
  assert.doesNotMatch(BROWSER_TOOL.description,/native site search|relevant job boards|educated inference/);
  assert.match(BROWSER_TOOL.description,/expectedUrl and expectedDocumentId/);
- assert.match(BROWSER_TOOL.description,/Foreign ownershipCandidates are not readable tabs/);
+ assert.match(BROWSER_TOOL.description,/foreign ownershipCandidates are not readable/);
  assert.doesNotMatch(BROWSER_TOOL.description,/citizenship|builtin:/i);
  const general=capabilityGuidance([{name:'relay_skills'},BROWSER_TOOL],{planningMode:'off'});
  assert.doesNotMatch(general,/BUNDLED TASK SKILLS|builtin:browser|job boards|BROWSER STATE RECOVERY/);
  assert.match(general,/relay_browser:.*empty task-owned tabs list is not sign-out/);
- assert.match(general,/For deliberate recovery.*stopped-task-recovery.*take_ownership/);
+ assert.match(general,/tabs query:"stopped-task-recovery"/);
+ assert.match(general,/ownerKey as expectedOwnerKey/);
+ assert.match(general,/url as expectedUrl/);
+ assert.match(general,/documentId as expectedDocumentId to take_ownership/);
  const namesOnly=capabilityGuidance([{name:'relay_browser'}],{planningMode:'off'});
  assert.doesNotMatch(namesOnly,/stopped-task-recovery|take_ownership/,'Recovery guidance requires the operation in the actual attached schema.');
  const withoutBrowser=capabilityGuidance([{name:'relay_skills'}],{planningMode:'off'});

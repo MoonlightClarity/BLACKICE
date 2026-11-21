@@ -1,32 +1,22 @@
----
-name: critical-path
-description: Find the dependency that controls delivery and take the most direct next action that advances it.
----
-
 # Critical Path
 
-Use when a task has dependencies, competing next actions, or a tempting detour. This is advisory for the current task, not a required planning ceremony. It applies to research, writing, operations, and software.
+Use when several next actions compete or one dependency blocks delivery.
 
-**What Makes Done** identifies the outcome and evidence. **Task Decomposition** exposes useful steps and dependencies. **Critical Path** decides where to act now and what can wait. You do not need to run all three methods.
+1. Start with the requested result. Work backward to the first condition that is not yet met.
+2. Choose an available action that meets that condition, unlocks later work, or delivers the result directly.
+3. Investigate uncertainty only when the answer could change that action. Use the smallest useful check and then act.
+4. If one route fails, try another route to the same result or advance an independent deliverable.
+5. Reconsider the path after a relevant failure, result, deadline, or user correction. Keep finished work and unaffected verification.
 
-## Find and advance the critical path
+A simple task can proceed without a written plan. Simplicity means fewer unnecessary dependencies and decisions while delivering the whole requested result. A partial patch that leaves the user's blocker in place is not a complete path.
 
-1. **Start at the result.** Walk backward from delivery: what must be true immediately before the result can be delivered? What prevents that from being true now? Separate real prerequisites from useful extras and later-stage work. If the path is obvious, start without writing a plan. Leave the final chat reply off a tool-action outline: reporting the result is not another dependency. Keep requested file delivery or external communication on the path.
-2. **Pick the action that unlocks progress.** If skipping or delaying a step would not change whether or when you can deliver, it is not on the critical path. Of the steps you can take now, choose one that removes a real blocker, unlocks downstream work, or delivers the result directly. Don't pick a step merely because it is easy or familiar.
-3. **Probe only uncertainty that changes the route.** Use the smallest informative check to distinguish the live options. Use the service, record, artifact, or tool already in place if it works. Stop deliberating when another comparison would not change the next action, then take it. This ends deliberation, not execution. If a real prerequisite is blocked, advance an independent deliverable or try a route that bypasses that dependency. Don't call a missing link a blocker if the source is easy to locate.
-4. **Recompute after meaningful changes.** A new user direction, a failed dependency, an observed effect, or a deadline can move the critical path. Preserve finished work and update only what changed. Do not rerun unchanged checks. Keep necessary verification, and don't repeat an action whose external result is unknown.
+Keep a prerequisite open while trying candidates that could satisfy it. A failed option is evidence about that option; it does not prove the search is exhausted. Retain the actual stop reason when the requested count or scope remains unmet.
 
-**Keep the prerequisite open when an option fails.** If several options can satisfy the same step, track the result of each attempt without turning each candidate into a new plan. A failed option narrows the search. Try the next promising one until an option meets the need, the agreed search limit is reached, or the evidence shows no reasonable authorized route remains. A limit ends the search; it does not turn an unmet result into success.
+Examples:
+- File search returns an empty page with a cursor: follow the cursor, then read the selected file.
+- A dataset lacks a required field: record the gap and check another source.
+- An application is ready to submit: finish and verify it. Save deeper employer research for a screen or interview unless a missing fact changes the application now.
+- A user asks for a short update with all facts supplied: draft it now.
+- A click did not arrive: first check whether it was dispatched. That observation determines whether to inspect stale references or the destination.
 
-Simplicity means fewer unnecessary dependencies and decisions, not lower quality, less output, or a reason to stop at partial progress. If a quick patch leaves the actual blocker in place, a fuller repair is the more direct route.
-
-## Worked examples
-
-- **Find and use the resume.** A filename search says no matches on the first page but returns a cursor. Follow the cursor and then read the file. Looking for job titles without the evidence, or stopping to report an empty first page, does not resolve the dependency.
-- **Apply to jobs.** A current posting, suitability against the user's real constraints, needed materials, and confirmed submission are on the path. Deep employer research is generally not: research if you get an interview (including a screen), unless a specific fact is needed to decide whether or how to apply now. An employer response gives the application practical value, but it comes after applying and is not part of application completion. If one form genuinely cannot proceed, continue other eligible applications.
-- **Find a usable dataset.** The first source lacks the field the analysis needs. Record why it is unusable and check the next promising source. Keep “find a dataset with the needed field” open; neither finding a dataset nor rejecting one completes that step.
-- **Draft a short update.** The recipient, decision, and next date are supplied. Draft it now. Another tone comparison cannot change the next action. If the request was draft-only, sending is not on the path.
-- **Reconcile two spreadsheets.** Match on the available stable ID and inspect representative matches. Use fuzzy matching only for records whose missing or unstable IDs make it necessary. A handful of ambiguous rows need not delay the reliable matches.
-- **Diagnose a desktop failure.** A click didn't arrive. Check whether input was dispatched before debating window architecture. Rejection before dispatch calls for examining ref freshness; a dispatched click landing elsewhere justifies testing coordinate translation. Make the check, act on the evidence, and verify in the failing flow.
-
-Inspired by the design principle in [Ponytail](https://github.com/DietrichGebert/ponytail/blob/main/skills/ponytail/SKILL.md). This is an original BLACKICE skill with no plug-in, hooks, or session modes.
+Inspired by [Ponytail](https://github.com/DietrichGebert/ponytail/blob/main/skills/ponytail/SKILL.md); original BLACKICE workflow.

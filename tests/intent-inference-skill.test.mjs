@@ -26,15 +26,15 @@ test('the first-party skill can be opened and operationalizes temporal and non-t
  const {entry}=await invoke({action:'read',id});
  assert.equal(entry.id,id); assert.equal(entry.provenance.kind,'first-party');
  assert.match(entry.content,/^# Intent Inference/m);
- assert.match(entry.content,/advisory method/);
- assert.match(entry.content,/6 AM EST on November 20/);
+ assert.match(entry.content,/next useful action/);
+ assert.match(entry.content,/6 AM EST.*normally means November 20/);
  assert.match(entry.content,/explicitly dated cutoff[\s\S]*host-bound deadline/);
- assert.match(entry.content,/Do not convert the fixed cutoff/);
- assert.match(entry.content,/ask the smallest discriminating question/);
- assert.match(entry.content,/do not apply, inherit the old cutoff/);
- assert.match(entry.content,/do not claim the work will keep running overnight/i);
- assert.match(entry.content,/two plausible Alexes/);
- assert.match(entry.content,/I meant just revise the summary/);
+ assert.match(entry.content,/Resuming an expired Goal does not move its deadline/);
+ assert.match(entry.content,/Ask only for a missing choice that materially changes/);
+ assert.match(entry.content,/same topic or wording alone does not resume an old Goal/);
+ assert.match(entry.content,/does not establish that background execution exists/);
+ assert.match(entry.content,/identify the intended Alex/);
+ assert.match(entry.content,/When corrected, update the affected step and retain valid work/);
 });
 
 test('intent guidance distinguishes transferable experience from the work the user wants next',async()=>{
@@ -43,11 +43,11 @@ test('intent guidance distinguishes transferable experience from the work the us
  assert.equal(entries[0]?.id,id,query);
  assert.ok(!Object.hasOwn(entries[0],'content'));
  const {entry}=await invoke({action:'read',id});
- assert.equal(entry.provenance.revision,'2');
- assert.match(entry.content,/what they want to leave behind and what they want instead/);
- assert.match(entry.content,/regular duties, recurring outputs, and who uses them/);
- assert.match(entry.content,/set that option aside and inspect the next one/);
- assert.match(entry.content,/blanket ban on an industry, tool, or employment type/);
- assert.match(entry.content,/annotation queues[\s\S]*research briefs that guide pricing/);
- assert.match(entry.content,/spreadsheet template still requires manual copying[\s\S]*produce the needed report/);
+ assert.equal(entry.provenance.revision,'clarity-20261121');
+ assert.match(entry.content,/leave old work or replace an approach/);
+ assert.match(entry.content,/regular duties and outputs/);
+ assert.match(entry.content,/past work as evidence of transferable ability/);
+ assert.match(entry.content,/does not exclude an entire industry or tool/);
+ assert.match(entry.content,/pricing briefs[\s\S]*graded training data/);
+ assert.match(entry.content,/compare options by their regular duties and outputs/);
 });

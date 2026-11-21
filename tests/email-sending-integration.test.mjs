@@ -75,7 +75,8 @@ test('a valid deferred CLI result remains queued and unsent without another send
   const store = fakeStore(); store.send = async input => { store.calls.push({ action: 'send', input }); return { ...prepared(), state: 'queued', sent: false, transportAccepted: false, recipientAcknowledged: false, delivery: { queueId: 'queue-fixture' } }; };
   const response = await createEmailToolHandler({ store })({ name: 'relay_email', arguments: { action: 'send', id: 'email_fixture', requestId: 'send-queued' } });
   assert.equal(response.success, true); assert.equal(payload(response).state, 'queued'); assert.equal(payload(response).sent, false); assert.equal(payload(response).transportAccepted, false); assert.equal(payload(response).delivery.queueId, 'queue-fixture'); assert.equal(store.calls.length, 1);
-  assert.match(EMAIL_INSTRUCTIONS, /do not resubmit a queued message/);
+  assert.match(EMAIL_INSTRUCTIONS, /queued message is already scheduled/);
+  assert.match(EMAIL_INSTRUCTIONS, /inspect that delivery instead of issuing another send/);
 });
 
 async function engineFixture(t, execute, { threadId = 'email-native-thread', workers = false } = {}) {

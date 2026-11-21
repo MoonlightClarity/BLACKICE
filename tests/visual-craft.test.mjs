@@ -53,3 +53,14 @@ test('cross-domain custom SVGs retain exact source through persistence, revision
  }
  const reloaded=new VisualArtifacts({dataDir});assert.equal((await reloaded.read({action:'list',conversationId:'craft'})).artifacts.length,3);
 });
+
+test('on-demand guidance follows the visual brief without imposing one aesthetic', async () => {
+ const store = new VisualArtifacts({dataDir:path.join(tmpdir(),'unused-visual-brief')});
+ for (const focus of ['general','illustration','data','ux','analysis']) {
+  const result = await store.execute({action:'describe',focus});
+  assert.match(result.designGuide.checklist.defaultDirection, /user's visual brief and references/);
+  assert.match(result.designGuide.foundation.professionalDepth, /from the brief/);
+  assert.match(result.designGuide.foundation.constructionBudget, /svg\.length <= 32768/);
+  assert.doesNotMatch(JSON.stringify(result.designGuide), /Default to professional 2\.5D|Match BLACKICE in chat|Omit all-caps kickers|Never color by sequence/);
+ }
+});

@@ -1,11 +1,17 @@
 # Tell a story with a chart
 
-Turn supplied data into a clear static chart, source note, and explanation of what the evidence shows.
+Use when a chart can clarify a comparison, trend, distribution, or relationship in supplied data.
 
-**What you need:** Readable rows, cells, or a CSV export. A local artifact requires a writable destination and a chart renderer only if visual verification is requested; spreadsheet editing is not needed.
+1. Read the rows or cells and identify the question the chart should answer.
+2. Calculate the needed values. Keep units, time period, denominator, and treatment of missing data explicit.
+3. Choose a line for ordered time, bars for category comparison, or a scatter plot for paired numeric values.
+4. Label the axes and the comparison that matters. Keep an observed pattern separate from a causal explanation.
+5. Save the chart in the requested format, inspect the rendering when available, and compare plotted values with source rows or totals.
 
-**Approach:** Draft the takeaway as a question to test. Calculate the values it depends on and keep the source units, period, denominator, and treatment of missing data. Choose a line for change across ordered time, a bar for category comparisons, or a scatter plot for relationships. Label the relevant comparison, not every mark. Avoid turning an observed pattern into a causal claim.
+Deliver the chart with a source note and a short explanation. Include a small data table or text alternative when useful.
 
-**Check and recover:** Compare plotted values with the source totals or selected rows, then check axes and units. Provide a small table or text alternative. If rendering fails, return the underlying values and an unrendered static chart source when useful. Label unavailable data and any visual checks you could not make.
+Example: show monthly enrollment as a line and mark missing months as gaps; a line interpolated across them would imply values you do not have.
 
-Workflow reference: [Data Scrollytelling by Andrew Hess and Microsoft](https://github.com/microsoft/cat-agent-skills/blob/189409b5be6caf7c83bfaac1857044e72b053dbe/submissions/scrollytelling-data/SKILL.md) ([MIT license](https://github.com/microsoft/cat-agent-skills/blob/189409b5be6caf7c83bfaac1857044e72b053dbe/LICENSE)). Written for BLACKICE; no upstream templates, scripts, or assets included.
+If rendering fails, repair the chart source or use an available renderer. If no renderer works, provide the underlying values and clearly identify any unrendered source.
+
+Workflow reference: [Data Scrollytelling](https://github.com/microsoft/cat-agent-skills/blob/189409b5be6caf7c83bfaac1857044e72b053dbe/submissions/scrollytelling-data/SKILL.md) ([MIT](https://github.com/microsoft/cat-agent-skills/blob/189409b5be6caf7c83bfaac1857044e72b053dbe/LICENSE)); adapted for BLACKICE.

@@ -1,9 +1,13 @@
 # Map an unfamiliar code path
 
-Trace an input through handlers, state, and output in an unfamiliar repository.
+Use when locating where an input, action, or error travels through a repository.
 
-**What you need:** A readable repository or relevant excerpts; runtime logging is optional.
+1. Start from a distinctive error, UI label, route, or symbol. Search the repository for that exact text.
+2. Read the entry point and follow the registered handler, direct calls, state writes, and output.
+3. Record each step as file + symbol + input/output. Include only boundaries needed to explain the requested behavior.
+4. Compare declared settings with the code that reads them. Find the actual runtime selection or dispatch when several implementations exist.
+5. Confirm uncertain links with a focused test or existing trace when available.
 
-**Approach:** Start from an observed label, symbol, or error and find the entry point. Follow registered handlers, service boundaries, state writes, and read-back paths. Separate declared capabilities and settings from executed code.
+Return a compact path with the first relevant failure or unanswered boundary. Distinguish source-based inference from observed execution.
 
-**Check and recover:** Give a short file-and-symbol map and label where runtime evidence ends. If a dynamic dispatch or external service obscures a step, name the fastest trace or focused test that would resolve it.
+Example: button → request handler → saved setting → reload reader → rendered value. If the saved value is correct but reload shows the old value, inspect the read path before changing persistence.

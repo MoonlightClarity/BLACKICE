@@ -1,0 +1,979 @@
+{
+  "base": "28f8e0f51be0bc55e73eb9afab1bc1ebeea765e8",
+  "module": "native-tool-descriptions",
+  "status": "verified",
+  "textOnly": true,
+  "changes": [
+    {
+      "file": "lib/browser.mjs",
+      "anchor": "export const BROWSER_TOOL =",
+      "marker": "description:",
+      "beforeChars": 1866,
+      "afterChars": 1376,
+      "beforeWords": 260,
+      "afterWords": 194,
+      "oldSha256": "199b0471b1969b7706198d8c7f4b0361484455b82c97a75d168a3ca40784b606",
+      "newSha256": "c30388a482a81afd8d9ee0374dc7548942afab2d2e0e76ebb3b0aab5ebe62044"
+    },
+    {
+      "file": "lib/workspace-tools.mjs",
+      "anchor": "export const WORKSPACE_TOOL =",
+      "marker": "description:",
+      "beforeChars": 891,
+      "afterChars": 1157,
+      "beforeWords": 130,
+      "afterWords": 177,
+      "oldSha256": "df74f52c618f37e9963710c5fbe108c6df9a14e4c27ebc04bbc016b334518dbe",
+      "newSha256": "c65d0c5b509019ee1b2bfbe56fb67904a6509ddbb0e32d50f1a2fc7e6ae835cb"
+    },
+    {
+      "file": "lib/workspace-tools.mjs",
+      "anchor": "export const WORKSPACE_INSTRUCTIONS =",
+      "marker": "",
+      "beforeChars": 964,
+      "afterChars": 1197,
+      "beforeWords": 139,
+      "afterWords": 184,
+      "oldSha256": "af386982193f82ad759a329e57c26c02f6c37a6b4c4a8ed301a6302b6df37405",
+      "newSha256": "fa25eb0b5caef02806787cfdc0d6f4173ced3d9349df1bf84d97afb80a015e6f"
+    },
+    {
+      "file": "lib/file-search-contract.mjs",
+      "anchor": "export const FIND_FILES_TOOL =",
+      "marker": "description:",
+      "beforeChars": 857,
+      "afterChars": 988,
+      "beforeWords": 123,
+      "afterWords": 148,
+      "oldSha256": "1549f3053eaf755cf6a046b3905adbcb85a48b2c4f8ae32d6171b698aa3c95da",
+      "newSha256": "1f559a839bb188aa6428c1e615f4f5bf8cdb9c2943436ec43eabf6a413d77ea5"
+    },
+    {
+      "file": "lib/attachments.mjs",
+      "anchor": "export const ATTACHMENT_TOOL =",
+      "marker": "description:",
+      "beforeChars": 530,
+      "afterChars": 631,
+      "beforeWords": 88,
+      "afterWords": 96,
+      "oldSha256": "cd18a01c1759720589d6a4a42e9593cdf234f1c71c7e4f95633a74a32772f6f0",
+      "newSha256": "a17b03ae1aa01e99d22129073bf0200483a9bc4367d3fb733d45bceb3a1326ef"
+    },
+    {
+      "file": "lib/attachments.mjs",
+      "anchor": "export const ATTACHMENT_INSTRUCTIONS =",
+      "marker": "",
+      "beforeChars": 1035,
+      "afterChars": 466,
+      "beforeWords": 162,
+      "afterWords": 75,
+      "oldSha256": "4de809181d0316683f4726371dfc4f7ebefa50c154aea0e9164b2b86139520e9",
+      "newSha256": "941a07fa4acfdc6392eab27b20b7d0c3ed1cd6481f89578eeddb6ea2d76558f9"
+    },
+    {
+      "file": "lib/desktop-tools.mjs",
+      "anchor": "export const DESKTOP_TOOL =",
+      "marker": "description:",
+      "beforeChars": 482,
+      "afterChars": 487,
+      "beforeWords": 64,
+      "afterWords": 67,
+      "oldSha256": "98bbb64a0b064700c928f92daf64c95d349fe5686a6513b6328cb03a7fb57cc5",
+      "newSha256": "01b588c5ee94f0c1a22da614209474a6b61c6c339b29056c160e49d122233c26"
+    },
+    {
+      "file": "lib/desktop-tools.mjs",
+      "anchor": "export const DESKTOP_INSTRUCTIONS =",
+      "marker": "",
+      "beforeChars": 1393,
+      "afterChars": 526,
+      "beforeWords": 184,
+      "afterWords": 74,
+      "oldSha256": "a8ad8566186c67029c79482dc56fc8df35f451a5ef1b1b1fef82820e9d9f3aa7",
+      "newSha256": "6252c1e064acc3d63947980181af0fa59b8d7ece96962f5c9f1acd613cd5b63d"
+    },
+    {
+      "file": "lib/application-tools.mjs",
+      "anchor": "export const APPLICATION_TOOL=",
+      "marker": "description:",
+      "beforeChars": 329,
+      "afterChars": 538,
+      "beforeWords": 49,
+      "afterWords": 72,
+      "oldSha256": "0ae0d62ff7b27bf629582e8825a46f1057abeb05b935f8cf4ef1303e9a7de8a0",
+      "newSha256": "ac1a941d0c92ed8d033219a05390afa041b42acd4b8ff55b9bb522c19ea02143"
+    },
+    {
+      "file": "lib/application-tools.mjs",
+      "anchor": "export const APPLICATION_INSTRUCTIONS =",
+      "marker": "",
+      "beforeChars": 841,
+      "afterChars": 534,
+      "beforeWords": 115,
+      "afterWords": 72,
+      "oldSha256": "bf77156110464c9d299dc12dbb99bf4e17a0a18c438f0e962efe815951c5be58",
+      "newSha256": "3e2c117b0870b6b0c087d4c9d7b0bde7d3b32049b1de90296dd4f36cfe568196"
+    },
+    {
+      "file": "lib/native-window-tools.mjs",
+      "anchor": "export const NATIVE_WINDOWS_TOOL=",
+      "marker": "\"description\":",
+      "beforeChars": 695,
+      "afterChars": 694,
+      "beforeWords": 98,
+      "afterWords": 101,
+      "oldSha256": "b005bc541669d5c2be72910b81d5a6de9c3beb1287952c56f2bcea55a3388c44",
+      "newSha256": "1a68d665fefc2e0587fc883ce509a877d61b26cc03e42f5688900ba32a5fa3e6"
+    },
+    {
+      "file": "lib/native-window-tools.mjs",
+      "anchor": "export const NATIVE_WINDOWS_INSTRUCTIONS =",
+      "marker": "",
+      "beforeChars": 1388,
+      "afterChars": 592,
+      "beforeWords": 192,
+      "afterWords": 80,
+      "oldSha256": "f16ee69b8563176c9890b3a9c07f584f7d9cac2a3773aeb611b8c2ebbf05c851",
+      "newSha256": "2d2fa72adbbf4ff26f59d40de71a032965b54d34d1af4ecbb88515bfeac3452e"
+    },
+    {
+      "file": "lib/email-tools.mjs",
+      "anchor": "export const EMAIL_TOOL=",
+      "marker": "\"description\":",
+      "beforeChars": 545,
+      "afterChars": 714,
+      "beforeWords": 74,
+      "afterWords": 101,
+      "oldSha256": "0cdc7efe9ff776d37997dfa257c42e9095e05e81aed73aac913b05a61d85a4fb",
+      "newSha256": "1e85962cc5aaeb3631dbfa2dda886a614f7d8ffffe59e706ea1c0c03d8b1c69f"
+    },
+    {
+      "file": "lib/email-tools.mjs",
+      "anchor": "export const EMAIL_INSTRUCTIONS =",
+      "marker": "",
+      "beforeChars": 2496,
+      "afterChars": 1113,
+      "beforeWords": 358,
+      "afterWords": 150,
+      "oldSha256": "65f8fe07198ec6f5801f3ed3c6f005c5d9d2a13942cc6a23a55af664eb0df9c0",
+      "newSha256": "e3ca972836698d2038bd63ef443de189a35896fe5103236de1e14e74c0d3e223"
+    },
+    {
+      "file": "lib/control-tools.mjs",
+      "anchor": "export const CONTROL_TOOL=",
+      "marker": "\"description\":",
+      "beforeChars": 188,
+      "afterChars": 483,
+      "beforeWords": 23,
+      "afterWords": 62,
+      "oldSha256": "c777199899234deb591ea1e146eb87486231b3395846f5dbfdce5374630be322",
+      "newSha256": "330670eb683391078719976c2037cbc1aef6d75d264d6d08a5eedd941b11415d"
+    },
+    {
+      "file": "lib/control-tools.mjs",
+      "anchor": "export const CONTROL_INSTRUCTIONS =",
+      "marker": "",
+      "beforeChars": 685,
+      "afterChars": 459,
+      "beforeWords": 95,
+      "afterWords": 64,
+      "oldSha256": "e8184d7c5e5f7027d7e87c9a9b2501523f0357efc3ebd003307b5a2acc8515f3",
+      "newSha256": "4b3d7e134ed802b7ff76b73de4b182ef817b012eec0566bbe9f2201967ee0adf"
+    },
+    {
+      "file": "lib/project-tools.mjs",
+      "anchor": "export const PROJECT_TOOL =",
+      "marker": "description:",
+      "beforeChars": 680,
+      "afterChars": 603,
+      "beforeWords": 86,
+      "afterWords": 79,
+      "oldSha256": "83ce891d2b61df09ffa934562fd796235467fdb3acb4ea2d21d8a299ae81f765",
+      "newSha256": "5e1951d9a82adc4c9ddaf695f2dc6b701222809729833cd01bb541c2a7a7e80c"
+    },
+    {
+      "file": "lib/project-tools.mjs",
+      "anchor": "export const PROJECT_INSTRUCTIONS =",
+      "marker": "",
+      "beforeChars": 982,
+      "afterChars": 581,
+      "beforeWords": 132,
+      "afterWords": 85,
+      "oldSha256": "e978d59646acd4124c9246e5c8383e18c71690b0866d8dceab3d1f4739fce4ce",
+      "newSha256": "14e54acac7a13b20c567c4fbb2af6f38537a45d93e7bc07df79eaceb25449436"
+    },
+    {
+      "file": "lib/retrieval-tools.mjs",
+      "anchor": "tool('relay_skills',",
+      "marker": "",
+      "beforeChars": 355,
+      "afterChars": 314,
+      "beforeWords": 58,
+      "afterWords": 53,
+      "oldSha256": "203e00fef7cab6d712b3b8c4d9b2e220ed0bc6c4c7dea6f2a7940a0e3a03b954",
+      "newSha256": "2edae477e382ec6cce3e208000066f6aec47608604219baeb5eeb2ed13906afc"
+    },
+    {
+      "file": "lib/retrieval-tools.mjs",
+      "anchor": "tool('relay_history',",
+      "marker": "",
+      "beforeChars": 1182,
+      "afterChars": 762,
+      "beforeWords": 169,
+      "afterWords": 114,
+      "oldSha256": "bcb6c9f64654a8473cf386203447e3334b417dea9912e6e46df7b993e6ce4429",
+      "newSha256": "3531f6c36aa4ae9ba4ddc8249661fc490d45a9b8b39efb7a6c20cf48b9969483"
+    },
+    {
+      "file": "lib/retrieval-tools.mjs",
+      "anchor": "return {...full,description:",
+      "marker": "",
+      "beforeChars": 248,
+      "afterChars": 316,
+      "beforeWords": 31,
+      "afterWords": 45,
+      "oldSha256": "8f5400bed4f5098a0a90669471fc4ddd42ce1a902e49503b880457aa41376407",
+      "newSha256": "1f6e65b15eefb654d2ca600f265416f39a1a9fce0a89f2cd46f746c0ac82b2cd"
+    },
+    {
+      "file": "lib/browser-credential-tools.mjs",
+      "anchor": "export const BROWSER_CREDENTIAL_TOOL =",
+      "marker": "description:",
+      "beforeChars": 1188,
+      "afterChars": 982,
+      "beforeWords": 166,
+      "afterWords": 131,
+      "oldSha256": "38f876e5a4287e7508c70fa88d70150fdcf2ccffa0ddb0fd59fe4201aa2a91f7",
+      "newSha256": "1421bab836d199211b411492116bc719803f6db4b7126284623ca9fb9a68e345"
+    },
+    {
+      "file": "lib/browser-credential-tools.mjs",
+      "anchor": "export const BROWSER_CREDENTIAL_INSTRUCTIONS =",
+      "marker": "",
+      "beforeChars": 642,
+      "afterChars": 633,
+      "beforeWords": 87,
+      "afterWords": 83,
+      "oldSha256": "52af25380c816d0a4eea490efb6ecbc559f952bc148ed8aef72b0f547940d7b6",
+      "newSha256": "f2e419956bf5d67100fe0a55cb0c77d8f999100ca49eb5e6e7d7091a6bcda251"
+    },
+    {
+      "file": "lib/browser-signin.mjs",
+      "anchor": "export const BROWSER_VERIFICATION_GUIDANCE =",
+      "marker": "",
+      "beforeChars": 577,
+      "afterChars": 428,
+      "beforeWords": 92,
+      "afterWords": 66,
+      "oldSha256": "94decba79db1cadb739a6ee2d0ac55a9f74dd547b826074e8d7c21c16533e217",
+      "newSha256": "c0bf9ccb7719dd0c056fa641c258c8f4ed35e859513a3b8c20209d7cf8611e7e"
+    },
+    {
+      "file": "lib/browser-signin.mjs",
+      "anchor": "name: 'relay_browser_signin',",
+      "marker": "description:",
+      "beforeChars": 454,
+      "afterChars": 384,
+      "beforeWords": 61,
+      "afterWords": 54,
+      "oldSha256": "977b08f375c369026987125f8cee662c97d3e838c93766b937e6544096d532d5",
+      "newSha256": "51d2c0ba1b3fa475f44b5a2277221ac64fc5b20938203f181102d3f56cd92628"
+    },
+    {
+      "file": "lib/browser-signin.mjs",
+      "anchor": "export const BROWSER_SIGNIN_INSTRUCTIONS =",
+      "marker": "",
+      "beforeChars": 855,
+      "afterChars": 524,
+      "beforeWords": 119,
+      "afterWords": 70,
+      "oldSha256": "14ac1d529e343cd20b6089f32b24c4040de751979e356c60eb80f5f552573609",
+      "newSha256": "a59d11c2760bc27ec0dca6597e6fcccdab815e0e740c9c997fdc712364405dc8"
+    },
+    {
+      "file": "lib/conversation-goals.mjs",
+      "anchor": "export const GOAL_TOOL =",
+      "marker": "description:",
+      "beforeChars": 236,
+      "afterChars": 615,
+      "beforeWords": 33,
+      "afterWords": 91,
+      "oldSha256": "a310a8793dddec35187cbd7578f5024db25753497ae6cfd3cd06987bbb081ecd",
+      "newSha256": "ad8f455b3e324fc54befac540bd8ffa57418e01a210e18cbac1dace04acd1e2d"
+    },
+    {
+      "file": "lib/identity.mjs",
+      "anchor": "name: 'relay_identity',",
+      "marker": "description:",
+      "beforeChars": 212,
+      "afterChars": 211,
+      "beforeWords": 30,
+      "afterWords": 32,
+      "oldSha256": "c20bd3d1d1dce3de520d0686ba422f5a0640b53b6e0b646dfc1b63a5a74c5e1f",
+      "newSha256": "8aed772136a480eab8565eaf6148cfc5630b4ad0c0ce97ac83f2b0a10da2f159"
+    },
+    {
+      "file": "lib/prompt-templates.mjs",
+      "anchor": "export const PROMPT_TOOL =",
+      "marker": "description:",
+      "beforeChars": 457,
+      "afterChars": 525,
+      "beforeWords": 67,
+      "afterWords": 76,
+      "oldSha256": "fe901025b2b86c1f618359ca80ea8b50950943e70157b321f6ae512fa1c5adee",
+      "newSha256": "8ffeb8d08915a1dde210d0f5b9059205547f1d607d3a3403f72c70624c2145b9"
+    },
+    {
+      "file": "lib/frontend-devtools-tool.mjs",
+      "anchor": "name: 'blackice_frontend',",
+      "marker": "description:",
+      "beforeChars": 793,
+      "afterChars": 724,
+      "beforeWords": 117,
+      "afterWords": 103,
+      "oldSha256": "167ff22602d95e18a2e7dd31c0b672771cdd30784ee9bb95408460e502370b19",
+      "newSha256": "c664a7d6195eb76009553d39ecb99352c2f28c0f10e3eaf80e7e1ecdaa98576b"
+    },
+    {
+      "file": "lib/connected-browser-tools.mjs",
+      "anchor": "definition('blackice_connected_browser_read',",
+      "marker": "",
+      "beforeChars": 286,
+      "afterChars": 306,
+      "beforeWords": 43,
+      "afterWords": 41,
+      "oldSha256": "653eb35f7c695b84a0bced88226f68cd0eaaf7aaa4ee393e80f617d4ab404faa",
+      "newSha256": "85e99fba1d58be2df9cc06efe532e950b921404de45ac4aa0f82581c972fc5b8"
+    },
+    {
+      "file": "lib/connected-browser-tools.mjs",
+      "anchor": "definition('blackice_connected_browser_action',",
+      "marker": "",
+      "beforeChars": 576,
+      "afterChars": 444,
+      "beforeWords": 83,
+      "afterWords": 59,
+      "oldSha256": "6ef79fadc306cddecb535036005e968ae4a407f6d7f20437f533d4649534556a",
+      "newSha256": "8b74993c16287173b663f008e3b3ccb467d0db512f38426616301be3662910ef"
+    },
+    {
+      "file": "lib/connected-browser-tools.mjs",
+      "anchor": "definition('blackice_profile_list',",
+      "marker": "",
+      "beforeChars": 270,
+      "afterChars": 235,
+      "beforeWords": 39,
+      "afterWords": 27,
+      "oldSha256": "261ce8d08228cff403573e5dc0f172b13a44446f3ad9e247780da974a297fe0f",
+      "newSha256": "647258a4109a394a10976c61d44e74d070bbb973924fc88053bc268fcc4e199f"
+    },
+    {
+      "file": "lib/connected-browser-tools.mjs",
+      "anchor": "definition('blackice_profile_import',",
+      "marker": "",
+      "beforeChars": 410,
+      "afterChars": 386,
+      "beforeWords": 60,
+      "afterWords": 55,
+      "oldSha256": "fb613cccff3b42737e11ccfca3ebc4d7d04db309a805c2cedb551fe788200288",
+      "newSha256": "e474fad8d9e92143d1ebdce3497f3e2fa11c6f754dec4322dbe370d1de172117"
+    },
+    {
+      "file": "lib/connected-browser-tools.mjs",
+      "anchor": "definition('blackice_profile_connect',",
+      "marker": "",
+      "beforeChars": 328,
+      "afterChars": 223,
+      "beforeWords": 47,
+      "afterWords": 32,
+      "oldSha256": "83d2727d9afec24bddf9053d021449aeb93b9a42253bbed0405dc28542726d86",
+      "newSha256": "96ebb60364b1a029c19bbe348c26688c13028e030977775da3e9ec59babf1d99"
+    },
+    {
+      "file": "lib/provider-setup-tools.mjs",
+      "anchor": "definition('blackice_provider_read',",
+      "marker": "",
+      "beforeChars": 824,
+      "afterChars": 553,
+      "beforeWords": 110,
+      "afterWords": 75,
+      "oldSha256": "26834c59557f84feba9db122e2e73dc688782bf6a7819530297309cc8a4dc5b3",
+      "newSha256": "060e36413e1206c6335e9b7b3f224e1d1e8a884c8ef76f5ceb9b06d2aaab146a"
+    },
+    {
+      "file": "lib/provider-setup-tools.mjs",
+      "anchor": "definition('blackice_provider_configure',",
+      "marker": "",
+      "beforeChars": 198,
+      "afterChars": 465,
+      "beforeWords": 34,
+      "afterWords": 69,
+      "oldSha256": "54bd227a426b34c93112cf5c58cf75fe350d54c8f8b79099c8af97b3569be524",
+      "newSha256": "2b6cff4a8332d25b12225b577453566003df0cc6cc06a42b2177ad701e501d56"
+    },
+    {
+      "file": "lib/provider-setup-tools.mjs",
+      "anchor": "definition('blackice_provider_import_key',",
+      "marker": "",
+      "beforeChars": 243,
+      "afterChars": 521,
+      "beforeWords": 37,
+      "afterWords": 72,
+      "oldSha256": "166c46770ff6735b97dec29d9c140bfd1f20609525a8ff7c29bb67fc400b0dcd",
+      "newSha256": "d12cbcbba51c37812be4d71213da9825fdd23852bac2a1f096d572ef1ef0140a"
+    },
+    {
+      "file": "lib/browser-credential-tools.mjs",
+      "anchor": "loginOrigin: {",
+      "marker": "description:",
+      "beforeChars": 114,
+      "afterChars": 169,
+      "beforeWords": 17,
+      "afterWords": 25,
+      "oldSha256": "b200a5cb362bdd1a802f92d952331a72a1c467d424bf7f620b35872dc0a85d7e",
+      "newSha256": "a42868a8f429c4ec34662e7cadd053b3008058d31b5ecd2ef1a4ba8f7fc4a5bf"
+    },
+    {
+      "file": "lib/browser-credential-tools.mjs",
+      "anchor": "requestId: {",
+      "marker": "description:",
+      "beforeChars": 167,
+      "afterChars": 99,
+      "beforeWords": 25,
+      "afterWords": 16,
+      "oldSha256": "721d1ebe40b925620bd3d099f59af9cc769759756abfb4712f36eed4a214323a",
+      "newSha256": "0665df72b0cf8b9767d40c4f51e433a4136b0205128cd3351643d05e47a8fe13"
+    },
+    {
+      "file": "lib/browser-credential-tools.mjs",
+      "anchor": "password: {",
+      "marker": "description:",
+      "beforeChars": 70,
+      "afterChars": 80,
+      "beforeWords": 11,
+      "afterWords": 12,
+      "oldSha256": "81a3332df5e711d48d6a3c79e56e9d3d1797351f1812f131b3cc5597324531f2",
+      "newSha256": "50c19d3fe747319aa63a1b96c0417c34bf037edf6896e3ac10d389727ba20789"
+    },
+    {
+      "file": "lib/browser-credential-tools.mjs",
+      "anchor": "description: action === 'associate' ?",
+      "marker": "",
+      "beforeChars": 513,
+      "afterChars": 285,
+      "beforeWords": 72,
+      "afterWords": 40,
+      "oldSha256": "46e369952fcf440f075afb895d72b5e632ff5346d6e39e26628bc4c9f653aad8",
+      "newSha256": "cfa058d29e801feca737d2965dadd1313ccdd2ffe89652e360ecbfbb84c7e5a0"
+    },
+    {
+      "file": "lib/browser-credential-tools.mjs",
+      "anchor": ": ['save','update'].includes(action) ?",
+      "marker": "",
+      "beforeChars": 269,
+      "afterChars": 234,
+      "beforeWords": 40,
+      "afterWords": 36,
+      "oldSha256": "ca104f74fbf0969fc0e2d562914b512e2d36a1dff26243cb66b13c598f6bc5e2",
+      "newSha256": "70c8f24809c61d8072951e87e5a54a2200b8145dbc1edb71dabc73c5346d2eee"
+    },
+    {
+      "file": "lib/browser-credential-tools.mjs",
+      "anchor": ": action === 'authenticate' ?",
+      "marker": "",
+      "beforeChars": 277,
+      "afterChars": 255,
+      "beforeWords": 38,
+      "afterWords": 33,
+      "oldSha256": "0780fdc5beafd14f999ad64406de5d7bac2190a96e20727c92ece77e392253ed",
+      "newSha256": "50cffa68b2386093e0ceac62b37c698d1644e3484e71bd40a502368b06ee1631"
+    },
+    {
+      "file": "lib/browser-credential-tools.mjs",
+      "anchor": ": action === 'list' ?",
+      "marker": "",
+      "beforeChars": 88,
+      "afterChars": 99,
+      "beforeWords": 13,
+      "afterWords": 15,
+      "oldSha256": "cd4b252e180e960cd096ffcb8b906219a854a5671ef3fcfdee85a2162e944d69",
+      "newSha256": "4df93ee1ee4106972d24196a45555eaa8984aaf8912e8a63e40f0e33dabe3a99"
+    },
+    {
+      "file": "lib/browser-credential-tools.mjs",
+      "anchor": ": action === 'generate' ?",
+      "marker": "",
+      "beforeChars": 218,
+      "afterChars": 186,
+      "beforeWords": 32,
+      "afterWords": 27,
+      "oldSha256": "0a22c293da9c92929962219f975f67a032d03d442f6454ceceb2acd405c6e2d8",
+      "newSha256": "df3f8a50460cd932781f622bcd15178759074c25caec393d6c57a6301dee1062"
+    },
+    {
+      "file": "lib/frontend-devtools-tool.mjs",
+      "anchor": "text: { type: 'string',",
+      "marker": "description:",
+      "beforeChars": 62,
+      "afterChars": 52,
+      "beforeWords": 8,
+      "afterWords": 6,
+      "oldSha256": "d0466045c0c3b6446ea2d929f1dcca02f5b4616da3202c0871da3323cc26ed2b",
+      "newSha256": "badda2b3dd06674941d860a60451a789f66de8ca018d394bacdfef43c7a52311"
+    },
+    {
+      "file": "lib/conversation-goals.mjs",
+      "anchor": "retryReason: {",
+      "marker": "description:",
+      "beforeChars": 220,
+      "afterChars": 152,
+      "beforeWords": 35,
+      "afterWords": 21,
+      "oldSha256": "af8b98a6b349bb0f9f23bf3ed20cff10c5576e5b75767bfed29af75dc68de1e1",
+      "newSha256": "bb002352e5e20ea1942a9291061cc9839542501c754a270ac4fe70d83807ba0b"
+    },
+    {
+      "file": "lib/conversation-goals.mjs",
+      "anchor": "milestone: {",
+      "marker": "description:",
+      "beforeChars": 160,
+      "afterChars": 135,
+      "beforeWords": 22,
+      "afterWords": 18,
+      "oldSha256": "c0ba4ad7fc8301ff219081d4774838720d6e9d5d2549547fe5b8e3348a438ef1",
+      "newSha256": "cee15aba7523a0d864c75899a2bb98a611d02481402cf0996e7e2bc052d2fe44"
+    },
+    {
+      "file": "lib/conversation-goals.mjs",
+      "anchor": "waitUntil: {",
+      "marker": "description:",
+      "beforeChars": 98,
+      "afterChars": 95,
+      "beforeWords": 16,
+      "afterWords": 13,
+      "oldSha256": "0221035c9225b6c031bcf2d78901861843a557ab801f2a35ae3b3e21d1f1deab",
+      "newSha256": "be8323bfb3e2f097bc6b54596f35d1950e5ea89a79379df57fc118c6ef03a0f3"
+    },
+    {
+      "file": "lib/conversation-goals.mjs",
+      "anchor": "waitForRunId: {",
+      "marker": "description:",
+      "beforeChars": 74,
+      "afterChars": 73,
+      "beforeWords": 11,
+      "afterWords": 12,
+      "oldSha256": "da4ea0593096b228567d0989c0df2e90c930129ae39e353cea4334e9a5683085",
+      "newSha256": "cdc598d375a253fad896f6caa009b9f354984ea0a4dff0926519c6318bc1ba18"
+    },
+    {
+      "file": "lib/native-planning-tools.mjs",
+      "anchor": "entry.definition.name==='blackice_planning_graph_read'",
+      "marker": "?",
+      "beforeChars": 320,
+      "afterChars": 417,
+      "beforeWords": 45,
+      "afterWords": 56,
+      "oldSha256": "07bc84b5fc0b2ece3a5b3b61d1e265f32bc6ed2341c049c6c9ee52a6eefe1289",
+      "newSha256": "697731c26ff3258571d6c0ad1d714d0cdb678978cf403eba09349ad8db03e05d"
+    },
+    {
+      "file": "lib/native-planning-tools.mjs",
+      "anchor": "entry.definition.name==='blackice_planning_graph_write'",
+      "marker": "?",
+      "beforeChars": 748,
+      "afterChars": 503,
+      "beforeWords": 112,
+      "afterWords": 58,
+      "oldSha256": "15f4457471e97bba9c4540ea14ac6864925202011db5d8c9b8faa26e717695d0",
+      "newSha256": "bc543f14334da1e38c0aefe200da91b4c7904003a314b1d465623d11de8d2da2"
+    },
+    {
+      "file": "lib/native-planning-tools.mjs",
+      "anchor": "+ ALTERNATE_ROUTE_GUIDANCE",
+      "marker": ":",
+      "beforeChars": 374,
+      "afterChars": 342,
+      "beforeWords": 55,
+      "afterWords": 52,
+      "oldSha256": "43474a6979788cca1026a32c5792779840203bf8e78dedbb410cf777d71bce65",
+      "newSha256": "e92a644119678667c5362ac318ac0d9738280d37b094eee26dae9b5479ace6a3"
+    },
+    {
+      "file": "lib/browser-cleanup-policy.mjs",
+      "anchor": "export const BROWSER_CLEANUP_PROTOCOL =",
+      "marker": "",
+      "beforeChars": 2270,
+      "afterChars": 959,
+      "beforeWords": 321,
+      "afterWords": 142,
+      "oldSha256": "99a41b225396a545bbb5368d6981f1055459f86f0526e14f3d4b6bc40a18fd44",
+      "newSha256": "43e6503cc34852dd6b619c731bb1a9b4bbac6e3688d2a748b767825939ab0fde"
+    },
+    {
+      "file": "lib/workspace-tools.mjs",
+      "anchor": "path: { type: 'string',",
+      "marker": "description:",
+      "beforeChars": 0,
+      "afterChars": 155,
+      "beforeWords": 0,
+      "afterWords": 25,
+      "oldSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "newSha256": "477b0b319295804d9c2d1c9de0560dd74adf713b9725846cb6805819f7c9a45c"
+    },
+    {
+      "file": "lib/workspace-tools.mjs",
+      "anchor": "command: { type: 'string',",
+      "marker": "description:",
+      "beforeChars": 52,
+      "afterChars": 132,
+      "beforeWords": 7,
+      "afterWords": 23,
+      "oldSha256": "08f7dd8c9a77fbaff2737d8f49789d623bbfd88041aff247568ec25fad795d9d",
+      "newSha256": "d10cb9097a1f2d42cc1e61c951bad3019be486cbebb57f71f14f20449243fa64"
+    },
+    {
+      "file": "lib/conversation-goals.mjs",
+      "anchor": "goalId: {type: 'string',",
+      "marker": "description:",
+      "beforeChars": 0,
+      "afterChars": 58,
+      "beforeWords": 0,
+      "afterWords": 9,
+      "oldSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "newSha256": "121062668e8b9d9eb3a8d3b4d6a64fae4db50651650c4681469222afc03025e5"
+    },
+    {
+      "file": "lib/conversation-goals.mjs",
+      "anchor": "summary: {type: 'string',",
+      "marker": "description:",
+      "beforeChars": 0,
+      "afterChars": 82,
+      "beforeWords": 0,
+      "afterWords": 14,
+      "oldSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "newSha256": "00960f0aba1b811576f344dfadbabd10cd6996ac8debe8396a903ade57e12094"
+    },
+    {
+      "file": "lib/conversation-goals.mjs",
+      "anchor": "evidence: {type: 'string',",
+      "marker": "description:",
+      "beforeChars": 0,
+      "afterChars": 134,
+      "beforeWords": 0,
+      "afterWords": 20,
+      "oldSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "newSha256": "a9adb8448c1a1883567a14213495e7225c7f9e5166745ba70b38e0de7837c213"
+    },
+    {
+      "file": "lib/workspace-tools.mjs",
+      "anchor": "cwd: { type: 'string',",
+      "marker": "description:",
+      "beforeChars": 80,
+      "beforeWords": 13,
+      "oldSha256": "02b1ee485c68efd3a1303f9b059728d6fe0d7d897f450dcde71c69dfa1763dc4",
+      "afterChars": 156,
+      "afterWords": 25,
+      "newSha256": "a40e9ee00672777962e08ec1a0e98c246fe10cf2ce01777dc2ef1b18a0012358"
+    },
+    {
+      "file": "lib/file-search-contract.mjs",
+      "anchor": "cwd: {",
+      "marker": "description:",
+      "beforeChars": 53,
+      "beforeWords": 7,
+      "oldSha256": "56abd8b17f0de6269938b513df043ce38a591d1d84aec51a88c4ac18b226cc55",
+      "afterChars": 150,
+      "afterWords": 21,
+      "newSha256": "d90a83a6d060f6bb0dafea2afabdcdae4e00114b9862fc6b4116826eb3190619"
+    },
+    {
+      "file": "lib/retrieval-tools.mjs",
+      "anchor": "const scopeProperty =",
+      "marker": "description:",
+      "beforeChars": 67,
+      "beforeWords": 9,
+      "oldSha256": "f0c8f0c784c204fecba70c48647f9f568176f889ed5f362ab6964e606b4fa6a1",
+      "afterChars": 160,
+      "afterWords": 22,
+      "newSha256": "928ed69163779c6bb8d1df09da830260f0c48808ee31f2efb73ec91a37a2be89"
+    },
+    {
+      "file": "lib/workspace-file-search.mjs",
+      "anchor": "coverage:",
+      "marker": "",
+      "beforeChars": 1054,
+      "beforeWords": 141,
+      "oldSha256": "a4f32a9ca6eaabd075b348bd07b48fcbef4d5cc53d28e362b5a00cf6382b1aa2",
+      "afterChars": 558,
+      "afterWords": 72,
+      "newSha256": "ee9d5d5ffc31b1ed3a5725acf4417812ccaeac7a1eee9e68ff382f9502bea64b"
+    },
+    {
+      "file": "lib/workspace-file-search.mjs",
+      "anchor": "note:",
+      "marker": "",
+      "beforeChars": 116,
+      "beforeWords": 14,
+      "oldSha256": "73f9c64895e4eb83b0604024719ec73d8f6c46e4d45c89f8fd4a258d7c4fa892",
+      "afterChars": 142,
+      "afterWords": 20,
+      "newSha256": "fd5f97e60bae96b57f5aa1490e21496937fb42b6522053eb4b16be9ab4d02852"
+    }
+  ],
+  "files": [
+    {
+      "file": "lib/browser.mjs",
+      "beforeSha256": "294a577edd97761e8f4db3bc654f8a57b5da13a4876ae6b51b0369b2e966a689",
+      "afterSha256": "7303b1508858dabe0e8064219dc8bf3eec708a4f4274cfc712bd64b2d7b6cbc6"
+    },
+    {
+      "file": "lib/workspace-tools.mjs",
+      "beforeSha256": "c751358fad17964980aa2c73c5d5a2410967d2e531b9a96adf44fd6d299ddd2c",
+      "afterSha256": "9e1710ffab78dce4d93d538b46e1d5978814ecc9c084f1ec7b2c6bd07876b84a"
+    },
+    {
+      "file": "lib/file-search-contract.mjs",
+      "beforeSha256": "c728333413a0f4a6aa82e6bca9e506ef8c8e258964d28c3842b1adef24bc5d77",
+      "afterSha256": "8cee7320452a0e65a3c7e4ed11a8bcef0aa0e154afec4f95d8a791e6f4291e7d"
+    },
+    {
+      "file": "lib/attachments.mjs",
+      "beforeSha256": "4d81571526a5c0b7401185b8bb074ddcff3ed621f383f2ee5eef03abb8ba14d4",
+      "afterSha256": "821507977402f1e876ccc8e9054333040dd50c6aa040527c32d246cb6beed460"
+    },
+    {
+      "file": "lib/desktop-tools.mjs",
+      "beforeSha256": "5444f170b27511b62ae1c1e8990c4b47ff6505970e60a86d0aa4b257de14915b",
+      "afterSha256": "3e38e5e3e703cca150679075c09041d5d605a34aa8e817b4d2217208c8681d73"
+    },
+    {
+      "file": "lib/application-tools.mjs",
+      "beforeSha256": "3daf8fa80e94a123d12597b8db6747c8faa78a51ef082ef1f8a4b057da59837b",
+      "afterSha256": "2298604edd8f1bf12a64ae7aeed62efc87a31d0b1f77eb27806d6662c80b134d"
+    },
+    {
+      "file": "lib/native-window-tools.mjs",
+      "beforeSha256": "85fc31fd299e80c2e6fb85a9d07ec3c7c2f3cfb606c6698d11d2c0ed7021839e",
+      "afterSha256": "aeebd5845ba74b0272d76102688fa3f6d86c8ea886413acca8bf2a88516f193e"
+    },
+    {
+      "file": "lib/email-tools.mjs",
+      "beforeSha256": "19ace349b63d5811bec2afe7507b68c076fb59766831bc54ffe486fe5dc7256f",
+      "afterSha256": "cfbc7e831d72ebc9e414d993a7a18c2cc7283cc8e1ad4289a3af8d5522d89d5a"
+    },
+    {
+      "file": "lib/control-tools.mjs",
+      "beforeSha256": "83bb646823e5c70420715a39e9693c86ce4a1ed5fe89f8316dc6b56b0aad8119",
+      "afterSha256": "1e0e925cada76c7a2d66a1379ed42fb9bc99abaa09b61dd3ff9fafef6b07abdf"
+    },
+    {
+      "file": "lib/project-tools.mjs",
+      "beforeSha256": "5584d850d3262bad2fc8e8a1990b12d3b99687ef1dd71c67dbde910539efdb31",
+      "afterSha256": "dcb3c9ec53d3395de4046e1ad35795f4768ebd19d2b337487b7121dd6475dacd"
+    },
+    {
+      "file": "lib/retrieval-tools.mjs",
+      "beforeSha256": "130def68593d9d5d30c77538befd7f32d39e4ee67b3e703d6bbead047bae86e4",
+      "afterSha256": "b5cd41ffafe1446abe9a541020655bfdee6ba8ce89cfd57ef309f819afaa11ea"
+    },
+    {
+      "file": "lib/browser-credential-tools.mjs",
+      "beforeSha256": "07b80161b5c6f8d3423c147800ba504390aa70df6b568227530366a1a283e4d4",
+      "afterSha256": "2b25fd8f103225bea8ed6e37a5d408ca5a2a554fae8e331d1818b4eb4e3ebae6"
+    },
+    {
+      "file": "lib/browser-signin.mjs",
+      "beforeSha256": "f8538ca3499defcd6d7f5cb42ade8ab844eb0842da0b0cad66abfda8ba9cdaef",
+      "afterSha256": "4c868b2e567c08bad53867ef1d8ff58eddc3f3abb49a6f90c1b37f3ff0665932"
+    },
+    {
+      "file": "lib/conversation-goals.mjs",
+      "beforeSha256": "2f6cd8d65c97f02792421f6fde4838eb19c5dac562a764f48f2db73120574b7b",
+      "afterSha256": "dee13f8eccde15a61b45ac60fbdda3e558bdd981c796a435f29a8bd731a2c984"
+    },
+    {
+      "file": "lib/identity.mjs",
+      "beforeSha256": "6d44e813aaa8318070413af98ceb7f1224c65a32624f6c0c9d116357c700efc8",
+      "afterSha256": "00dcdf7884a7c89872d6be81950a1564a7f876209f62ee14bcd7fab25db64f2a"
+    },
+    {
+      "file": "lib/prompt-templates.mjs",
+      "beforeSha256": "602bc86075414f70acc4e28ff6a9cfae45e942babed1cda7568f9d49cfd7214b",
+      "afterSha256": "bcbac4a922ba6dd29207403bd15683554f82099b01cb0ada32bd722bcc43da9d"
+    },
+    {
+      "file": "lib/frontend-devtools-tool.mjs",
+      "beforeSha256": "2ea513d13220fc705135287dd5bb07fcc9bed1463c17b329cede867bd45b48d7",
+      "afterSha256": "aee8c09ee20083221d1e3199b485df2a830ad189a761b2c04e2b3810047364a5"
+    },
+    {
+      "file": "lib/connected-browser-tools.mjs",
+      "beforeSha256": "45d26dd8b732f00f5c6f9c376cea4d02f24d4f4a8bc0765ee987615f5bcc0d74",
+      "afterSha256": "1fbaf62ef1c80adb30f0404d6c2da749ee50b4b156a419ee3a676eba3575b2fe"
+    },
+    {
+      "file": "lib/provider-setup-tools.mjs",
+      "beforeSha256": "63fe1934b4ace376e29110044225d5ada150f4f9c34309b4ba9419b515e188b3",
+      "afterSha256": "0e76b7f90183f9729e7ececda2b2746f6c2a9b05bf590e5e43cc08fd6d843e37"
+    },
+    {
+      "file": "lib/native-planning-tools.mjs",
+      "beforeSha256": "3cca69448d8023837d5ff607978cb19a6e9bb972effb29cba46024f66d848eb3",
+      "afterSha256": "b0089f38c4ccc9547b8147bad17fc2978b919b56230dd7d8e8e2910d098aa42c"
+    },
+    {
+      "file": "lib/browser-cleanup-policy.mjs",
+      "beforeSha256": "8d3a0a07f1ed33c8b74e0ff1b4edca1a23aa1750f5919df488108def355b6bbe",
+      "afterSha256": "f504e0eddda7123f1d3e5eeb4efaeb11a08a499a2681aa48cfaa21782b249d9f"
+    },
+    {
+      "file": "lib/workspace-file-search.mjs",
+      "beforeSha256": "72538efd9b7e71244c07ee97d2422ef1aac8a9632862a6f3f6eb4e8d0c8d004f",
+      "afterSha256": "2bdee1603c18f247b3bc16dbc80642b1e6247d940793040988933c7e293dfb67"
+    }
+  ],
+  "checks": [
+    {
+      "kind": "syntax",
+      "result": "pass",
+      "sourceFiles": 21,
+      "jobId": "direct_57707d12bc4c480e0eeeef1b7a4b2e7aeb6a2f02606a9bf28fd29e83335117f4"
+    },
+    {
+      "kind": "initial-focused",
+      "passed": 186,
+      "failed": 2,
+      "skipped": 0,
+      "total": 188,
+      "evidence": "verification/instruction-clarity-native-tests.tap",
+      "note": "Two frozen wording assertions were replaced with active-schema/semantic checks; behavior checks passed."
+    },
+    {
+      "kind": "affected-and-delivery",
+      "passed": 68,
+      "failed": 0,
+      "skipped": 0,
+      "total": 68,
+      "evidence": "verification/instruction-clarity-native-followup.tap",
+      "jobId": "direct_b3c832bd6a4818154f8bb67afb87c8698295d1de174fd15cf42084d59290d52f"
+    },
+    {
+      "kind": "capacity-recovery",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "total": 5,
+      "evidence": "verification/instruction-clarity-native-capacity.tap",
+      "jobId": "direct_30382c960b72fa18e29b33460b1d324008f5fc4d35787747b031dd9c77781a1b"
+    },
+    {
+      "kind": "schema-comparison",
+      "result": "pass",
+      "metadataInstances": 36,
+      "jobId": "direct_4efedb69efdc60a12aad13edc35b079a03637411529cc4309a78b054c5677f76"
+    },
+    {
+      "kind": "ownership-argument-mapping",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "total": 4,
+      "evidence": "verification/instruction-clarity-native-ownership.tap",
+      "jobId": "direct_2fdcaee9a3a18c3dfa627db7bdc504dded464a5d19a83a9d7601b3a90effa7df"
+    },
+    {
+      "kind": "exact-browser-field-mappings",
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0,
+      "total": 22,
+      "evidence": "verification/instruction-clarity-native-field-mappings.tap",
+      "jobId": "direct_16841ad154ba7cea5024c53e5ab51fb4b6e14fd62e5de2678d35d78882e785ec"
+    },
+    {
+      "kind": "file-scope-handler-and-native-delivery",
+      "passed": 43,
+      "failed": 0,
+      "skipped": 0,
+      "total": 43,
+      "evidence": "verification/instruction-clarity-native-file-scope.tap",
+      "jobId": "direct_dda2cb5522f7ef0902802b0ef037f374382afdfe2145ada4c8439950f2b9a3a3",
+      "note": "Includes outside-cwd paths, scoped misses, broader explicit roots, completed traversal with gaps, and actual engine delivery/read. Two unchanged-behavior prose assertions updated."
+    }
+  ],
+  "adapterMetadataAdded": [
+    "workspace one-path and command size",
+    "goal required mutation fields"
+  ],
+  "editAttempts": 57,
+  "metrics": {
+    "scope": "Edited static descriptions and adapter guidance; excludes unchanged parameter help and dynamic external metadata.",
+    "textBlocks": 65,
+    "beforeChars": 34645,
+    "afterChars": 28552,
+    "changePercent": -17.6
+  },
+  "currentSchemaInspection": {
+    "passed": true,
+    "metadataInstances": 36,
+    "uniqueToolNames": 35,
+    "evidence": "verification/instruction-clarity-native-schema.json",
+    "descriptionFieldsExcluded": true,
+    "otherSchemaFieldsUnchanged": true
+  },
+  "staleGuidanceFixed": [
+    "Native app discovery is apps with query; no search action is advertised.",
+    "Goal complete/wait now state current goalId, summary and evidence required by the handler.",
+    "Provider save now states expectedUpdatedAt, including null for new IDs.",
+    "Workspace run states the actual 20,000-character command bound and script-file alternative.",
+    "Native Planning describes current read/write action schemas rather than source files or retired grammar.",
+    "Browser capacity errors describe recovery through attached tool actions without naming unavailable relay_browser or copying native JSON into direct tool calls.",
+    "Browser ownership adoption explicitly maps ownershipCandidates ownerKey/url/documentId to expectedOwnerKey/expectedUrl/expectedDocumentId, with tabId.",
+    "Browser/credential/provider/frontend recipes map observed documentId and loginOrigin to actual expectedDocumentId and origin arguments.",
+    "Native file guidance separates cwd, output destination, explicit search roots and OS access; known absolute input paths are read directly. Attachment/history misses do not imply local-file absence.",
+    "Filename pagination follows cursor presence; scanComplete can be true while searchComplete remains false after errors or skips."
+  ],
+  "testsChanged": [
+    {
+      "file": "tests/browser-cleanup-protocol.test.mjs",
+      "sha256": "3b44b24f1443b7899a30676a9a028acf03e9fb2c3e0ade283bd287359ec45361"
+    },
+    {
+      "file": "tests/email-tool-usability.test.mjs",
+      "sha256": "f27dcfb2a7f7a482110857395d21a3a46c1413edcf0ec55819e966fb334599b5"
+    },
+    {
+      "file": "tests/file-routing-guidance.test.mjs",
+      "sha256": "2677ecf97a5df491d88247a35f1e830fec275ede2d973dc72e8243be47adc790"
+    },
+    {
+      "file": "tests/workspace-discovery.test.mjs",
+      "sha256": "91ee58cc3ff2497ea715342b43e8c064417e4d6d6f2965b67be687c8a201138e"
+    },
+    {
+      "file": "tests/desktop-background-source.test.mjs",
+      "sha256": "4830650a33f3b7a6d85bebba361dd0442f64b5ade98ad0acb952ef6ace656c6c"
+    },
+    {
+      "file": "tests/email-sending-integration.test.mjs",
+      "sha256": "306aa2499d5b94d1e7e274aac2e1437fe620e09d50f0d9ce5ae6f4f8ddd69483"
+    },
+    {
+      "file": "tests/credential-browser-routing.test.mjs",
+      "sha256": "9720b6af790c2ea632de3a60fcc588c14080ebea23f5be50aa79a75ca33db5a4"
+    },
+    {
+      "file": "tests/browser-capacity-feedback.test.mjs",
+      "sha256": "951ed919a6c325cfc291aaf38a046be14ffd579bf9bbdd79a47d31835223097e"
+    },
+    {
+      "file": "tests/workspace-file-search-traversal.test.mjs",
+      "sha256": "e5102e84502b59e5fec4452eb580d6e084c2f63a21377f06d43b848566634bb4"
+    },
+    {
+      "file": "tests/workspace-file-search.test.mjs",
+      "sha256": "447f0f6eb6f70bf693bf3e203787c99e93998b1ae3dc1c8d2782f34ab550f516"
+    }
+  ],
+  "integration": "Native handoff verified. Project returned-method guidance is owned by skills lane; native hashes are a current source snapshot and coordinator owns final integrated fingerprint/activation."
+}

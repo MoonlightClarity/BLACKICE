@@ -4,7 +4,7 @@
     {
       "id": "library-browser-navigation",
       "title": "Browser Navigation and Continuity",
-      "description": "Open the requested page, follow redirects and tabs, recover stale page controls, and resume browser work from observed evidence.",
+      "description": "Open and follow pages, inspect navigation, recover stale controls, and verify the resulting page or record.",
       "tags": [
         "browser",
         "navigation",
@@ -18,14 +18,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "blackice-browser-navigation-v1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "browser-navigation.md"
     },
     {
       "id": "library-pdf-evidence",
       "title": "Read a PDF for evidence",
-      "description": "Extract cited claims, tables, or page findings from PDFs and flag scanned, unreadable, or unverified pages.",
+      "description": "Read a PDF's relevant pages, verify table labels and units, and cite the evidence used in the answer.",
       "tags": [
         "documents",
         "pdf",
@@ -33,15 +33,20 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "pdf-evidence.md"
     },
     {
       "id": "library-word-review",
-      "aliases": ["word document", "word draft", "word file", "word comments"],
+      "aliases": [
+        "word document",
+        "word draft",
+        "word file",
+        "word comments"
+      ],
       "title": "Review a Word document",
-      "description": "Review a Word draft and give located comments or a revised text version without implying formatting was preserved.",
+      "description": "Read Word paragraphs and tables, give located revisions, or save and inspect the edited document requested.",
       "tags": [
         "documents",
         "word",
@@ -50,15 +55,21 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "word-review.md"
     },
     {
       "id": "library-document-comparison",
-      "aliases": ["draft versions", "document versions", "compare drafts", "changes between drafts", "versions of the draft"],
+      "aliases": [
+        "draft versions",
+        "document versions",
+        "compare drafts",
+        "changes between drafts",
+        "versions of the draft"
+      ],
       "title": "Compare document versions",
-      "description": "Compare available versions by meaning and surface material changes with locations in both sources.",
+      "description": "Compare two document versions and locate changes to wording, obligations, dates, amounts, or conclusions.",
       "tags": [
         "documents",
         "comparison",
@@ -66,14 +77,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "document-comparison.md"
     },
     {
       "id": "library-document-action-items",
       "title": "Extract actions from documents",
-      "description": "Turn minutes, briefs, or documents into traceable tasks, decisions, deadlines, and unresolved questions.",
+      "description": "Extract actions, named owners, deadlines, decisions, and source locations from notes or documents.",
       "tags": [
         "documents",
         "meeting",
@@ -81,15 +92,21 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "document-action-items.md"
     },
     {
       "id": "library-spreadsheet-inspection",
-      "aliases": ["cached formulas", "formula values", "workbook formulas", "cached values", "spreadsheet data"],
+      "aliases": [
+        "cached formulas",
+        "formula values",
+        "workbook formulas",
+        "cached values",
+        "spreadsheet data"
+      ],
       "title": "Inspect spreadsheet data",
-      "description": "Profile supplied table data and reconcile totals; use workbook features only when the reader exposes them.",
+      "description": "Read workbook sheets and stored cells, distinguish formulas from cached values, and reconcile relevant totals.",
       "tags": [
         "data",
         "spreadsheet",
@@ -98,14 +115,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "spreadsheet-inspection.md"
     },
     {
       "id": "library-csv-cleanup",
       "title": "Clean and reconcile CSV data",
-      "description": "Clean tabular text with reversible transformations, a change summary, and reconciliation checks.",
+      "description": "Parse and clean CSV rows, account for duplicates, and check counts and totals in the saved output.",
       "tags": [
         "data",
         "csv",
@@ -113,14 +130,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "csv-cleanup.md"
     },
     {
       "id": "library-table-calculations",
       "title": "Calculate from tables",
-      "description": "Answer a quantitative question from supplied tables with explicit units, denominators, and checks.",
+      "description": "Calculate from table rows with stated units and denominators, then check the result against the source.",
       "tags": [
         "data",
         "analysis",
@@ -128,15 +145,24 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "table-calculations.md"
     },
     {
       "id": "library-data-reconciliation",
-      "aliases": ["contact lists", "duplicate records", "compare lists", "reconcile lists", "two rosters", "roster discrepancies", "match rosters", "roster conflicts"],
+      "aliases": [
+        "contact lists",
+        "duplicate records",
+        "compare lists",
+        "reconcile lists",
+        "two rosters",
+        "roster discrepancies",
+        "match rosters",
+        "roster conflicts"
+      ],
       "title": "Reconcile two lists",
-      "description": "Match two tables or exports and report missing, duplicate, and ambiguous records without silently dropping rows.",
+      "description": "Match two lists and account for exact, normalized, ambiguous, duplicate, and unmatched records.",
       "tags": [
         "data",
         "reconciliation",
@@ -144,23 +170,36 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "data-reconciliation.md"
     },
     {
       "id": "library-job-search",
       "title": "Job Search",
-      "description": "Find and verify live job openings across job boards and employer sites; separate a shortlist from authorized applications.",
-      "tags": ["research", "jobs", "web"],
-      "aliases": ["find open roles", "job boards", "verify a posting", "job applications", "career search"],
-      "source": {"kind": "first-party", "revision": "3"},
+      "description": "Find current openings, check the exact posting and fit, and complete applications when the user requests them.",
+      "tags": [
+        "research",
+        "jobs",
+        "web"
+      ],
+      "aliases": [
+        "find open roles",
+        "job boards",
+        "verify a posting",
+        "job applications",
+        "career search"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "clarity-20261121"
+      },
       "bodyFile": "job-search.md"
     },
     {
       "id": "library-public-source-brief",
       "title": "Research a public question",
-      "description": "Answer a research question with primary sources, dates, coverage, and explicit gaps.",
+      "description": "Research a factual question, read the relevant sources, and link each finding to its supporting evidence.",
       "tags": [
         "research",
         "web",
@@ -168,14 +207,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "public-source-brief.md"
     },
     {
       "id": "library-web-page-summary",
       "title": "Summarize a web page",
-      "description": "Extract the concrete takeaways from a specified page without confusing navigation text, snippets, or prior editions with its contents.",
+      "description": "Read a specified web page and summarize its relevant findings, dates, exceptions, and scope.",
       "tags": [
         "web",
         "summary",
@@ -183,14 +222,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "web-page-summary.md"
     },
     {
       "id": "library-compare-options-brief",
       "title": "Compare practical options",
-      "description": "Create a useful shortlist using evidence, user priorities, and consequential tradeoffs.",
+      "description": "Compare practical options against the user's requirements and recommend the best supported fit.",
       "tags": [
         "research",
         "comparison",
@@ -198,14 +237,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "compare-options-brief.md"
     },
     {
       "id": "library-evidence-brief",
       "title": "Write an evidence brief",
-      "description": "Turn scattered source material into a short brief with findings, evidence strength, and next decision.",
+      "description": "Organize source evidence around a decision and state findings, disagreements, and the next useful action.",
       "tags": [
         "research",
         "brief",
@@ -213,14 +252,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "evidence-brief.md"
     },
     {
       "id": "library-audience-draft",
       "title": "Draft for a specific audience",
-      "description": "Write a useful message or short document for its intended reader without sending it.",
+      "description": "Write a complete message or short document for its reader, purpose, and requested tone.",
       "tags": [
         "writing",
         "drafting",
@@ -228,14 +267,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "audience-draft.md"
     },
     {
       "id": "library-edit-for-clarity",
       "title": "Edit prose for clarity",
-      "description": "Improve structure, readability, or concision while preserving the author’s meaning and meaningful qualifications.",
+      "description": "Make prose easier to follow while preserving facts, intended meaning, and qualifications that matter.",
       "tags": [
         "writing",
         "revision",
@@ -243,15 +282,23 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "edit-for-clarity.md"
     },
     {
       "id": "library-project-handoff",
-      "aliases": ["project handover", "write handover", "prepare handover", "bug handoff", "handover notes", "handover reproduction", "handover steps"],
+      "aliases": [
+        "project handover",
+        "write handover",
+        "prepare handover",
+        "bug handoff",
+        "handover notes",
+        "handover reproduction",
+        "handover steps"
+      ],
       "title": "Prepare a project handoff",
-      "description": "Summarize verified state, current blockers, and the next executable step for someone taking over.",
+      "description": "Record usable work, unfinished steps, exact artifacts, check results, and the next executable action.",
       "tags": [
         "writing",
         "handoff",
@@ -259,24 +306,45 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "project-handoff.md"
     },
     {
       "id": "library-steerability",
-      "aliases": ["stop current work", "do not continue", "do not search", "tool failures", "changed direction"],
+      "aliases": [
+        "stop current work",
+        "do not continue",
+        "do not search",
+        "tool failures",
+        "changed direction"
+      ],
       "title": "Steerability",
-      "description": "Stop or redirect active work promptly and separate a report on earlier work from permission to resume it.",
-      "tags": ["execution", "communication", "diagnosis"],
-      "source": {"kind": "first-party", "revision": "2"},
+      "description": "Apply a user's stop or change of direction and preserve the actual results of work already started.",
+      "tags": [
+        "execution",
+        "communication",
+        "diagnosis"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "clarity-20261121"
+      },
       "bodyFile": "steerability.md"
     },
     {
       "id": "library-software-debugging",
-      "aliases": ["app freezes", "app hangs", "desktop freezes", "intermittent freezes", "reproduce bug", "diagnose hang", "desktop unresponsive"],
+      "aliases": [
+        "app freezes",
+        "app hangs",
+        "desktop freezes",
+        "intermittent freezes",
+        "reproduce bug",
+        "diagnose hang",
+        "desktop unresponsive"
+      ],
       "title": "Diagnose a software bug",
-      "description": "Find where a software behavior first diverges using a focused reproduction and evidence.",
+      "description": "Trace a software symptom to the first wrong result, test the cause, and verify a requested repair.",
       "tags": [
         "coding",
         "debugging",
@@ -284,15 +352,19 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "software-debugging.md"
     },
     {
       "id": "library-focused-regression",
-      "aliases": ["test a ui change", "browser regression", "test a local web app"],
+      "aliases": [
+        "test a ui change",
+        "browser regression",
+        "test a local web app"
+      ],
       "title": "Verify a code change",
-      "description": "Choose focused regression checks, including controlled browser tests, and distinguish verified behavior from untested paths.",
+      "description": "Run checks that expose the changed behavior and nearby regressions; report actual outcomes and missing checks.",
       "tags": [
         "coding",
         "testing",
@@ -300,15 +372,24 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "blackice-browser-fixture-v2"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "focused-regression.md"
     },
     {
       "id": "library-code-review",
-      "aliases": ["code review", "review code", "review production code", "review source code", "review patch", "review diff", "check patch", "review pull request"],
+      "aliases": [
+        "code review",
+        "review code",
+        "review production code",
+        "review source code",
+        "review patch",
+        "review diff",
+        "check patch",
+        "review pull request"
+      ],
       "title": "Review a code change",
-      "description": "Find behavior regressions and missing verification in a local patch with actionable findings.",
+      "description": "Review a patch for concrete behavior defects and report their trigger, effect, source location, and repair direction.",
       "tags": [
         "coding",
         "review",
@@ -316,14 +397,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "code-review.md"
     },
     {
       "id": "library-source-map",
       "title": "Map an unfamiliar code path",
-      "description": "Trace an input through handlers, state, and output in an unfamiliar repository.",
+      "description": "Trace a repository input through its handlers, saved state, and output using file and symbol references.",
       "tags": [
         "coding",
         "repository",
@@ -331,15 +412,20 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "source-map.md"
     },
     {
       "id": "library-concept-diagram",
-      "aliases": ["data flow", "system diagram", "architecture diagram", "systems diagram"],
+      "aliases": [
+        "data flow",
+        "system diagram",
+        "architecture diagram",
+        "systems diagram"
+      ],
       "title": "Draw a concept diagram",
-      "description": "Explain a process, relationship, or system with a labeled static SVG and a short text equivalent.",
+      "description": "Create and inspect a labeled static SVG that explains one process, hierarchy, or system relationship.",
       "tags": [
         "diagram",
         "svg",
@@ -348,15 +434,23 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "concept-diagram.md"
     },
     {
       "id": "library-accessibility-spot-check",
-      "aliases": ["keyboard-only", "keyboard navigation", "keyboard accessibility", "tab order", "keyboard operability", "tab key", "shift tab"],
+      "aliases": [
+        "keyboard-only",
+        "keyboard navigation",
+        "keyboard accessibility",
+        "tab order",
+        "keyboard operability",
+        "tab key",
+        "shift tab"
+      ],
       "title": "Spot-check web accessibility",
-      "description": "Check a page or short flow for keyboard, focus, and labeling barriers with observed evidence.",
+      "description": "Check keyboard navigation, visible focus, labels, and reflow on a page or short flow.",
       "tags": [
         "accessibility",
         "keyboard",
@@ -366,15 +460,24 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "accessibility-spot-check.md"
     },
     {
       "id": "library-chart-storytelling",
-      "aliases": ["trend chart", "line chart", "bar chart", "time series", "trend over time", "line graph", "plot trend", "graph over time"],
+      "aliases": [
+        "trend chart",
+        "line chart",
+        "bar chart",
+        "time series",
+        "trend over time",
+        "line graph",
+        "plot trend",
+        "graph over time"
+      ],
       "title": "Tell a story with a chart",
-      "description": "Turn supplied data into a clear static chart, source note, and explanation of what the evidence shows.",
+      "description": "Calculate the relevant values, create a labeled static chart, and compare it with the source data.",
       "tags": [
         "charts",
         "data-story",
@@ -383,19 +486,33 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "chart-storytelling.md"
     },
     {
       "id": "library-personal-context",
       "title": "Personal Context",
-      "aliases": ["personal context", "usual style", "as we discussed", "previous decision", "prior preferences", "pick up where we left off", "continue previous work", "what did we decide"],
-      "description": "Use relevant user preferences and earlier project decisions without importing an old task, deadline, or unverified claim. Continue current research even without past-chat lookup.",
-      "tags": ["methods", "preferences", "continuity", "provenance"],
+      "aliases": [
+        "personal context",
+        "usual style",
+        "as we discussed",
+        "previous decision",
+        "prior preferences",
+        "pick up where we left off",
+        "continue previous work",
+        "what did we decide"
+      ],
+      "description": "Use relevant user preferences and prior decisions while keeping the current task's scope and deadline.",
+      "tags": [
+        "methods",
+        "preferences",
+        "continuity",
+        "provenance"
+      ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "personal-context.md"
     },
@@ -412,7 +529,7 @@
         "draft or send",
         "transferable experience versus target work"
       ],
-      "description": "Resolve ambiguous references, date and deadline intent, fresh requests versus resumed work, the user's intended change, and the next useful action without inventing permission or task scope.",
+      "description": "Resolve references, timing, and scope from the current request and take the next useful step.",
       "tags": [
         "methods",
         "intent",
@@ -422,14 +539,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "2"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "intent-inference.md"
     },
     {
       "id": "library-what-makes-done",
       "title": "What Makes Done",
-      "description": "Define evidence of real completion and take the next useful authorized action when work is unfinished.",
+      "description": "Check whether the requested result exists and continue the missing work or report the actual stop condition.",
       "tags": [
         "methods",
         "completion",
@@ -443,14 +560,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "blackice-what-makes-done-v4"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "what-makes-done.md"
     },
     {
       "id": "library-simplest-complete-path",
       "title": "Critical Path",
-      "description": "Find the dependency that controls delivery, advance it now, and skip work that will not change the route.",
+      "description": "Find the unmet dependency that controls delivery and take the most useful available action.",
       "tags": [
         "methods",
         "proactivity",
@@ -465,14 +582,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "blackice-critical-path-v2"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "simplest-complete-path.md"
     },
     {
       "id": "library-long-term-judgment",
       "title": "Long-Term Judgment",
-      "description": "Calibrate effort to real reliance, act under uncertainty with a clear undo path, and make complexity earn its place.",
+      "description": "Choose effort and complexity according to actual use, expected benefit, delay, and recoverable failure.",
       "tags": [
         "methods",
         "judgment",
@@ -487,14 +604,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "blackice-long-term-judgment-v1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "long-term-judgment.md"
     },
     {
       "id": "library-verify-a-working-slice",
       "title": "Verify a Working Slice",
-      "description": "Follow one representative input through the real workflow to a usable result. Pin which version is running, check handoffs, and distinguish structural checks from observed outcomes.",
+      "description": "Follow a representative input through the real workflow and inspect the result where it is used.",
       "tags": [
         "methods",
         "integration",
@@ -508,14 +625,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "verify-a-working-slice.md"
     },
     {
       "id": "library-expand-a-catalog",
       "title": "Expand a Catalog",
-      "description": "Add distinct entries to a catalog, separate listed or selectable options from working behavior, and check shared and unique routes without assuming one entry proves the rest.",
+      "description": "Add distinct catalog entries, verify their references, and check the behavior each choice promises.",
       "tags": [
         "methods",
         "catalog",
@@ -530,14 +647,14 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "1"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "expand-a-catalog.md"
     },
     {
       "id": "library-anti-completion-bias",
       "title": "Anti-Completion Bias",
-      "description": "Catch a premature final answer after a plan, partial result, failed first attempt, or unverified cutoff. Take the next useful action instead of describing it.",
+      "description": "Catch a premature final answer and take the next available step while requested work remains.",
       "tags": [
         "methods",
         "completion",
@@ -552,9 +669,36 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "blackice-anti-completion-bias-v2"
+        "revision": "clarity-20261121"
       },
       "bodyFile": "anti-completion-bias.md"
+    },
+    {
+      "id": "library-modular-development",
+      "title": "Modular Development",
+      "description": "Build, fix, or refactor software in small saved changes with observable behavior, focused checks, and visible failure recovery.",
+      "tags": [
+        "coding",
+        "modular",
+        "implementation",
+        "refactor",
+        "development"
+      ],
+      "aliases": [
+        "modular development",
+        "build software",
+        "implement a feature",
+        "fix a bug",
+        "refactor code",
+        "small testable modules",
+        "extend the application",
+        "software implementation"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "clarity-20261121"
+      },
+      "bodyFile": "modular-development.md"
     }
   ]
 }

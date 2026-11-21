@@ -1,0 +1,178 @@
+TAP version 13
+# Subtest: a ChatGPT document edit preserves a durable stopped-worker interruption and never resumes the run
+ok 1 - a ChatGPT document edit preserves a durable stopped-worker interruption and never resumes the run
+  ---
+  duration_ms: 132.2906
+  type: 'test'
+  ...
+# Subtest: the document-only source requires a verified external actor and cannot be supplied through tool arguments
+ok 2 - the document-only source requires a verified external actor and cannot be supplied through tool arguments
+  ---
+  duration_ms: 50.6533
+  type: 'test'
+  ...
+# Subtest: Swarm search matches the saved objective, trims text, and preserves active/archive and group filtering
+ok 3 - Swarm search matches the saved objective, trims text, and preserves active/archive and group filtering
+  ---
+  duration_ms: 53.9312
+  type: 'test'
+  ...
+# Subtest: Swarm detail projects compact attempt metadata and reads real run output through the existing bounded result tool
+ok 4 - Swarm detail projects compact attempt metadata and reads real run output through the existing bounded result tool
+  ---
+  duration_ms: 45.1858
+  type: 'test'
+  ...
+# Subtest: large Swarm task pages stay bounded and expose exact continuation offsets without losing rows
+ok 5 - large Swarm task pages stay bounded and expose exact continuation offsets without losing rows
+  ---
+  duration_ms: 82.868
+  type: 'test'
+  ...
+# Subtest: list guidance creates a current contract and saved plans return only their own edit protocol
+not ok 6 - list guidance creates a current contract and saved plans return only their own edit protocol
+  ---
+  duration_ms: 57.185
+  type: 'test'
+  location: 'C:\\Users\\user\\Documents\\Codex\\BLACKICE-instruction-clarity-20261121\\tests\\chatgpt-planning.test.mjs:96:1'
+  failureType: 'testCodeFailure'
+  error: 'The configured Planning workspace must be an absolute path.'
+  code: 'INVALID_TASK_STATE'
+  stack: |-
+    fail (file:///C:/Users/user/Documents/Codex/BLACKICE-instruction-clarity-20261121/lib/task-state.mjs:27:84)
+    TaskStateStore.createCanonicalPlanningDocument (file:///C:/Users/user/Documents/Codex/BLACKICE-instruction-clarity-20261121/lib/task-state.mjs:357:65)
+    editPlanningWorkspace (file:///C:/Users/user/Documents/Codex/BLACKICE-instruction-clarity-20261121/lib/planning-workspace.mjs:184:32)
+    ChatGPTPlanningAPI.call (file:///C:/Users/user/Documents/Codex/BLACKICE-instruction-clarity-20261121/lib/chatgpt-planning.mjs:111:27)
+    TestContext.<anonymous> (file:///C:/Users/user/Documents/Codex/BLACKICE-instruction-clarity-20261121/tests/chatgpt-planning.test.mjs:106:29)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: an existing external edit tool creates a durable standalone plan, discovers it in the desktop workspace and never starts a model
+ok 7 - an existing external edit tool creates a durable standalone plan, discovers it in the desktop workspace and never starts a model
+  ---
+  duration_ms: 47.0206
+  type: 'test'
+  ...
+# Subtest: external numeric assessment chooses inexpensive progress, persists it, and changes only with revised concrete evidence
+ok 8 - external numeric assessment chooses inexpensive progress, persists it, and changes only with revised concrete evidence
+  ---
+  duration_ms: 168.4072
+  type: 'test'
+  ...
+# Subtest: nullable numeric estimates pass the actual connector schema and never silently choose an interruption
+ok 9 - nullable numeric estimates pass the actual connector schema and never silently choose an interruption
+  ---
+  duration_ms: 80.6928
+  type: 'test'
+  ...
+# Subtest: a shared typed user-agency checkpoint is recomputed and retained through external recursive edits
+ok 10 - a shared typed user-agency checkpoint is recomputed and retained through external recursive edits
+  ---
+  duration_ms: 131.4694
+  type: 'test'
+  ...
+# Subtest: creation is explicit, scoped, atomic and optimistic; retries cannot overwrite any saved plan
+ok 11 - creation is explicit, scoped, atomic and optimistic; retries cannot overwrite any saved plan
+  ---
+  duration_ms: 98.4382
+  type: 'test'
+  ...
+# Subtest: a standalone document cannot resurrect an archived chat identity or bypass Trash visibility
+ok 12 - a standalone document cannot resurrect an archived chat identity or bypass Trash visibility
+  ---
+  duration_ms: 25.3185
+  type: 'test'
+  ...
+# Subtest: the A2A surface shares the same external document lifecycle and actor without worker dispatch
+ok 13 - the A2A surface shares the same external document lifecycle and actor without worker dispatch
+  ---
+  duration_ms: 63.7618
+  type: 'test'
+  ...
+# Subtest: bounded native replies expose authoritative decision costs and link complete saved evidence
+ok 14 - bounded native replies expose authoritative decision costs and link complete saved evidence
+  ---
+  duration_ms: 46.9441
+  type: 'test'
+  ...
+# Subtest: oversized decision input is rejected before any graph edit is committed
+ok 15 - oversized decision input is rejected before any graph edit is committed
+  ---
+  duration_ms: 39.0096
+  type: 'test'
+  ...
+# Subtest: native contract authoring is distinct from external graph editing
+ok 16 - native contract authoring is distinct from external graph editing
+  ---
+  duration_ms: 0.3154
+  type: 'test'
+  ...
+# Subtest: shared editors save canonical intent with revision protection and preserve bound receipt semantics
+ok 17 - shared editors save canonical intent with revision protection and preserve bound receipt semantics
+  ---
+  duration_ms: 117.7513
+  type: 'test'
+  ...
+# Subtest: remote schemas preserve version 13 graph edits and add strict canonical replacement without mutating native catalogs
+ok 18 - remote schemas preserve version 13 graph edits and add strict canonical replacement without mutating native catalogs
+  ---
+  duration_ms: 148.0931
+  type: 'test'
+  ...
+# Subtest: canonical editing rejects mixed or legacy operations and runtime fields without partial changes
+ok 19 - canonical editing rejects mixed or legacy operations and runtime fields without partial changes
+  ---
+  duration_ms: 57.3885
+  type: 'test'
+  ...
+# Subtest: classic editor sends only authored fields from the current saved intent and keeps receipt bindings
+ok 20 - classic editor sends only authored fields from the current saved intent and keeps receipt bindings
+  ---
+  duration_ms: 1.8975
+  type: 'test'
+  ...
+# Subtest: both canonical forms expose work intent and never offer editable runtime status or evidence
+ok 21 - both canonical forms expose work intent and never offer editable runtime status or evidence
+  ---
+  duration_ms: 0.9818
+  type: 'test'
+  ...
+# Subtest: editing a command target keeps its submission permission and proof separate
+ok 22 - editing a command target keeps its submission permission and proof separate
+  ---
+  duration_ms: 1.9114
+  type: 'test'
+  ...
+# Subtest: canonical three-way review merges unrelated remote edits and retains text for remotely removed work
+ok 23 - canonical three-way review merges unrelated remote edits and retains text for remotely removed work
+  ---
+  duration_ms: 1.0373
+  type: 'test'
+  ...
+# Subtest: next editor rebases canonical drafts explicitly and delayed save receipts preserve later typing
+ok 24 - next editor rebases canonical drafts explicitly and delayed save receipts preserve later typing
+  ---
+  duration_ms: 1.5997
+  type: 'test'
+  ...
+# Subtest: work-item removal removes dependency edges and adding after removal does not invent resources
+ok 25 - work-item removal removes dependency edges and adding after removal does not invent resources
+  ---
+  duration_ms: 0.367
+  type: 'test'
+  ...
+# Subtest: the classic canonical UI saves through the actual shared service and retains a conflicting draft
+ok 26 - the classic canonical UI saves through the actual shared service and retains a conflicting draft
+  ---
+  duration_ms: 263.6372
+  type: 'test'
+  ...
+1..26
+# tests 26
+# suites 0
+# pass 25
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 846.322

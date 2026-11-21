@@ -363,12 +363,14 @@ test('work-item scope does not accept wildcard authority, unsupported effect lab
   }
 });
 
-test('canonical planning and execution explain how to expand bounded public research scope', () => {
-  assert.match(CONTRACT_AUTHORING_GUIDANCE, /observe and a concrete browser scope.*actual origin from the captured evidence/);
-  assert.match(CONTRACT_AUTHORING_GUIDANCE, /browser:relay scope covers tab inventory/);
-  assert.match(CONTRACT_AUTHORING_GUIDANCE, /revise that same work item with the exact resource, preserving prior IDs and evidence/);
-  assert.match(CONTRACT_AUTHORING_GUIDANCE, /Research scope does not authorize form submissions, messages, or other commitments/);
-  assert.ok(CONTRACT_INSTRUCTIONS.includes(CONTRACT_AUTHORING_GUIDANCE));
+test('canonical planning and execution explain resource scopes and material research updates', () => {
+  assert.match(CONTRACT_AUTHORING_GUIDANCE, /fields declared by the attached tool/);
+  assert.match(CONTRACT_AUTHORING_GUIDANCE, /Keep stable criterion and work-item IDs/);
+  assert.match(CONTRACT_AUTHORING_GUIDANCE, /Include observe for its verification and recovery reads/);
+  assert.match(CONTRACT_AUTHORING_GUIDANCE, /operationScopes ties each effect to its resources/);
+  assert.match(CONTRACT_AUTHORING_GUIDANCE, /browser:relay identifies tab inventory; these are not a concrete source whose contents were read/);
+  assert.match(CONTRACT_AUTHORING_GUIDANCE, /Add a newly needed origin or URL to the same work item through a material plan revision/);
+  assert.match(CONTRACT_INSTRUCTIONS, /Revise the plan when the goal, criteria, resources or dependencies change/);
 });
 
 test('ordinary audit handling remains separate from resource and effect permissions', () => {

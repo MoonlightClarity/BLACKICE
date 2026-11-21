@@ -49,25 +49,22 @@ test('retained historical policy parser preserves records; new chat does not exp
 test('anti-overalignment calibrates inference without records-only gates and preserves local real blockers',()=>{
   const instruction=ANTI_OVERALIGNMENT_STOP_CALIBRATION.join(' ');
   for(const expectation of [
-    /MINIMUM-SCOPE BLOCKING/,
-    /smallest affected field, action, destination or branch/,
-    /immediately continue independently actionable leaves/,
-    /If one application is blocked, continue other applications/,
-    /NO independent authorized work/,
-    /User-supplied answers and user uncertainty policy govern/,
-    /Use an estimate or inference when the evidence supports the next step/,
-    /Check any missing fact that could change that step/,
-    /Distinguish supplied facts, inferred answers and unknowns/,
-    /grounded qualitative judgment or explicitly labeled estimates/,
-    /A local stop requires concrete evidence that the exact next operation cannot currently be performed/,
-    /reassess the shared assumption/,
-    /quarantine only that affected submission/,
-    /never fabricated completion/,
-    /No separate per-action checklist/i
+    /specific missing input or observed failure/,
+    /continue independent requested work/,
+    /supported ordinary inference/,
+    /not a new user constraint/,
+    /Check a missing fact when it can change the next action/,
+    /Reuse an answer to a shared prerequisite/,
+    /user's stated constraints/,
+    /preferences as evidence to weigh/,
+    /without adding per-step approval questions/,
+    /inspect its destination or receipt before repeating it/,
+    /uncertainty separate from uncertainty about an answer/,
+    /Report completed outcomes, unresolved effects and remaining work accurately/
   ])assert.match(instruction,expectation);
   const policy=normalizePlanningOntology({version:2,modules:{anti_overalignment:true}});
   assert.equal(policy.modules.anti_overalignment,true);
-  assert.match(planningOntologyInstructions(policy),/MINIMUM-SCOPE BLOCKING/);
+  assert.match(planningOntologyInstructions(policy),/continue independent requested work/);
   const explicitOverride=normalizePlanningOntology({modules:{anti_overalignment:'forbidden'}});
   assert.equal(explicitOverride.modules.anti_overalignment,false,'user can still explicitly override the default');
   assert.match(planningOntologyInstructions(explicitOverride),/OFF:[\s\S]*Anti-overalignment calibration/);

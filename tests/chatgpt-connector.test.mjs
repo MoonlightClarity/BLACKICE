@@ -170,12 +170,12 @@ test('restart guidance describes force only when the discovered tool supports it
   const { connector } = await fixture(t);
   const definition = desktopRestartTool({ restart: { request() {} }, getJob() {} }).definition;
   const withForce = connector.instructions({ get: name => name === 'blackice_restart' ? { definition } : undefined });
-  assert.match(withForce, /force: true only when the user explicitly requests a forced restart/);
+  assert.match(withForce, /force:true pauses automatic queues and stops cancellable work/);
   assert.match(withForce, /pauses automatic queues and stops cancellable work/);
-  assert.match(withForce, /different intents and need different request IDs/);
+  assert.match(withForce, /new requestId for a different action/);
   const legacy = structuredClone(definition); delete legacy.inputSchema.properties.force;
-  assert.doesNotMatch(connector.instructions({ get: () => ({ definition: legacy }) }), /force: true/);
-  assert.doesNotMatch(connector.instructions({ get: () => undefined }), /force: true/);
+  assert.doesNotMatch(connector.instructions({ get: () => ({ definition: legacy }) }), /force:\s*true/);
+  assert.doesNotMatch(connector.instructions({ get: () => undefined }), /force:\s*true/);
 });
 
 test('unauthenticated GET discovery probes return the OAuth metadata challenge without starting a stream or tool', async t => {

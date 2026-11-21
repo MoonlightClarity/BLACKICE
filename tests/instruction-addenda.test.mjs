@@ -27,7 +27,7 @@ test('ordinary addenda do not resurrect conflicting global policies or connector
   const text=addenda.join('\n');
   assert.doesNotMatch(text,/full quantitative planning contract|only the user may apply|quoted user statement|do not operate existing user windows/i);
   assert.doesNotMatch(WORKSPACE_INSTRUCTIONS,/For direct connector calls|blackice_get_job|same connection|requestId/);
-  assert.match(APPLICATION_INSTRUCTIONS,/compatibility list does not limit other attached adapters/);
+  assert.match(APPLICATION_TOOL.description,/Other Windows apps can use/);
 });
 
 test('condensation retains the actual action contracts for identity, restoration and staged projects',()=>{
@@ -35,7 +35,7 @@ test('condensation retains the actual action contracts for identity, restoration
   assert.equal(APPLICATION_TOOL.inputSchema.properties.expectedTextSha256.pattern,'^[a-f0-9]{64}$');
   assert.ok(APPLICATION_TOOL.inputSchema.properties.action.enum.includes('restore_document'));
   for(const action of ['start','retry_task','review_task']) assert.ok(PROJECT_TOOL.inputSchema.properties.action.enum.includes(action));
-  assert.match(PROJECT_INSTRUCTIONS,/review_task[^.]*paused review[^.]*start resumes[^.]*without repeating delivery/);
+  assert.match(PROJECT_TOOL.description+'\n'+PROJECT_INSTRUCTIONS,/review_task[^.]*paused review[^.]*start resumes[^.]*without repeating delivery/);
   assert.equal(BROWSER_CREDENTIAL_TOOL.inputSchema.properties.expectedRevision.minimum,0);
   assert.match(IDENTITY_INSTRUCTIONS,/fixed SOUL snapshot[^.]*current USER profile/);
 });

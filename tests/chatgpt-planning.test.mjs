@@ -92,3 +92,29 @@ test('large Swarm task pages stay bounded and expose exact continuation offsets 
   assert.deepEqual(seen, f.projects[0].tasks.map(item => item.id));
   for (const args of [{ attemptLimit: 11 }, { attemptOffset: -1 }, { limit: 101 }, { includeOutputs: true }]) await assert.rejects(f.api.call('blackice_get_swarm_plan', { projectId: 'swarm-one', ...args }, client), { code: 'CHATGPT_ARGUMENTS_INVALID' });
 });
+
+test('list guidance creates a current contract and saved plans return only their own edit protocol', async t => {
+  const f=await fixture(t);f.engine.defaultCwd=f.directory;
+  const listed=await f.api.call('blackice_list_plans',{},client),help=listed.planningContract;
+  assert.equal(help.taskSchemaVersion,14);
+  assert.equal(help.create.operation,'create_contract');
+  assert.equal(help.create.expectedRevision,0);
+  assert.ok(help.contractSchema);
+  for(const key of ['canonicalEdit','createCanonical','assessDecision','agencyCheckpoint','decisionInputSchema'])assert.equal(help[key],undefined,key);
+  const contract={contractVersion:2,goal:'Inspect the requested source.',criteria:[{id:'checked',kind:'observation',description:'The source was observed.',resourceKey:'file:source.txt'}],
+    workItems:[{id:'inspect',title:'Inspect the source',objective:'Read and verify the supplied source.',owner:'coordinator',resourceKeys:['file:source.txt'],effects:['observe'],dependsOn:[],criterionIds:['checked']}],instructions:[]};
+  const created=await f.api.call(help.tool,{taskId:'current-contract',expectedRevision:help.create.expectedRevision,operations:[{type:help.create.operation,contract}]},client);
+  assert.equal(created.taskSchemaVersion,14);
+  assert.equal(created.planningContract.edit.operation,'replace_contract');
+  assert.equal(created.planningContract.create,undefined);
+  const read=await f.api.call('blackice_get_plan',{taskId:created.taskId},client);
+  const updated=await f.api.call(read.planningContract.tool,{taskId:read.taskId,expectedRevision:read.planningContract.edit.expectedRevision,operations:[{type:read.planningContract.edit.operation,contract:{...contract,goal:'Inspect and summarize the source.'}}]},client);
+  assert.equal(updated.taskSchemaVersion,14);assert.equal(updated.revision,read.revision+1);
+  const legacy=await f.api.call('blackice_get_plan',{taskId:'task-one'},client);
+  assert.notEqual(legacy.taskSchemaVersion,14);
+  assert.equal(legacy.planningContract.taskSchemaVersion,legacy.taskSchemaVersion);
+  assert.equal(legacy.planningContract.edit.expectedRevision,legacy.revision);
+  for(const key of ['canonicalEdit','createCanonical','create'])assert.equal(legacy.planningContract[key],undefined,key);
+  const legacyEdited=await f.api.call('blackice_edit_plan',{taskId:'task-one',expectedRevision:legacy.revision,operations:[{type:'metadata',patch:{goal:'Existing legacy record remains editable.'}}]},client);
+  assert.equal(legacyEdited.goal,'Existing legacy record remains editable.');
+});

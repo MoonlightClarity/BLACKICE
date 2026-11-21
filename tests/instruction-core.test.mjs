@@ -10,12 +10,13 @@ const tool = (name, actions = [], properties = {}) => ({ name, inputSchema: { pr
 test('the built-in core delegates behavior and contains no retired analytical/approval policy', () => {
   assert.equal(analyticalMethodInstructions(), '');
   assert.ok(BLACKICE_HARNESS_INSTRUCTIONS.length < 2500, 'Default adapter contract must remain reviewable; this check never truncates owner text.');
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /SOUL\.md supplies owner-configured behavior/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Current user directions supersede conflicting behavioral defaults/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Use SOUL\.md for behavior and relevant skills for task methods/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Follow the user's current request, constraints and corrections/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Current user directions replace conflicting behavioral defaults, skill instructions and earlier assistant plans/);
   assert.doesNotMatch(BLACKICE_HARNESS_INSTRUCTIONS, /full quantitative planning contract|GENERAL ANALYTICAL METHOD|FORM COMPLETION|changes require owner approval/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /When input was not dispatched/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /When an action may have reached its destination/);
-  assert.match(EXECUTION_COMPLETION_RULE, /observed host\/time limit/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /When a tool says input was not dispatched/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /If it may have run, inspect the saved receipt or destination before repeating/);
+  assert.match(EXECUTION_COMPLETION_RULE, /observed limit or unavailable required step prevents it/);
 });
 
 test('local file routing follows the attached schema instead of advertising a retired find action', () => {
@@ -28,15 +29,32 @@ test('local file routing follows the attached schema instead of advertising a re
   assert.doesNotMatch(legacy, /relay_find_files/);
   const paths = capabilityGuidance([tool('relay_find_files')]);
   assert.doesNotMatch(paths, /relay_workspace/);
-  assert.match(paths, /empty page is not a completed search/);
+  assert.match(paths, /Continue while a cursor is returned, even after an empty page/);
 });
 
-test('browser recovery guidance includes ownership operations only when the attached tool supports them', () => {
+test('browser recovery guidance names only operations and identity fields present in the attached schema', () => {
   const ordinary = capabilityGuidance([tool('relay_browser', ['open', 'snapshot', 'click'])]);
   assert.match(ordinary, /fresh snapshot and retry/);
   assert.doesNotMatch(ordinary, /take_ownership|stopped-task-recovery/);
-  const recovery = capabilityGuidance([tool('relay_browser', ['tabs', 'take_ownership'])]);
-  assert.match(recovery, /take_ownership with its exact tab ID, ownerKey, URL and document ID/);
+  const identity = Object.fromEntries(['tabId', 'expectedOwnerKey', 'expectedUrl', 'expectedDocumentId'].map(name => [name, { type: 'string' }]));
+  const recovery = capabilityGuidance([tool('relay_browser', ['tabs', 'take_ownership'], { ...identity, query: { type: 'string' } })]);
+  assert.match(recovery, /tabs query:"stopped-task-recovery"/);
+  assert.match(recovery, /Pass tabId unchanged/);
+  assert.match(recovery, /ownerKey as expectedOwnerKey/);
+  assert.match(recovery, /url as expectedUrl/);
+  assert.match(recovery, /documentId as expectedDocumentId to take_ownership/);
+  for (const missing of Object.keys(identity)) {
+    const partial = { ...identity };
+    delete partial[missing];
+    const guidance = capabilityGuidance([tool('relay_browser', ['tabs', 'take_ownership'], partial)]);
+    assert.match(guidance, /use the identity fields actually listed for take_ownership/);
+    assert.doesNotMatch(guidance, /expectedOwnerKey|expectedUrl|expectedDocumentId|Pass tabId/, missing + ' is absent from the attached schema');
+    assert.doesNotMatch(guidance, /stopped-task-recovery/, 'query is absent from this schema');
+  }
+  const missingQuery = capabilityGuidance([tool('relay_browser', ['tabs', 'take_ownership'], identity)]);
+  const missingTabs = capabilityGuidance([tool('relay_browser', ['take_ownership'], { ...identity, query: { type: 'string' } })]);
+  const missingTake = capabilityGuidance([tool('relay_browser', ['tabs'], { query: { type: 'string' } })]);
+  for (const guidance of [missingQuery, missingTabs, missingTake]) assert.doesNotMatch(guidance, /stopped-task-recovery/);
 });
 
 test('advisory/off planning introduces no external checkpoint and canonical guidance requires a matching schema', () => {

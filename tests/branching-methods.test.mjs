@@ -163,8 +163,10 @@ test('malformed or duplicated persisted source receipts are rejected without dis
   }
 });
 
-test('legacy project catalog stays byte-equivalent and cannot accept or execute branching methods', async t => {
-  assert.equal(createHash('sha256').update(JSON.stringify(PROJECT_TOOL)).digest('hex'), '877436207114a65c7ef1c471455669fdbbe1343d49c739def4232a46f6c207a0');
+test('project input schema stays compatible and cannot accept or execute branching methods', async t => {
+  // Descriptions can improve without changing the accepted project inputs.
+  assert.equal(createHash('sha256').update(JSON.stringify(PROJECT_TOOL.inputSchema)).digest('hex'), '1dd8e0a13aabe1ed3e84ed1602c7648e73e0bf8bcec6dd097f324eda7dd81e4e');
+  assert.equal(PROJECT_TOOL.name, 'relay_project');
   const { methods, calls, projects } = await fixture(t), draft = taskPlanMethodDraft(source()), saved = await methods.create(draft);
   assert.throws(() => methods.preview(saved.id), { code: 'METHOD_OUTLINE_TASK_ONLY', status: 409 });
   await assert.rejects(methods.use(saved.id), { code: 'METHOD_OUTLINE_TASK_ONLY', status: 409 });

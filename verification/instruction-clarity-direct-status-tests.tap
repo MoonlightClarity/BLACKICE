@@ -1,0 +1,517 @@
+TAP version 13
+# (node:25284) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: every anonymous POST receives an OAuth challenge before headers, body or protocol are parsed
+ok 1 - every anonymous POST receives an OAuth challenge before headers, body or protocol are parsed
+  ---
+  duration_ms: 20.8991
+  type: 'test'
+  ...
+# Subtest: supplied invalid credentials receive the existing HTTP challenge before initialization or body parsing
+ok 2 - supplied invalid credentials receive the existing HTTP challenge before initialization or body parsing
+  ---
+  duration_ms: 8.8171
+  type: 'test'
+  ...
+# Subtest: authenticated discovery advertises exact OAuth scopes but never executes a user tool
+ok 3 - authenticated discovery advertises exact OAuth scopes but never executes a user tool
+  ---
+  duration_ms: 13.1028
+  type: 'test'
+  ...
+# Subtest: a pending native restart keeps authenticated receipt reads and cancellation available without admitting new work
+ok 4 - a pending native restart keeps authenticated receipt reads and cancellation available without admitting new work
+  ---
+  duration_ms: 36.3575
+  type: 'test'
+  ...
+# Subtest: every advertised definition mirrors OAuth metadata without changing scopes, annotations or catalog stability
+ok 5 - every advertised definition mirrors OAuth metadata without changing scopes, annotations or catalog stability
+  ---
+  duration_ms: 107.5426
+  type: 'test'
+  ...
+# Subtest: restart guidance describes force only when the discovered tool supports it
+ok 6 - restart guidance describes force only when the discovered tool supports it
+  ---
+  duration_ms: 11.2033
+  type: 'test'
+  ...
+# Subtest: unauthenticated GET discovery probes return the OAuth metadata challenge without starting a stream or tool
+ok 7 - unauthenticated GET discovery probes return the OAuth metadata challenge without starting a stream or tool
+  ---
+  duration_ms: 11.0193
+  type: 'test'
+  ...
+# Subtest: HEAD discovery returns bodyless OAuth challenges before transport parsing or execution
+ok 8 - HEAD discovery returns bodyless OAuth challenges before transport parsing or execution
+  ---
+  duration_ms: 12.3492
+  type: 'test'
+  ...
+# Subtest: authenticated HEAD remains POST-only and all HEAD rejection branches are bodyless
+ok 9 - authenticated HEAD remains POST-only and all HEAD rejection branches are bodyless
+  ---
+  duration_ms: 17.1961
+  type: 'test'
+  ...
+# Subtest: HEAD discovery does not relax unrelated HTTP methods or query handling
+ok 10 - HEAD discovery does not relax unrelated HTTP methods or query handling
+  ---
+  duration_ms: 8.425
+  type: 'test'
+  ...
+# Subtest: real HTTP HEAD discovery exposes OAuth metadata and completes without a payload
+ok 11 - real HTTP HEAD discovery exposes OAuth metadata and completes without a payload
+  ---
+  duration_ms: 30.2456
+  type: 'test'
+  ...
+# Subtest: an authenticated read echoes the exact request/result pair and uses direct execution
+ok 12 - an authenticated read echoes the exact request/result pair and uses direct execution
+  ---
+  duration_ms: 9.7231
+  type: 'test'
+  ...
+# Subtest: the actual direct/planning catalog is stable across nonce probes, status, auth challenges and refreshed credentials
+ok 13 - the actual direct/planning catalog is stable across nonce probes, status, auth challenges and refreshed credentials
+  ---
+  duration_ms: 105.9428
+  type: 'test'
+  ...
+# Subtest: catalog diagnostics detect an actual definition change without changing tool annotations or scopes
+ok 14 - catalog diagnostics detect an actual definition change without changing tool annotations or scopes
+  ---
+  duration_ms: 12.5727
+  type: 'test'
+  ...
+# Subtest: invalid supplied bearer credentials receive HTTP 401 without invoking linking UI or admitting an action
+ok 15 - invalid supplied bearer credentials receive HTTP 401 without invoking linking UI or admitting an action
+  ---
+  duration_ms: 9.2949
+  type: 'test'
+  ...
+# Subtest: revocation between authentication and admission gets an HTTP challenge without executing
+ok 16 - revocation between authentication and admission gets an HTTP challenge without executing
+  ---
+  duration_ms: 9.6174
+  type: 'test'
+  ...
+# Subtest: scope checks, cross-origin requests and disabled connectors block execution
+ok 17 - scope checks, cross-origin requests and disabled connectors block execution
+  ---
+  duration_ms: 15.2702
+  type: 'test'
+  ...
+# Subtest: only successful authenticated tools notify setup and optional receipt failures preserve the actual result
+ok 18 - only successful authenticated tools notify setup and optional receipt failures preserve the actual result
+  ---
+  duration_ms: 8.1212
+  type: 'test'
+  ...
+# Subtest: MCP modern routing and result metadata agree while legacy initialize stays supported
+ok 19 - MCP modern routing and result metadata agree while legacy initialize stays supported
+  ---
+  duration_ms: 8.1907
+  type: 'test'
+  ...
+# Subtest: invalid argument containers and unknown worker tools never reach the execution API
+ok 20 - invalid argument containers and unknown worker tools never reach the execution API
+  ---
+  duration_ms: 8.7946
+  type: 'test'
+  ...
+# Subtest: revocation and narrowed scopes between authentication and dispatch prevent admission
+ok 21 - revocation and narrowed scopes between authentication and dispatch prevent admission
+  ---
+  duration_ms: 8.0382
+  type: 'test'
+  ...
+# Subtest: a valid grant narrowed before dispatch requests the missing scope without invalidating its bearer credential
+ok 22 - a valid grant narrowed before dispatch requests the missing scope without invalidating its bearer credential
+  ---
+  duration_ms: 8.4919
+  type: 'test'
+  ...
+# Subtest: registered MCP clients receive standard scope challenges before any action executes
+ok 23 - registered MCP clients receive standard scope challenges before any action executes
+  ---
+  duration_ms: 7.2097
+  type: 'test'
+  ...
+# Subtest: registered MCP clients receive a standard challenge for additional saved-result scopes
+ok 24 - registered MCP clients receive a standard challenge for additional saved-result scopes
+  ---
+  duration_ms: 13.8783
+  type: 'test'
+  ...
+# Subtest: maintenance blocks OAuth writes and tracks already admitted OAuth work until settled
+ok 25 - maintenance blocks OAuth writes and tracks already admitted OAuth work until settled
+  ---
+  duration_ms: 8.5125
+  type: 'test'
+  ...
+# Subtest: close waits for an admitted tool result instead of reporting a lost pending action
+ok 26 - close waits for an admitted tool result instead of reporting a lost pending action
+  ---
+  duration_ms: 9.4532
+  type: 'test'
+  ...
+# Subtest: unavailable direct storage remains visible and cannot be advertised as ready
+ok 27 - unavailable direct storage remains visible and cannot be advertised as ready
+  ---
+  duration_ms: 17.5658
+  type: 'test'
+  ...
+# Subtest: a saved result with narrower current access challenges for its actual required permissions
+ok 28 - a saved result with narrower current access challenges for its actual required permissions
+  ---
+  duration_ms: 8.3799
+  type: 'test'
+  ...
+# Subtest: an action or upstream HTTP permission error does not ask ChatGPT to reconnect BLACKICE
+ok 29 - an action or upstream HTTP permission error does not ask ChatGPT to reconnect BLACKICE
+  ---
+  duration_ms: 7.3914
+  type: 'test'
+  ...
+# Subtest: direct status exposes sanitized integration diagnostics without changing the advertised catalog
+ok 30 - direct status exposes sanitized integration diagnostics without changing the advertised catalog
+  ---
+  duration_ms: 8.7944
+  type: 'test'
+  ...
+# Subtest: a stalled optional setup observer does not delay delivery of a completed action
+ok 31 - a stalled optional setup observer does not delay delivery of a completed action
+  ---
+  duration_ms: 7.499
+  type: 'test'
+  ...
+# (node:5780) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: read-only nonce probe proves authenticated request and has no file, browser or model side effect
+ok 32 - read-only nonce probe proves authenticated request and has no file, browser or model side effect
+  ---
+  duration_ms: 62.3095
+  type: 'test'
+  ...
+# Subtest: direct status exposes only the validated caller grant and omits identity from host status
+ok 33 - direct status exposes only the validated caller grant and omits identity from host status
+  ---
+  duration_ms: 51.4339
+  type: 'test'
+  ...
+# Subtest: real bounded workspace read returns one durable receipt and exact replay never reads changed file
+ok 34 - real bounded workspace read returns one durable receipt and exact replay never reads changed file
+  ---
+  duration_ms: 71.081
+  type: 'test'
+  ...
+# Subtest: scoped writes execute directly and no local action approval API or remote override exists
+ok 35 - scoped writes execute directly and no local action approval API or remote override exists
+  ---
+  duration_ms: 79.4411
+  type: 'test'
+  ...
+# Subtest: new authorized work needs no local setting and the choice persists naturally after restart
+ok 36 - new authorized work needs no local setting and the choice persists naturally after restart
+  ---
+  duration_ms: 128.7059
+  type: 'test'
+  ...
+# Subtest: restarted pending interactions are interrupted rather than advertised as live or replayed
+ok 37 - restarted pending interactions are interrupted rather than advertised as live or replayed
+  ---
+  duration_ms: 115.2355
+  type: 'test'
+  ...
+# Subtest: explicit absolute paths, parent paths and ordinary symlinks work under the account permissions
+ok 38 - explicit absolute paths, parent paths and ordinary symlinks work under the account permissions
+  ---
+  duration_ms: 216.1595
+  type: 'test'
+  ...
+# Subtest: replacing a working directory keeps it usable for new relative file operations
+ok 39 - replacing a working directory keeps it usable for new relative file operations
+  ---
+  duration_ms: 68.5631
+  type: 'test'
+  ...
+# Subtest: patch and guarded undo use durable receipts for relative and explicit external paths
+ok 40 - patch and guarded undo use durable receipts for relative and explicit external paths
+  ---
+  duration_ms: 185.5226
+  type: 'test'
+  ...
+# Subtest: owner isolation holds for get, list and cancel even when job ID is known
+ok 41 - owner isolation holds for get, list and cancel even when job ID is known
+  ---
+  duration_ms: 62.6282
+  type: 'test'
+  ...
+# Subtest: revocation cancels active and pending work and scopes are rechecked immediately before dispatch
+ok 42 - revocation cancels active and pending work and scopes are rechecked immediately before dispatch
+  ---
+  duration_ms: 70.9691
+  type: 'test'
+  ...
+# Subtest: cancellation before queued dispatch never reaches the handler and repeated IDs do not duplicate active work
+ok 43 - cancellation before queued dispatch never reaches the handler and repeated IDs do not duplicate active work
+  ---
+  duration_ms: 53.7609
+  type: 'test'
+  ...
+# Subtest: cancelled dispatched work preserves a late success receipt instead of claiming no effects
+ok 44 - cancelled dispatched work preserves a late success receipt instead of claiming no effects
+  ---
+  duration_ms: 64.1998
+  type: 'test'
+  ...
+# Subtest: signed import arguments are hashed for replay but never persisted or echoed in pending metadata
+ok 45 - signed import arguments are hashed for replay but never persisted or echoed in pending metadata
+  ---
+  duration_ms: 63.9168
+  type: 'test'
+  ...
+# Subtest: the concrete ChatGPT file-import tool executes under scopes and saves its receipt without retaining its signed URL
+ok 46 - the concrete ChatGPT file-import tool executes under scopes and saves its receipt without retaining its signed URL
+  ---
+  duration_ms: 87.8777
+  type: 'test'
+  ...
+# Subtest: contained browser reads use real serialized handler and reject external browser or implicit active tab
+ok 47 - contained browser reads use real serialized handler and reject external browser or implicit active tab
+  ---
+  duration_ms: 54.6872
+  type: 'test'
+  ...
+# Subtest: browser failures keep actionable durable messages, uncertainty and exact replay across reload
+ok 48 - browser failures keep actionable durable messages, uncertainty and exact replay across reload
+  ---
+  duration_ms: 89.9666
+  type: 'test'
+  ...
+# Subtest: a concrete pending browser interaction blocks without dispatch and local resolution never replays it
+ok 49 - a concrete pending browser interaction blocks without dispatch and local resolution never replays it
+  ---
+  duration_ms: 71.0932
+  type: 'test'
+  ...
+# Subtest: contained page text is kept only in memory and public job metadata never echoes its value
+ok 50 - contained page text is kept only in memory and public job metadata never echoes its value
+  ---
+  duration_ms: 75.4554
+  type: 'test'
+  ...
+# Subtest: fill and select receipts omit echoed page values, URLs, images and dialog text from durable history
+ok 51 - fill and select receipts omit echoed page values, URLs, images and dialog text from durable history
+  ---
+  duration_ms: 93.6217
+  type: 'test'
+  ...
+# Subtest: shutdown waits for physical completion, retains its lease on timeout and supports explicit cleanup retry
+ok 52 - shutdown waits for physical completion, retains its lease on timeout and supports explicit cleanup retry
+  ---
+  duration_ms: 115.0708
+  type: 'test'
+  ...
+# Subtest: commands require their separate scope and do not borrow files write authority
+ok 53 - commands require their separate scope and do not borrow files write authority
+  ---
+  duration_ms: 320.0708
+  type: 'test'
+  ...
+# Subtest: a corrupt optional job ledger preserves all receipts and exposes unavailable status without blocking app initialization
+ok 54 - a corrupt optional job ledger preserves all receipts and exposes unavailable status without blocking app initialization
+  ---
+  duration_ms: 67.9969
+  type: 'test'
+  ...
+# Subtest: fresh attenuated grants cannot retrieve or enumerate saved results and errors outside their current scopes
+ok 55 - fresh attenuated grants cannot retrieve or enumerate saved results and errors outside their current scopes
+  ---
+  duration_ms: 72.4742
+  type: 'test'
+  ...
+# Subtest: uploads admit exactly one observed ref or chooser with both document guards and carry trusted path checks
+ok 56 - uploads admit exactly one observed ref or chooser with both document guards and carry trusted path checks
+  ---
+  duration_ms: 59.4929
+  type: 'test'
+  ...
+# Subtest: durable upload receipt preserves verified delivery with unconfirmed site acceptance and replay does not dispatch again
+ok 57 - durable upload receipt preserves verified delivery with unconfirmed site acceptance and replay does not dispatch again
+  ---
+  duration_ms: 49.4263
+  type: 'test'
+  ...
+# Subtest: uploads use requested local files even when an ordinary symlink points outside the working directory
+ok 58 - uploads use requested local files even when an ordinary symlink points outside the working directory
+  ---
+  duration_ms: 79.3443
+  type: 'test'
+  ...
+# Subtest: a browser action waiting in the serialized queue rechecks refreshed scopes immediately before dispatch
+ok 59 - a browser action waiting in the serialized queue rechecks refreshed scopes immediately before dispatch
+  ---
+  duration_ms: 77.9798
+  type: 'test'
+  ...
+# Subtest: real browser handoff receipts retain dialog kinds and never claim an undispatched input completed
+ok 60 - real browser handoff receipts retain dialog kinds and never claim an undispatched input completed
+  ---
+  duration_ms: 97.2116
+  type: 'test'
+  ...
+# Subtest: completed API history does not consume admission capacity and old requests still return exact receipts after reopening
+ok 61 - completed API history does not consume admission capacity and old requests still return exact receipts after reopening
+  ---
+  duration_ms: 155.5322
+  type: 'test'
+  ...
+# Subtest: status, public history, and revocation do not hydrate completed result payloads
+ok 62 - status, public history, and revocation do not hydrate completed result payloads
+  ---
+  duration_ms: 63.9483
+  type: 'test'
+  ...
+# Subtest: public history uses one metadata snapshot when a concurrent admission changes more than one page
+ok 63 - public history uses one metadata snapshot when a concurrent admission changes more than one page
+  ---
+  duration_ms: 554.7165
+  type: 'test'
+  ...
+# Subtest: terminal hydration corruption makes direct execution unavailable and never replays or admits around the damaged receipt
+ok 64 - terminal hydration corruption makes direct execution unavailable and never replays or admits around the damaged receipt
+  ---
+  duration_ms: 92.7629
+  type: 'test'
+  ...
+# Subtest: authenticated owners can signal active cancellation after storage failure without leaking or claiming a saved receipt
+ok 65 - authenticated owners can signal active cancellation after storage failure without leaking or claiming a saved receipt
+  ---
+  duration_ms: 80.7384
+  type: 'test'
+  ...
+# Subtest: shutdown signals and drains active work after storage failure, retaining the lease until physical settlement
+    # Subtest: existing hydration latch
+    ok 1 - existing hydration latch
+      ---
+      duration_ms: 115.7707
+      type: 'test'
+      ...
+    # Subtest: SQLite commit acknowledgment failure during cancellation
+    ok 2 - SQLite commit acknowledgment failure during cancellation
+      ---
+      duration_ms: 103.5314
+      type: 'test'
+      ...
+    1..2
+ok 66 - shutdown signals and drains active work after storage failure, retaining the lease until physical settlement
+  ---
+  duration_ms: 219.9453
+  type: 'test'
+  ...
+# Subtest: direct metadata tab selection preserves pending sign-in without page inspection and requires an exact owned target
+ok 67 - direct metadata tab selection preserves pending sign-in without page inspection and requires an exact owned target
+  ---
+  duration_ms: 55.8744
+  type: 'test'
+  ...
+# Subtest: direct browser grants receive stable task ownership and cannot target another grant page
+ok 68 - direct browser grants receive stable task ownership and cannot target another grant page
+  ---
+  duration_ms: 89.1336
+  type: 'test'
+  ...
+# Subtest: direct browser guidance permits ordinary account input without requiring the credential helper
+ok 69 - direct browser guidance permits ordinary account input without requiring the credential helper
+  ---
+  duration_ms: 39.2359
+  type: 'test'
+  ...
+# Subtest: direct structured writes cannot bypass current profile or immutable Skills ownership
+ok 70 - direct structured writes cannot bypass current profile or immutable Skills ownership
+  ---
+  duration_ms: 197.7164
+  type: 'test'
+  ...
+# Subtest: filename find pages outside workspace through fresh direct jobs and isolates grant cursors
+ok 71 - filename find pages outside workspace through fresh direct jobs and isolates grant cursors
+  ---
+  duration_ms: 143.5793
+  type: 'test'
+  ...
+# Subtest: direct tab_mark exposes explicit owned metadata control without inspecting or replaying page work
+ok 72 - direct tab_mark exposes explicit owned metadata control without inspecting or replaying page work
+  ---
+  duration_ms: 63.9314
+  type: 'test'
+  ...
+# (node:18772) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: full connector catalog references only tools that are attached by the server
+ok 73 - full connector catalog references only tools that are attached by the server
+  ---
+  duration_ms: 201.587
+  type: 'test'
+  ...
+# Subtest: connector schema guidance names graph tools only when the catalog attaches them
+ok 74 - connector schema guidance names graph tools only when the catalog attaches them
+  ---
+  duration_ms: 21.8856
+  type: 'test'
+  ...
+# (node:28876) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: current goal schema accepts its advertised nullable types and rejects other types
+ok 75 - current goal schema accepts its advertised nullable types and rejects other types
+  ---
+  duration_ms: 1.7045
+  type: 'test'
+  ...
+# Subtest: advertised goal and start_chat union values reach handlers through the direct API
+ok 76 - advertised goal and start_chat union values reach handlers through the direct API
+  ---
+  duration_ms: 116.8244
+  type: 'test'
+  ...
+# Subtest: retired cycle metadata does not advertise executable legacy actions
+ok 77 - retired cycle metadata does not advertise executable legacy actions
+  ---
+  duration_ms: 1.9077
+  type: 'test'
+  ...
+# Subtest: Planning schema lookup returns the same action fields that the write tool validates
+ok 78 - Planning schema lookup returns the same action fields that the write tool validates
+  ---
+  duration_ms: 3.306
+  type: 'test'
+  ...
+# Subtest: connector instructions distinguish direct actions from model-starting tools
+ok 79 - connector instructions distinguish direct actions from model-starting tools
+  ---
+  duration_ms: 0.3259
+  type: 'test'
+  ...
+# Subtest: direct browser capacity recovery uses actions from its attached tools
+ok 80 - direct browser capacity recovery uses actions from its attached tools
+  ---
+  duration_ms: 97.6642
+  type: 'test'
+  ...
+# Subtest: status reports registered model-starting tools without invoking a handler or creating a job
+ok 81 - status reports registered model-starting tools without invoking a handler or creating a job
+  ---
+  duration_ms: 373.1165
+  type: 'test'
+  ...
+1..81
+# tests 83
+# suites 0
+# pass 83
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4664.0234

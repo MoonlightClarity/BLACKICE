@@ -22,10 +22,16 @@ function fixture(deliveries = records) {
   return { handler, calls };
 }
 
-test('email usability fixes preserve the current catalog and instructions', () => {
-  const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
-  assert.equal(hash(EMAIL_TOOL), '7e0a5a35f54d7b6389a52283ce68cce306775372edecce3fa46d2c247ee9d9e8');
-  assert.equal(hash(EMAIL_INSTRUCTIONS), '65f8fe07198ec6f5801f3ed3c6f005c5d9d2a13942cc6a23a55af664eb0df9c0');
+test('email guidance retains the compose/send schema and describes saved delivery recovery', () => {
+  const contract = JSON.stringify(EMAIL_TOOL, (key, value) => key === 'description' ? undefined : value);
+  assert.equal(createHash('sha256').update(contract).digest('hex'), 'ad23c6318df555753296a55a75d0bcd65b0f4ab5114a97eabd67a55d71dbcf7d');
+  for (const action of ['compose', 'send', 'deliveries', 'get_delivery']) {
+    assert.ok(EMAIL_TOOL.inputSchema.properties.action.enum.includes(action));
+    assert.ok((EMAIL_TOOL.description + EMAIL_INSTRUCTIONS).includes(action));
+  }
+  assert.match(EMAIL_INSTRUCTIONS, /separate stable requestId/);
+  assert.match(EMAIL_INSTRUCTIONS, /queued remains pending/);
+  assert.match(EMAIL_INSTRUCTIONS, /uncertain may already have been dispatched/);
 });
 
 test('unpaged deliveries retain every record and the compatible response shape', async () => {

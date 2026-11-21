@@ -1,9 +1,13 @@
 # Research a public question
 
-Answer a research question with primary sources, dates, coverage, and explicit gaps.
+Use when answering a factual question from public sources.
 
-**What you need:** A reachable public browser/search tool or supplied sources. Search snippets are discovery, not verification.
+1. Turn the question into the claims that must be checked.
+2. Search for primary or original sources and read the relevant pages or reports.
+3. Check the date, jurisdiction, population, version, or other scope that affects each claim. For recent events, distinguish the event date from the publication date.
+4. Compare conflicting evidence and identify whether the disagreement is substantive or comes from different scopes.
+5. Attach each source link to the claim it supports.
 
-**Approach:** Turn the question into a few claims to verify. Read the original pages or reports where possible, check date and scope, and attach each link to the claim it supports. Distinguish publication from event date in time-sensitive cases.
+Lead with the supported answer, then explain the evidence and any gap that changes the conclusion. A search snippet can locate a source; use the source itself for a claim that depends on exact wording.
 
-**Check and recover:** If a central source cannot be opened, try a credible alternate source, label what is still unverified, and narrow the conclusion rather than citing the inaccessible page as read.
+If a central source cannot be opened, try an available credible source or supplied copy. State what was actually read and what remains unverified. Continue answering the parts supported by accessible evidence.

@@ -26,10 +26,13 @@ test('Personal Context is discoverable for personal and explicit continuing task
     assert.ok(!(await invoke({action:'search',query})).entries.some(entry=>entry.id===id),query);
   const selected=(await invoke({action:'read',id})).entry.content;
   assert.match(selected,/^# Personal Context/);
-  for(const phrase of [/"action":"read","kind":"user"/,/"action":"search","scope":"workspace"/,
-    /"action":"read","scope":"workspace","id":/,/actual clock/,/Fresh request does not resume a Goal/i,/inspect fresh timing diagnostics/])
-    assert.match(selected,phrase);
-  assert.match(selected,/When Past Chats is Off[\s\S]*Do not recover previous chats through another tool/);
+  for(const phrase of [/read the user profile through the identity tool/,
+    /use the attached history tool when Past Chats is enabled/,
+    /read the promising result using its returned ID/,
+    /Yesterday's application quota and deadline do not carry over/,
+    /checking an earlier claim that the fix was installed/]) assert.match(selected,phrase);
+  assert.match(selected,/When Past Chats is Off[\s\S]*do not retrieve old conversations through another route/);
+  assert.match(selected,/Build history calls from the attached tool schema/);
 });
 
 test('both Past Chats modes can load Personal Context and obtain fresh evidence without importing old scope',async t=>{
@@ -63,7 +66,7 @@ test('both Past Chats modes can load Personal Context and obtain fresh evidence 
       for(const text of [options.prompt,options.developerInstructions]){
         assert.ok(!text.includes(priorMarker),'no historical user task on the initial model request');
         assert.ok(!text.includes(staleMarker),'no historical assistant claim on the initial model request');
-        assert.doesNotMatch(text,/Separate relevance from authority/,'no unconditional Personal Context body injection');
+        assert.doesNotMatch(text,/Find only the context that changes the next step/,'no unconditional Personal Context body injection');
       }
       const historyActions=options.dynamicTools.find(tool=>tool.name==='relay_history')?.inputSchema.properties.action.enum||[];
       assert.equal(historyActions.includes('search'),mode==='on');
@@ -78,8 +81,8 @@ test('both Past Chats modes can load Personal Context and obtain fresh evidence 
       const matches=payload(await tool('relay_skills',{action:'search',query:'personal context',limit:3}));
       assert.equal(matches.entries[0].id,id);
       const method=payload(await tool('relay_skills',{action:'read',id}));
-      assert.match(method.entry.content,/A blank profile is not a negative fact/);
-      assert.match(method.entry.content,/inspect fresh timing diagnostics/);
+      assert.match(method.entry.content,/continue work that does not depend on it/);
+      assert.match(method.entry.content,/checking an earlier claim that the fix was installed/);
       const profile=payload(await tool('relay_identity',{action:'read',kind:'user'}));
       assert.match(profile.content,/Clearly separate observed timings from estimates/);
       if(mode==='on'){

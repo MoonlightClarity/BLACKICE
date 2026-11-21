@@ -10,7 +10,7 @@ test('release catalog is read-only, fresh, and ignores all legacy/native inputs'
  list.entries[0].title='poison';assert.notEqual((await catalog.list()).entries[0].title,'poison');
  const detail=await catalog.detail({id:'builtin-decomposition'});detail.content='poison';assert.notEqual(readReleaseSkill(detail.id).content,'poison');
  await assert.rejects(catalog.detail({id:'saved:legacy'}),{status:404});await assert.rejects(catalog.list({source:'codex'}),{status:400});
- assert.match(readReleaseSkill('builtin-structured-analysis').content,/Advisory use/);assert.ok(searchReleaseSkills('analytic').some(e=>e.id==='builtin-structured-analysis'));
+ assert.match(readReleaseSkill('builtin-structured-analysis').content,/sections are alternatives, not a checklist/);assert.ok(searchReleaseSkills('analytic').some(e=>e.id==='builtin-structured-analysis'));
 });
 test('skill IDs are exact identifiers, not paths',()=>{
  assert.equal(skillIdFromRequestPath('/api/skills/builtin-decomposition'),'builtin-decomposition');
@@ -23,7 +23,7 @@ test('model sees discovery/read only, no memory, no ambient instructions or pers
  const invoke=arguments_=>handler({name:'relay_skills',arguments:arguments_});
  const all=JSON.parse((await invoke({action:'search'})).contentItems[0].text);assert.equal(all.entries.length,12);assert.equal(all.truncated,true);
  const found=JSON.parse((await invoke({action:'search',query:'dependent'})).contentItems[0].text);assert.ok(found.entries.some(e=>e.id==='builtin-decomposition'));assert.ok(!('content' in found.entries[0]));
- const read=JSON.parse((await invoke({action:'read',id:'builtin-decomposition'})).contentItems[0].text);assert.match(read.entry.content,/When to use/);
+ const read=JSON.parse((await invoke({action:'read',id:'builtin-decomposition'})).contentItems[0].text);assert.match(read.entry.content,/For one obvious action, act directly/);
  for(const action of ['save','patch','remove','remember'])await assert.rejects(invoke({action,id:'builtin-decomposition'}));
  await assert.rejects(invoke({action:'read',id:'legacy'}),{status:404});
  await assert.rejects(handler({name:'relay_memory',arguments:{action:'search'}}));

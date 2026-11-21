@@ -1,19 +1,22 @@
 # Diagnose a software bug
 
-Use this when behavior is wrong and the cause isn't yet established. Aim to identify the first boundary where expected and observed behavior diverge. A useful diagnosis can be narrow; it need not map the whole system.
+Use when behavior is wrong and the cause is not established.
 
-## Start where observation is cheapest
+## Locate the first wrong result
 
-- With an exact error or failing test, start there. Use `relay_workspace` with `action:"search", path:<source folder>, query:<literal error text>` to locate relevant project files. The search matches file contents literally, not regex or filenames; `relay_find_files` fits exact or partial filenames. Read the smallest useful source or log range with `action:"read"` and `startLine`/`lineCount`, then follow the caller or data across one boundary at a time.
-- When a focused test or local repro is available, use `relay_workspace` with `action:"run", cwd:<project folder>, command:<repo's focused command>, timeoutMs:<bounded duration>`. Judge the recorded exit code and output. A command that never reached the assertion, a skipped test, or a timeout is not a passing repro. Use the project's documented runner and an isolated fixture when a repro could mutate real data.
-- If it only happens in the installed app or under load, preserve what differs: exact build, entry point, approximate time, and input size or concurrency. Compare the same observation under a good and bad case. Prefer a timestamped log, one measured boundary, or a small fixture over broad instrumentation. Don't disturb a working installation just to make a guess testable.
+1. Start from the exact error, failing test, or visible symptom. Search project contents for the literal error or symbol. Use the file-finding tool for filenames.
+2. Read the relevant source or log range, supplying one path per call when the reader accepts a scalar path.
+3. Follow the input across the few boundaries that can explain the failure: request, handler, saved state, response, display.
+4. Compare plausible causes using an observation that differs between them.
 
-## Make a discriminating check
+For a local check, use the attached command tool with the actual project directory, focused command, and supported timeout. Read the exit code and output. A skipped assertion, missing dependency, or timeout leaves that check unverified. Build calls from the attached tool schema; declarations found while searching source describe code, not necessarily the running tool.
 
-Pick two explanations that imply different observations, and probe where they disagree. Split “write failed” into questions such as: did the renderer send the expected payload, did the server accept it, and did the subsequent read return the saved value? This separates a UI symptom from a persistence defect. Keep observed facts, causal inference, and unresolved alternatives distinct.
+## Fix and verify
 
-If asked to diagnose only, stop at a supported finding and the next check that would change it. If asked to fix, make the smallest repair at the confirmed boundary and rerun the check that failed before, plus a nearby case that should remain unchanged. Prefer testing through the same route that failed; a source-level check may miss packaging, process, or integration differences.
+If asked to fix, repair the first boundary where expected and actual state differ. Rerun the failing case and a nearby case affected by the change. If the problem only appears in an installed build, check that build and route; a passing source test may not exercise packaging or saved state.
 
-## Worked example
+If asked only to diagnose, report the supported cause and the next check that would resolve any remaining alternative.
 
-“Renaming a folder looks successful, but it reverts when I reopen the view.” Two plausible causes: the write never persisted, or it persisted and the reopened view used stale state. A focused test using a disposable folder shows the write returns success and a fresh independent read returns the new name, while reopening renders the old name. Trace how the reopened view gets its initial data and test whether its cache refreshes after a write. Don't rewrite persistence merely because the symptom looks like a save failure. If only a screenshot is available, report that it establishes the displayed name, not the state of storage; a write receipt and a fresh read would distinguish the two.
+Example: a renamed folder reverts after reopening. A successful write and a fresh read both show the new name, but the UI shows the old name. Investigate the reload/cache path rather than rewriting persistence.
+
+For an intermittent failure, preserve the build, input, timing, and observed trace. Failure to reproduce it does not show that it never happened.

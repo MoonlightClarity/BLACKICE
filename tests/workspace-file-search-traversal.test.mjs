@@ -137,7 +137,7 @@ test('only owned scratch is excluded across sessions and aliases; ordinary temp 
  assert.equal(pages.at(-1).scanComplete,true);assert.equal(pages.at(-1).searchComplete,false);
  assert.ok(pages.at(-1).excludedScratchCount>=3,'own scratch, other session scratch and alias are counted');
  assert.equal(pages.at(-1).errorCount,0);
- assert.match(pages.at(-1).coverage,/owned temporary traversal databases are excluded/);
+ assert.match(pages.at(-1).coverage,/Owned temporary search databases are excluded/);
  for(const file of [path.join(foreignScratch,'frontier.sqlite'),path.join(alias,'frontier.sqlite')]){
   const direct=await observer({path:file,query:'frontier.sqlite'});
   assert.deepEqual(direct.matches,[]);assert.equal(direct.excludedScratchCount,1);assert.equal(direct.searchComplete,false);

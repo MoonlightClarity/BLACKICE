@@ -91,8 +91,9 @@ test('an existing external edit tool creates a durable standalone plan, discover
     const list = await api.call('blackice_list_plans', {}, client);
     assert.equal(list.plans[0].taskId, created.taskId);
     assert.equal(list.planningContract.modelExecution, false);
-    assert.ok(list.planningContract.decisionInputSchema);
-    assert.match(list.planningContract.guidance, /user/i);
+    assert.equal(list.planningContract.taskSchemaVersion,14);
+    assert.equal(list.planningContract.create.operation,'create_contract');
+    assert.ok(list.planningContract.contractSchema);
   } finally { await reopened.close(); }
 });
 

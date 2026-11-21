@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { BROWSER_CLEANUP_PROTOCOL } from '../lib/browser-cleanup-policy.mjs';
@@ -21,13 +22,11 @@ const definition = (name, extra = {}) => ({
 const unavailable = () => assert.fail('Discovery must not execute a tool.');
 const provider = tools => ({ tools: () => tools, call: unavailable });
 
-test('the configured catalog retains 34 tools with reviewed authentication, canonical creation, fill and conversation contracts', () => {
-  // Bind the reviewed public definitions, including recursive planning,
-  // bounded contained diagnostics, exact-identity ownership/debug controls,
-  // the cleanup protocol, the explicit relay default for credential fill,
-  // and the distinction between fill text and selection-only value.
-  // The complete fingerprint catches unreviewed contract changes.
-  // Only definitions are constructed: no storage or native adapter is opened.
+const frozenCatalog = JSON.parse(readFileSync(new URL('./fixtures/chatgpt-tool-catalog-28f8e0f5.json', import.meta.url), 'utf8'));
+const withoutDescriptions = value => Array.isArray(value) ? value.map(withoutDescriptions) : value && typeof value === 'object'
+  ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'description').map(([key, item]) => [key, withoutDescriptions(item)])) : value;
+
+test('current catalog matches its live provider schemas and preserves runtime contracts', () => {
   const execution = new DirectExecutionAPI({ dataDir: '/unused-catalog-fixture', additionalTools: [
     chatGPTFileImportTool({ directory: '/unused-catalog-fixture/imports' }),
     ...createDirectConnectedBrowserTools({ manager: {}, connectChrome: unavailable }),
@@ -37,6 +36,123 @@ test('the configured catalog retains 34 tools with reviewed authentication, cano
   ] });
   // Pin the current reviewed contract and reconstruct historical contracts below.
   const catalog = createChatGPTToolCatalog({ providers: [execution, new ChatGPTPlanningAPI({})], version: '2.40.8' });
+  assert.deepEqual(catalog.tools().map(tool => tool.name), [
+    'blackice_direct_status', 'blackice_list_jobs', 'blackice_get_job', 'blackice_cancel_job',
+    'blackice_workspace_read', 'blackice_workspace_write', 'blackice_run_command', 'blackice_browser_read',
+    'blackice_browser_action', 'blackice_browser_upload', 'blackice_task_contract', 'blackice_task_context', 'blackice_import_file', 'blackice_connected_browser_read',
+    'blackice_connected_browser_action', 'blackice_profile_list', 'blackice_profile_import', 'blackice_profile_connect',
+    'blackice_restart', 'blackice_credentials_list', 'blackice_credentials_generate', 'blackice_credentials_save', 'blackice_credentials_update', 'blackice_credentials_associate', 'blackice_credentials_fill', 'blackice_credentials_authenticate',
+    'blackice_list_plans', 'blackice_get_plan', 'blackice_get_run_result', 'blackice_list_swarm_plans',
+    'blackice_get_swarm_plan', 'blackice_get_plan_groups', 'blackice_edit_plan', 'blackice_edit_plan_groups',
+  ]);
+  const current = catalog.tools();
+  assert.deepEqual(catalog.status(), {
+    sha256: createHash('sha256').update(JSON.stringify(current)).digest('hex'),
+    toolCount: current.length, serverVersion: '2.40.8',
+  });
+  // Wording can change independently. Field types, actions, scopes and annotations
+  // remain the same as the captured source contract unless deliberately reviewed.
+  assert.deepEqual(withoutDescriptions(current), withoutDescriptions(frozenCatalog.tools));
+  for (const tool of current) {
+    assert.deepEqual(catalog.get(tool.name).definition, tool);
+    assert.deepEqual(catalog.get(tool.name).requiredScopes, frozenCatalog.requiredScopes[tool.name]);
+  }
+  assert.ok(current.find(tool => tool.name === 'blackice_browser_action').description.endsWith(BROWSER_CLEANUP_PROTOCOL));
+  for (const name of ['blackice_credentials_save', 'blackice_credentials_update']) {
+    const entry = catalog.get(name), tool = entry.definition;
+    assert.deepEqual(entry.requiredScopes, ['read', 'browser:write']);
+    assert.deepEqual(tool.annotations, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+    assert.equal(tool.inputSchema.additionalProperties, false);
+    assert.deepEqual(tool.inputSchema.required, name.endsWith('_save')
+      ? ['requestId', 'origin', 'password', 'expectedRevision']
+      : ['requestId', 'origin', 'password', 'expectedRevision', 'credentialId', 'revision']);
+    assert.equal(tool.inputSchema.properties.expectedRevision.minimum, 0);
+    assert.equal(tool.inputSchema.properties.password.maxLength, 1024);
+  }
+  const authentication = catalog.tools().find(tool => tool.name === 'blackice_credentials_authenticate');
+  const credentialFill = catalog.tools().find(tool => tool.name === 'blackice_credentials_fill');
+  assert.deepEqual(authentication.annotations, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true });
+  assert.deepEqual(catalog.get(authentication.name).requiredScopes, ['read', 'browser:write']);
+  assert.deepEqual(authentication.inputSchema, {
+    type: 'object',
+    properties: {
+      ...credentialFill.inputSchema.properties,
+      intent: { type: 'string', enum: ['login', 'signup'] },
+      submitRef: { type: 'string', minLength: 1, maxLength: 500 },
+    },
+    required: ['requestId', 'origin', 'credentialId', 'revision', 'browser', 'tabId', 'expectedUrl', 'expectedDocumentId', 'passwordRef', 'intent', 'submitRef'],
+    additionalProperties: false,
+  });
+  // DirectExecutionAPI always registers these two tools. This fixture does not install
+  // the separately supplied native attachment extension or graph/cycle services.
+  const contexts=catalog.tools().find(tool=>tool.name==='blackice_task_context');
+  assert.deepEqual(contexts.inputSchema.oneOf.map(branch=>branch.properties.action.const),['issue','read','revoke']);
+  assert.equal(catalog.tools().some(tool=>tool.name==='blackice_native_task_context'),false);
+  const contracts=catalog.tools().find(tool=>tool.name==='blackice_task_contract');
+  assert.ok(contracts.inputSchema.oneOf.some(branch=>branch.properties.action.const==='bind_plan'));
+  const read=catalog.tools().find(tool=>tool.name==='blackice_browser_read');
+  assert.equal(read.annotations.readOnlyHint,true);
+  assert.ok(read.inputSchema.properties.action.enum.includes('diagnostics'));
+  assert.equal(read.inputSchema.properties.after.minimum,0);
+  assert.equal(read.inputSchema.properties.limit.maximum,256);
+  assert.equal(read.inputSchema.properties.expectedUrl,undefined);
+  assert.equal(read.inputSchema.properties.expectedDocumentId,undefined);
+  const browserAction=catalog.tools().find(tool=>tool.name==='blackice_browser_action');
+  assert.ok(browserAction.description.endsWith(BROWSER_CLEANUP_PROTOCOL));
+  const action=browserAction.inputSchema;
+  for(const name of ['take_ownership','transfer_ownership','debug_reset','stop'])assert.ok(action.properties.action.enum.includes(name));
+  assert.deepEqual(action.properties.destination.enum,['user','task']);
+  assert.equal(action.properties.destinationOwnerKey.maxLength,650);
+  const fill=catalog.tools().find(tool=>tool.name==='blackice_credentials_fill').inputSchema;
+  assert.equal(fill.properties.browser.default,'relay');
+  assert.deepEqual(fill.properties.browser.enum,['relay']);
+  const planning=catalog.tools().find(tool=>tool.name==='blackice_edit_plan').inputSchema;
+  const edits=Object.fromEntries(planning.properties.operations.items.oneOf.map(operation=>[operation.properties.type.const,operation.properties]));
+  assert.ok(edits.add.step.properties.operation);
+  assert.ok(edits.metadata.patch.properties.facts);
+  assert.ok(edits.add.step.properties.branch.properties.elif);
+  assert.equal(edits.add.step.properties.branch.properties.if.$ref,'#/$defs/planExpression');
+  assert.deepEqual(planning.$defs.planExpression.anyOf.filter(value=>value.properties).map(value=>Object.keys(value.properties)[0]),['fact','and','or','not','xor','compare']);
+  assert.equal(edits.revisit.reason.minLength,1);
+  const replacement=planning.properties.operations.items.oneOf.find(operation=>operation.properties.type.const==='replace_contract');
+  assert.deepEqual(replacement.required,['type','contract']);
+  assert.equal(replacement.additionalProperties,false);
+  assert.equal(edits.replace_contract.contract.additionalProperties,false);
+  assert.equal(edits.replace_contract.contract.properties.contractVersion.const,2);
+  assert.equal(edits.replace_contract.contract.properties.workItems.minItems,1);
+  const workItem=edits.replace_contract.contract.properties.workItems.items;
+  assert.equal(workItem.required.includes('operationScopes'),false);
+  assert.deepEqual(workItem.properties.operationScopes.items.required,['effect','resourceKeys']);
+  assert.ok(workItem.properties.operationScopes.items.properties.confirmationCriterionId);
+  assert.equal(edits.replace_contract.contract.properties.planEpoch,undefined);
+  assert.equal(edits.replace_contract.contract.properties.runtime,undefined);
+  assert.equal(edits.replace_contract.contract.properties.outcomes,undefined);
+  const creation=planning.properties.operations.items.oneOf.find(operation=>operation.properties.type.const==='create_contract');
+  assert.deepEqual(creation.required,['type','contract']);
+  assert.equal(creation.additionalProperties,false);
+  assert.deepEqual(edits.create_contract.contract,edits.replace_contract.contract);
+  assert.ok(edits.create_contract.userAgency);
+  assert.equal(edits.create_contract.contract.properties.planEpoch,undefined);
+  assert.equal(edits.create_contract.contract.properties.runtime,undefined);
+  assert.equal(edits.create_contract.contract.properties.outcomes,undefined);
+
+});
+
+test('immutable historical catalog snapshots retain their recorded fingerprints', () => {
+  // Bind the reviewed public definitions, including recursive planning,
+  // bounded contained diagnostics, exact-identity ownership/debug controls,
+  // the cleanup protocol, the explicit relay default for credential fill,
+  // and the distinction between fill text and selection-only value.
+  // The complete fingerprint catches unreviewed contract changes.
+  // Only definitions are constructed: no storage or native adapter is opened.
+  // Historical wording and schemas come only from this immutable snapshot.
+  // Active metadata above is never rewritten to reconstruct an old fingerprint.
+  const BROWSER_CLEANUP_PROTOCOL = frozenCatalog.browserCleanupProtocol;
+  const catalog = {
+    tools: () => structuredClone(frozenCatalog.tools),
+    status: () => structuredClone(frozenCatalog.status),
+    get: name => ({ definition: structuredClone(frozenCatalog.tools.find(tool => tool.name === name)), requiredScopes: [...frozenCatalog.requiredScopes[name]] }),
+  };
   assert.deepEqual(catalog.tools().map(tool => tool.name), [
     'blackice_direct_status', 'blackice_list_jobs', 'blackice_get_job', 'blackice_cancel_job',
     'blackice_workspace_read', 'blackice_workspace_write', 'blackice_run_command', 'blackice_browser_read',

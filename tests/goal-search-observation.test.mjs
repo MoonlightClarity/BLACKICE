@@ -61,16 +61,16 @@ test('nine advancing cursor turns settle and dispatch beyond seven without claim
  assert.equal(f.goals.raw('root').status,'budget_exhausted');assert.equal(f.dispatched.length,8);
  assert.match(f.dispatched.at(-1).message,/intermediate progress only, not completion/);
 });
-test('same initial search replay remains nonprogress and triggers existing stagnation boundary',async()=>{
+test('same initial search replay remains nonprogress without an implicit turn cap',async()=>{
  const f=fixture();
- for(let n=1;n<=3;n++)await f.turn(search(null),receipt(cursor(1),100));
- assert.equal(f.goals.raw('root').noProgressTurns,3);assert.equal(f.goals.raw('root').status,'blocked');
+ for(let n=1;n<=8;n++)await f.turn(search(null),receipt(cursor(1),100));
+ assert.equal(f.goals.raw('root').noProgressTurns,8);assert.equal(f.goals.raw('root').status,'active');
  assert.equal(f.goals.raw('root').completionEvidence,null);
 });
-test('cursor rotation without scanned-count advancement does not reset the existing seven-turn limit',async()=>{
+test('cursor rotation without scanned-count advancement remains unverified after seven turns',async()=>{
  const f=fixture();
- for(let n=1;n<=7;n++)await f.turn(search(n===1?null:cursor(n-1)),receipt(cursor(n),100));
- assert.equal(f.goals.raw('root').noProgressTurns,7);assert.equal(f.goals.raw('root').status,'blocked');
+ for(let n=1;n<=8;n++)await f.turn(search(n===1?null:cursor(n-1)),receipt(cursor(n),100));
+ assert.equal(f.goals.raw('root').noProgressTurns,8);assert.equal(f.goals.raw('root').status,'active');
 });
 test('coverage reset, replay, scope change and final-cursor reuse do not invent intermediate progress',()=>{
  const row=(input,next,count,extra)=>observeGoalToolOutcome(search(input),receipt(next,count,extra));
@@ -145,15 +145,15 @@ test('real filesystem cursor frontier survives a full turn and clipped display j
 
 test('repeating an initial and continuation page in fresh backend sessions never earns credit',async()=>{
  const f=fixture();
- for(let n=1;n<=7;n++){
+ for(let n=1;n<=8;n++){
   const s=randomUUID();
   await f.turn([[search(null),receipt(cursor(1,s),100)],[search(cursor(1,s)),receipt(cursor(2,s),200)]]);
   const goal=f.goals.raw('root');
   assert.equal(goal.noProgressTurns,n);
   assert.equal(goal.lastProgressBasis,'unverified');
-  if(goal.status==='blocked')break;
+  assert.equal(goal.status,'active');
  }
- assert.equal(f.goals.raw('root').status,'blocked');
+ assert.equal(f.goals.raw('root').status,'active');
 });
 
 test('a material objective change clears coverage and a superseded turn cannot restore it',async()=>{
@@ -208,10 +208,10 @@ test('same-scope resets alternating across turns cannot repeatedly credit old co
  for(let n=1;n<=5;n++){
   const replacement=randomUUID();
   await f.turn(search(null),receipt(cursor(1,replacement),100));
-  if(f.goals.raw('root').status==='blocked')break;
+  assert.equal(f.goals.raw('root').status,'active');
   await f.turn(search(cursor(1,replacement)),receipt(cursor(2,replacement),200));
   assert.equal(f.goals.raw('root').lastProgressBasis,'unverified');
   if(f.goals.raw('root').status==='blocked')break;
  }
- assert.equal(f.goals.raw('root').status,'blocked');
+ assert.equal(f.goals.raw('root').status,'active');
 });

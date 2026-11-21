@@ -15,8 +15,10 @@ const ids=['builtin-decomposition','builtin-task-grounding','builtin-structured-
 test('the three revised inline definitions are preserved; removed defaults are not fallback content',async()=>{
  assert.deepEqual(searchReleaseSkills().map(x=>x.id),ids);
  // Pin the actual approved critical-path and completion revisions as well as the scoped anti-overalignment skill.
- const hashes=['0e45b660d8efd57ea0c327234a675fd814c792fa9923017c7c9ad557152487d2','56c729d6ed74b073df340c1640500e7dac43e57418f52c8b292bd0b94737ed5d','22b3d21f67512eefcc4032cf546e7e0485f1020568228ecc03851e896b82224b'];
+ const hashes=["0ceb99d89d9c40ebd6e37f0e816bf2c88e713016f3af3ef09c57f36b7bd5be6a","201a3e0a45d70169a7cf6fca882ca469bac06da1e13e0733b0de94c43be790da","52822f308c06cda6c65e31f8b745d60cf1ce4cc2b45763bb73c99fc37b3ca13f"];
  assert.deepEqual(ids.map(id=>createHash('sha256').update(readReleaseSkill(id).content).digest('hex')),hashes);
+ assert.match(readReleaseSkill('builtin-task-grounding').content,/cwd.*default for relative paths, not a boundary on file discovery/);
+ assert.match(readReleaseSkill('builtin-task-grounding').content,/search likely personal or project folders/);
  const catalog=createSkillsCatalog();assert.deepEqual((await catalog.list()).entries.filter(x=>x.id.startsWith('builtin-')).map(x=>x.id),ids);
  for(const id of ['builtin-browser','builtin-browser-tab-management','builtin-file-discovery','builtin-job-search','builtin-inference','builtin-time-management','builtin-feasibility','builtin-branching','builtin-replanning','builtin-metacognition','builtin-verification','builtin-delegation']){
   assert.throws(()=>readReleaseSkill(id),{status:404});await assert.rejects(catalog.detail({id}),{status:404});
@@ -74,15 +76,15 @@ test('explicit folder mutation removes orphan placements only, preserving actual
 });
 
 
-test('over-alignment calibration connects three reward incentives to the delivered scope',async()=>{
+test('anti-overalignment delivers concrete blocker checks and delegated decisions once',async()=>{
  const {content}=readReleaseSkill('builtin-task-grounding');
  const patterns=[
-  /F\/\(M\+F\)/,
-  /three reviewers can independently veto/,
-  /4 - 3p/,
-  /Check what the source prevents/,
+  /Name the exact action and the observed obstacle/,
+  /A warning, employer preference, old plan, or unmentioned requirement/,
+  /Make the best supported decision and take the step/,
   /indirect evidence/,
-  /Conflicting documents/,
+  /Finish independent steps/,
+  /Two schedules conflict/,
  ];
  for(const pattern of patterns)assert.match(content,pattern);
  assert.doesNotMatch(content,/under-alignment|underalignment|circana|sponsor|arbitrat/i);

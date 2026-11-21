@@ -1,9 +1,13 @@
 # Prepare a project handoff
 
-Summarize verified state, current blockers, and the next executable step for someone taking over.
+Use when another person or agent must continue existing work.
 
-**What you need:** Task notes, repository evidence, or records describing current state.
+1. Read the current task, saved artifacts, and latest results.
+2. State the requested deliverable and what is usable now.
+3. List unfinished work separately from completed work. For each unfinished item, give its observed blocker or next executable action.
+4. Include the exact file, revision, URL, or record ID needed to continue. Preserve the command and result of checks that matter.
+5. Identify any action whose effect remains unknown so the next worker checks it before repeating it.
 
-**Approach:** Start from the deliverable and what is actually usable now. Separate completed work from experiments, queued work, blocked work, and recommendations. Provide exact artifact, commit, or relevant location when available.
+Keep the handoff focused on continuation, not the full history. Verify major completion claims against the artifact or receipt.
 
-**Check and recover:** Cross-check the highest-stakes completion claims and identify checks that have not run. Give the next executable step and what it depends on, not a reconstruction of the entire project history.
+Example: “The export is saved at X; the totals check passed; upload job Y is still running. Read Y before starting another upload.” If a result cannot be verified, label it as reported and name the missing evidence.

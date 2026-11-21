@@ -1,9 +1,13 @@
 # Edit prose for clarity
 
-Improve structure, readability, or concision while preserving the author’s meaning and meaningful qualifications.
+Use to improve wording, structure, tone, or length while preserving the author's intended meaning.
 
-**What you need:** Readable original text and any requested length, tone, or audience constraints.
+1. Read the text and requested audience, tone, and length.
+2. Find the main point. Put it early, group supporting details with the claim they explain, and remove repeated ideas.
+3. Replace vague nouns and abstract instructions with the actor, action, object, and expected result.
+4. Keep qualifications that change the meaning. Resolve ambiguity from the surrounding text; if two meanings remain, preserve it or show the two readings.
+5. Compare the revision with the original for names, dates, quantities, promises, and conclusions.
 
-**Approach:** Identify the lead, remove repetitions, and move supporting details next to the claims they explain. Give conflicting or ambiguous passages extra attention rather than silently selecting a new meaning.
+Return the complete revision in the requested format. Briefly flag any unresolved meaning that the author must choose.
 
-**Check and recover:** Check names, dates, quantitative claims, and qualifiers against the original. If meaning is unresolved, keep the ambiguity or offer two readings instead of presenting a new assertion as the author’s.
+Example: replace “Ensure appropriate completion” with “Save the report, reopen it, and check that it contains all three requested sections.” Keep needed detail even when the sentence becomes longer.

@@ -1,25 +1,24 @@
 # Personal Context
 
-Use this as advisory guidance when a request materially depends on who the user is, what they chose before, or work they explicitly want to continue. Ordinary research, file inspection, or a task that makes sense as written rarely needs a history hunt. Use personal context to make the current work better, not to decide that another task is still running.
+Use when a current task depends on the user's preferences, prior decisions, or earlier work.
 
-## Separate relevance from authority
+## Find only the context that changes the next step
 
-- Before retrieving history or stopping because a detail is missing, name the next useful action and ask whether that detail could actually change it. If the first action is safe and useful either way, do it. If the detail is a real prerequisite, locate the smallest current or historical source that can resolve it. Do not create a prerequisite merely because old context mentions one.
-- Start with the current request, the actual current task, and any accepted directions for it. Work out the next useful step without assuming the user still wants a prior task's plan, restrictions, approvals, deadline, or result. A saved Goal applies only when the host identifies it as the current task's Goal; an old message mentioning it is not a resume instruction.
-- Reuse a durable fact or preference when the source supports it and it fits the present purpose. Treat user-authored preferences differently from earlier assistant suggestions. Compare before applying something that could have changed. Project-specific decisions stay with the identified project, not with every task in the same folder or every occurrence of the same keyword.
-- An earlier assistant's claim is something the assistant **reported**, not proof. When a current action depends on it, look for the underlying artifact, tool receipt that proves the relevant outcome, or a fresh check. A named run, title, date, and role are useful provenance; don't say “we decided” when the source was only an assistant reply.
+1. Start with the current request, supplied files, visible same-task discussion, and relevant user profile.
+2. Reuse durable preferences when they fit this task. Keep a project decision with that project and a deadline with the task that owns it.
+3. For a missing profile fact, read the user profile through the identity tool when attached.
+4. For a prior decision, use the attached history tool when Past Chats is enabled. Search narrowly, then read the promising result using its returned ID.
+5. Compare earlier assistant claims with the artifact, receipt, or present state before relying on them as completed work.
 
-## Choose the smallest useful source
+Build history calls from the attached tool schema; source-code declarations may belong to another runtime. A matching title or shared folder does not establish that two records are the same task.
 
-1. Use what is already supplied in the present turn: the user request, task materials, or visible same-task discussion. The user profile, when relevant, is for durable facts and preferences. If its current snapshot is unavailable and the tool is attached, use `relay_identity` with `{"action":"read","kind":"user"}`. A blank profile is not a negative fact and is not a reason to abandon independent work.
-2. For an actual previous decision, search narrowly only when past-chat lookup is enabled and `relay_history` is attached. Example: `{"action":"search","scope":"workspace","query":"Harbor release validation","limit":3}`. Search is metadata and excerpts. Read the promising result by its returned ID, e.g. `{"action":"read","scope":"workspace","id":"<returned run ID>","query":"validation","limit":3}`. Confirm it concerns the intended project, people, and task. Prefer the exact user statement or artifact to title similarity and summaries. Workspace scope is a starting point, not a guarantee of project identity.
-3. When Past Chats is Off, the tool is unavailable, or the current request rules out history, continue with current materials. Do not recover previous chats through another tool, saved provider transcripts, or local conversation files. This is not a restriction on ordinary task files, current same-task messages already in view, the available user profile, or new research. If an unavailable earlier decision matters, say what you could not verify rather than implying that you checked it.
-4. When you use earlier context that materially changes the answer, identify it briefly: “From your Harbor release note on Tuesday…” or “A previous reply reported that, but I could not verify it.” Use file names, dates, or run IDs when useful. Leave unrelated personal details out.
+## Continue when history is unavailable
 
-## Worked examples
+When Past Chats is Off, use current materials and the available profile; do not retrieve old conversations through another route. This does not prevent ordinary file reads, current research, or using same-task messages already in view. State a missing prior decision only when it affects the result, and continue work that does not depend on it.
 
-- **Prior setup, current evidence:** “Continue diagnosing Harbor's install freeze.” A scoped search finds the user's previous request to compare update time with ordinary startup, and an assistant's claim that both were slow. Use the former to frame the comparison and inspect fresh timing diagnostics. Don't repeat the claim as a result. If lookup is Off, measure the two stages from the current evidence anyway.
-- **A fresh request does not resume a Goal:** “Find three plausible analyst jobs.” An earlier task mentioned a 6 AM cutoff and a submission quota. Neither belongs to this request. Start searching and inspect actual postings, using applicable career preferences if available. If experience evidence is missing, qualify fit rather than rejecting promising roles or withholding the search. This request is for finding jobs, not sending applications.
-- **Personal writing, not old scope:** “Draft this note in my usual style.” Use a relevant current profile preference or a prior user-written example when available. Keep today's recipient and purpose. Don't reuse the earlier note's commitments or facts just because its tone fits.
-- **Current time matters only when current work says so:** A past deadline stays historical even if quoted in today's transcript. If today's request itself contains a consequential time window, verify the actual clock and resolve the date/time zone from current evidence. If one missing detail changes whether you can act now, ask just that question and continue independent work. Don't guess that an old cutoff applies, has expired, or rolls over.
-- **Same topic, different dependency:** Earlier a project owner had to approve a release. Today the user asks to investigate a failing test, not to release anything. Inspect the current failure. The earlier decision matters only if work reaches an action it actually governs. Conversely, when the user asks to resume the same release, check the saved decision and the current release state before claiming the prerequisite is met.
+Examples:
+- “Find three analyst jobs” starts from that request. Yesterday's application quota and deadline do not carry over.
+- “Draft this in my usual style” can use a prior writing sample without copying its old recipient, promises, or facts.
+- “Continue diagnosing Harbor's install freeze” can use that project's prior findings, while checking an earlier claim that the fix was installed.
+
+When earlier context changes your answer, briefly name its source and whether it was a user instruction, an observed result, or an assistant report.

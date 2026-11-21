@@ -199,7 +199,7 @@ test('filesystem mutations between pages remain live observations rather than a 
   assert.equal(matches.find(x => x.path === changed)?.size, 42);
   assert.ok(pages.flatMap(x => x.errors).some(x => x.path === deleted && x.code === 'ENOENT'));
   assert.equal(pages.at(-1).searchComplete, false);
-  for (const page of [first, ...pages]) assert.match(page.coverage, /Filesystem changes during pagination may affect results/);
+  for (const page of [first, ...pages]) assert.match(page.coverage, /Filesystem changes may affect pages/);
   // The added entry may or may not appear in an already-open OS directory stream.
   // The contract promises current observations, not a stable filesystem snapshot.
   const fresh = await drain(f, { action: 'find', path: f.outside, query: 'Item-new' });

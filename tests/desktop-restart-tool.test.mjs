@@ -22,11 +22,11 @@ test('restart tool schema requires one stable request ID and existing command au
   assert.equal(id.minLength, 1); assert.equal(id.maxLength, 120);
   assert.match('restart-20261021:one', new RegExp(id.pattern));
   for (const value of ['', ' restart', 'restart/one', 'a'.repeat(121)]) assert.doesNotMatch(value, new RegExp(id.pattern));
-  assert.match(definition.description, /scheduling, not completed restart/);
-  assert.match(definition.description, /preserving the current profile and mode/);
+  assert.match(definition.description, /scheduling job/);
+  assert.match(definition.description, /preserving its profile and mode/);
   assert.equal(definition.inputSchema.properties.force.type, 'boolean');
-  assert.match(definition.description, /active work blocks restart/);
-  assert.match(definition.description, /pause automatic queues and stop cancellable work/);
+  assert.match(definition.description, /active work that prevents it/);
+  assert.match(definition.description, /pauses automatic queues and stops cancellable work/);
 });
 
 test('restart tool returns only its scheduling receipt and defers raw job reads to the controller', async () => {

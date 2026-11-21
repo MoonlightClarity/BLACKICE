@@ -1,0 +1,7 @@
+{
+  "sourceAndTestFiles": 115,
+  "syntaxFailures": [],
+  "whitespaceExitCode": 0,
+  "whitespace": "",
+  "whitespaceScope": "Staged source, tests, documentation and JSON receipts; captured TAP output preserved verbatim."
+}

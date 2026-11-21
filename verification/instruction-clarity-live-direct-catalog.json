@@ -1,0 +1,558 @@
+{
+  "baseCommit": "28f8e0f51be0bc55e73eb9afab1bc1ebeea765e8",
+  "surface": "Actual server.mjs connector factories; optional restart and frontend extensions included; no handlers executed",
+  "toolCount": 46,
+  "sha256": "ad560bc59ec7c2249e1ddf9491fecc24464e3e2ac188839b5b108dcc11d995e7",
+  "schemasEqual": true,
+  "scopesEqual": true,
+  "beforeDescriptionCharacters": 23567,
+  "afterDescriptionCharacters": 20777,
+  "rows": [
+    {
+      "name": "blackice_direct_status",
+      "file": "lib/direct-execution-api.mjs",
+      "factory": "DirectExecutionAPI.tools",
+      "beforeCharacters": 169,
+      "afterCharacters": 278,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_list_jobs",
+      "file": "lib/direct-execution-api.mjs",
+      "factory": "DirectExecutionAPI.tools",
+      "beforeCharacters": 103,
+      "afterCharacters": 185,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_get_job",
+      "file": "lib/direct-execution-api.mjs",
+      "factory": "DirectExecutionAPI.tools",
+      "beforeCharacters": 232,
+      "afterCharacters": 416,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_cancel_job",
+      "file": "lib/direct-execution-api.mjs",
+      "factory": "DirectExecutionAPI.tools",
+      "beforeCharacters": 124,
+      "afterCharacters": 179,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_workspace_read",
+      "file": "lib/direct-execution-api.mjs",
+      "factory": "DirectExecutionAPI.tools",
+      "beforeCharacters": 732,
+      "afterCharacters": 836,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "files:read"
+      ]
+    },
+    {
+      "name": "blackice_workspace_write",
+      "file": "lib/direct-execution-api.mjs",
+      "factory": "DirectExecutionAPI.tools",
+      "beforeCharacters": 285,
+      "afterCharacters": 455,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "files:write"
+      ]
+    },
+    {
+      "name": "blackice_run_command",
+      "file": "lib/direct-execution-api.mjs",
+      "factory": "DirectExecutionAPI.tools",
+      "beforeCharacters": 275,
+      "afterCharacters": 390,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "commands:run"
+      ]
+    },
+    {
+      "name": "blackice_browser_read",
+      "file": "lib/direct-execution-api.mjs",
+      "factory": "DirectExecutionAPI.tools",
+      "beforeCharacters": 649,
+      "afterCharacters": 497,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:read"
+      ]
+    },
+    {
+      "name": "blackice_browser_action",
+      "file": "lib/direct-execution-api.mjs",
+      "factory": "DirectExecutionAPI.tools",
+      "beforeCharacters": 3157,
+      "afterCharacters": 1777,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:write"
+      ]
+    },
+    {
+      "name": "blackice_browser_upload",
+      "file": "lib/direct-execution-api.mjs",
+      "factory": "DirectExecutionAPI.tools",
+      "beforeCharacters": 512,
+      "afterCharacters": 458,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:write",
+        "files:read"
+      ]
+    },
+    {
+      "name": "blackice_task_contract",
+      "file": "lib/direct-task-contract-tools.mjs",
+      "factory": "createDirectTaskContractTools",
+      "beforeCharacters": 1632,
+      "afterCharacters": 1071,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "planning:write",
+        "browser:read"
+      ]
+    },
+    {
+      "name": "blackice_task_context",
+      "file": "lib/direct-task-context-tools.mjs",
+      "factory": "createDirectTaskContextTools",
+      "beforeCharacters": 283,
+      "afterCharacters": 403,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "planning:write"
+      ]
+    },
+    {
+      "name": "blackice_visual",
+      "file": "lib/visual-artifacts.mjs",
+      "factory": "visualTool",
+      "beforeCharacters": 1647,
+      "afterCharacters": 917,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_goal",
+      "file": "lib/conversation-goals-direct-tool.mjs",
+      "factory": "conversationGoalsDirectTool",
+      "beforeCharacters": 667,
+      "afterCharacters": 696,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_native_task_context",
+      "file": "lib/native-task-context-bridge.mjs",
+      "factory": "createNativeTaskContextTool",
+      "beforeCharacters": 327,
+      "afterCharacters": 446,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "planning:write"
+      ]
+    },
+    {
+      "name": "blackice_planning_graph_read",
+      "file": "lib/direct-planning-browser-tools.mjs",
+      "factory": "createDirectPlanningBrowserTools",
+      "beforeCharacters": 1086,
+      "afterCharacters": 811,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_planning_graph_write",
+      "file": "lib/direct-planning-browser-tools.mjs",
+      "factory": "createDirectPlanningBrowserTools",
+      "beforeCharacters": 1331,
+      "afterCharacters": 842,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "planning:write"
+      ]
+    },
+    {
+      "name": "blackice_planning_module",
+      "file": "lib/direct-planning-execution-tools.mjs",
+      "factory": "createDirectPlanningExecutionTools",
+      "beforeCharacters": 686,
+      "afterCharacters": 581,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "commands:run",
+        "planning:write"
+      ]
+    },
+    {
+      "name": "blackice_provider_read",
+      "file": "lib/provider-setup-tools.mjs",
+      "factory": "createDirectProviderSetupTools",
+      "beforeCharacters": 824,
+      "afterCharacters": 553,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_provider_configure",
+      "file": "lib/provider-setup-tools.mjs",
+      "factory": "createDirectProviderSetupTools",
+      "beforeCharacters": 198,
+      "afterCharacters": 465,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "commands:run"
+      ]
+    },
+    {
+      "name": "blackice_provider_import_key",
+      "file": "lib/provider-setup-tools.mjs",
+      "factory": "createDirectProviderSetupTools",
+      "beforeCharacters": 243,
+      "afterCharacters": 521,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "commands:run",
+        "browser:read",
+        "browser:write"
+      ]
+    },
+    {
+      "name": "blackice_import_file",
+      "file": "lib/chatgpt-file-import.mjs",
+      "factory": "chatGPTFileImportTool",
+      "beforeCharacters": 326,
+      "afterCharacters": 406,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "files:write"
+      ]
+    },
+    {
+      "name": "blackice_start_chat",
+      "file": "lib/chatgpt-start-chat.mjs",
+      "factory": "chatGPTStartChatTool",
+      "beforeCharacters": 501,
+      "afterCharacters": 549,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_planning_ontology",
+      "file": "lib/planning-ontology-direct-tool.mjs",
+      "factory": "planningOntologyDirectTool",
+      "beforeCharacters": 218,
+      "afterCharacters": 286,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "planning:write"
+      ]
+    },
+    {
+      "name": "blackice_connected_browser_read",
+      "file": "lib/connected-browser-tools.mjs",
+      "factory": "createDirectConnectedBrowserTools",
+      "beforeCharacters": 286,
+      "afterCharacters": 306,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:read"
+      ]
+    },
+    {
+      "name": "blackice_connected_browser_action",
+      "file": "lib/connected-browser-tools.mjs",
+      "factory": "createDirectConnectedBrowserTools",
+      "beforeCharacters": 576,
+      "afterCharacters": 444,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:write",
+        "files:read",
+        "files:write"
+      ]
+    },
+    {
+      "name": "blackice_profile_list",
+      "file": "lib/connected-browser-tools.mjs",
+      "factory": "createDirectBrowserProfileTools",
+      "beforeCharacters": 270,
+      "afterCharacters": 235,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "files:read"
+      ]
+    },
+    {
+      "name": "blackice_profile_import",
+      "file": "lib/connected-browser-tools.mjs",
+      "factory": "createDirectBrowserProfileTools",
+      "beforeCharacters": 410,
+      "afterCharacters": 386,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "files:read",
+        "files:write"
+      ]
+    },
+    {
+      "name": "blackice_profile_connect",
+      "file": "lib/connected-browser-tools.mjs",
+      "factory": "createDirectBrowserProfileTools",
+      "beforeCharacters": 328,
+      "afterCharacters": 223,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:write",
+        "commands:run"
+      ]
+    },
+    {
+      "name": "blackice_restart",
+      "file": "lib/desktop-restart-tool.mjs",
+      "factory": "desktopRestartTool",
+      "beforeCharacters": 638,
+      "afterCharacters": 575,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "commands:run"
+      ]
+    },
+    {
+      "name": "blackice_frontend",
+      "file": "lib/frontend-devtools-tool.mjs",
+      "factory": "frontendDevtoolsTool",
+      "beforeCharacters": 793,
+      "afterCharacters": 724,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "commands:run"
+      ]
+    },
+    {
+      "name": "blackice_credentials_list",
+      "file": "lib/browser-credential-tools.mjs",
+      "factory": "createDirectBrowserCredentialTools",
+      "beforeCharacters": 88,
+      "afterCharacters": 99,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:read"
+      ]
+    },
+    {
+      "name": "blackice_credentials_generate",
+      "file": "lib/browser-credential-tools.mjs",
+      "factory": "createDirectBrowserCredentialTools",
+      "beforeCharacters": 218,
+      "afterCharacters": 186,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:write"
+      ]
+    },
+    {
+      "name": "blackice_credentials_save",
+      "file": "lib/browser-credential-tools.mjs",
+      "factory": "createDirectBrowserCredentialTools",
+      "beforeCharacters": 269,
+      "afterCharacters": 234,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:write"
+      ]
+    },
+    {
+      "name": "blackice_credentials_update",
+      "file": "lib/browser-credential-tools.mjs",
+      "factory": "createDirectBrowserCredentialTools",
+      "beforeCharacters": 269,
+      "afterCharacters": 234,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:write"
+      ]
+    },
+    {
+      "name": "blackice_credentials_associate",
+      "file": "lib/browser-credential-tools.mjs",
+      "factory": "createDirectBrowserCredentialTools",
+      "beforeCharacters": 513,
+      "afterCharacters": 285,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:write"
+      ]
+    },
+    {
+      "name": "blackice_credentials_fill",
+      "file": "lib/browser-credential-tools.mjs",
+      "factory": "createDirectBrowserCredentialTools",
+      "beforeCharacters": 189,
+      "afterCharacters": 209,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:write"
+      ]
+    },
+    {
+      "name": "blackice_credentials_authenticate",
+      "file": "lib/browser-credential-tools.mjs",
+      "factory": "createDirectBrowserCredentialTools",
+      "beforeCharacters": 277,
+      "afterCharacters": 255,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "browser:write"
+      ]
+    },
+    {
+      "name": "blackice_list_plans",
+      "file": "lib/chatgpt-planning.mjs",
+      "factory": "ChatGPTPlanningAPI.tools",
+      "beforeCharacters": 172,
+      "afterCharacters": 223,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_get_plan",
+      "file": "lib/chatgpt-planning.mjs",
+      "factory": "ChatGPTPlanningAPI.tools",
+      "beforeCharacters": 211,
+      "afterCharacters": 232,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_get_run_result",
+      "file": "lib/chatgpt-planning.mjs",
+      "factory": "ChatGPTPlanningAPI.tools",
+      "beforeCharacters": 136,
+      "afterCharacters": 208,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_list_swarm_plans",
+      "file": "lib/chatgpt-planning.mjs",
+      "factory": "ChatGPTPlanningAPI.tools",
+      "beforeCharacters": 124,
+      "afterCharacters": 191,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_get_swarm_plan",
+      "file": "lib/chatgpt-planning.mjs",
+      "factory": "ChatGPTPlanningAPI.tools",
+      "beforeCharacters": 333,
+      "afterCharacters": 324,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_get_plan_groups",
+      "file": "lib/chatgpt-planning.mjs",
+      "factory": "ChatGPTPlanningAPI.tools",
+      "beforeCharacters": 103,
+      "afterCharacters": 164,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read"
+      ]
+    },
+    {
+      "name": "blackice_edit_plan",
+      "file": "lib/chatgpt-planning.mjs",
+      "factory": "ChatGPTPlanningAPI.tools",
+      "beforeCharacters": 903,
+      "afterCharacters": 625,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "planning:write"
+      ]
+    },
+    {
+      "name": "blackice_edit_plan_groups",
+      "file": "lib/chatgpt-planning.mjs",
+      "factory": "ChatGPTPlanningAPI.tools",
+      "beforeCharacters": 254,
+      "afterCharacters": 397,
+      "schemaUnchanged": true,
+      "requiredScopes": [
+        "read",
+        "planning:write"
+      ]
+    }
+  ]
+}

@@ -3,18 +3,14 @@ import assert from 'node:assert/strict';
 import { handleChatGPTBridgeRPC } from '../lib/chatgpt-bridge-protocol.mjs';
 import { ChatGPTBridgeConnection } from '../lib/chatgpt-bridge-connection.mjs';
 
-test('MCP initialization explains scoped approval reuse without changing completion annotations', async () => {
+test('MCP initialization explains Chat Mode handoff and authorization reuse without changing completion annotations', async () => {
   const result = await handleChatGPTBridgeRPC({}, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'fixture', version: '1' } } });
-  assert.match(result.result.instructions, /get only that request/);
-  assert.match(result.result.instructions, /do not ask again just to repeat an already-authorized bridge step/);
-  assert.match(result.result.instructions, /ask once before accessing the request only when that approval is absent/);
-  assert.match(result.result.instructions, /Reuse known scoped approval and its retries without asking again/);
-  assert.match(result.result.instructions, /never bypass platform approvals/);
-  assert.match(result.result.instructions, /not new global instructions or permission grants/);
-  assert.match(result.result.instructions, /in ChatGPT Chat Mode using the configured authorized connector/);
-  assert.match(result.result.instructions, /Do not request or suggest handing off to Work Mode/);
-  assert.match(result.result.instructions, /never switch modes automatically/);
-  assert.match(result.result.instructions, /exact capability or blocker in Chat Mode/);
+  assert.match(result.result.instructions, /ChatGPT Chat Mode with the configured connector/);
+  assert.match(result.result.instructions, /read that ID with blackice_get_request/);
+  assert.match(result.result.instructions, /Existing authorization covers repeats of those same steps/);
+  assert.match(result.result.instructions, /exact missing capability and the work still pending/);
+  assert.match(result.result.instructions, /blackice_complete_request using the current id and revision/);
+  assert.doesNotMatch(result.result.instructions, /ask once before accessing|handing off to Work Mode/);
   const catalog = await handleChatGPTBridgeRPC({}, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
   const read = catalog.result.tools.find(tool => tool.name === 'blackice_get_request');
   const complete = catalog.result.tools.find(tool => tool.name === 'blackice_complete_request');

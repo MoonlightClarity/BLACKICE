@@ -1,0 +1,48 @@
+TAP version 13
+# (node:11840) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: current catalog matches its live provider schemas and preserves runtime contracts
+ok 1 - current catalog matches its live provider schemas and preserves runtime contracts
+  ---
+  duration_ms: 62.3354
+  type: 'test'
+  ...
+# Subtest: immutable historical catalog snapshots retain their recorded fingerprints
+ok 2 - immutable historical catalog snapshots retain their recorded fingerprints
+  ---
+  duration_ms: 73.5681
+  type: 'test'
+  ...
+# Subtest: each provider is sampled once and dispatch remains paired with its captured definition
+ok 3 - each provider is sampled once and dispatch remains paired with its captured definition
+  ---
+  duration_ms: 0.5627
+  type: 'test'
+  ...
+# Subtest: duplicate tool identity fails before either provider can execute
+ok 4 - duplicate tool identity fails before either provider can execute
+  ---
+  duration_ms: 0.6615
+  type: 'test'
+  ...
+# Subtest: caller and provider mutations cannot change snapshots or their authorization scopes
+ok 5 - caller and provider mutations cannot change snapshots or their authorization scopes
+  ---
+  duration_ms: 0.4298
+  type: 'test'
+  ...
+# Subtest: scope aliases and existing metadata preserve their wire representation and provider order
+ok 6 - scope aliases and existing metadata preserve their wire representation and provider order
+  ---
+  duration_ms: 0.4202
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 305.6432

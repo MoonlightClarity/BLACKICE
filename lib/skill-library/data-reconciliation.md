@@ -1,9 +1,13 @@
 # Reconcile two lists
 
-Match two tables or exports and report missing, duplicate, and ambiguous records without silently dropping rows.
+Use when matching two tables, rosters, or exports and locating duplicates or differences.
 
-**What you need:** Two readable lists, a join key or sufficient matching attributes, and representative sample rows.
+1. Read both inputs and check their row counts, key formats, and key uniqueness.
+2. Match on a stable shared ID where possible. Normalize known formatting differences such as spaces or case and show one example.
+3. Separate exact matches, normalized matches, ambiguous candidates, and unmatched rows.
+4. Use secondary fields to resolve a collision only when those fields distinguish the records.
+5. Account for every input row on both sides, including duplicates and unmatched rows.
 
-**Approach:** Compare key formats and uniqueness in each list. Separate exact, normalized, ambiguous, and unmatched cases; show normalization on a sample. Use secondary fields to resolve a collision only when they support the match.
+Deliver the matched records and exceptions in the requested format, with the matching rule and counts. For partial exports, state which input is incomplete.
 
-**Check and recover:** Reconcile input counts on both sides before claiming completeness. If exports are partial or a key has multiple candidates, show the exceptions and suggest the field that would resolve them.
+Example: two “Sam Lee” records share a name but have different email addresses. Keep them distinct unless another identifier connects them. If the key is insufficient, identify the additional field that would resolve the ambiguity and finish the reliable matches.

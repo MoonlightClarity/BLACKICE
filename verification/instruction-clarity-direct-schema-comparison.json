@@ -1,0 +1,333 @@
+{
+  "kind": "Direct and compatibility exported definitions; includes overlap with live46 and separate retired/manual/remote/scheduler surfaces",
+  "base": "C:/Users/user/Documents/Codex/BLACKICE-new-skill-20261121",
+  "current": "C:\\Users\\user\\Documents\\Codex\\BLACKICE-instruction-clarity-20261121",
+  "definitions": 54,
+  "schemasEqual": true,
+  "rows": [
+    {
+      "name": "blackice_bridge_status",
+      "beforeCharacters": 117,
+      "afterCharacters": 122,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_browser_action",
+      "beforeCharacters": 3157,
+      "afterCharacters": 1777,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_browser_read",
+      "beforeCharacters": 649,
+      "afterCharacters": 497,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_browser_upload",
+      "beforeCharacters": 512,
+      "afterCharacters": 458,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_cancel_job",
+      "beforeCharacters": 124,
+      "afterCharacters": 179,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_cancel_task",
+      "beforeCharacters": 122,
+      "afterCharacters": 150,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_complete_request",
+      "beforeCharacters": 320,
+      "afterCharacters": 363,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_continue_task",
+      "beforeCharacters": 178,
+      "afterCharacters": 273,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_direct_status",
+      "beforeCharacters": 169,
+      "afterCharacters": 278,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_edit_plan",
+      "beforeCharacters": 830,
+      "afterCharacters": 606,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_edit_plan",
+      "beforeCharacters": 903,
+      "afterCharacters": 625,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_edit_plan_groups",
+      "beforeCharacters": 254,
+      "afterCharacters": 397,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_edit_schedule",
+      "beforeCharacters": 244,
+      "afterCharacters": 259,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_get_job",
+      "beforeCharacters": 232,
+      "afterCharacters": 416,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_get_plan",
+      "beforeCharacters": 211,
+      "afterCharacters": 232,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_get_plan_groups",
+      "beforeCharacters": 103,
+      "afterCharacters": 164,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_get_request",
+      "beforeCharacters": 216,
+      "afterCharacters": 195,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_get_run",
+      "beforeCharacters": 148,
+      "afterCharacters": 194,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_get_run_result",
+      "beforeCharacters": 136,
+      "afterCharacters": 208,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_get_schedule",
+      "beforeCharacters": 210,
+      "afterCharacters": 261,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_get_swarm_plan",
+      "beforeCharacters": 333,
+      "afterCharacters": 324,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_get_task",
+      "beforeCharacters": 293,
+      "afterCharacters": 212,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_goal",
+      "beforeCharacters": 667,
+      "afterCharacters": 696,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_import_file",
+      "beforeCharacters": 326,
+      "afterCharacters": 406,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_list_jobs",
+      "beforeCharacters": 103,
+      "afterCharacters": 185,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_list_plans",
+      "beforeCharacters": 172,
+      "afterCharacters": 223,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_list_requests",
+      "beforeCharacters": 168,
+      "afterCharacters": 229,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_list_schedule_results",
+      "beforeCharacters": 156,
+      "afterCharacters": 246,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_list_schedules",
+      "beforeCharacters": 150,
+      "afterCharacters": 187,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_list_swarm_plans",
+      "beforeCharacters": 124,
+      "afterCharacters": 191,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_list_tasks",
+      "beforeCharacters": 259,
+      "afterCharacters": 260,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_models",
+      "beforeCharacters": 117,
+      "afterCharacters": 157,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_native_task_context",
+      "beforeCharacters": 327,
+      "afterCharacters": 446,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_planning_cycle",
+      "beforeCharacters": 919,
+      "afterCharacters": 324,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_planning_graph_read",
+      "beforeCharacters": 1086,
+      "afterCharacters": 811,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_planning_graph_write",
+      "beforeCharacters": 1331,
+      "afterCharacters": 842,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_planning_module",
+      "beforeCharacters": 686,
+      "afterCharacters": 581,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_planning_ontology",
+      "beforeCharacters": 218,
+      "afterCharacters": 286,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_preview_schedule",
+      "beforeCharacters": 155,
+      "afterCharacters": 180,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_read_artifact",
+      "beforeCharacters": 175,
+      "afterCharacters": 212,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_read_output",
+      "beforeCharacters": 114,
+      "afterCharacters": 172,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_restart",
+      "beforeCharacters": 638,
+      "afterCharacters": 575,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_run_command",
+      "beforeCharacters": 275,
+      "afterCharacters": 390,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_run_schedule",
+      "beforeCharacters": 211,
+      "afterCharacters": 236,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_start_chat",
+      "beforeCharacters": 501,
+      "afterCharacters": 549,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_start_task",
+      "beforeCharacters": 228,
+      "afterCharacters": 309,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_status",
+      "beforeCharacters": 101,
+      "afterCharacters": 97,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_task_context",
+      "beforeCharacters": 283,
+      "afterCharacters": 403,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_task_contract",
+      "beforeCharacters": 1632,
+      "afterCharacters": 1071,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_visual",
+      "beforeCharacters": 1647,
+      "afterCharacters": 917,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_workspace_read",
+      "beforeCharacters": 732,
+      "afterCharacters": 836,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "blackice_workspace_write",
+      "beforeCharacters": 285,
+      "afterCharacters": 455,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "relay_chatgpt",
+      "beforeCharacters": 691,
+      "afterCharacters": 565,
+      "schemaUnchanged": true
+    },
+    {
+      "name": "relay_visual",
+      "beforeCharacters": 1647,
+      "afterCharacters": 917,
+      "schemaUnchanged": true
+    }
+  ]
+}

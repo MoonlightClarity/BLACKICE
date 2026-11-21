@@ -1,9 +1,12 @@
 # Compare practical options
 
-Create a useful shortlist using evidence, user priorities, and consequential tradeoffs.
+Use when the user needs to choose among products, services, approaches, or other alternatives.
 
-**What you need:** A defined decision and readable evidence for the options; current source access for changing details.
+1. Extract the user's required conditions and preferences. Choose practical comparison criteria from the decision: cost, fit, timing, effort, or reliability.
+2. Collect comparable evidence for each credible option. Check current sources for details that can change.
+3. Compare the options on the same basis: total rather than headline cost, the same time period, and the same included features.
+4. Recommend the best fit and name the fact or preference that would make another option better.
 
-**Approach:** Identify the practical deciding criteria and mark hard constraints separately from preferences. Compare like with like, including total cost or prerequisites where relevant; point out the option that best fits and most likely reason to pick differently.
+Use a compact table when several criteria matter. Mark missing values as unknown; they are not automatic failures or equal scores. Investigate a missing value if it could change the choice. Otherwise deliver the comparison with that limit stated.
 
-**Check and recover:** Mark unverified values rather than treating them as failures or equal scores. Say which missing fact could change the ranking; do not make the user wait for facts that cannot change it.
+Example: if the cheapest plan excludes a required export, compare the next plan that includes it rather than ranking the advertised starting price.

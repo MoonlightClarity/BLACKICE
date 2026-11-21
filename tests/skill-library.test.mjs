@@ -108,6 +108,8 @@ test('the default first-party pack is selectable by real format and task queries
   ['anti-overalignment','builtin-task-grounding'],
   ['verify the running system','library-verify-a-working-slice'],
   ['add new catalog entries','library-expand-a-catalog'],
+  ['modular development','library-modular-development'],
+  ['implement a feature','library-modular-development'],
  ]){
   const result=await call({action:'search',query});
   assert.equal(result.entries[0].id,id);
@@ -118,8 +120,8 @@ test('the default first-party pack is selectable by real format and task queries
  }
  // This meaningful body word isn't metadata. Search must never read or discover through pack bodies.
  const body=await fs.readFile(new URL('word-review.md',root),'utf8');
- assert.match(body,/paragraphs/);
- assert.ok(!(await call({action:'search',query:'paragraphs'})).entries.some(row=>row.id==='library-word-review'));
+ assert.match(body,/milestone/);
+ assert.ok(!(await call({action:'search',query:'milestone'})).entries.some(row=>row.id==='library-word-review'));
 });
 test('natural requests and concise keywords rank the intended default skill first',async()=>{
  const handler=createRetrievalToolHandler({cwd:process.cwd()});
@@ -143,7 +145,7 @@ test('natural requests and concise keywords rank the intended default skill firs
  for(const query of ['soil salinity limits for heirloom tomatoes','repaint a rusted bicycle frame with enamel','pdfish','lexicalgibberish-only','Could you please do it?']){
   assert.equal((await search(query)).totalMatches,0,query);
  }
- assert.ok(!(await search('paragraphs')).entries.some(row=>row.id==='library-word-review'));
+ assert.ok(!(await search('milestone')).entries.some(row=>row.id==='library-word-review'));
 });
 test('domain aliases handle intervening words without awarding unrelated word fragments',async()=>{
  const handler=createRetrievalToolHandler({cwd:process.cwd()});

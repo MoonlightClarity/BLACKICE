@@ -1,3 +1,4 @@
+import { CONTRACT_AUTHORING_GUIDANCE } from '../public/planning-contract-model.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -67,6 +68,7 @@ test('native MCP describe delivers exact action fields and distinguishes the two
   assert.equal(reply.isError, false);
   const described = parsed(reply);
   assert.deepEqual(described.schema, f.advertised.inputSchema);
+  assert.equal(described.authoring, CONTRACT_AUTHORING_GUIDANCE);
   assert.deepEqual(described.actionFields.plan, ['action', 'expectedRevision', 'contract']);
   assert.deepEqual(described.actionFields.bind_receipt, ['action', 'expectedRevision', 'workItemId', 'criterionId', 'receiptBinding']);
   assert.deepEqual(described.actionFields.focus, ['action', 'expectedPlanEpoch', 'workItemId']);
@@ -75,7 +77,7 @@ test('native MCP describe delivers exact action fields and distinguishes the two
   for (const [action, fields] of Object.entries(described.actionFields)) {
     assert.match(described.schema.properties.action.description, new RegExp(action + ': ' + fields.join(', ')));
   }
-  assert.match(described.note, /plan accepts only action, expectedRevision and contract/);
+  assert.match(described.note, /plan takes action, expectedRevision and contract/);
   assert.match(described.schema.properties.expectedPlanEpoch.description, /only for focus and assess/);
   assert.match(described.schema.properties.expectedPlanEpoch.description, /Omit this field.*including plan/);
   assert.match(described.schema.properties.expectedRevision.description, /plan, bind_receipt, checkpoint and artifact/);
@@ -84,9 +86,9 @@ test('native MCP describe delivers exact action fields and distinguishes the two
   assert.equal(Object.hasOwn(described.schema.properties.contract.properties, 'planEpoch'), false);
   assert.match(described.schema.properties.contract.description, /authorable canonical intent/);
   assert.match(described.schema.properties.contract.description, /Omit host-owned contract\.planEpoch/);
-  assert.match(described.note, /omit host-owned contract\.planEpoch/);
+  assert.match(described.note, /host-owned contract\.planEpoch omitted/);
   assert.deepEqual(TASK_WORKER_TOOL.inputSchema, TASK_TOOL.inputSchema);
-  assert.match(TASK_WORKER_TOOL.description, /plan accepts only action, expectedRevision and contract/);
+  assert.match(TASK_WORKER_TOOL.description, /plan takes action, expectedRevision and contract/);
   assert.equal(described.schema.oneOf, undefined);
   assert.equal(described.schema.if, undefined);
 });

@@ -121,11 +121,29 @@ test('calibrated manual chat can enable autonomy later in its original conversat
   assert.equal(runtime.calls.length,3);
 });
 
-test('ordinary final text cannot complete the goal and three empty turns are visible as stalled', async t => {
-  const {engine,goals,runtime} = await fixture(t, async (_,n) => ({...output(n),output:'All done!'}));
-  const run = engine.startRun({workflow:graph(),input:{task:'Do work',goal:{objective:'Do work'}}});
-  await waitFor(async () => (await goals.get(run.id))?.status === 'blocked');
-  const goal = await goals.get(run.id); assert.equal(runtime.calls.length,3); assert.equal(goal.completionEvidence,null); assert.match(goal.lastReason,/no-progress boundary/);
+test('null turn limit remains active after seven empty turns and retains no-progress telemetry', async t => {
+  const release=deferred();t.after(()=>release.resolve());
+  const {engine,goals,runtime} = await fixture(t, async (_,n) => {if(n===8)await release.promise;return {...output(n),output:'All done!'};});
+  const run = engine.startRun({workflow:graph(),input:{task:'Do work',goal:{objective:'Do work',maxTurns:null}}});
+  await waitFor(()=>runtime.calls.length===8);
+  const goal=await goals.get(run.id);
+  assert.equal(goal.status,'active');assert.equal(goal.maxTurns,null);assert.equal(goal.noProgressTurns,7);
+  assert.equal(goal.completionEvidence,null);assert.equal(goal.lastProgressBasis,'unverified');
+  await goals.control(run.id,{action:'pause_after_turn'});
+  release.resolve();await waitFor(()=>[...engine.runs.values()].at(-1).settled);
+  assert.equal((await goals.get(run.id)).status,'paused');assert.equal(runtime.calls.length,8);
+});
+
+test('an observed dependency wait still pauses continuation with a null turn limit', async t => {
+  const waitUntil=new Date(Date.now()+60000).toISOString();
+  const {engine,goals,runtime}=await fixture(t,async(options,n)=>{
+    if(n===5)assert.equal((await report(options,'wait',{summary:'The dependency reports a later retry time.',evidence:'The observed dependency response specifies the retry time recorded here.',waitUntil})).result.success,true);
+    return output(n);
+  });
+  const run=engine.startRun({workflow:graph(),input:{task:'Wait for the dependency result',goal:{objective:'Wait for the dependency result',maxTurns:null}}});
+  await waitFor(async()=> (await goals.get(run.id))?.status==='waiting'&&[...engine.runs.values()].at(-1).settled);
+  const goal=await goals.get(run.id);assert.equal(goal.maxTurns,null);assert.equal(goal.waitUntil,waitUntil);
+  await new Promise(resolve=>setTimeout(resolve,30));assert.equal(runtime.calls.length,5);
 });
 
 test('explicit pause_after_turn keeps an in-flight turn and prevents automatic continuation', async t => {
@@ -445,7 +463,8 @@ test('control reconciliation refuses changed intent, lifecycle, run, goal and ab
  await goals.control(first.id,{action:'pause',requestId:'reject-cleanup'});
 });
 
-test('autonomous recovery preserves prepared work, then detects repeated destination switching', async t => {
+test('autonomous recovery preserves prepared work and reports destination switching without a turn cap', async t => {
+  const release=deferred();t.after(()=>release.resolve());
   const actions = [];
   let activeRun;
   const browser = {
@@ -457,6 +476,7 @@ test('autonomous recovery preserves prepared work, then detects repeated destina
     },
   };
   const {engine,goals,runtime} = await fixture(t, async (options,n) => {
+    if(n===5){await release.promise;return output(n);}
     const call = args => options.onToolCall({name:'relay_browser', arguments:{browser:'relay',tabId:'prepared',...args}});
     const turn = [...engine.runs.values()].at(-1);
     activeRun = turn;
@@ -485,16 +505,20 @@ test('autonomous recovery preserves prepared work, then detects repeated destina
     return output(n);
   },{engine:{browser}});
   const run = engine.startRun({workflow:graph(),input:{task:'Prepare and verify application readiness without submitting.',goal:{objective:'Until verified readiness is achieved, keep resolving the prepared application.'}}});
-  await waitFor(async () => (await goals.get(run.id))?.status === 'blocked');
-  assert.equal(runtime.calls.length,4,JSON.stringify([...engine.runs.values()].map(r => r.error)));
+  await waitFor(()=>runtime.calls.length===5);
+  assert.equal((await goals.get(run.id)).status,'active');
+  assert.equal(runtime.calls.length,5,JSON.stringify([...engine.runs.values()].map(r => r.error)));
   assert.deepEqual(actions,['read','click','snapshot',...Array(8).fill('navigate')]);
   assert.equal((await goals.get(run.id)).completionEvidence,null);
   assert.equal(goals.raw(run.id).lastReportedMilestone.milestone,'prepared:historical-office-verified');
   assert.equal(goals.raw(run.id).lastMilestone,undefined,'a reported milestone is not host-verified');
   assert.equal((goals.raw(run.id).milestones || []).length,0,'reported milestones do not reset observed progress');
+  await goals.control(run.id,{action:'pause_after_turn'});release.resolve();
+  await waitFor(()=>[...engine.runs.values()].at(-1).settled);
 });
 
 test('distinct observed field advances survive omitted milestones, while repeated evidence and unknown edits stall', async t => {
+  const release=deferred();t.after(()=>release.resolve());
   let current, value = '', unknownDispatches = 0;
   const browser = {
     status: () => ({available:true, contained:true, tabs:current ? [{tabId:'draft',owner:{taskId:current.taskId,runId:current.id,nodeId:'agent'}}] : []}),
@@ -508,6 +532,7 @@ test('distinct observed field advances survive omitted milestones, while repeate
     },
   };
   const {engine,goals,runtime} = await fixture(t, async (opts,n) => {
+    if(n===7){await release.promise;return output(n);}
     current = [...engine.runs.values()].at(-1);
     const call = args => opts.onToolCall({name:'relay_browser',arguments:{browser:'relay',tabId:'draft',...args}});
     await call({action:'snapshot'});
@@ -525,11 +550,14 @@ test('distinct observed field advances survive omitted milestones, while repeate
     return output(n);
   },{engine:{browser}});
   const run = engine.startRun({workflow:graph(),input:{task:'Verify draft fields',goal:{objective:'Verify draft fields'}}});
-  await waitFor(() => goals.view(run.id)?.status === 'blocked');
-  assert.equal(runtime.calls.length,6,JSON.stringify([...engine.runs.values()].map(r=>r.error)));
+  await waitFor(() => runtime.calls.length === 7);
+  assert.equal(goals.view(run.id).status,'active');
+  assert.equal(runtime.calls.length,7,JSON.stringify([...engine.runs.values()].map(r=>r.error)));
   assert.equal(goals.raw(run.id).milestones.length,3);
   assert.equal(goals.raw(run.id).noProgressTurns,3);
   assert.equal(unknownDispatches,1);
+  await goals.control(run.id,{action:'pause_after_turn'});release.resolve();
+  await waitFor(()=>[...engine.runs.values()].at(-1).settled);
 });
 
 test('uncertain effect remains blocked after an unrelated read turn while a distinct action remains available', async t => {
@@ -679,4 +707,35 @@ test('Goal scope refreshes legacy native catalogs held only in resume state on C
     assert.equal(options.threadId,undefined);
     assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_goal'),false);
   }
+});
+
+test('direct goal controls persist null by default and remove an explicit finite cap with null', async t => {
+  let api;t.after(()=>api?.close());
+  const {engine,goals,conversations,cwd,dataDir,runtime}=await fixture(t,async()=>output(1),{goals:{autoStart:false}});
+  const seeded=engine.startRun({workflow:graph(),input:'Create the fixture conversation.'});
+  await waitFor(()=>engine.getRun(seeded.id).settled);
+  const {DirectExecutionAPI}=await import('../lib/direct-execution-api.mjs');
+  const {conversationGoalsDirectTool}=await import('../lib/conversation-goals-direct-tool.mjs');
+  api=await new DirectExecutionAPI({dataDir:path.join(dataDir,'direct-null-test'),allowedRoot:cwd,additionalTools:[conversationGoalsDirectTool({goals})]}).init();
+  const client={id:'null-goal-owner',kind:'chatgpt',scopes:['read']};
+  const control=async(requestId,body)=>{
+    const receipt=await api.call('blackice_goal',{requestId,conversationId:seeded.id,...body},client);
+    const job=await waitFor(async()=>{const value=await api.getJob(receipt.jobId,client);return value.settled&&value;});
+    assert.equal(job.status,'succeeded',JSON.stringify(job));
+    return JSON.parse(job.result.text.text).goal;
+  };
+  const persisted=async expected=>{
+    const states=await conversations.readStates(conversations.stateFile);
+    assert.equal(states[seeded.id].goal.maxTurns,expected);
+  };
+  let goal=await control('default-null',{action:'set',objective:'Verify stored limit behavior.'});
+  assert.equal(goal.maxTurns,null);await persisted(null);
+  goal=await control('finite-cap',{action:'update',maxTurns:3,expectedRevision:goal.revision});
+  assert.equal(goal.maxTurns,3);await persisted(3);
+  goal=await control('clear-cap',{action:'update',maxTurns:null,expectedRevision:goal.revision});
+  assert.equal(goal.maxTurns,null);await persisted(null);
+  goal=await control('pause-null',{action:'pause',expectedRevision:goal.revision});
+  goal=await control('resume-null',{action:'resume',expectedRevision:goal.revision});
+  assert.equal(goal.maxTurns,null);await persisted(null);
+  assert.equal(runtime.calls.length,1,'Automatic continuations remain disabled in this fixture.');
 });

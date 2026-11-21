@@ -4,14 +4,11 @@ import {assetInspectionHtml,ASSET_INSPECTION} from '../desktop/visual-inspection
 import {SVG_GENERAL_EXAMPLES} from '../lib/visual-craft-examples.mjs';
 import {VISUAL_PREVIEW_FEEDBACK} from '../lib/visual-preview-feedback.mjs';
 
-test('the native feedback recipe displays both flattened PNGs without repeating preview or printing bytes',async()=>{
- const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
- const run=new AsyncFunction('tools','args','image',VISUAL_PREVIEW_FEEDBACK.nativeStringExample);
- const urls=['data:image/png;base64,bWFpbg==','data:image/png;base64,c2hlZXQ='];
- let calls=0;const displayed=[];
- await run({relay_visual:async()=>{calls++;return JSON.stringify({width:512})+'\n'+urls.join('\n');}},{action:'preview'},url=>displayed.push(url));
- assert.equal(calls,1);assert.deepEqual(displayed,urls);
- await run({relay_visual:async()=>'{"error":"preview unavailable"}'},{action:'preview'},()=>assert.fail('No image was returned'));
+test('preview feedback describes returned image data without assuming unattached tools or helpers',()=>{
+ assert.doesNotMatch(JSON.stringify(VISUAL_PREVIEW_FEEDBACK),/tools\.|relay_visual|image\(/);
+ assert.match(VISUAL_PREVIEW_FEEDBACK.imageFormats.structured,/inputImage.*imageUrl/);
+ assert.match(VISUAL_PREVIEW_FEEDBACK.imageFormats.directJob,/includeImages:true/);
+ assert.match(VISUAL_PREVIEW_FEEDBACK.imageFormats.flattened,/newline-separated data:image/);
 });
 
 test('asset inspection embeds only validated images and preserves original colors and transparency',()=>{
@@ -32,7 +29,7 @@ test('native and direct asset previews return a second image without saving or b
  const native=await nativeVisualTools(store)({taskId:'a',runId:'r',canWrite:false});
  const direct=visualTool(store);
  for(const result of [await native.handle({name:'relay_visual',arguments:{action:'preview',inspection:'asset',document:doc}}),await direct.execute({action:'preview',inspection:'asset',document:doc,requestId:'preview'},{client:{id:'owner',scopes:['read']}})]){
-  assert.deepEqual(result.contentItems.map(c=>c.type),['inputText','inputImage','inputImage']);assert.doesNotMatch(result.contentItems[0].text,/base64,(?:bWFpbg|c2hlZXQ)/);assert.ok(JSON.parse(result.contentItems[0].text).imageFeedback.nativeStringExample);assert.equal(JSON.parse(result.contentItems[0].text).qualityAssessment.status,'not-assessed');
+  assert.deepEqual(result.contentItems.map(c=>c.type),['inputText','inputImage','inputImage']);assert.doesNotMatch(result.contentItems[0].text,/base64,(?:bWFpbg|c2hlZXQ)/);assert.deepEqual(JSON.parse(result.contentItems[0].text).imageFeedback,VISUAL_PREVIEW_FEEDBACK);assert.equal(JSON.parse(result.contentItems[0].text).qualityAssessment.status,'not-assessed');
  }
  assert.equal(calls,2);assert.deepEqual((await store.read({action:'list',conversationId:'a'})).artifacts,[]);
  await assert.rejects(()=>native.handle({name:'relay_visual',arguments:{action:'preview',inspection:'arbitrary',document:doc}}));

@@ -1,9 +1,13 @@
 # Extract actions from documents
 
-Turn minutes, briefs, or documents into traceable tasks, decisions, deadlines, and unresolved questions.
+Use for minutes, transcripts, briefs, or notes that contain commitments, decisions, and follow-ups.
 
-**What you need:** Readable notes, transcript, document text, or supported attachment.
+1. Read the relevant sections and retain page, heading, or line locations.
+2. Separate agreed actions from suggestions, decisions, and open questions.
+3. For each action, capture the work, named owner, due date or trigger, and source location.
+4. Preserve relative deadlines such as “two business days after approval” unless the approval date is known.
+5. Check the most consequential actions against the original wording.
 
-**Approach:** Separate commitments from suggestions and open questions. Capture the action, responsible party when named, due date or trigger, and a source locator. Preserve relative wording such as 'two business days after approval' unless the start date is known.
+Return a table or list with unknown owners and dates left explicit. If the user asked to create task records, create them through the available tool and inspect the saved result.
 
-**Check and recover:** Sample the most consequential tasks against the text. Mark unknown owners or dates and name any missed sections. Deliver proposed actions as a list unless asked to create records; a proposed task is not a created task.
+Example: “Maya will send the draft Friday” is an action; “we could ask Maya” is a suggestion. A missing section limits the extraction, so name it rather than describing the whole document as checked.

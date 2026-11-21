@@ -1,0 +1,229 @@
+{
+  "base": "28f8e0f51be0bc55e73eb9afab1bc1ebeea765e8",
+  "changes": [
+    {
+      "file": "lib/harness-identity.mjs",
+      "beforeChars": 2549,
+      "afterChars": 1762,
+      "beforeHash": "6390e0a7ae59446d470c5cc7d8dd617cc861e9d4e7776e9dbd8d600b17f7f92b",
+      "afterHash": "7d0874c4283586a46ba417f61cad48d7b5cbea0c100fc08af047748bd8d2eff8"
+    },
+    {
+      "file": "lib/task-completion-guidance.mjs",
+      "beforeChars": 2105,
+      "afterChars": 1470,
+      "beforeHash": "db26927a841f96870ebbb1c7d11f1ecd8eaed4c5f29e4e4ca5c6ccfbdfc104bb",
+      "afterHash": "c1801fa2218abef722675d8b289afb7d646b684d1ab2da8c01713f455ef38160"
+    },
+    {
+      "file": "lib/direct-task-guidance.mjs",
+      "beforeChars": 3310,
+      "afterChars": 1550,
+      "beforeHash": "e84758b549195fe43bf254c0c836c43efb41e8138d8bfe0c85de09503b64b5ee",
+      "afterHash": "c9d64994374c7222663451491f80d51ed50f2aa5d57650cf2c358cd784a42d3d"
+    },
+    {
+      "file": "public/planning-contract-model.mjs",
+      "beforeChars": 46759,
+      "afterChars": 43726,
+      "beforeHash": "3a29d7c9b8d9d5ca8e909b6336d7aeac1c927620fd31549ad204e73b92fc8899",
+      "afterHash": "b0a986f411cbb214885f9543b803fdf6662f8bd5d9d69b3ed35da3e0c24740c8"
+    },
+    {
+      "file": "lib/task-state.mjs",
+      "beforeChars": 100557,
+      "afterChars": 99557,
+      "beforeHash": "9fdb7a62e75f65beac0ed437203bb3da11491fb7576278105e0abe23d1fb83fc",
+      "afterHash": "e30b6b35293305a865e85e20391440e5c26787c93e41baa32612cc4fa48900d2"
+    },
+    {
+      "file": "lib/task-action-directory.mjs",
+      "beforeChars": 43564,
+      "afterChars": 40805,
+      "beforeHash": "73df455bd64f6cf107faba14424a62791d757aa4485b68c1d3f1d53ff68a3078",
+      "afterHash": "b6b584ae06bb1debf0e98112accce825974724edcf025d241e5c33900dfa140b"
+    },
+    {
+      "file": "lib/task-state.mjs",
+      "beforeChars": 99557,
+      "afterChars": 100690,
+      "beforeHash": "e30b6b35293305a865e85e20391440e5c26787c93e41baa32612cc4fa48900d2",
+      "afterHash": "0cc382fa47a92ffcf5bb2f7a8c39971735935baac3bbc8fde70201a27393aabf"
+    },
+    {
+      "file": "lib/engine.mjs",
+      "beforeChars": 277820,
+      "afterChars": 276995,
+      "beforeHash": "a4b6571725634286eaf77085e67019532136b39272c809035d65db4b4f88c330",
+      "afterHash": "2fef8df949fcbf1903fda6c69de2b3dc583094f1e9ea20837f014362ac35a939"
+    },
+    {
+      "file": "lib/operational-receipts.mjs",
+      "beforeChars": 4329,
+      "afterChars": 3921,
+      "beforeHash": "de98b1aa6db11b6137f80954a7f8cd7cc4653b89848b6feb233facf1d39991f3",
+      "afterHash": "2e4fe66b4d30d4e6416bf494de10367aaa6b76add484143138a6ba2346cae125"
+    },
+    {
+      "file": "lib/outcome-reconciliation.mjs",
+      "beforeChars": 4817,
+      "afterChars": 4050,
+      "beforeHash": "30a16a22f9222fa0a5bf7ec7f5063a368d07a7b8ca3704422883a68f406b3eb6",
+      "afterHash": "28a4da7fff652053602f65e3a008a6b84b65152c8a1be09b2b4df90d9f27bb1c"
+    },
+    {
+      "file": "lib/review-concern-provenance.mjs",
+      "beforeChars": 5139,
+      "afterChars": 4197,
+      "beforeHash": "963fa2f3fce1ec755e00dc42a30e9048939a1110ec782d2f0326024b75ce487f",
+      "afterHash": "607cef46afaab8e5ffb6bdbef66f97d7d1a2d32f797789d9c52b87fc138b3907"
+    },
+    {
+      "file": "lib/planning-awareness.mjs",
+      "beforeChars": 26164,
+      "afterChars": 25926,
+      "beforeHash": "3985fe7fbd30743e258697e12e4280c34d71d67a6395c418156acaf03e5b6e8e",
+      "afterHash": "df8355a41fa6ed38ee7bf1ec00a6769a80df2a7ca42523d44a1bc6b9c85f4bde"
+    },
+    {
+      "file": "public/task-viability-model.mjs",
+      "beforeChars": 29849,
+      "afterChars": 28535,
+      "beforeHash": "177bae0794a8506c755063da6bfd93070e5df17fead09890ed2fe76112a08528",
+      "afterHash": "1ba3901c1dbd721b7af4386ef89f75a0fad113fe390451cb959883fee62fe6a1"
+    },
+    {
+      "file": "public/planning-user-agency.mjs",
+      "beforeChars": 18651,
+      "afterChars": 15397,
+      "beforeHash": "682fcfbc9fca4be6e09ee2039bd874caa1244b03fa2633f7366f239033bdb1d2",
+      "afterHash": "6c853bac7cea9be6333730c8275069af13cc12e0082623a0c9612288164e8bcd"
+    },
+    {
+      "file": "lib/subagents.mjs",
+      "beforeChars": 23908,
+      "afterChars": 21813,
+      "beforeHash": "8e8be70453f6fe04377f49ac7ebde0f6cd53165dc50450e93e46193f7da72454",
+      "afterHash": "ce0af4491a59a067549c6313de42bb02638b2188084fec72a9376c3c68b613a0"
+    },
+    {
+      "file": "lib/native-agent-control.mjs",
+      "beforeChars": 16643,
+      "afterChars": 15866,
+      "beforeHash": "b4b4760c933d23f34683ed996a4c3d04646937eace9ea9ecb63a26c78af5c4e3",
+      "afterHash": "973d7ca91b5703299f9ce3af315afce7387185f6a55cb1b46741597d1794e79f"
+    },
+    {
+      "file": "lib/operational-receipts.mjs",
+      "beforeChars": 3921,
+      "afterChars": 3825,
+      "beforeHash": "2e4fe66b4d30d4e6416bf494de10367aaa6b76add484143138a6ba2346cae125",
+      "afterHash": "dcd9ff0a7b2be26ad7a3370381ab8c3902a153fda4ed2126e8465b2781157ea1"
+    },
+    {
+      "file": "public/planning-module-policy.mjs",
+      "beforeChars": 13376,
+      "afterChars": 8808,
+      "beforeHash": "b258456f83fc2bd197f4a774b1243b91494dad6e1853e47011c92662960eaa38",
+      "afterHash": "bc93dac626916c9988aa3cc1544ad6fe7954e02933d36f1bab58e747aae87223"
+    },
+    {
+      "file": "lib/task-action-directory.mjs",
+      "beforeChars": 40805,
+      "afterChars": 39322,
+      "beforeHash": "b6b584ae06bb1debf0e98112accce825974724edcf025d241e5c33900dfa140b",
+      "afterHash": "9da8744e17b662eae730922aea072c4651b4df9da0735d8dc32b62cd5f906b50"
+    },
+    {
+      "file": "lib/task-state.mjs",
+      "beforeChars": 100690,
+      "afterChars": 100721,
+      "beforeHash": "0cc382fa47a92ffcf5bb2f7a8c39971735935baac3bbc8fde70201a27393aabf",
+      "afterHash": "47f59b44a97181a46756127b35be87f82976ce27fb2ffb148166f0e070d0270b"
+    },
+    {
+      "file": "lib/native-catalog-fingerprint.mjs",
+      "beforeChars": 0,
+      "afterChars": 700,
+      "beforeHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "afterHash": "7860cf0775203fcd44df8aeb578b98985d5887db1de2682ada3721ccbae1ab18"
+    },
+    {
+      "file": "lib/engine.mjs",
+      "beforeChars": 276995,
+      "afterChars": 279218,
+      "beforeHash": "2fef8df949fcbf1903fda6c69de2b3dc583094f1e9ea20837f014362ac35a939",
+      "afterHash": "7ce81d7d9fef39a5347a369eb8f55f09c7b713a3e4b0f2ed70eaf6a799cf5f76"
+    },
+    {
+      "file": "lib/task-state.mjs",
+      "beforeChars": 100721,
+      "afterChars": 100790,
+      "beforeHash": "47f59b44a97181a46756127b35be87f82976ce27fb2ffb148166f0e070d0270b",
+      "afterHash": "86509bcad9aa5ddc0ce972ae6f209396948c852e249d2e5e9d2e9627f93ae9c5"
+    },
+    {
+      "file": "lib/harness-identity.mjs",
+      "beforeChars": 1762,
+      "afterChars": 2081,
+      "beforeHash": "7d0874c4283586a46ba417f61cad48d7b5cbea0c100fc08af047748bd8d2eff8",
+      "afterHash": "934e2d94e97d149daf81eb05cfc7189c2ab3add426f34922d108b597a89ac735"
+    },
+    {
+      "file": "lib/native-agent-control.mjs",
+      "beforeChars": 15866,
+      "afterChars": 15919,
+      "beforeHash": "973d7ca91b5703299f9ce3af315afce7387185f6a55cb1b46741597d1794e79f",
+      "afterHash": "195c72fbe5f8eb651ea18f8d91895ae114d02cb13d6224e39819b13d6f69503e"
+    },
+    {
+      "file": "lib/engine.mjs",
+      "beforeChars": 279218,
+      "afterChars": 279456,
+      "beforeHash": "7ce81d7d9fef39a5347a369eb8f55f09c7b713a3e4b0f2ed70eaf6a799cf5f76",
+      "afterHash": "5099ee8effcd92974e7b9b52b19681aab6b44545e4c22a37cb0f05667bfdb7f7"
+    },
+    {
+      "file": "lib/tool-routing.mjs",
+      "beforeChars": 9262,
+      "afterChars": 9898,
+      "beforeHash": "40ec95e0b7a49e4f7800315f5b40a1b1c734c0df71e3ad1d563a773fc0edc502",
+      "afterHash": "540d1d18d437cb056e9668ecc1d55a61cd033bf295f91bc1870c2de27c68308c"
+    },
+    {
+      "file": "tests/planning-module-policy.test.mjs",
+      "beforeChars": 10492,
+      "afterChars": 10249,
+      "beforeHash": "7e8f5e3f95a66d7fd2ed0820fb2431d629befd3fcd4bcf517452a03c8a71b257",
+      "afterHash": "97d2bb6c94f8f1393b817958b78d69881065c0c7a779bda92b8e95a0b4e34a1d"
+    },
+    {
+      "file": "tests/subagent-static-admission.test.mjs",
+      "beforeChars": 3538,
+      "afterChars": 3593,
+      "beforeHash": "331cd6cb75da0c835152c1c4cf24916d5ce04a4bb080cc4d9dbb5357a6fbd8a4",
+      "afterHash": "f14276f728d5565a9787b69f3c23b58c872573ddb01fcf7f6273aa120652cfe1"
+    },
+    {
+      "file": "tests/native-catalog-refresh.test.mjs",
+      "beforeChars": 5214,
+      "afterChars": 6020,
+      "beforeHash": "fef2c01500e54ff63edc033be99781db02921d7311a05949d7cb1de71068cde7",
+      "afterHash": "d99a8be0d5990aca2c6d57b36b8024261857775d747e2432b9d6ab3c9f86f342"
+    },
+    {
+      "file": "lib/harness-identity.mjs",
+      "beforeChars": 2081,
+      "afterChars": 2194,
+      "beforeHash": "934e2d94e97d149daf81eb05cfc7189c2ab3add426f34922d108b597a89ac735",
+      "afterHash": "5365c50f9ce4d79c79a2d74f9891645e65467faabf67365c3c927b2ea8cc1a64"
+    },
+    {
+      "file": "lib/tool-routing.mjs",
+      "beforeChars": 9898,
+      "afterChars": 10127,
+      "beforeHash": "540d1d18d437cb056e9668ecc1d55a61cd033bf295f91bc1870c2de27c68308c",
+      "afterHash": "929beeb12b9a6abe1fbca46bff8ddc8642dccc884b15ce845765d982e30cb49b"
+    }
+  ]
+}

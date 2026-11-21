@@ -1,0 +1,343 @@
+TAP version 13
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: goals have no implicit budget and reject invalid authored limits
+ok 1 - goals have no implicit budget and reject invalid authored limits
+  ---
+  duration_ms: 2.7969
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: progress without model-authored goal ID uses the bound generation but rejects an explicit different goal
+ok 2 - progress without model-authored goal ID uses the bound generation but rejects an explicit different goal
+  ---
+  duration_ms: 636.7827
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: one goal continues for three turns in the same conversation and finishes with evidence
+ok 3 - one goal continues for three turns in the same conversation and finishes with evidence
+  ---
+  duration_ms: 416.9935
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: calibrated manual chat can enable autonomy later in its original conversation
+ok 4 - calibrated manual chat can enable autonomy later in its original conversation
+  ---
+  duration_ms: 281.31
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ordinary final text cannot complete the goal and three empty turns are visible as stalled
+ok 5 - ordinary final text cannot complete the goal and three empty turns are visible as stalled
+  ---
+  duration_ms: 319.8085
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: explicit pause_after_turn keeps an in-flight turn and prevents automatic continuation
+ok 6 - explicit pause_after_turn keeps an in-flight turn and prevents automatic continuation
+  ---
+  duration_ms: 260.5528
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: goal limits stop at the requested allowance and resume renews the allowance
+ok 7 - goal limits stop at the requested allowance and resume renews the allowance
+  ---
+  duration_ms: 562.1259
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: replayed control requests do not replace the goal or enqueue another run
+ok 8 - replayed control requests do not replace the goal or enqueue another run
+  ---
+  duration_ms: 272.5588
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: editing the goal invalidates completion from the old objective
+ok 9 - editing the goal invalidates completion from the old objective
+  ---
+  duration_ms: 306.6867
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: human steering invalidates a completion candidate and is preserved for the next turn
+ok 10 - human steering invalidates a completion candidate and is preserved for the next turn
+  ---
+  duration_ms: 309.6229
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: user pause during an asynchronous continuation lookup wins the dispatch race
+ok 11 - user pause during an asynchronous continuation lookup wins the dispatch race
+  ---
+  duration_ms: 283.9147
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: clear before initial delayed admission cannot resurrect the original goal
+ok 12 - clear before initial delayed admission cannot resurrect the original goal
+  ---
+  duration_ms: 164.2925
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: goal completion retains pages until settlement and cleans earlier run owners
+ok 13 - goal completion retains pages until settlement and cleans earlier run owners
+  ---
+  duration_ms: 300.1113
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: initial goal option is bound to the existing run idempotency receipt
+ok 14 - initial goal option is bound to the existing run idempotency receipt
+  ---
+  duration_ms: 199.9676
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: an incoming user request holds automatic dispatch across body and archive IO
+ok 15 - an incoming user request holds automatic dispatch across body and archive IO
+  ---
+  duration_ms: 296.694
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: goal start can be deferred until server dependencies are ready
+ok 16 - goal start can be deferred until server dependencies are ready
+  ---
+  duration_ms: 320.7315
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a durable completion candidate is reconciled on restart without another model turn
+ok 17 - a durable completion candidate is reconciled on restart without another model turn
+  ---
+  duration_ms: 238.9736
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: an interrupted goal survives restart without replaying uncertain work
+ok 18 - an interrupted goal survives restart without replaying uncertain work
+  ---
+  duration_ms: 273.0218
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: dispatch storage errors produce a visible blocked reason instead of an idle active goal
+ok 19 - dispatch storage errors produce a visible blocked reason instead of an idle active goal
+  ---
+  duration_ms: 225.6881
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: editing a goal during delayed automatic admission resumes the new objective in the same conversation
+ok 20 - editing a goal during delayed automatic admission resumes the new objective in the same conversation
+  ---
+  duration_ms: 379.6021
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: rejected goal waits preserve recorded progress and completion through the real engine
+ok 21 - rejected goal waits preserve recorded progress and completion through the real engine
+  ---
+  duration_ms: 198.1353
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: pause aborts current provider and waits for dispatch settlement without replay
+ok 22 - pause aborts current provider and waits for dispatch settlement without replay
+  ---
+  duration_ms: 252.2215
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: stale exact pause target rejects without cancelling active work
+ok 23 - stale exact pause target rejects without cancelling active work
+  ---
+  duration_ms: 167.3346
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: pause replay after explicit Resume cannot interrupt the new turn
+ok 24 - pause replay after explicit Resume cannot interrupt the new turn
+  ---
+  duration_ms: 267.746
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: pause persistence failure never interrupts execution
+ok 25 - pause persistence failure never interrupts execution
+  ---
+  duration_ms: 154.7093
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: restart reconciles exact archived paused target without replay and exposes missing evidence
+ok 26 - restart reconciles exact archived paused target without replay and exposes missing evidence
+  ---
+  duration_ms: 174.3589
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Pause and Resume reconcile telemetry revisions without retrying or changing targets
+ok 27 - Pause and Resume reconcile telemetry revisions without retrying or changing targets
+  ---
+  duration_ms: 289.5488
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: control reconciliation refuses changed intent, lifecycle, run, goal and absent snapshot
+ok 28 - control reconciliation refuses changed intent, lifecycle, run, goal and absent snapshot
+  ---
+  duration_ms: 175.8203
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: autonomous recovery preserves prepared work, then detects repeated destination switching
+ok 29 - autonomous recovery preserves prepared work, then detects repeated destination switching
+  ---
+  duration_ms: 485.6348
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: distinct observed field advances survive omitted milestones, while repeated evidence and unknown edits stall
+ok 30 - distinct observed field advances survive omitted milestones, while repeated evidence and unknown edits stall
+  ---
+  duration_ms: 690.9241
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: uncertain effect remains blocked after an unrelated read turn while a distinct action remains available
+ok 31 - uncertain effect remains blocked after an unrelated read turn while a distinct action remains available
+  ---
+  duration_ms: 432.7556
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ordinary same-chat request does not inherit an enabled Goal, and the actual successor uses only bound Goal evidence
+ok 32 - ordinary same-chat request does not inherit an enabled Goal, and the actual successor uses only bound Goal evidence
+  ---
+  duration_ms: 344.5744
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: expiry of a saved Goal does not abort an unbound same-chat question
+ok 33 - expiry of a saved Goal does not abort an unbound same-chat question
+  ---
+  duration_ms: 258.1533
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Goal scope refreshes legacy native catalogs held only in resume state on Continue and Retry
+ok 34 - Goal scope refreshes legacy native catalogs held only in resume state on Continue and Retry
+  ---
+  duration_ms: 222.8294
+  type: 'test'
+  ...
+# (node:8056) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: direct goal controls persist null by default and remove an explicit finite cap with null
+not ok 35 - direct goal controls persist null by default and remove an explicit finite cap with null
+  ---
+  duration_ms: 180.7402
+  type: 'test'
+  location: 'C:\\Users\\user\\Documents\\Codex\\BLACKICE-instruction-clarity-20261121\\tests\\conversation-goals.test.mjs:684:1'
+  failureType: 'testCodeFailure'
+  error: 'Use the declared arguments for blackice_goal.'
+  code: 'DIRECT_REQUEST_INVALID'
+  stack: |-
+    fail (file:///C:/Users/user/Documents/Codex/BLACKICE-instruction-clarity-20261121/lib/direct-execution-api.mjs:21:88)
+    DirectExecutionAPI.call (file:///C:/Users/user/Documents/Codex/BLACKICE-instruction-clarity-20261121/lib/direct-execution-api.mjs:261:68)
+    async control (file:///C:/Users/user/Documents/Codex/BLACKICE-instruction-clarity-20261121/tests/conversation-goals.test.mjs:694:19)
+    async TestContext.<anonymous> (file:///C:/Users/user/Documents/Codex/BLACKICE-instruction-clarity-20261121/tests/conversation-goals.test.mjs:703:12)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# (node:20580) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: current goal schema accepts its advertised nullable types and rejects other types
+ok 36 - current goal schema accepts its advertised nullable types and rejects other types
+  ---
+  duration_ms: 1.4948
+  type: 'test'
+  ...
+# Subtest: advertised goal and start_chat union values reach handlers through the direct API
+ok 37 - advertised goal and start_chat union values reach handlers through the direct API
+  ---
+  duration_ms: 107.4469
+  type: 'test'
+  ...
+# Subtest: retired cycle metadata does not advertise executable legacy actions
+ok 38 - retired cycle metadata does not advertise executable legacy actions
+  ---
+  duration_ms: 1.7242
+  type: 'test'
+  ...
+# Subtest: Planning schema lookup returns the same action fields that the write tool validates
+ok 39 - Planning schema lookup returns the same action fields that the write tool validates
+  ---
+  duration_ms: 4.6394
+  type: 'test'
+  ...
+# Subtest: connector instructions distinguish direct actions from model-starting tools
+ok 40 - connector instructions distinguish direct actions from model-starting tools
+  ---
+  duration_ms: 0.3861
+  type: 'test'
+  ...
+# Subtest: direct browser capacity recovery uses actions from its attached tools
+ok 41 - direct browser capacity recovery uses actions from its attached tools
+  ---
+  duration_ms: 76.951
+  type: 'test'
+  ...
+1..41
+# tests 41
+# suites 0
+# pass 40
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 10577.13

@@ -1,11 +1,15 @@
 # Draw a concept diagram
 
-Explain a process, relationship, or system with a labeled static SVG and a short text equivalent.
+Use when a static SVG can explain a process, hierarchy, relationship, or system.
 
-**What you need:** The concept and its intended audience. Delivering an SVG file requires a writable task location; visual checking requires a renderer available in the session.
+1. Identify the question the diagram should answer and the intended reader.
+2. List the required labels and connections. Choose one main relationship to show; split unrelated relationships into separate diagrams.
+3. Draw a standalone SVG with a viewBox, readable text, enough spacing, and labeled arrows where direction matters. Use shapes or labels as well as color to distinguish paths.
+4. Save it to the requested location. Render and inspect it at the intended size when a renderer is available.
+5. Check that every arrow means a real relationship and that all labels fit.
 
-**Approach:** Choose one relationship to clarify: sequence, hierarchy, comparison, or part-to-whole. Sketch labels and connections before styling. Use readable text and enough spacing, label arrows where direction matters, and distinguish multiple paths by more than color. Keep the SVG standalone with a viewBox and no scripts, remote images, or font dependencies.
+Deliver the SVG and a short text description of the relationship. If rendering is unavailable, report that layout has not been visually checked. If a relationship is uncertain, label that connection as uncertain instead of inventing it.
 
-**Check and recover:** Check that each arrow corresponds to a real relationship, labels fit at the intended size, and the drawing has a readable title and text equivalent. If you can save but cannot render it, say that visual layout is unverified. If saving fails, provide the SVG source inline; if the input relationships are unclear, provide a labeled text outline.
+Example: show a request branching to a cache hit or database lookup, then joining at the response. Put implementation details that do not affect that flow in the accompanying text.
 
-Workflow reference: [Concept Diagrams by v1k22 and Nous Research](https://github.com/NousResearch/hermes-agent/blob/52811481bc07b18b073790cd2a168a832c92acd7/optional-skills/creative/concept-diagrams/SKILL.md) ([MIT license](https://github.com/NousResearch/hermes-agent/blob/52811481bc07b18b073790cd2a168a832c92acd7/LICENSE)). Written for BLACKICE; no upstream templates, scripts, or assets included.
+Workflow reference: [Concept Diagrams](https://github.com/NousResearch/hermes-agent/blob/52811481bc07b18b073790cd2a168a832c92acd7/optional-skills/creative/concept-diagrams/SKILL.md) ([MIT](https://github.com/NousResearch/hermes-agent/blob/52811481bc07b18b073790cd2a168a832c92acd7/LICENSE)); adapted for BLACKICE.

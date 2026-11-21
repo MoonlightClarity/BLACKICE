@@ -1,9 +1,13 @@
 # Calculate from tables
 
-Answer a quantitative question from supplied tables with explicit units, denominators, and checks.
+Use when deriving totals, rates, averages, differences, or other metrics from table data.
 
-**What you need:** Readable table data and a calculation method appropriate to the amount of data.
+1. Read the required rows and columns. Identify units, period, missing values, and whether the table is complete.
+2. Define the metric and denominator before calculating.
+3. Calculate with a script or available calculation tool when the volume makes manual arithmetic unreliable.
+4. Check the row count, plausible bounds, and one independent calculation or reconciliation.
+5. Give the result with its units, formula, and relevant source range.
 
-**Approach:** Define the metric and denominator before calculating. Keep time periods and units consistent; distinguish a row-level average from an average of subgroup averages. Show a compact formula or worked example where it aids reuse.
+Example: overall conversion is total conversions divided by total visitors. Averaging each branch's percentage gives a different answer when branch sizes differ.
 
-**Check and recover:** Cross-check counts, plausible bounds, and one independent calculation. If the data or compute path is incomplete, report the verified subset and say which input or check is still needed.
+If rows are missing or unreadable, calculate the supported subset and label its scope. Retrieve missing batches when they are available; a successful calculation on part of the source is not the whole-table total.

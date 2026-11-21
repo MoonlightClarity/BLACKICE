@@ -1,0 +1,886 @@
+[
+  {
+    "name": "blackice_direct_status",
+    "description": "Check whether BLACKICE and its direct tools are available. Returns connectionId, granted scopes, browser availability, job state, restart state and tool catalog version. Supply nonce to see that same value in the response. This check reads no files or pages and starts no model.",
+    "fields": [
+      "nonce"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_list_jobs",
+    "description": "List jobs saved for this connection. Filter by status and page with offset/limit. Use a returned jobId with blackice_get_job for its result. Listing or reconnecting does not rerun jobs.",
+    "fields": [
+      "status",
+      "offset",
+      "limit"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_get_job",
+    "description": "Read a saved job by jobId. Returns status, settled, effects, error or interaction, and the result when available. queued, running and cancelling are still pending; awaiting_input names the interaction to resolve. Page long result text with the returned nextOffset. includeImages:true returns image URLs saved by screenshot or preview jobs. After a lost response, read this job to learn what happened before retrying.",
+    "fields": [
+      "jobId",
+      "offset",
+      "limit",
+      "includeImages"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_cancel_job",
+    "description": "Request cancellation by jobId. Read blackice_get_job until settled is true to see the final status and any completed effects. Cancellation does not undo effects already completed.",
+    "fields": [
+      "jobId"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_workspace_read",
+    "description": "Read and find files on the BLACKICE computer. A supplied absolute path can be read directly, including outside the working directory. list shows a folder; read opens text, DOCX, PDF or XLSX; search looks for content inside the selected file/folder; find looks for a literal filename or path; patch_history reads saved edits.\nIf the location is unknown, use find with query. Omit path and roots for a computer-wide search; supply path or roots only to choose narrower locations. For later pages repeat the query/filters with the returned cursor and a new requestId. Inspect returned roots, searchComplete, errors and skippedCount. A miss describes that searched scope, not every file on the computer.\nRead one returned path per call. The working directory only resolves relative paths. Returns jobId; use blackice_get_job for the result.",
+    "fields": [
+      "requestId",
+      "action",
+      "path",
+      "startLine",
+      "lineCount",
+      "startPage",
+      "pageCount",
+      "startChar",
+      "charCount",
+      "sheet",
+      "startRow",
+      "rowCount",
+      "startColumn",
+      "columnCount",
+      "query",
+      "roots",
+      "match",
+      "extensions",
+      "cursor",
+      "timeoutMs",
+      "caseSensitive",
+      "limit",
+      "depth",
+      "patchId",
+      "taskContext"
+    ],
+    "actions": [
+      "list",
+      "read",
+      "search",
+      "find",
+      "patch_history"
+    ]
+  },
+  {
+    "name": "blackice_workspace_write",
+    "description": "Write or patch one local UTF-8 file. write uses path and text. patch uses path, exact oldText and replacement newText; expectedHash rejects a file changed since it was read. undo_patch uses patchId and checks the saved edit. Relative paths use the configured working folder; absolute paths are accepted. Returns jobId; read blackice_get_job for the saved path, hash and patch receipt. On a hash conflict, read the current file before preparing a new edit.",
+    "fields": [
+      "requestId",
+      "action",
+      "path",
+      "text",
+      "oldText",
+      "newText",
+      "expectedHash",
+      "patchId",
+      "taskContext"
+    ],
+    "actions": [
+      "write",
+      "patch",
+      "undo_patch"
+    ]
+  },
+  {
+    "name": "blackice_run_command",
+    "description": "Run command in BLACKICE's configured working folder, with timeoutMs up to 120000. Commands use the local account's filesystem access; the working directory does not restrict accessible paths. Returns jobId; read blackice_get_job for stdout, stderr, exitCode, timedOut and truncation. Cancellation stops the command's child process tree. This tool runs commands directly and starts no model.",
+    "fields": [
+      "requestId",
+      "command",
+      "timeoutMs",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_browser_read",
+    "description": "Inspect BLACKICE browser tabs, a tab snapshot/text/screenshot, downloads, diagnostics or filtering status. Start with tabs to obtain tabId and conversationId; reuse conversationId for that conversation's calls. snapshot returns refs and page identity for input actions. Read actions do not accept expectedUrl or expectedDocumentId.\nFor diagnostics use after/limit to page events. tabs with query:\"stopped-task-recovery\" finds stopped-task tabs. Returns jobId; read blackice_get_job for the result.",
+    "fields": [
+      "requestId",
+      "action",
+      "tabId",
+      "browser",
+      "conversationId",
+      "operation",
+      "query",
+      "after",
+      "limit",
+      "taskContext"
+    ],
+    "actions": [
+      "tabs",
+      "snapshot",
+      "read",
+      "screenshot",
+      "downloads",
+      "protection",
+      "diagnostics"
+    ]
+  },
+  {
+    "name": "blackice_browser_action",
+    "description": "Operate the contained BLACKICE browser. Use tabId from tabs and refs, expectedUrl and expectedDocumentId from a current snapshot. fill replaces text using text; select uses value; press uses key. interaction requires the observed interactionId plus the tab and page identity. Reuse conversationId for calls in the same saved conversation.\nUse ordinary browser controls for authorized account fields and submissions. Password helpers are optional continuity tools. take_ownership and transfer_ownership use observed owner IDs; folder/tab actions organize the selected tabs.\nReturns jobId; inspect blackice_get_job and the resulting page. If a stale-page error says actionDispatched:false, take a fresh snapshot and try with its IDs. If dispatch is uncertain, inspect the page and saved result to decide the next action. BROWSER TAB CLEANUP: Read tabs and record the baseline; track exact tab IDs opened by this task. A connection-wide owner can cover several conversations. Use the saved conversationId when supported, otherwise distinguish task-created tabs from personal/pre-existing pages.\nClose a task page after saving its useful results and checking it for unfinished forms, pending effects, unresolved dialogs, running downloads or resumable work. Keep pages still needed by the user or another task, including work awaiting input. The cleanup preview reports limited DOM inspection for deliberate per-page manual review; a hidden form cannot be ruled out by that scan alone.\nCall blackice_browser_action action:\"close\" for the chosen tabId, await blackice_get_job, then reread tabs to verify removal. After an uncertain close, inspect the original job and tab state; an already absent tab needs no new close. Close a task-created folder only after verifying it is empty.",
+    "fields": [
+      "requestId",
+      "action",
+      "inUse",
+      "destination",
+      "destinationTabId",
+      "destinationOwnerKey",
+      "expectedOwnerKey",
+      "tabId",
+      "browser",
+      "expectedUrl",
+      "expectedDocumentId",
+      "conversationId",
+      "parentTabId",
+      "folderId",
+      "name",
+      "url",
+      "ref",
+      "text",
+      "value",
+      "key",
+      "interactionId",
+      "decision",
+      "promptText",
+      "operation",
+      "enabled",
+      "origin",
+      "modifiers",
+      "query",
+      "x",
+      "y",
+      "direction",
+      "amount",
+      "timeoutMs",
+      "taskContext"
+    ],
+    "actions": [
+      "tab_mark",
+      "take_ownership",
+      "transfer_ownership",
+      "debug_reset",
+      "stop",
+      "open",
+      "navigate",
+      "click",
+      "hover",
+      "fill",
+      "type",
+      "select",
+      "press",
+      "scroll",
+      "wait",
+      "back",
+      "forward",
+      "reload",
+      "close",
+      "interaction",
+      "folder_create",
+      "folder_rename",
+      "folder_close",
+      "tab_move",
+      "tab_select",
+      "suspend",
+      "protection"
+    ]
+  },
+  {
+    "name": "blackice_browser_upload",
+    "description": "Attach local files to a current browser file input. Supply tabId, paths, expectedUrl, expectedDocumentId and exactly one of ref or chooserId from the observed page. Absolute paths and paths relative to the configured working folder are accepted. No OS file picker opens. Returns jobId; inspect the upload receipt and page to see whether the site retained the files. If input state changed or cleared, inspect the current page before choosing the next action.",
+    "fields": [
+      "requestId",
+      "tabId",
+      "browser",
+      "expectedUrl",
+      "expectedDocumentId",
+      "conversationId",
+      "ref",
+      "chooserId",
+      "paths",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_task_contract",
+    "description": "Save a task contract and track observed outcomes.\n- bind_plan links a saved plan using sourceTaskId and expectedSourceRevision; create saves a supplied contract; read returns it; update requires expectedRevision.\n- bind records one observed submit control using tabId, ref, expectedUrl and expectedDocumentId. identityFields identify the subject and target, such as applicant and job. Binding does not click.\n- reconcile reads destination evidence for bindingId: phase baseline checks earlier results; phase outcome checks this attempt. An UNKNOWN result means the effect is unresolved; inspect the destination or saved receipts to resolve it.\n- measure returns distinct outcomes confirmed in the recorded history. Missing history does not establish that no earlier outcome exists.\n- authorize_repeat records repeat intent from the user's request with userInstructionRef, userInstructionQuote and reason. For an UNKNOWN result, also describe the uncertainty and its acknowledgement in the supplied fields. This records the agent's interpretation, not a new user approval.",
+    "fields": [
+      "requestId",
+      "action",
+      "sourceTaskId",
+      "expectedSourceRevision",
+      "taskId",
+      "contract",
+      "bindingId",
+      "userInstructionRef",
+      "userInstructionQuote",
+      "reason",
+      "acknowledgeUncertainty",
+      "uncertaintyStatement",
+      "tabId",
+      "expectedRevision",
+      "workItemId",
+      "criterionId",
+      "identityFields",
+      "ref",
+      "expectedUrl",
+      "expectedDocumentId",
+      "phase"
+    ],
+    "actions": [
+      "bind_plan",
+      "create",
+      "read",
+      "measure",
+      "authorize_repeat",
+      "update",
+      "bind",
+      "reconcile"
+    ]
+  },
+  {
+    "name": "blackice_task_context",
+    "description": "Create, inspect or revoke a saved taskContext. issue requires taskId, its expectedRevision, workItemId, criterionId and adapters, and returns the context ID. Pass that ID on calls that should carry this task link. read returns its current generation; revoke requires expectedGeneration and leaves past effect records intact. A context is optional metadata for browser calls; it does not add permissions.",
+    "fields": [
+      "requestId",
+      "action",
+      "taskId",
+      "expectedRevision",
+      "workItemId",
+      "criterionId",
+      "bindingId",
+      "adapters",
+      "taskContext",
+      "expectedGeneration"
+    ],
+    "actions": [
+      "issue",
+      "read",
+      "revoke"
+    ]
+  },
+  {
+    "name": "blackice_visual",
+    "description": "Create and edit saved SVG artwork, diagrams, charts and mockups. describe returns the visual document format and examples; optional focus selects a design chapter. preview renders an unsaved document and returns images plus layout warnings; inspection:asset adds a contact sheet. Inspect those images to decide which details to repair.\ncreate saves document. read returns its current revision and objects; changes shows edits since sinceRevision. revise replaces the document; patch edits stable object IDs using operations. Supply expectedRevision when editing and reread after a conflict. export returns the selected saved revision. Direct calls require requestId. Saved artifacts also require conversationId; native calls use the current conversation and require requestId for saves. preview accepts document without saving, or artifactId to render a saved revision. It returns image content for visual inspection.",
+    "fields": [
+      "inspection",
+      "focus",
+      "action",
+      "conversationId",
+      "artifactId",
+      "sinceRevision",
+      "limit",
+      "operations",
+      "revision",
+      "expectedRevision",
+      "requestId",
+      "document",
+      "taskContext"
+    ],
+    "actions": [
+      "describe",
+      "preview",
+      "list",
+      "read",
+      "changes",
+      "create",
+      "revise",
+      "patch",
+      "export"
+    ]
+  },
+  {
+    "name": "blackice_goal",
+    "description": "Manage a goal in an existing conversation. get returns its current revision and state. set saves an objective; update changes it; resume restarts automatic continuation. set/resume can launch the conversation's model. Follow-up turns run in the same conversation while the goal is active. get reports status and lastReason when continuation stops.\npause interrupts the current run; pass its observed pauseRunId and wait for pauseRequest.settled. pause_after_turn lets the current turn finish and prevents the next. clear removes the goal. Use the current expectedRevision for changes; reread after a conflict. Use blackice_get_run_result with a returned run ID to inspect progress and completion.",
+    "fields": [
+      "requestId",
+      "conversationId",
+      "action",
+      "objective",
+      "pauseRunId",
+      "expectedRevision",
+      "expectedControl",
+      "maxTurns",
+      "deadlineAt",
+      "deadlineTimeZone",
+      "taskContext"
+    ],
+    "actions": [
+      "get",
+      "set",
+      "update",
+      "pause",
+      "pause_after_turn",
+      "resume",
+      "clear"
+    ]
+  },
+  {
+    "name": "blackice_native_task_context",
+    "description": "Read or change the saved taskContext attachment on one idle native task. read requires nativeTaskId and returns nativeRevision, attachment state and generation. attach also requires expectedNativeRevision and taskContext; detach requires expectedNativeRevision and expectedGeneration. The host reports NATIVE_TASK_PROVIDER_BOUNDARY if this provider cannot support attachment. Changes leave earlier outcome records intact and do not start a model.",
+    "fields": [
+      "requestId",
+      "action",
+      "nativeTaskId",
+      "expectedNativeRevision",
+      "expectedGeneration",
+      "taskContext"
+    ],
+    "actions": [
+      "attach",
+      "read",
+      "detach",
+      "attach",
+      "read",
+      "detach"
+    ]
+  },
+  {
+    "name": "blackice_planning_graph_read",
+    "description": "Read saved Planning graph requests, modules and results using graphRequestId. Task/conversation plans use taskId with blackice_get_plan.\n- list searches requests; templates lists module kinds and response fields.\n- schema requires writeAction and returns that write schema. Add field for one field's schema. No graphRequestId is needed for schema.\n- get requires graphRequestId; add nodeId for one module and its latest response.\n- attempts reads execution status; source reads sourceId; response_history lists saved responses or reads responseId; program reads XML text.\nUse each returned nextOffset with its matching offset field to continue that list. get has separate edgeOffset, sourceOffset, inputOffset and attemptOffset. Returns a durable job; retrieve it with blackice_get_job. Reading starts no model.",
+    "fields": [
+      "requestId",
+      "conversationId",
+      "query",
+      "offset",
+      "limit",
+      "writeAction",
+      "field",
+      "graphRequestId",
+      "nodeId",
+      "edgeOffset",
+      "sourceOffset",
+      "inputOffset",
+      "attemptOffset",
+      "sourceId",
+      "responseId",
+      "action",
+      "taskContext"
+    ],
+    "actions": [
+      "list",
+      "templates",
+      "schema",
+      "get",
+      "program",
+      "attempts",
+      "source",
+      "response_history",
+      "list",
+      "templates",
+      "schema",
+      "get",
+      "program",
+      "attempts",
+      "source",
+      "response_history"
+    ]
+  },
+  {
+    "name": "blackice_planning_graph_write",
+    "description": "Edit the shared Planning graph. create_request saves title/objective; add_module creates a node; update_module edits it; assign changes its owner; link adds a relationship; add_source saves source text. update_program takes saved XML and expectedRequestRevision. For node changes use current expectedNodeRevision; for a new child use expectedParentRevision. Empty doneWhen or skipReason clears that field.\nrecord_response saves your contribution under values with graphRequestId, nodeId and expectedNodeRevision. Use fields declared by that module's template. Read templates for the module's fields, or blackice_planning_graph_read action:schema with writeAction:record_response for structured fields. The result records your contribution and its revision. Graph edits do not start workers; use blackice_planning_module to run a saved module.",
+    "fields": [
+      "requestId",
+      "graphRequestId",
+      "conversationId",
+      "title",
+      "objective",
+      "cwd",
+      "nodeId",
+      "parentId",
+      "kind",
+      "prompt",
+      "doneWhen",
+      "skipReason",
+      "expectedParentRevision",
+      "expectedNodeRevision",
+      "xml",
+      "expectedRequestRevision",
+      "ownerId",
+      "label",
+      "scope",
+      "edgeId",
+      "from",
+      "to",
+      "sourceResponseId",
+      "sourceResponseRevision",
+      "sourceField",
+      "freshness",
+      "text",
+      "url",
+      "contract",
+      "userAgency",
+      "checks",
+      "subproblems",
+      "childResults",
+      "inferences",
+      "acceptanceCriteria",
+      "steps",
+      "criterionResults",
+      "coverage",
+      "requirements",
+      "values",
+      "grounding",
+      "openQuestions",
+      "challengeResponses",
+      "action",
+      "taskContext"
+    ],
+    "actions": [
+      "create_request",
+      "add_module",
+      "update_module",
+      "update_program",
+      "assign",
+      "link",
+      "add_source",
+      "record_response"
+    ]
+  },
+  {
+    "name": "blackice_planning_module",
+    "description": "Run one saved Planning module or cancel its active attempt. Read its current revision with blackice_planning_graph_read first. run requires graphRequestId, nodeId and expectedNodeRevision; it starts the configured model and returns an attempt ID. The analytical worker has no action tools. Use blackice_planning_graph_read action:attempts for status and action:response_history for the saved answer. cancel requires the exact attemptId and leaves earlier results intact. A completed direct job confirms this control call; check the attempt to determine whether the module finished.",
+    "fields": [
+      "requestId",
+      "graphRequestId",
+      "nodeId",
+      "action",
+      "expectedNodeRevision",
+      "model",
+      "effort",
+      "serviceTier",
+      "attemptId",
+      "reason",
+      "taskContext"
+    ],
+    "actions": [
+      "run",
+      "cancel",
+      "run",
+      "cancel"
+    ]
+  },
+  {
+    "name": "blackice_provider_read",
+    "description": "Read saved API connections or a provider's model catalog. list returns sanitized connection metadata; catalog requires providerId.\nCatalog results include context/output capacities and their sources, reported prices, and paging. query, sort, minContextTokens, toolsOnly, visionOnly and freeOnly filter the full catalog before pagination. freeOnly includes complete reported zero pricing or an explicit free-access flag; anonymous free presets always apply it.\nA catalog entry does not test account quota or inference. Keys and header values are omitted.",
+    "fields": [
+      "requestId",
+      "action",
+      "providerId",
+      "query",
+      "offset",
+      "limit",
+      "sort",
+      "minContextTokens",
+      "toolsOnly",
+      "freeOnly",
+      "visionOnly",
+      "refresh",
+      "taskContext"
+    ],
+    "actions": [
+      "list",
+      "catalog"
+    ]
+  },
+  {
+    "name": "blackice_provider_configure",
+    "description": "Save or check an API provider. save requires provider plus expectedUpdatedAt: use the current saved timestamp to update or null to create a new ID.\ntest requires providerId and checks the provider connection/catalog without model inference. key_to_disk requires providerId and its current expectedUpdatedAt, and copies its existing saved key to this profile's .env.\nRaw keys are not accepted as tool arguments. These actions leave the app's default model unchanged.",
+    "fields": [
+      "requestId",
+      "action",
+      "provider",
+      "providerId",
+      "expectedUpdatedAt",
+      "taskContext"
+    ],
+    "actions": [
+      "save",
+      "test",
+      "key_to_disk"
+    ]
+  },
+  {
+    "name": "blackice_provider_import_key",
+    "description": "Import an API key displayed in the contained browser. inspect reads the selected source; click_inspect activates the observed control and inspects it. Supply tabId, origin and expectedUrl, plus the current ref and expectedDocumentId when targeting a control.\nimport also requires saved providerId and expectedUpdatedAt. BLACKICE transfers the key internally to this profile's .env by default; storage:\"encrypted\" selects encrypted storage. The returned receipt reports the saved provider. It does not run model inference.",
+    "fields": [
+      "requestId",
+      "action",
+      "storage",
+      "tabId",
+      "origin",
+      "expectedUrl",
+      "expectedDocumentId",
+      "ref",
+      "providerId",
+      "expectedUpdatedAt",
+      "taskContext"
+    ],
+    "actions": [
+      "inspect",
+      "click_inspect",
+      "import"
+    ]
+  },
+  {
+    "name": "blackice_import_file",
+    "description": "Copy one ChatGPT attachment into BLACKICE's import folder, up to 25 MiB. Supply requestId and file with download_url/file_id. The completed job returns the saved path and SHA-256; use that path for later file reads, chat attachments or browser uploads. Import itself does not submit the file to a website. Reuse requestId to recover the same import; an expired link requires a fresh attachment and request.",
+    "fields": [
+      "requestId",
+      "file",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_start_chat",
+    "description": "Create a new saved BLACKICE Chat conversation and start its model on message. Requires requestId and message; omit model to use the saved default. The conversation starts in the configured working directory; absolute local attachmentPaths may be elsewhere on the computer. Add existing attachmentIds, local attachmentPaths or one attached file as needed. Returns a run ID after admission. Read blackice_get_run_result for progress and the completed answer. Starting a conversation uses provider tokens; reading its result does not start another run.",
+    "fields": [
+      "requestId",
+      "message",
+      "model",
+      "planningMode",
+      "planningOntology",
+      "directoryMode",
+      "goal",
+      "effort",
+      "serviceTier",
+      "attachmentIds",
+      "attachmentPaths",
+      "file",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_planning_ontology",
+    "description": "Read or save Planning module defaults. get returns current values and supported module IDs. set requires ontology:{version:2,modules:{...}} with Boolean values. The saved policy applies to future chats and start_chat defaults; it does not change active or historical runs or start work.",
+    "fields": [
+      "requestId",
+      "action",
+      "ontology",
+      "taskContext"
+    ],
+    "actions": [
+      "get",
+      "set"
+    ]
+  },
+  {
+    "name": "blackice_connected_browser_read",
+    "description": "Inspect configured browser connections. action:\"connections\" lists them; action:\"tools\" with connectionId returns that connection's current tool schemas, optionally filtered by query. Use those returned schemas for calls; each browser keeps its own sign-ins and storage. This action does not start a model.",
+    "fields": [
+      "requestId",
+      "action",
+      "connectionId",
+      "query",
+      "taskContext"
+    ],
+    "actions": [
+      "connections",
+      "tools"
+    ]
+  },
+  {
+    "name": "blackice_connected_browser_action",
+    "description": "Call a configured browser's tool. First read its current schemas with blackice_connected_browser_read. For action:\"call\", supply connectionId, the returned tool name and arguments matching that schema. imageOutputPath optionally saves a returned image to a new absolute path.\naction:\"connect_chrome\" connects the existing Chrome session; Chrome may show its own connection prompt. Inspect the resulting page state to confirm the website action.",
+    "fields": [
+      "requestId",
+      "action",
+      "connectionId",
+      "name",
+      "arguments",
+      "imageOutputPath",
+      "taskContext"
+    ],
+    "actions": [
+      "connect_chrome",
+      "call"
+    ]
+  },
+  {
+    "name": "blackice_profile_list",
+    "description": "List installed Chromium profiles and completed BLACKICE imports. Returns profile metadata, sourceIds and paths, without cookie/password values. Use a sourceId with blackice_profile_import; use an importId with blackice_profile_connect.",
+    "fields": [
+      "requestId",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_profile_import",
+    "description": "Copy sourceId from blackice_profile_list into a separate BLACKICE profile for the same installed browser, including extensions and site storage. The source is unchanged. The result lists excluded runtime files; a locked or changing source fails without replacing a completed import. Copied sign-ins may be unusable because of native encryption; inspect the target site after connecting.",
+    "fields": [
+      "requestId",
+      "sourceId",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_profile_connect",
+    "description": "Launch a completed importId with its original browser executable and expose its connection to BLACKICE tools. The original profile remains unchanged. Returns connectionId; inspect the target site to check its saved sign-in.",
+    "fields": [
+      "requestId",
+      "importId",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_restart",
+    "description": "Schedule BLACKICE's native restart while preserving its profile and mode. Ordinary restart reports active work that prevents it. force:true pauses automatic queues and stops cancellable work before restarting; other reported blockers can still prevent restart. Returns a scheduling job and temporarily disconnects the connector. After reconnecting, read that job and blackice_direct_status.restart.receipt; status completed with the same requestId confirms replacement process startup. Recover an uncertain restart by reading its receipt rather than creating another request.",
+    "fields": [
+      "requestId",
+      "force",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_frontend",
+    "description": "Inspect and operate BLACKICE's own UI for development. target:\"frontend\" selects the app renderer; target:\"main\" selects the Electron host.\nsnapshot returns UI refs, documentId and URL. For interact, copy documentId to expectedDocumentId and URL to expectedUrl, then choose click, fill, press, scroll or drag. Take another snapshot to inspect the result. These helpers cover the top-level document and redact password/OTP values.\nscreenshot captures the app window. evaluate runs expression; cdp sends method/params. Debugger sessions persist across calls; events reads their buffered events.\nOversized results are saved as local artifacts; the receipt includes path, SHA-256 and byte count. The tool does not start a model.",
+    "fields": [
+      "requestId",
+      "action",
+      "target",
+      "operation",
+      "ref",
+      "destinationRef",
+      "expectedDocumentId",
+      "expectedUrl",
+      "text",
+      "key",
+      "deltaX",
+      "deltaY",
+      "expression",
+      "method",
+      "params",
+      "sessionId",
+      "rect",
+      "after",
+      "limit",
+      "clear",
+      "eventLimit",
+      "eventByteLimit",
+      "snapshotOptions",
+      "taskContext"
+    ],
+    "actions": [
+      "state",
+      "snapshot",
+      "screenshot",
+      "evaluate",
+      "cdp",
+      "events",
+      "interact"
+    ]
+  },
+  {
+    "name": "blackice_credentials_list",
+    "description": "List saved account metadata and vaultRevision for one exact HTTPS origin. Password text is omitted.",
+    "fields": [
+      "requestId",
+      "origin",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_credentials_generate",
+    "description": "Generate and store an encrypted password for origin using a stable requestId. Returns credentialId/revision without password text. Reuse the same ID and inputs after an uncertain result.",
+    "fields": [
+      "requestId",
+      "origin",
+      "username",
+      "label",
+      "length",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_credentials_save",
+    "description": "Store a supplied website password in the local vault using expectedRevision from list and a stable requestId. update also needs credentialId/revision. This changes the vault entry, not the website password, and does not submit a form.",
+    "fields": [
+      "requestId",
+      "origin",
+      "username",
+      "label",
+      "password",
+      "expectedRevision",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_credentials_update",
+    "description": "Store a supplied website password in the local vault using expectedRevision from list and a stable requestId. update also needs credentialId/revision. This changes the vault entry, not the website password, and does not submit a form.",
+    "fields": [
+      "requestId",
+      "origin",
+      "username",
+      "label",
+      "password",
+      "expectedRevision",
+      "credentialId",
+      "revision",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_credentials_associate",
+    "description": "Add or remove one exact SSO loginOrigin for a saved credential. Requires origin, username, credentialId/revision, expectedRevision from list, operation and requestId. For fill, pass the associated loginOrigin as origin and the returned revision. The password is not copied or returned.",
+    "fields": [
+      "requestId",
+      "origin",
+      "username",
+      "credentialId",
+      "revision",
+      "loginOrigin",
+      "operation",
+      "expectedRevision",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_credentials_fill",
+    "description": "Fill the selected credentialId/revision into current password fields on origin. Supply tabId, expectedUrl, expectedDocumentId and passwordRef. This fills fields without submitting and returns no password text.",
+    "fields": [
+      "requestId",
+      "origin",
+      "credentialId",
+      "revision",
+      "browser",
+      "tabId",
+      "expectedUrl",
+      "expectedDocumentId",
+      "passwordRef",
+      "confirmationRef",
+      "usernameRef",
+      "conversationId",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_credentials_authenticate",
+    "description": "Fill the selected credential revision and submit one same-origin HTTPS POST login/signup. Use current field refs, submitRef, intent and requestId. Reuse identical inputs after uncertainty; inspect the destination to check whether authentication succeeded.",
+    "fields": [
+      "requestId",
+      "origin",
+      "credentialId",
+      "revision",
+      "browser",
+      "tabId",
+      "expectedUrl",
+      "expectedDocumentId",
+      "passwordRef",
+      "confirmationRef",
+      "usernameRef",
+      "intent",
+      "submitRef",
+      "conversationId",
+      "taskContext"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_list_plans",
+    "description": "Find saved task/conversation plans by query, groupId or exact taskId. Defaults to active; state:archived or all includes archived plans. Returns names, current revisions and run references. Use offset/limit to page results.",
+    "fields": [
+      "query",
+      "state",
+      "groupId",
+      "offset",
+      "limit",
+      "taskId"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_get_plan",
+    "description": "Read a saved task/conversation plan by taskId. Returns its current revision, task work and saved decision/context records. planningAwareness reports current editing and worker read receipts. Use this revision when preparing an edit.",
+    "fields": [
+      "taskId"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_get_run_result",
+    "description": "Read an existing run by runId. Returns status, settled and saved output; add nodeId for one worker. Page long text by passing output.nextOffset as offset. This reads the run without starting or continuing it.",
+    "fields": [
+      "runId",
+      "nodeId",
+      "offset",
+      "limit"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_list_swarm_plans",
+    "description": "Find saved Swarms projects by query or groupId. Defaults to active; state:archived or all includes archived projects. Returns names, groups, revisions and task counts. Page with offset/limit.",
+    "fields": [
+      "query",
+      "state",
+      "groupId",
+      "offset",
+      "limit"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_get_swarm_plan",
+    "description": "Read a Swarms project by projectId, including task status and execution attempt IDs. offset/limit pages tasks. Each task defaults to its latest five attempts; use attemptOffset/attemptLimit for other attempts. Use blackice_get_run_result with a returned runId for worker output. Reading does not start, retry or review work.",
+    "fields": [
+      "projectId",
+      "offset",
+      "limit",
+      "attemptOffset",
+      "attemptLimit"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_get_plan_groups",
+    "description": "Read plan names, group membership and the organization revision. Use that revision with blackice_edit_plan_groups; it is separate from each plan's content revision.",
+    "fields": [],
+    "actions": []
+  },
+  {
+    "name": "blackice_edit_plan",
+    "description": "Save task/conversation plan operations using taskId and its current expectedRevision. For a new task at revision 0, use create_contract with a complete current contract. For an existing current plan, use replace_contract as the sole operation. Existing legacy graph records retain their graph-edit operations; blackice_get_plan identifies the saved protocol. Use the attached operations schema for fields. The host retains planEpoch and runtime evidence. Changes are saved as one batch and do not execute the plan. After a conflict or lost response, read blackice_get_plan to see what was saved before preparing another edit.",
+    "fields": [
+      "taskId",
+      "expectedRevision",
+      "operations"
+    ],
+    "actions": []
+  },
+  {
+    "name": "blackice_edit_plan_groups",
+    "description": "Rename/group plans or create, rename and remove groups. Read blackice_get_plan_groups first and pass its organization revision as expectedRevision. operations is an array whose entries use type, such as create_group with id/name or update_plan with taskId/name/groupId. Removing a group keeps its plans. After a conflict or lost response, reread the organization to determine the remaining change.",
+    "fields": [
+      "expectedRevision",
+      "operations"
+    ],
+    "actions": []
+  }
+]

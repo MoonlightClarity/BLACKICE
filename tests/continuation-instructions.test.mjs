@@ -14,8 +14,9 @@ test('revised continuation instructions reach the native turn on the same provid
   const runtime=new CodexRuntime({command:process.execPath,args:[fixture],cwd:directory,requestTimeoutMs:5000,runTimeoutMs:8000});
   const requests=[],request=runtime._request.bind(runtime);
   const injected=await readBundledSkill('library-what-makes-done');
-  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:'blackice-anti-completion-bias-v2'};
-  const receipt={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:'blackice-what-makes-done-v4'};
+  const submitted=entry=>({type:'skill_context_submitted',skillId:entry.id,title:entry.title,source:entry.source,sourceRevision:entry.provenance.revision});
+  const antiCompletion=submitted(await readBundledSkill('library-anti-completion-bias'));
+  const receipt=submitted(injected);
   let rejectTurn=false;
   runtime._request=(method,params={},...args)=>{requests.push({method,params:structuredClone(params)});if(rejectTurn&&method==='turn/start')return Promise.reject(Error('Synthetic native rejection'));return request(method,params,...args);};
   const engine=new HarnessEngine({runtime,dataDir:path.join(directory,'data'),defaultCwd:directory});

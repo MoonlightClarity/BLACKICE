@@ -31,9 +31,9 @@ for(const type of ['openai','anthropic','compatible'])test(`${type}: the engine 
   const messages=body=>type==='openai'?body.input:body.messages.filter(message=>message.role!=='system');
   const toolNames=body=>(body.tools||[]).map(tool=>type==='compatible'?tool.function.name:tool.name);
   const firstInstructions=instructions(requests[0].body);assert.equal(typeof firstInstructions,'string');assert.match(firstInstructions,/BLACKICE TOOL ROUTING/);assert.doesNotMatch(firstInstructions,/GENERAL ANALYTICAL METHOD/);
-  assert.match(firstInstructions,/SOUL\.md supplies owner-configured behavior/);
+  assert.match(firstInstructions,/Use SOUL\.md for behavior and relevant skills for task methods/);
   assert.doesNotMatch(firstInstructions,/full quantitative planning contract/);
-  assert.match(firstInstructions,/Current user directions supersede conflicting behavioral defaults/);
+  assert.match(firstInstructions,/Current user directions replace conflicting behavioral defaults, skill instructions and earlier assistant plans/);
   assert.deepEqual(manifest(firstInstructions).map(item=>item.name),toolNames(requests[0].body));assert.deepEqual(new Set(toolNames(requests[0].body)),new Set(['relay_workspace','relay_find_files','relay_control','relay_agents','relay_skills','relay_history']));for(const name of ['relay_browser','relay_desktop','relay_connections','relay_identity','relay_files','relay_task'])assert.ok(!manifest(firstInstructions).some(item=>item.name===name),name);
   assert.ok(!JSON.stringify(messages(requests[0].body)).includes('BLACKICE TOOL ROUTING'),'routing policy must not exist only in a user prompt');
   // Retrieval remains available on follow-up without any mutable memory service.
@@ -109,13 +109,13 @@ test('the legacy relay history setting preserves native continuation and contain
   const firstReceipt = JSON.parse(one.nodes.agent.output);
   assert.ok(firstReceipt.tools.includes('relay_browser'));
   assert.equal(firstReceipt.tools.includes('relay_connections'),false);
-  assert.match(firstReceipt.instructions, /Current user directions supersede conflicting behavioral defaults and prior assistant plans/);
+  assert.match(firstReceipt.instructions, /Current user directions replace conflicting behavioral defaults, skill instructions and earlier assistant plans/);
   const browserDefinition=(await wire()).find(record=>record.method==='thread/start').params.dynamicTools.find(tool=>tool.name==='relay_browser');
   assert.match(firstReceipt.instructions,/relay_browser:.*stopped-task-recovery/);
-  assert.match(browserDefinition.description, /contained BLACKICE browser/);
+  assert.match(browserDefinition.description, /BLACKICE's contained browser/);
   assert.match(browserDefinition.description, /expectedUrl and expectedDocumentId/);
-  assert.match(browserDefinition.description, /empty tabs list means this task has no visible pages/);
-  assert.match(browserDefinition.description, /Foreign ownershipCandidates are not readable tabs/);
+  assert.match(browserDefinition.description, /tabs lists this task's visible pages; an empty list does not mean the profile is signed out/);
+  assert.match(browserDefinition.description, /foreign ownershipCandidates are not readable/);
   assert.doesNotMatch(browserDefinition.description, /relevant job boards|educated inference|First decompose/);
   const originalBrowserAudit=one.nodes.agent.instructionAudit.sections.find(item=>item.layer==='tool-definition'&&item.toolName==='relay_browser');
   assert.ok(originalBrowserAudit.text.includes(browserDefinition.description));

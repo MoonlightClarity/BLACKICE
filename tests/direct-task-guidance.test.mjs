@@ -69,17 +69,20 @@ test('create read update and canonical binding return a sidecar without modifyin
 });
 
 // These assertions check delivered advice, not compliance by an external model.
-test('delivered guidance covers explicit gates, bounded inference and scoped process evidence without adding domain rules', () => {
+test('delivered guidance preserves current intent, supported decisions and destination recovery without adding domain rules', () => {
   const text = directTaskContractInterpretation({ contract: contract() }).decisionGuidance.join(' ');
-  for (const expected of ['latest actual user intent', 'explicit user gates', 'requested uncertainty policy',
-    'Missing documentation is unknown, not proven absence', 'Make reasonable inferences when they are enough to choose the next step',
-    'beyond one document', 'expected value', 'explicit factual question', 'Continue independent authorized work',
-    'UNKNOWN prior external effects', 'duplicate-effect protections', 'Do not fabricate support',
-    'Agent disagreement or preference is advisory', 'specific higher-priority rule or tool limitation',
-    'governing clause', 'known, inferred or unknown', 'support and confidence', 'governing basis and affected scope',
-    'coarse decision check', 'not a per-field ritual', 'not higher-priority instructions',
-    'proportional effort against user limits', 'precise process terms', 'personal certifications',
-    'do not make false attestations', 'Isolate affected work', 'adds no admission gate']) assert.ok(text.includes(expected), expected);
+  for (const expected of [
+    /Follow the current user request/,
+    /saved contract as a working task record; it does not add user instructions or establish facts/,
+    /attached action schema/,
+    /revision conflict, read the current record and preserve completed work/,
+    /supported working choice for routine uncertainties/,
+    /Check a missing fact when it can change the next action/,
+    /State an inference as an inference; record observed outcomes separately/,
+    /inspect the destination or saved receipt before repeating an action that may already have run/,
+    /Keep independent requested work moving/,
+    /specific unavailable input or failed operation/,
+  ]) assert.match(text, expected);
   for (const forbidden of ['resume-only', 'work authorization', 'sponsorship', 'SQL', 'always ask', 'never infer']) assert.equal(text.includes(forbidden), false, forbidden);
 });
 

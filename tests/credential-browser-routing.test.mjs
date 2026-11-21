@@ -25,8 +25,14 @@ test('credential playbook is absent when the helper is not actually attached', (
 
 test('attached browser documents its operation without duplicating task-specific email or job skills',()=>{
  const guidance=BROWSER_TOOL.description;
- assert.match(guidance,/password_manager on an owned site tabId/);
- assert.match(guidance,/manager is optional; normal page controls remain available/);
- assert.match(guidance,/absolute local paths with the observed file input or chooser/);
+ assert.match(guidance,/password_manager[^.]*owned tab/);
+ assert.match(guidance,/optional saved-password interface/);
+ assert.match(guidance,/absolute local paths[^.]*file-input ref or chooserId/);
+ for (const action of ['password_manager','upload']) assert.ok(BROWSER_TOOL.inputSchema.properties.action.enum.includes(action));
+ for (const field of ['tabId','ref','chooserId']) assert.equal(BROWSER_TOOL.inputSchema.properties[field].type,'string');
+ assert.equal(BROWSER_TOOL.inputSchema.properties.paths.type,'array');
+ assert.match(guidance,/take_ownership[^.]*pass its tabId[^.]*ownerKey to expectedOwnerKey[^.]*url to expectedUrl[^.]*documentId to expectedDocumentId/);
+ for (const field of ['expectedOwnerKey','expectedUrl','expectedDocumentId']) assert.equal(BROWSER_TOOL.inputSchema.properties[field].type,'string');
+ assert.ok(BROWSER_TOOL.inputSchema.properties.action.enum.includes('take_ownership'));
  assert.doesNotMatch(guidance,/known webmail service|confirmed sender|Check Sent|relevant job boards|educated inference/);
 });

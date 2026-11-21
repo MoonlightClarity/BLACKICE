@@ -15,7 +15,7 @@ test('the desktop backend has no physical-input or foreground-focus API path', a
   assert.ok(actions.includes('inspect')&&actions.includes('get_text'));
   assert.ok(actions.includes('set_value')&&actions.includes('invoke'), 'the generic tool exposes existing semantic mutation capabilities');
   assert.ok(!Object.hasOwn(DESKTOP_TOOL.inputSchema.properties,'x')&&!Object.hasOwn(DESKTOP_TOOL.inputSchema.properties,'keys'));
-  assert.match(DESKTOP_INSTRUCTIONS,/does not implement physical mouse, keyboard or foreground-focus input/i);
+  assert.match(DESKTOP_TOOL.description,/not physical mouse or keyboard input/i);
 });
 
 test('known focus-taking WinForms checkbox actions are rejected rather than retried with input', async () => {
