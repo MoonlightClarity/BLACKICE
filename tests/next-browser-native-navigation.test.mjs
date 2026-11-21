@@ -38,6 +38,7 @@ async function fixture(t,{closeReceipt}={}) {
     api: async (route, method = 'GET', body) => {
       if (route.startsWith('/api/browser/status')) { reads++; return structuredClone(state); }
       if(route==='/api/browser/close-all'&&closeReceipt){
+        assert.equal(method,'POST');assert.deepEqual(body,{});
         closes++;state.tabs=state.tabs.filter(tab=>closeReceipt.remainingTabIds.includes(tab.tabId));state.activeTab=state.tabs[0]?.tabId||null;
         return closeReceipt;
       }
@@ -57,6 +58,22 @@ async function fixture(t,{closeReceipt}={}) {
     },
   };
 }
+
+test('native bulk close is a visible text control outside collapsed Tools and uses one confirmed request',async t=>{
+ const receipt={closed:2,failedTabs:[],skippedInUseIds:[],remainingTabIds:[]};
+ const f=await fixture(t,{closeReceipt:receipt}),button=f.$('#next-browser-close-all');
+ assert.equal(f.$('#next-browser-tools').hidden,true,'Tools starts collapsed.');
+ assert.equal(f.mount.querySelectorAll('#next-browser-close-all').length,1);
+ assert.equal(button.textContent.trim(),'Close all unused tabs');
+ assert.equal(button.getAttribute('aria-label')??button.textContent.trim(),'Close all unused tabs');
+ assert.ok(button.closest('.next-browser-navigation'),'Bulk close stays in visible browser navigation.');
+ assert.equal(button.closest('#next-browser-tools'),null,'Bulk close never requires opening Tools.');
+ for(let ancestor=button;ancestor;ancestor=ancestor.parentElement)assert.equal(ancestor.hidden,false,'Bulk close has no hidden ancestor.');
+ window.confirm=()=>false;await f.click(button);await sleep(0);assert.equal(f.closes,0);
+ window.confirm=()=>true;await f.click(button);
+ await until(()=>f.closes===1&&f.notifications.length>0);
+ assert.equal(f.closes,1);assert.deepEqual(f.state.tabs,[]);
+});
 
 test('native bulk close warns about eligible leftovers even if no close operation failed',async t=>{
  const receipt={closed:1,failedTabs:[],skippedInUseIds:[],remainingTabIds:['other']};

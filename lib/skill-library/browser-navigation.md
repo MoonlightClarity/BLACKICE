@@ -1,6 +1,6 @@
 # Browser Navigation and Continuity
 
-Use when opening a page, following navigation, inspecting visual or embedded obstacles, recovering stale controls, or resuming browser work.
+Use when opening a page, following navigation, inspecting visual or embedded obstacles, recovering stale controls, resuming browser work, or reusing and closing completed task pages.
 
 ## Open and identify the page
 
@@ -26,6 +26,14 @@ After navigation, check the current URL, title, and expected content. If a click
 4. If one route fails, try another route that reaches the same requested page. Continue independent work while an uncertain effect is being checked.
 
 A successful click establishes that input was sent. Verify the resulting page or record before claiming the task succeeded.
+
+## Reuse and close completed task pages
+
+1. Read tabs and record the baseline; track exact tab IDs opened by this task. Reuse the task's matching page when continuing work. Preserve personal/pre-existing pages and foreign pages.
+2. Reuse or close completed owned pages incrementally as work progresses. Save their useful results first, then inspect for unfinished forms, pending effects, unresolved dialogs, running downloads and resumable work. Apply these checks before navigating a page to new work as well as before closing it. Keep anything still needed by the user or another task, including work awaiting input.
+3. Keep `inUse` marks while pages are needed. Use `relay_browser` with `action:"tab_mark", inUse:false` only to release your own completed task mark; never clear a user or another task's mark.
+4. Close the chosen task-created page with `relay_browser`, `action:"close", browser:"relay"` and its exact `tabId`. Await the native tool result, then call `action:"tabs"` to verify removal. After an uncertain close, inspect its receipt and current tabs before retrying; an already absent tab needs no new close.
+5. Close a task-created folder only after verifying it is empty. Task settlement alone does not establish that a page is finished; preserve unfinished work for continuation.
 
 ## Preserve what lets the next step continue
 

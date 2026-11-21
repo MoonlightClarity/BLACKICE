@@ -574,3 +574,78 @@ test('a genuine pending chooser publishes a compact guarded upload call before l
     assert.equal(requests[0].action,'snapshot');
   }
 });
+
+for (const closeReceipt of ['confirmed', 'lost-after-close']) {
+  test('scripted native cleanup closes exactly one completed owned page and reinspects: ' + closeReceipt, async t => {
+    // This exercises the tool path and receipts, not a model's cleanup decisions.
+    const owner = { taskId: 'cleanup-task', runId: 'cleanup-run', nodeId: 'agent' };
+    const originalTabs = [
+      { tabId: 'unfinished', owner: { ...owner }, url: 'https://forms.example.test/draft', documentId: 'unfinished:1', draft: 'Saved unfinished form' },
+      { tabId: 'marked', owner: { ...owner }, url: 'https://research.example.test/keep', inUse: true, inUseBy: { kind: 'user' } },
+      { tabId: 'foreign', owner: { taskId: 'other-task', runId: 'other-run', nodeId: 'agent' }, url: 'https://other.example.test/' },
+      { tabId: 'personal', url: 'https://personal.example.test/' },
+      { tabId: 'calling-chat', purpose: 'chat-mode', url: 'https://chatgpt.com/c/fixture' },
+    ];
+    const tabs = structuredClone(originalTabs), calls = [];
+    const driver = {
+      status: () => ({ available: true, contained: true, tabs: structuredClone(tabs),
+        activeTab: 'personal', ownerActiveTabs: { ['cleanup-task\0agent']: 'unfinished' } }),
+      async perform(args, options) {
+        calls.push(structuredClone(args));
+        assert.deepEqual(options.owner, owner);
+        if (args.action === 'tabs') return { tabs: structuredClone(tabs), activeTab: 'personal' };
+        if (args.action === 'open') {
+          tabs.push({ tabId: 'completed-page', owner: { ...options.owner }, url: args.url, documentId: 'completed-page:1' });
+          return { tabId: 'completed-page', url: args.url, documentId: 'completed-page:1' };
+        }
+        if (args.action === 'snapshot') {
+          const tab = tabs.find(row => row.tabId === args.tabId);
+          return { tabId: tab.tabId, url: tab.url, documentId: tab.documentId,
+            frames: [{ text: tab.draft || 'Completed research result saved in the task notes.', elements: [] }] };
+        }
+        assert.equal(args.action, 'close');
+        assert.equal(args.tabId, 'completed-page', 'only the exact selected completed task page may reach close');
+        tabs.splice(tabs.findIndex(tab => tab.tabId === args.tabId), 1);
+        if (closeReceipt === 'lost-after-close') throw Object.assign(new Error('The close result was unavailable.'), { code: 'CLOSE_RESULT_UNAVAILABLE' });
+        return { closed: args.tabId, receipt: { closed: true, tabId: args.tabId } };
+      },
+    };
+    const browser = new BrowserWorkspace({ driver });
+    t.after(() => browser.close());
+    const handler = createBrowserToolHandler({ browser, owner });
+    const call = args => handler({ name: 'relay_browser', arguments: { browser: 'relay', ...args } });
+    const read = result => { assert.equal(result.success, true); return JSON.parse(result.contentItems[0].text); };
+    const baseline = read(await call({ action: 'tabs' }));
+    assert.deepEqual(baseline.tabs.map(tab => tab.tabId), ['unfinished', 'marked']);
+    const opened = read(await call({ action: 'open', url: 'https://research.example.test/result' }));
+    assert.equal(opened.tabId, 'completed-page');
+    assert.match(read(await call({ action: 'snapshot', tabId: opened.tabId })).frames[0].text, /Completed research result/);
+    assert.match(read(await call({ action: 'snapshot', tabId: 'unfinished' })).frames[0].text, /unfinished form/);
+
+    const beforeProtectedAttempts = calls.length;
+    for (const [tabId, code] of [['marked', 'BROWSER_TAB_IN_USE'], ['foreign', 'BROWSER_TAB_OWNERSHIP'], ['personal', 'BROWSER_TAB_OWNERSHIP'], ['calling-chat', 'BROWSER_HUMAN_CHAT_RESERVED']]) {
+      const rejected = await call({ action: 'close', tabId });
+      assert.equal(rejected.success, false);
+      assert.equal(rejected.code, code);
+      assert.equal(JSON.parse(rejected.contentItems[0].text).actionDispatched, false);
+    }
+    const releaseHumanMark = await call({ action: 'tab_mark', tabId: 'marked', inUse: false });
+    assert.equal(releaseHumanMark.success, false);
+    assert.equal(releaseHumanMark.code, 'BROWSER_TAB_IN_USE');
+    assert.equal(calls.length, beforeProtectedAttempts, 'protected attempts never reach the driver');
+
+    const closed = await call({ action: 'close', tabId: opened.tabId });
+    if (closeReceipt === 'confirmed') assert.equal(read(closed).receipt.closed, true);
+    else {
+      assert.equal(closed.success, false);
+      assert.equal(closed.code, 'CLOSE_RESULT_UNAVAILABLE');
+      assert.notEqual(JSON.parse(closed.contentItems[0].text).actionDispatched, false, 'a lost result must not claim the close never dispatched');
+    }
+    const after = read(await call({ action: 'tabs' }));
+    assert.equal(after.tabs.some(tab => tab.tabId === opened.tabId), false);
+    assert.deepEqual(after.tabs.map(tab => tab.tabId), ['unfinished', 'marked']);
+    assert.deepEqual(tabs, originalTabs, 'unfinished, marked, foreign, personal and calling pages remain unchanged');
+    assert.deepEqual(calls.slice(-2).map(args => args.action), ['close', 'tabs']);
+    assert.equal(calls.filter(args => args.action === 'close').length, 1, 'reinspection of an absent page does not replay an uncertain close');
+  });
+}

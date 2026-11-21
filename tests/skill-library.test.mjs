@@ -180,3 +180,17 @@ for (const query of ['browser visual obstacle', 'An embedded challenge appeared 
   assert.equal(selected.entry.source,'bundled');
  });
 }
+
+for (const query of ['browser tab cleanup', 'Close finished browser pages while continuing the task.', 'reuse browser tabs']) {
+ test('native skill retrieval delivers incremental tab cleanup: '+query,async()=>{
+  const handler=createRetrievalToolHandler({cwd:process.cwd()});
+  const call=async args=>decode(await handler({name:'relay_skills',arguments:args}));
+  const found=await call({action:'search',query});
+  assert.equal(found.entries[0]?.id,'library-browser-navigation',query);
+  const selected=await call({action:'read',id:found.entries[0].id});
+  const body=selected.entry.content;
+  assert.equal(body,await fs.readFile(new URL('../lib/skill-library/browser-navigation.md',import.meta.url),'utf8'));
+  for(const required of ['record the baseline','exact tab IDs','incrementally','unfinished forms','pending effects','unresolved dialogs','running downloads','resumable work','personal/pre-existing','inUse','relay_browser','action:"close"','action:"tabs"','already absent','empty'])assert.ok(body.includes(required),required);
+  assert.doesNotMatch(body,/blackice_browser_action|blackice_get_job/);
+ });
+}

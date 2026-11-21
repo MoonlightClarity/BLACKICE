@@ -109,7 +109,10 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
   mount.innerHTML=[
     '<div class="next-native-browser" data-browser-mode="native">',
     '<div class="next-browser-navigation" aria-label="Browser navigation">',
+    '<div class="next-browser-management">',
     browserUsageMarkup(),
+    '<button type="button" id="next-browser-close-all" class="next-browser-bulk-close" title="Close tabs not marked in use">Close all unused tabs</button>',
+    '</div>',
     '<form id="next-browser-form" class="next-row next-browser-address" role="search">',
     '<button type="button" id="next-browser-back" aria-label="Back" title="Back">←</button>',
     '<button type="button" id="next-browser-forward" aria-label="Forward" title="Forward">→</button>',
@@ -122,7 +125,6 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
     '</form>',
     '<div id="next-browser-tools" class="next-browser-tools" aria-label="Browser tools" hidden>',
     '<button type="button" id="next-browser-downloads-toggle" aria-expanded="false" aria-controls="next-browser-downloads">Downloads</button>',
-    '<button type="button" id="next-browser-close-all" title="Close tabs not marked in use">Close unused tabs...</button>',
     '</div></div>',
     '<div class="next-native-browser-body">',
     '<aside class="next-native-browser-sidebar" aria-label="Tabs and folders">',
@@ -160,7 +162,7 @@ export function createNativeBrowserWorkspace({mount,api,events,notify=()=>{},onN
   toolsToggle.addEventListener('keydown',event=>{if(event.key==='Escape'&&!toolsPanel.hidden){event.preventDefault();showTools(false,true);}});
   for(const [id,icon,label] of [
     ['back','back','Back'],['forward','forward','Forward'],['reload','reload','Reload page'],['new','plus','New tab'],['passwords','key','Passwords'],
-    ['go','go','Go to address'],['tools-toggle','tools','Browser tools'],['downloads-toggle','download','Downloads'],['close-all','closeAll','Close unused tabs'],
+    ['go','go','Go to address'],['tools-toggle','tools','Browser tools'],['downloads-toggle','download','Downloads'],
     ['close','close','Close tab'],['refresh','reload','Refresh tabs'],['inspect','read','Read page'],['shot','camera','Refresh view']
   ]){const button=$('next-browser-'+id);if(button)browserIconButton(button,icon,label,button.title||label);}
   $('next-browser-passwords').hidden=typeof onNavigate!=='function';

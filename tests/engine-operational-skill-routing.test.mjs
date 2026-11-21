@@ -324,3 +324,18 @@ test('an authored workflow is not reclassified as ordinary Chat merely because i
   const f = await fixture(t);
   requireAbsent(await f.invoke('mission', application, { authored: true }));
 });
+
+test('ordinary browser work delivers native cleanup in the actual provider tool catalog on both entry points', { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  for (const route of ['direct', 'mission']) {
+    const task = 'Compare the public hours for two local libraries and save a short note.';
+    const result = await f.invoke(route, task);
+    assert.equal(result.run.input, task);
+    requireAbsent(result);
+    const browser = result.requests[0].tools.find(tool => tool.function?.name === 'relay_browser')?.function;
+    assert.ok(browser, 'the actual provider request must carry relay_browser');
+    assert.match(browser.description, /BROWSER TAB CLEANUP:/);
+    for (const required of ['incrementally', 'unfinished forms', 'pending effects', 'inUse', 'action:"close"', 'native tool result', 'action:"tabs"', 'verify removal', 'already absent']) assert.ok(browser.description.includes(required), required);
+    assert.doesNotMatch(browser.description, /blackice_browser_action|blackice_get_job/);
+  }
+});

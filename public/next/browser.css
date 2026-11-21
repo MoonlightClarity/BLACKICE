@@ -221,7 +221,6 @@
 .next-browser-tools{display:flex;flex-wrap:wrap;gap:7px;padding-top:8px}
 .next-browser-tools[hidden]{display:none}
 .next-browser-tools button{min-height:32px;font-size:12px}
-.next-browser-tools #next-browser-close-all{margin-left:auto}
 .next-native-browser-content .next-native-browser-status:empty{display:none}
 .next-native-browser-content .next-browser-cleanup-panel{margin:8px;border-radius:6px}
 @media(max-width:900px){.next-native-browser-sidebar{flex-basis:218px}.next-native-browser .next-browser-address button{padding:6px 7px;font-size:11px}}
@@ -255,6 +254,9 @@
 
 .next-browser-usage{display:flex;align-items:center;justify-content:flex-end;padding-bottom:7px;font-size:11px;color:var(--muted)}
 .next-browser-usage button{font-size:11px;min-height:28px}
+.next-browser-management{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding-bottom:7px}
+.next-browser-management .next-browser-usage{flex:1 1 auto;min-width:0;justify-content:flex-start;padding-bottom:0}
+.next-browser-bulk-close{flex:0 0 auto;min-height:32px;font-size:12px}
 
 /* Browser chrome uses fixed SVG icons; page content and meaningful notices remain text. */
 .next-browser-icon-button{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:32px;min-height:32px;padding:6px!important;line-height:1}

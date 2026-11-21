@@ -17,7 +17,10 @@ export function createBrowserWorkspace(options) {
     '<header class="next-panel-head"><div><h1>Browser</h1><p>Contained native Chromium pages · no external browser window</p></div>',
     '<button type="button" id="next-browser-refresh">Refresh tabs</button></header>',
     '<div class="next-browser-navigation" id="next-browser-navigation" aria-label="Browser navigation">',
+    '<div class="next-browser-management">',
     browserUsageMarkup(),
+    '<button type="button" id="next-browser-close-all" class="next-browser-bulk-close" title="Close tabs not marked in use">Close all unused tabs</button>',
+    '</div>',
     '<div class="next-browser-tabs" id="next-browser-tabs" role="tablist" aria-label="Contained tabs"></div>',
     '<form id="next-browser-form" class="next-row next-browser-address" role="search">',
     '<button type="button" id="next-browser-back" aria-label="Back" title="Back">←</button>',
@@ -31,7 +34,6 @@ export function createBrowserWorkspace(options) {
     '<button type="button" id="next-browser-inspect">Read page</button>',
     '<button type="button" id="next-browser-shot" class="next-primary">Refresh view</button>',
     '<button type="button" id="next-browser-close">Close tab</button>',
-    '<button type="button" id="next-browser-close-all">Close all unused tabs</button>',
     '<label class="next-browser-auto-label"><input type="checkbox" id="next-browser-auto"> Live preview</label></div>',
     '<p class="next-help" id="next-browser-status" role="status" aria-live="polite">Choose a contained page.</p>',
     '<section class="next-browser-dialog" id="next-browser-interaction" hidden aria-live="polite"></section>',
@@ -60,7 +62,7 @@ export function createBrowserWorkspace(options) {
   };
   for(const [id,icon,label] of [
     ['back','back','Back'],['forward','forward','Forward'],['reload','reload','Reload page'],['new','plus','New tab'],['passwords','key','Passwords'],
-    ['go','go','Go to address'],['tools-toggle','tools','Browser tools'],['downloads-toggle','download','Downloads'],['close-all','closeAll','Close unused tabs'],
+    ['go','go','Go to address'],['tools-toggle','tools','Browser tools'],['downloads-toggle','download','Downloads'],
     ['close','close','Close tab'],['refresh','reload','Refresh tabs'],['inspect','read','Read page'],['shot','camera','Refresh view']
   ]){const button=$('next-browser-'+id);if(button)browserIconButton(button,icon,label,button.title||label);}
   $('next-browser-passwords').hidden=typeof onNavigate!=='function';

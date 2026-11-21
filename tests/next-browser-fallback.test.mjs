@@ -58,7 +58,7 @@ test('a blocked request is an informative notice and ordinary exact-page input n
 });
 
 async function tabFixture(t,{initial,activeTab='page-a',hook}={}){
-  const dom=browserDOM(t),calls=[],subscribers=new Set(),state={tabs:initial||[
+  const dom=browserDOM(t),calls=[],notifications=[],subscribers=new Set(),state={tabs:initial||[
     {browser:'relay',visible:false,tabId:'page-a',title:'Page A',url:'https://fixture.example/a',documentId:'a:1'},
     {browser:'relay',visible:false,tabId:'page-b',title:'Page B',url:'https://fixture.example/b',documentId:'b:1'},
   ],activeTab};let nextId=0;
@@ -84,10 +84,10 @@ async function tabFixture(t,{initial,activeTab='page-a',hook}={}){
     if(body.action==='screenshot')return {...tab,width:1280,height:900,imageUrl:'data:image/png;base64,aGVsbG8='};
     return {...tab,ok:true};
   };
-  const create=()=>createBrowserWorkspace({mount:dom.mount,api,events:{subscribe(handler){subscribers.add(handler);return()=>subscribers.delete(handler);}},notify(){}});
+  const create=()=>createBrowserWorkspace({mount:dom.mount,api,events:{subscribe(handler){subscribers.add(handler);return()=>subscribers.delete(handler);}},notify(message){notifications.push(message);}});
   let workspace=create();t.after(()=>workspace.destroy());workspace.enter();
   const idle=async()=>{await until(()=>!dom.$('#next-browser-new').disabled&&Boolean(dom.$('#next-browser-image')));};await idle();
-  return {...dom,state,calls,subscribers,get workspace(){return workspace;},idle,
+  return {...dom,state,calls,notifications,subscribers,get workspace(){return workspace;},idle,
     action:type=>calls.filter(call=>call.body?.action===type),selected:()=>dom.$('.next-browser-tab[aria-selected="true"]')?.dataset.tabId,
     async select(tabId){await dom.click(`[data-tab-id="${tabId}"]`);await idle();},
     async recreate(){workspace.destroy();workspace=create();workspace.enter();await idle();},
@@ -213,6 +213,25 @@ test('a genuinely pending file request retains Choose files and Dismiss without 
     interactionId:'browser_input_fixture',decision:'dismiss'});
 });
 
+
+test('fallback bulk close is a visible text control and sends one confirmed request',async t=>{
+ const f=await tabFixture(t,{hook:async(call,state)=>{
+  if(call.route!=='/api/browser/close-all')return;
+  assert.equal(call.method,'POST');assert.deepEqual(call.body,{});
+  state.tabs=[];state.activeTab=null;
+  return{closed:2,failedTabs:[],skippedInUseIds:[],remainingTabIds:[]};
+ }}),button=f.$('#next-browser-close-all');
+ assert.equal(f.mount.querySelectorAll('#next-browser-close-all').length,1);
+ assert.equal(button.textContent.trim(),'Close all unused tabs');
+ assert.equal(button.getAttribute('aria-label')??button.textContent.trim(),'Close all unused tabs');
+ assert.ok(button.closest('.next-browser-navigation'),'Bulk close stays in visible browser navigation.');
+ for(let ancestor=button;ancestor;ancestor=ancestor.parentElement)assert.equal(ancestor.hidden,false,'Bulk close has no hidden ancestor.');
+ window.confirm=()=>true;await f.click(button);
+ await until(()=>f.notifications.includes('Closed 2 browser tabs.'));
+ assert.equal(f.$('.next-browser-tab'),null);
+ assert.equal(f.calls.filter(call=>call.route==='/api/browser/close-all').length,1);
+ assert.deepEqual(f.state.tabs,[]);
+});
 
 test('fallback close all requires confirmation, retains protected tabs and never repeats uncertain close',async t=>{
  let closes=0;const f=await tabFixture(t,{hook:async(call,state)=>{
