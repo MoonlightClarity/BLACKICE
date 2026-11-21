@@ -15,7 +15,7 @@ test('approved skill ships the exact bundled revision and gives the model a fres
  assert.equal(base.title,'Anti-Overalignment');
  // Pin the ordinary-request delegation default; earlier operational fixtures are historical.
  assert.equal(base.revision,1);
- assert.equal(hash(base.content),'9c41b9e2bcbbb432af47e66f48c7f7834c07b478746b207fa731f0a18c3e63a5');
+ assert.equal(hash(base.content),'5d0312f9ee091aa7ac3366a78f84bc056881dd040919d0c78a132d3f512b7394');
  assert.ok(base.content.startsWith('# Anti-Overalignment\n'));
  assert.equal(entry.content,base.content);assert.equal(entry.source,'bundled');
  const handler=createRetrievalToolHandler({cwd:root,dataDir:root});

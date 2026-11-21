@@ -132,11 +132,17 @@ export function captureEvent(event, history = []) {
     if (!publicPhase(message.phase)) return null;
     data = { type: 'message', itemId: message.itemId || message.id, phase: message.phase,
       text: sanitize(String(message.text || ''), 'output', 0, limits), questionCandidate: questionCandidate(message.text) };
-  } else if (d.type === 'item' && ['dynamicToolCall', 'webSearch', 'functionCall', 'mcpToolCall'].includes(item?.type)) {
+  } else if (d.type === 'item' && ['dynamicToolCall', 'webSearch', 'functionCall', 'mcpToolCall', 'commandExecution', 'fileChange', 'imageGeneration', 'collabAgentToolCall'].includes(item?.type)) {
     const copy = sanitize(item, 'output', 0, limits);
     if (item.arguments !== undefined) copy.arguments = sanitize(item.arguments, 'arguments', 0, limits);
     data = { type: 'item', stage: d.stage, item: copy };
     if (d.stage === 'completed') { const answer = answerEvidence(event, copy, history, limits); if (answer) data.answerEvidence = answer; }
+  } else if (d.type === 'item' && !['reasoning', 'userMessage', 'agentMessage', 'contextCompaction'].includes(item?.type)) {
+    // Unrecognized public item bodies are not evidence of a completed action.
+    limits.unsupportedNativeItems = 1;
+    data = { type: 'unsupported.item', stage: ['started', 'completed'].includes(d.stage) ? d.stage : null,
+      item: { type: typeof item?.type === 'string' ? cleanText(item.type).slice(0, 200) : null,
+        id: typeof item?.id === 'string' ? cleanText(item.id).slice(0, 200) : null } };
   } else if (['tool.result', 'skill_context_submitted', 'skill_context_accepted', 'instruction_context_submitted',
     'instruction_context_accepted', 'chat.execution-review', 'host.final-review', 'provider.final', 'browser.observation'].includes(d.type)) {
     data = sanitize(d, 'output', 0, limits);
@@ -162,7 +168,7 @@ export function summarize(events) {
       if (fields.length && !forms.has(p.url)) forms.set(p.url, { at: event.at, callId: item.id, ...summary });
       return summary;
     });
-    calls.push({ at: event.at, callId: item.id, tool: item.tool || item.name, args: item.arguments,
+    calls.push({ at: event.at, callId: item.id, tool: item.tool || item.name || item.type, args: item.arguments,
       success: item.success, pages: pageSummaries });
   }
   return { rawEventCount: events.length, uniquePublicMessageCount: messages.size, publicMessages: [...messages.values()],
@@ -172,7 +178,7 @@ export function summarize(events) {
     scoring: 'manual evidence review required; no automatic application-success verdict' };
 }
 export function createCapture(options = {}) {
-  const state = { schemaVersion: 2, redactionPolicy: 'observed-native-field-answers-v2', active: true, runId: null, startedAt: new Date().toISOString(), records: [], bytes: 0, dropped: 0,
+  const state = { schemaVersion: 3, redactionPolicy: 'public-native-actions-v3', active: true, runId: null, startedAt: new Date().toISOString(), records: [], bytes: 0, dropped: 0,
     errors: 0, limitationEvents: 0, maxEvents: options.maxEvents ?? 3000, maxBytes: options.maxBytes ?? 16000000,
     source: 'authenticated-app-event-stream' };
   const bytes = value => new TextEncoder().encode(JSON.stringify(value)).length;
@@ -212,7 +218,7 @@ export function createCapture(options = {}) {
 export async function browserBootstrap() {
   const key = '__blackiceJobSearchEvidence';
   if (window[key]?.active) {
-    if (window[key].schemaVersion !== 2) throw Error('Existing observer uses another capture schema; stop it before replacing it.');
+    if (window[key].schemaVersion !== 3) throw Error('Existing observer uses another capture schema; stop it before replacing it.');
     if (!window[key].ready) throw Error('Existing observer has no stream readiness receipt; stop it before replacing it.');
     return { ...(await window[key].ready), alreadyActive: true };
   }

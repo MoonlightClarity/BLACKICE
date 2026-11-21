@@ -1,8 +1,8 @@
-# Reproducible native job-search trial
+# Reproducible native task calibration
 
-This runner exercises an ordinary BLACKICE Chat request through the native app and archives public execution evidence. It performs real applications when the agent follows the request. It does not fill employer forms, choose jobs, supply applicant answers, coach the model, or grade business success.
+This runner exercises frozen ordinary BLACKICE Chat requests through the native app and archives public execution evidence. Job search remains a diagnostic default case; immutable case files let unrelated tasks use the same capture, provenance and recovery path. The runner records observed effects for manual review.
 
-## Fixed task
+## Legacy job-search diagnostic
 
 Single application:
 
@@ -51,6 +51,35 @@ Set --profile-condition fresh in that attempt's arguments and wait for native pr
 
 Record the original applicant sources and normal application-history state separately. Only genuine prior outcomes belong in duplicate-avoidance history. Record any such history copied into a new profile by exact source and hash. Do not inject a test answer packet.
 
+### Choose the working directory
+
+The native app profile and a task's working directory are independent. To use an existing folder, add the same optional --cwd selection to every command for that attempt:
+
+```powershell
+$trialWorkingDirectory = Join-Path $env:APPDATA 'Relay\workspace'
+$trialArgs += @('--cwd', $trialWorkingDirectory)
+```
+
+Choose any existing absolute directory containing the normal task files. The runner records the app's startup working directory separately from the selected run directory, freezes that choice, and verifies the recovered run's effective directory. It sends the selection through the ordinary native workflow and input cwd fields, as normal Chat does for its Local working folder setting. A fresh native profile can therefore share the original working files while retaining its separate profile state; record that shared-files condition in the attempt's provenance.
+
+When --cwd is omitted, the runner continues to use /api/status.cwd. The original job prompts, legacy configuration hashes and saved-admission recovery remain unchanged. Invalid directories and changed selections fail before admission; a recovered run with a different effective directory is an explicit mismatch.
+
+## Frozen ordinary-task cases
+
+An optional --case-file selects an immutable case for the same native runner. Job search remains the default diagnostic when no case file is supplied. The case file contains only this schema:
+
+```json
+{"schema":"blackice.calibration.case.v1","id":"ordinary-summary","task":"Review the notes in this folder and save a concise summary in summary.md.","artifacts":["notes.md","summary.md"]}
+```
+
+Use an absolute case-file path. The id is a lowercase slug, task is a nonempty verbatim string of at most 16 KiB, and the complete UTF-8 JSON file is limited to 64 KiB. The optional artifacts array contains at most 16 distinct relative file paths using forward slashes, without drive prefixes, backslashes, or . and .. segments. Keep case specifications, expected results, rubrics, and attempt outputs outside the task working directory.
+
+Add --case-file $trialCaseFile to every preflight, start, inspect, and collect invocation for that attempt, together with the selected --cwd. Omit --jobs for an explicit case. The runner submits only task through ordinary Chat; the id, artifact list and evaluation metadata remain observer inputs. It snapshots the original case bytes as base64 plus their SHA-256 in manifest.json, checks source bytes before admission, and uses the saved snapshot for recovery after admission even if the original case file changes or disappears. All available catalogue skill content identities participate in effective preflight provenance.
+
+Declared files are observed before admission and after the exact run settles. artifacts-before.json and artifacts-after.json use schema blackice.calibration.artifacts.v1 and bind caseId, caseSha256, phase, runId, cwd, observedAtUTC, limits, and files. Each complete file row records its relative path, raw byte count and SHA-256; UTF-8 text is retained within 256 KiB per file and 4 MiB total. The existing text and structured secret sanitizer can redact text, which is explicitly marked. UTF-8 BOMs are recognized for structured sanitization. If parsed JSON cannot be sanitized, text is omitted with textOmitted set to sanitization-failed while its raw byte count and hash remain available. Binary content, missing files, directories, read errors and limits remain explicit states. Paths resolving outside the task directory are reported without reading their contents. The observations have journaled hashes and are reused unchanged after collection; a changed saved archive is an error.
+
+These observations establish what was observed, not whether the task was done well. Compare actual artifacts and public behavior with the ordinary request, its explicit limits, and the separately frozen evaluator criteria. Controlled fixtures establish behavior on those fixtures; real external outcomes still require native external confirmation. Preserve every failed case and any effects it produced. The historical runner directory, storage schema and request prefix remain stable so earlier attempts retain their original interpretation.
+
 ## Run and recover
 
 From the task root:
@@ -81,9 +110,9 @@ A native process change invalidates the original in-memory observer assumption. 
 
 Each attempt records its exact prompt/configuration, native process, source fingerprints, effective instruction and skill identities, provider/profile declarations, durable operation journal, run inspections, and complete bounded public capture. The decoder reads only the selected public frontend result and verifies oversized artifact hashes and sizes. Private reasoning and credentials are excluded.
 
-Capture policy version 2 adds answerEvidence for completed successful native fill/type actions that match an earlier observed, current, nonsecret field. It retains complete cleaned requested text with field and operation provenance under the same capture budget. Missing or ambiguous metadata and secret fields remain redacted. Requested text, a successful field action and a final employer submission are distinct evidence; inspect later edits before drawing conclusions about the submitted answer.
+Capture policy version 3 also retains normalized public native command, file, image and collaboration items. Unsupported public item bodies produce identity-only limitation records. The generic sanitizer and private-reasoning exclusions are unchanged. Version 2 introduced answerEvidence for completed successful native fill/type actions that match an earlier observed, current, nonsecret field. It retains complete cleaned requested text with field and operation provenance under the same capture budget. Missing or ambiguous metadata and secret fields remain redacted. Requested text, a successful field action and a final employer submission are distinct evidence; inspect later edits before drawing conclusions about the submitted answer.
 
-A pass requires evidence of all applicable conditions:
+For the legacy job-search diagnostic, a pass requires evidence of all applicable conditions:
 
 - The unchanged ordinary task and declared model/modes reached the provider.
 - The agent used the user's real existing materials and honored the actual requested scope.

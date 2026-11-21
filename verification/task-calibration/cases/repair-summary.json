@@ -1,0 +1,11 @@
+{
+  "schema": "blackice.calibration.case.v1",
+  "id": "repair-summary",
+  "task": "Fix the summary generator in this folder and regenerate summary.csv.",
+  "artifacts": [
+    "README.md",
+    "summary.mjs",
+    "activity.csv",
+    "summary.csv"
+  ]
+}

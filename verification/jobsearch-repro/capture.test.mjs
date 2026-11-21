@@ -1,3 +1,4 @@
+import { safeNativeImageItem } from '../../lib/native-image-artifacts.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -197,7 +198,7 @@ test('audited answer preserves a long actual-shaped fill with earlier field prov
     assert.equal(audit.observed.callId,'observation');assert.equal(audit.observed.documentId,'tab-a:9');assert.equal(audit.observed.frame,'7-11');
     assert.equal(audit.originalLength,text.length);assert.equal(audit.retainedLength,text.length);
     assert.equal(audit.textComplete,true);assert.match(audit.meaning,/not.*submitted/i);
-    assert.equal(c.snapshot().schemaVersion,2);
+    assert.equal(c.snapshot().schemaVersion,3);
     assert.equal(c.snapshot().events.at(-1).data.item.arguments.text.redacted,true);
   }
 });
@@ -298,4 +299,75 @@ test('late duplicate cannot use a later observation as prior evidence',()=>{
   c.ingest(later);c.ingest(called);
   assert.equal(c.snapshot().events.at(-1).data.answerEvidence?.redacted,true);
   assert.doesNotMatch(JSON.stringify(c.snapshot()),/late-duplicate-answer/);
+});
+
+
+const nativeCommand={type:'commandExecution',id:'native-command',command:'node verify.mjs',cwd:'C:/fixture',
+  status:'completed',exitCode:7,aggregatedOutput:'Actual test failure\n',durationMs:12};
+const nativeFile={type:'fileChange',id:'native-file',status:'completed',
+  changes:[{path:'report.txt',kind:'update',diff:'-old\n+actual revised output\n'}]};
+
+test('H2 retains actual-shaped native command and file outcomes with exact run/node/call identity',()=>{
+  const c=createCapture();c.bind(run);
+  c.ingest(event({type:'item',stage:'completed',item:nativeCommand}));
+  c.ingest({...event({type:'item',stage:'completed',item:nativeFile}),nodeId:'worker'});
+  c.ingest(event({type:'item',stage:'completed',item:{...nativeCommand,id:'other-run'}},other));
+  const records=c.snapshot().events;
+  assert.equal(records.length,2);assert.deepEqual(records.map(e=>[e.runId,e.nodeId,e.data.item.id]),[[run,'agent','native-command'],[run,'worker','native-file']]);
+  assert.deepEqual(records[0].data.item,nativeCommand);assert.deepEqual(records[1].data.item,nativeFile);
+  assert.equal(records[0].data.stage,'completed');assert.equal(records[0].data.item.exitCode,7);
+  assert.deepEqual(c.summary().lastCalls.map(x=>x.tool),['commandExecution','fileChange']);
+  assert.equal(Object.hasOwn(c.summary(),'success'),false);
+});
+
+test('H2 retains normalized public image and collaboration records without inventing success',()=>{
+  const c=createCapture();c.bind(run);
+  const image=safeNativeImageItem({type:'imageGeneration',id:'image',status:'completed',savedPath:'C:/fixture/image.png',result:'private binary body'});
+  const collaboration={type:'collabAgentToolCall',id:'collaboration',status:'failed',tool:'wait'};
+  for(const item of [image,collaboration])c.ingest(event({type:'item',stage:'completed',item}));
+  const records=c.snapshot().events;
+  assert.equal(records.length,2);assert.deepEqual(records[0].data.item,image);assert.deepEqual(records[1].data.item,collaboration);
+  assert.doesNotMatch(JSON.stringify(records),/private binary body/);
+  assert.equal(Object.hasOwn(records[1].data.item,'success'),false);
+});
+
+test('H2 preserves secret and private-reasoning exclusions on native action fields',()=>{
+  const c=createCapture();c.bind(run);
+  c.ingest(event({type:'item',stage:'completed',item:{...nativeCommand,analysis:'private chain',
+    credentials:{password:'secret-native-value'},aggregatedOutput:'password=secret-native-value Bearer secret-native-bearer'}}));
+  c.ingest(event({type:'item',stage:'completed',item:{type:'reasoning',id:'private',summary:'private chain'}}));
+  c.ingest(event({type:'item',stage:'completed',item:{type:'agentMessage',phase:'analysis',text:'private chain'}}));
+  assert.equal(c.snapshot().events.length,1);
+  const kept=c.snapshot().events[0].data.item;
+  assert.equal(kept.credentials.secret,true);assert.equal(kept.credentials.present,true);
+  assert.doesNotMatch(JSON.stringify(c.snapshot()),/private chain|secret-native-value|secret-native-bearer/);
+});
+
+test('H2 native output and event limits remain visible in capture completeness',()=>{
+  const c=createCapture();c.bind(run);
+  c.ingest(event({type:'item',stage:'completed',item:{...nativeCommand,aggregatedOutput:'x'.repeat(200001)}}));
+  c.finish('observer-finished');
+  assert.equal(c.snapshot().events.length,1);assert.equal(c.snapshot().captureHealthy,false);assert.equal(c.snapshot().captureComplete,false);
+  assert.equal(c.snapshot().events[0].captureLimitations.omittedCharacters,1);
+  const bounded=createCapture({maxEvents:1});bounded.bind(run);
+  bounded.ingest(event({type:'item',stage:'completed',item:nativeCommand}));
+  bounded.ingest(event({type:'item',stage:'completed',item:nativeFile}));
+  assert.equal(bounded.dropped,1);assert.equal(bounded.stopReason,'capacity-limit');assert.equal(bounded.snapshot().events.length,1);
+});
+
+test('H2 unknown public native item retains only identity and explicit unsupported limitation',()=>{
+  const c=createCapture();c.bind(run);
+  c.ingest(event({type:'item',stage:'completed',item:{type:'futureNativeAction',id:'unknown',status:'completed',text:'unreviewed body',analysis:'private chain'}}));
+  c.finish('observer-finished');
+  const record=c.snapshot().events[0];
+  assert.equal(record.data.type,'unsupported.item');assert.deepEqual(record.data.item,{type:'futureNativeAction',id:'unknown'});
+  assert.equal(record.captureLimitations.unsupportedNativeItems,1);assert.equal(c.snapshot().captureComplete,false);
+  assert.doesNotMatch(JSON.stringify(record),/unreviewed body|private chain/);
+});
+
+test('H2 generated observer identifies new policy and rejects an active older schema',async()=>{
+  const f=bootstrapFixture(),pending=f.start();f.subscription.onopen();const ready=await pending;
+  assert.equal(ready.schemaVersion,3);assert.equal(ready.redactionPolicy,'public-native-actions-v3');
+  f.capture.schemaVersion=2;
+  await assert.rejects(f.start(),/another capture schema/);
 });

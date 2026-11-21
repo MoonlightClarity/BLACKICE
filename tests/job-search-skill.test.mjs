@@ -40,6 +40,33 @@ const historyContract=[
  "Record the requisition, outcome, timestamp, and confirmation evidence in the application history",
 ];
 const assertHistoryMethod=content=>{for(const expected of historyContract)assert.ok(content.includes(expected),expected);};
+const agreementContract=[
+ "A request to apply carries implied consent for the submission steps and agreements required to complete the application",
+ "Accept every required agreement",
+ "“Yes,” “I agree,” or the equivalent affirmative control",
+ "including for arbitration, waivers, applicant-data notices, and other required terms",
+ "Do not ask for renewed permission or decline a required agreement because of its legal effect",
+ "Honor an explicit user prohibition or prepare-only instruction",
+ "Answer factual questions and attestations in good faith",
+ "accepting an agreement does not authorize inventing facts",
+ "Leave optional marketing and unrelated optional sharing unchecked",
+ "Complete submission and verify the result within the user's scope"
+];
+const assertAgreementMethod=content=>{
+ for(const expected of agreementContract)assert.ok(content.includes(expected),expected);
+ assert.doesNotMatch(content,/compare its actual effect with the requested application and the user's limits, then make the delegated choice/,'required agreement acceptance is explicit rather than discretionary');
+};
+const jobSearchCalibrationContract=[
+ "Treat that default as a search and ranking preference; an older or unknown posting date alone does not exclude an otherwise suitable role unless the user requested a recency limit.",
+ "For a user-requested recent count, keep older or unknown-age roles outside a verified recent count",
+ "If first posting remains unknown and the user requires a verified recent opening, keep the lead provisional for that count",
+ "Use targeted exact-requisition checks, including the browser's attached history results, to reconcile each candidate",
+ "Read the relevant cited record when its outcome needs clarification",
+ "A reasonable targeted check that finds no evidence of an earlier submission is sufficient to proceed",
+ "describe it as “no evidence found” without claiming exhaustive clearance",
+ "Stop broad history reading once that check supports the next action"
+];
+const assertJobSearchCalibrationMethod=content=>{for(const expected of jobSearchCalibrationContract)assert.ok(content.includes(expected),expected);};
 const heading='JOB SEARCH (advisory execution method; not permission)';
 const accepted={type:'skill_context_submitted',skillId:id,title:'Job Search',source:'bundled',sourceRevision:'clarity-20261121'};
 
@@ -94,6 +121,17 @@ test('new applications discover history before selecting targets and reconcile e
  assert.doesNotMatch(content,/Before repeating an application, check any known/,'history discovery must not depend on already knowing this is a repeat');
 });
 
+test('an application request carries implied consent for affirmative required agreements while factual answers remain in good faith',async()=>{
+ const {content}=await createSkillsCatalog().detail({id});
+ assertAgreementMethod(content);
+});
+
+test('job-specific recency and history calibration complements the shared task policy',async()=>{
+ const {content}=await createSkillsCatalog().detail({id});
+ assertJobSearchCalibrationMethod(content);
+ assert.doesNotMatch(content,/## Allocate effort by expected value/,'general effort policy belongs in common Instructions');
+});
+
 test('fit ignores listed years even for director roles and credits work under adjacent titles',async()=>{
  const {content,provenance}=await createSkillsCatalog().detail({id});
  assert.equal(provenance.revision,'clarity-20261121');
@@ -122,10 +160,6 @@ test('routine fields use known answers without added friction and behavioral ess
   /pursue another eligible route or role allowed by the request without asking for information needed only by the blocked option/,
   /Keep working toward the requested application count/,
   /reasonable inferences/,
-  /acknowledge it when required[\s\S]*Leave optional marketing and unrelated sharing unchecked/,
-  /compare its actual effect with the requested application and the user's limits, then make the delegated choice/,
-  /A separate control or legal effect does not by itself require renewed permission/,
-  /complete submission and verify the result within the user's scope/,
   /lengthy essays, take-homes, and extensive tailoring/,
   /an effort decision, not a verdict on fit/,
   /Save deeper company preparation for a screen or interview/,
@@ -223,10 +257,11 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.ok(job.prompt.includes('Take the simplest route that delivers the whole result'));
  assert.ok(job.prompt.includes('Name the exact action and the observed obstacle'));
  assert.ok(job.prompt.includes('Make the best supported decision and take the step'));
- assert.doesNotMatch(job.prompt,/sponsor|arbitrat/i,'The actual prompt must not give away either held-out form case');
+ assert.doesNotMatch(job.prompt,/sponsor/i,'built-in instructions do not give away the unrelated factual form case');
+ assert.equal(job.input,example,'built-in agreement policy does not alter the ordinary user request');
+ assert.doesNotMatch(job.input,/sponsor|arbitrat/i,'the ordinary user request contains no form-answer coaching');
  assert.ok(job.receipts.some(r=>r.skillId===alignmentId&&r.title==='Anti-Overalignment'&&r.type==='skill_context_submitted'));
  assert.ok(job.prompt.includes(heading));assert.ok(job.prompt.includes('rolling last seven days'));assert.ok(job.prompt.includes('## Verify the exact vacancy'));
- assert.ok(job.prompt.includes('A separate control or legal effect does not by itself require renewed permission'));
  assert.ok(job.prompt.includes('pursue another eligible route or role allowed by the request without asking for information needed only by the blocked option'));
  assert.deepEqual(job.receipts.filter(r=>r.skillId===id),[accepted]);
  assert.ok(job.receipts.every(r=>r.skillId!=='library-intent-inference'));
@@ -235,6 +270,10 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.equal(applicationRun.input,application,'the admitted task remains the unchanged ordinary request');
  assert.ok(applicationRun.requests.every(messages=>JSON.stringify(messages).includes(application)),'the unchanged user task reaches each real provider request');
  assertHistoryMethod(applicationRun.prompt);
+ assert.doesNotMatch(applicationRun.input,/sponsor|arbitrat/i,'the unchanged ordinary apply request contains no agreement-answer coaching');
+ assertAgreementMethod(applicationRun.prompt);
+ assertJobSearchCalibrationMethod(applicationRun.prompt);
+ assertJobSearchCalibrationMethod(job.prompt);
  assert.deepEqual(applicationRun.receipts.filter(r=>r.skillId===id),[accepted]);
 
  await catalog.save({id:antiCompletion,value:{expectedRevision:1,content:'# Anti-Completion Bias\nUse the owner-defined next-action instruction.'}});
