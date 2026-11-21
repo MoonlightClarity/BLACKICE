@@ -36,3 +36,17 @@ test('stale autonomous wakes cannot dispatch or continue runs',()=>{
  assert.throws(()=>HarnessEngine.prototype.dispatchRun.call({}, {autonomyDispatch:{generation:1}}),error);
  assert.throws(()=>HarnessEngine.prototype.continueRun.call({}, 'old',{}, {autonomyDispatch:{generation:1}}),error);
 });
+
+test('retired autonomy continuation rejects benchmark hints before reading run state',()=>{
+ let lookups=0;
+ const engine={get runs(){lookups++;throw Error('Retired continuation must not read run state');}};
+ const error={code:'AUTONOMY_RETIRED',status:410};
+ for(const [label,value] of [
+  ['missing input',undefined],
+  ['ordinary input',{}],
+  ['top-level benchmark',{benchmark:{profile:'fixture'}}],
+  ['nested benchmark',{input:{benchmark:{profile:'fixture'}}}],
+  ['null benchmark',{benchmark:null}],
+ ])assert.throws(()=>HarnessEngine.prototype.continueRun.call(engine,'old',value,{autonomyDispatch:{generation:1}}),error,label);
+ assert.equal(lookups,0);
+});
