@@ -1,0 +1,103 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "sourceCommit": "580e94decc0192aec2dfdc5644012bea48f80cf2",
+  "workflowControllerCommit": null,
+  "sourceCommitOrigin": "git-rev-parse-HEAD",
+  "checkoutUnchanged": true,
+  "version": "2.40.68",
+  "startedAt": "2026-11-21T01:50:15.412Z",
+  "checkedAt": "2026-11-21T02:13:37.597Z",
+  "node": "v22.23.5",
+  "platform": "win32",
+  "appFingerprint": "a83bf6914da1561196a7acd79deecdd6cedb220aa80b78bf361c62c11fa5ddd8",
+  "sourceIndexSha256": "c4b6c67f97dcf1c3cee96b67c124870813ffb6ef5658a228f3bb6852f3490d56",
+  "sourceFilesVerified": 1963,
+  "testFiles": 913,
+  "testInventorySha256": "aa18ab273baa6fcd9d8cc7e6260804f90f17707c1c3be4edb3ac7bfd4e650951",
+  "state": "passed",
+  "passed": true,
+  "fullSuite": true,
+  "countsComplete": true,
+  "sourceUnchanged": true,
+  "fingerprintUnchanged": true,
+  "tests": {
+    "total": 9248,
+    "passed": 9239,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 9,
+    "cancelled": 0,
+    "todo": 0,
+    "exitCode": 0,
+    "signal": null
+  },
+  "testLogSha256": "8000b121701a49f4df779dfb61a203b697e74e6c8832d04773cbbed3881023c6",
+  "execution": {
+    "kind": "node-test-explicit-inventory",
+    "concurrency": 1,
+    "uniqueCoverageVerified": true
+  },
+  "optionalSkips": [
+    "native live informational alert releases without focus or effect replay",
+    "native offscreen informational alert releases without focus or effect replay",
+    "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+    "live contained input updates application state and delivers editing keys without OS focus",
+    "offscreen contained input updates application state and delivers editing keys without OS focus",
+    "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+    "native popups preserve OAuth routing and remain independent when their opener closes",
+    "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+    "real packaged desktop main reaches ready with UIA retired and no launcher window"
+  ],
+  "fileSymlinkCapabilitySkips": [],
+  "skipDetails": [
+    {
+      "name": "native live informational alert releases without focus or effect replay",
+      "reason": null,
+      "assertionsRan": false
+    },
+    {
+      "name": "native offscreen informational alert releases without focus or effect replay",
+      "reason": null,
+      "assertionsRan": false
+    },
+    {
+      "name": "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+      "assertionsRan": false
+    },
+    {
+      "name": "live contained input updates application state and delivers editing keys without OS focus",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for the isolated native fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "offscreen contained input updates application state and delivers editing keys without OS focus",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for the isolated native fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for disposable Electron restoration.",
+      "assertionsRan": false
+    },
+    {
+      "name": "native popups preserve OAuth routing and remain independent when their opener closes",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+      "assertionsRan": false
+    },
+    {
+      "name": "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+      "reason": "Set RELAY_TRUSTED_FILL_QA=1 for the isolated native fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "real packaged desktop main reaches ready with UIA retired and no launcher window",
+      "reason": null,
+      "assertionsRan": false
+    }
+  ],
+  "unexpectedSkips": [],
+  "validationScope": "Windows source suite only. Named skipped assertions were not exercised. Live model and installed runtime require separate verification."
+}
