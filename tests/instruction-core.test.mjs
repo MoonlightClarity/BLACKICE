@@ -13,6 +13,11 @@ test('the built-in core delegates behavior and contains no retired analytical/ap
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Use SOUL\.md for behavior and relevant skills for task methods/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Follow the user's current request, constraints and corrections/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Current user directions replace conflicting behavioral defaults, skill instructions and earlier assistant plans/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /An ordinary request delegates the actions and choices needed to complete it/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /no extra autonomy or no-questions wording is required/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /A required agreement, attestation or legal effect is not by itself a new permission requirement/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /prepare-only, exclusions and cancellation/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Do not invent facts or claim an inference was verified/);
   assert.doesNotMatch(BLACKICE_HARNESS_INSTRUCTIONS, /full quantitative planning contract|GENERAL ANALYTICAL METHOD|FORM COMPLETION|changes require owner approval/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /When a tool says input was not dispatched/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /If it may have run, inspect the saved receipt or destination before repeating/);

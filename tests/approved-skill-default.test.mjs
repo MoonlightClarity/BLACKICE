@@ -13,9 +13,9 @@ test('approved skill ships the exact bundled revision and gives the model a fres
  const root=await mkdtemp(path.join(tmpdir(),'approved-skill-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const catalog=createSkillsCatalog({dataDir:root}),base=readReleaseSkill(id),entry=await catalog.detail({id});
  assert.equal(base.title,'Anti-Overalignment');
- // Pin the current instruction-clarity default; the older operational fixture is historical.
+ // Pin the ordinary-request delegation default; earlier operational fixtures are historical.
  assert.equal(base.revision,1);
- assert.equal(hash(base.content),'201a3e0a45d70169a7cf6fca882ca469bac06da1e13e0733b0de94c43be790da');
+ assert.equal(hash(base.content),'9c41b9e2bcbbb432af47e66f48c7f7834c07b478746b207fa731f0a18c3e63a5');
  assert.ok(base.content.startsWith('# Anti-Overalignment\n'));
  assert.equal(entry.content,base.content);assert.equal(entry.source,'bundled');
  const handler=createRetrievalToolHandler({cwd:root,dataDir:root});

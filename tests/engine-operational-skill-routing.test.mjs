@@ -126,7 +126,7 @@ async function fixture(t) {
       sections: run.nodes.agent.instructionAudit?.sections || [],
     };
   }
-  return { catalog, invoke };
+  return { catalog, invoke, instructions: engine.instructionSettings };
 }
 
 function requireOperational(result, expectedSource) {
@@ -150,6 +150,14 @@ test('direct and Mission application entry points deliver the same operational s
   const f = await fixture(t);
   const mission = await f.invoke('mission');
   const direct = await f.invoke('direct');
+  for (const result of [mission, direct]) {
+    const core = result.sections.find(section => section.id === 'core');
+    assert.equal(core.status, 'accepted');
+    assert.match(core.text, /An ordinary request delegates the actions and choices needed to complete it/);
+    assert.match(core.text, /A required agreement, attestation or legal effect is not by itself a new permission requirement/);
+    assert.ok(result.prompt.includes(JSON.stringify(core.text).slice(1, -1)), 'the accepted default reached the real compatible-provider request');
+    assert.equal(result.run.input, application, 'the admitted task remains the exact ordinary application request');
+  }
   requireOperational(mission, 'bundled');
   requireOperational(direct, 'bundled');
   for (const id of operationalIds) {
@@ -163,8 +171,13 @@ test('direct and Mission application entry points deliver the same operational s
   );
 });
 
-test('both application entry points deliver current owner revisions instead of bundled fallbacks', { timeout: 20000 }, async t => {
+test('both application entry points deliver current owner core and skill revisions instead of bundled fallbacks', { timeout: 20000 }, async t => {
   const f = await fixture(t);
+  const priorCore = await f.instructions.read();
+  const ownerCore = await f.instructions.update({
+    content: "OWNER_COMMON_INSTRUCTIONS\nPreserve the user's current limits.",
+    expectedRevision: priorCore.revision, expectedHash: priorCore.hash,
+  });
   const contents = new Map([
     ['builtin-task-grounding', '# Anti-Overalignment\nOwner method: continue authorized work using observable results.'],
     ['library-job-search', '# Job Search\nOwner method: verify the requested application outcome.'],
@@ -176,6 +189,13 @@ test('both application entry points deliver current owner revisions instead of b
   for (const route of ['mission', 'direct']) {
     const result = await f.invoke(route);
     requireOperational(result, 'user');
+    const core = result.sections.find(section => section.id === 'core');
+    assert.equal(core.text, ownerCore.content);
+    assert.equal(core.revision, ownerCore.revision);
+    assert.equal(core.sourceHash, ownerCore.hash);
+    assert.equal(core.status, 'accepted');
+    assert.ok(result.prompt.includes(JSON.stringify(ownerCore.content).slice(1, -1)));
+    assert.doesNotMatch(result.prompt, /An ordinary request delegates the actions and choices needed to complete it/, 'source defaults do not silently override saved owner Instructions');
     for (const [id, content] of contents) {
       const current = await f.catalog.detail({ id });
       assert.equal(result.receipts.find(row => row.skillId === id).sourceRevision, current.revision);

@@ -94,9 +94,13 @@ test('routine fields use known answers without added friction and behavioral ess
   /Hold competing answers to the same standard/,
   /Use known answers about relatives/,
   /leave only that field unresolved and finish independent steps/,
+  /pursue another eligible route or role allowed by the request without asking for information needed only by the blocked option/,
+  /Keep working toward the requested application count/,
   /reasonable inferences/,
   /acknowledge it when required[\s\S]*Leave optional marketing and unrelated sharing unchecked/,
-  /A separate waiver or commitment is a separate choice/,
+  /compare its actual effect with the requested application and the user's limits, then make the delegated choice/,
+  /A separate control or legal effect does not by itself require renewed permission/,
+  /complete submission and verify the result within the user's scope/,
   /lengthy essays, take-homes, and extensive tailoring/,
   /an effort decision, not a verdict on fit/,
   /Save deeper company preparation for a screen or interview/,
@@ -197,6 +201,8 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.doesNotMatch(job.prompt,/sponsor|arbitrat/i,'The actual prompt must not give away either held-out form case');
  assert.ok(job.receipts.some(r=>r.skillId===alignmentId&&r.title==='Anti-Overalignment'&&r.type==='skill_context_submitted'));
  assert.ok(job.prompt.includes(heading));assert.ok(job.prompt.includes('rolling last seven days'));assert.ok(job.prompt.includes('## Verify the exact vacancy'));
+ assert.ok(job.prompt.includes('A separate control or legal effect does not by itself require renewed permission'));
+ assert.ok(job.prompt.includes('pursue another eligible route or role allowed by the request without asking for information needed only by the blocked option'));
  assert.deepEqual(job.receipts.filter(r=>r.skillId===id),[accepted]);
  assert.ok(job.receipts.every(r=>r.skillId!=='library-intent-inference'));
 
