@@ -11,6 +11,7 @@ import {HarnessEngine} from '../lib/engine.mjs';
 import {TaskActionDirectory} from '../lib/task-action-directory.mjs';
 import {commitChatPlanningProposal} from '../lib/chat-planning-engine.mjs';
 import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
+import {readBundledSkill} from '../lib/skill-library.mjs';
 
 class Native extends EventEmitter {
   status(){return {connected:false,authenticated:false,models:[]};}
@@ -31,6 +32,8 @@ const catalog = [
 test('explicit Chat Planning reaches a real compatible provider and advances the one Directory, unlike ordinary Off', {timeout:20000},async t=>{
   const root=await realpath(tmpdir()), dir=await mkdtemp(path.join(root,'blackice-planning-provider-'));
   const requests=[];
+  const receivedText=index=>requests[index].body.messages.map(message=>message.content).join('\n');
+  const [completionSkill,antiCompletionSkill]=await Promise.all([readBundledSkill('library-what-makes-done'),readBundledSkill('library-anti-completion-bias')]);
   let answerToPlanning=JSON.stringify(plan), heldResponse;
   let engine,runtime,skillCatalog;
   const server=http.createServer(async(req,res)=>{
@@ -76,10 +79,11 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   assert.doesNotMatch(requests[0].allText,/CRITICAL PATH|LONG-TERM JUDGMENT/);
   assert.match(requests[0].allText,/OWNER_PROVIDER_CORE/);
   assert.doesNotMatch(requests[0].body.messages[0].content,/EXECUTION COMPLETION|BLACKICE AGENT HARNESS/);
-  assert.match(requests[0].allText,/WHAT MAKES DONE \(bundled execution method\)[\s\S]*What just happened\?/);
+  assert.match(requests[0].allText,/WHAT MAKES DONE \(bundled execution method\)/);
+  assert.ok(receivedText(0).includes(completionSkill.content));
   assert.equal(off.planningModuleReceipts,undefined);
-  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:'blackice-anti-completion-bias-v2'};
-  const bundled={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:'blackice-what-makes-done-v4'};
+  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:antiCompletionSkill.provenance.revision};
+  const bundled={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:completionSkill.provenance.revision};
   assert.deepEqual(off.skillLoadReceipts,[bundled,antiCompletion]);
   const on=await done(await start('Check the startup route',{chatPlanning:'on'}));
   assert.equal(on.status,'completed',on.error);
@@ -91,7 +95,8 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   assert.match(requests[1].allText,/OWNER_PROVIDER_CORE/);
   assert.match(requests[2].allText,/ADVISORY PLANNING CHOICE/);
   assert.match(requests[1].allText,/OWNER_PREPARATION_METHOD/);
-  assert.match(requests[2].allText,/WHAT MAKES DONE \(bundled execution method\)[\s\S]*What just happened\?/);
+  assert.match(requests[2].allText,/WHAT MAKES DONE \(bundled execution method\)/);
+  assert.ok(receivedText(2).includes(completionSkill.content));
   assert.doesNotMatch(requests[1].allText,/CRITICAL PATH|LONG-TERM JUDGMENT/);
   const parentAudit=on.nodes.agent.instructionAudit,preparation=parentAudit.preparations[0];
   assert.equal(parentAudit.preparations.length,1);

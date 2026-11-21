@@ -11,6 +11,8 @@ import {HarnessEngine} from '../lib/engine.mjs';
 import {submitChat} from '../public/next/chat/send.mjs';
 import {projectFamily} from '../public/next/chat/reader-model.mjs';
 import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
+import {readBundledSkill} from '../lib/skill-library.mjs';
+import {EXECUTION_COMPLETION_RULE} from '../lib/task-completion-guidance.mjs';
 
 class Native extends EventEmitter {
   status(){return {connected:false,authenticated:false,models:[]};}
@@ -22,8 +24,9 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   const root=await realpath(tmpdir()),dir=await mkdtemp(path.join(root,'blackice-skill-provider-'));
   const requests=[],observed=[];
   const skillId='library-pdf-evidence', title='Read a PDF for evidence';
-  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:'blackice-anti-completion-bias-v2'};
-  const automatic={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:'blackice-what-makes-done-v4'};
+  const [pdfSkill,completionSkill,antiCompletionSkill]=await Promise.all([readBundledSkill(skillId),readBundledSkill('library-what-makes-done'),readBundledSkill('library-anti-completion-bias')]);
+  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:antiCompletionSkill.provenance.revision};
+  const automatic={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:completionSkill.provenance.revision};
   const explicit={type:'skill_loaded',skillId,title};
   const calls=[
     ['lookup',{action:'search',query:'read PDF for evidence'}],
@@ -74,43 +77,47 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
     requests[0].messages.find(message=>message.role==='system').content);
   const loaded=audit.sections.find(section=>section.role==='tool'&&section.source.endsWith(skillId));
   assert.equal(loaded.status,'delivered');assert.equal(loaded.deliveries,2);
-  assert.match(loaded.text,/Get to the relevant page/);
+  assert.equal(loaded.text,pdfSkill.content);assert.equal(loaded.revision,pdfSkill.provenance.revision);
   assert.ok(requests[0].tools.some(tool=>tool.function?.name==='relay_skills'));
   const toolResult=(step,id)=>requests[step].messages.find(message=>message.role==='tool'&&message.tool_call_id===id)?.content??'';
   assert.match(toolResult(1,'lookup'),new RegExp(skillId));
-  assert.doesNotMatch(toolResult(1,'lookup'),/Get to the relevant page/);
+  assert.ok(JSON.parse(toolResult(1,'lookup')).entries.every(entry=>!('content' in entry)));
   assert.match(toolResult(2,'missing'),/not found/i);
-  assert.match(toolResult(3,'load'),/Get to the relevant page/);
+  const deliveredSkill=JSON.parse(toolResult(3,'load')).entry;
+  assert.equal(deliveredSkill.content,pdfSkill.content);assert.equal(deliveredSkill.provenance.revision,pdfSkill.provenance.revision);
   assert.deepEqual(observed.slice(0,4),[[],[automatic,antiCompletion],[automatic,antiCompletion],[automatic,antiCompletion]],
     'The automatic prompt receipt starts after first acceptance; discovery, a miss, and a not-yet-accepted body do not emit a skill-loaded receipt.');
   const projected=projectFamily({rootId:done.id,runs:[done]}).runs[0];
   for(const receipts of [observed[4],done.skillLoadReceipts,projected.skillLoadReceipts]){
     assert.deepEqual(receipts,[automatic,antiCompletion,explicit], 'The accepted tool body adds one distinct receipt even after the repeat.');
-    assert.doesNotMatch(JSON.stringify(receipts),/Get to the relevant page/);
+    assert.ok(receipts.every(receipt=>!('content' in receipt)));
   }
 
   const completion=automatic.skillId,wire=index=>requests[index].messages.map(item=>item.content).join('\n');
-  const core=/EXECUTION COMPLETION[\s\S]*Continue while a useful authorized action can advance the requested outcome/;
-  assert.match(wire(0),core);
-  assert.match(wire(0),/WHAT MAKES DONE \(bundled execution method\)[\s\S]*What just happened\?/);
+  const assertCore=text=>{assert.match(text,/EXECUTION COMPLETION/);assert.ok(text.includes(EXECUTION_COMPLETION_RULE));};
+  assertCore(wire(0));
+  assert.match(wire(0),/WHAT MAKES DONE \(bundled execution method\)/);
+  assert.ok(wire(0).includes(completionSkill.content));
   catalog=createSkillsCatalog({dataDir:path.join(dir,'engine')});
   const packaged=await catalog.detail({id:completion});
-  assert.equal(packaged.provenance.revision,'blackice-what-makes-done-v4');
+  assert.equal(packaged.provenance.revision,completionSkill.provenance.revision);
   const edited=await catalog.save({id:completion,value:{expectedRevision:packaged.revision,content:'# What Makes Done\nOwner completion fixture 9321.'}});
   const editedRun=await run('Use the current completion method.');
-  assert.match(wire(5),core);
+  assertCore(wire(5));
   // Both task execution and supported model skill lookup use the owner-facing choice.
   assert.match(wire(5),/WHAT MAKES DONE \(owner-edited execution method\)[\s\S]*local revision 2[\s\S]*Owner completion fixture 9321/);
-  assert.doesNotMatch(wire(5),/What just happened\?/);
-  assert.match(wire(0),/WHAT MAKES DONE \(bundled execution method\)[\s\S]*blackice-what-makes-done-v4[\s\S]*What just happened\?/);
+  assert.ok(!wire(5).includes(completionSkill.content));
+  assert.ok(wire(0).includes('packaged revision '+completionSkill.provenance.revision+'.'));
+  assert.ok(wire(0).includes(completionSkill.content));
   const ownerReceipt={...automatic,source:'user',sourceRevision:2};
   assert.deepEqual(editedRun.skillLoadReceipts,[ownerReceipt,antiCompletion]);
   assert.deepEqual(projectFamily({rootId:editedRun.id,runs:[editedRun]}).runs[0].skillLoadReceipts,[ownerReceipt,antiCompletion]);
 
   const removed=await catalog.delete({id:completion,value:{expectedRevision:edited.revision}});
   const deletedRun=await run('Keep the core completion contract only.');
-  assert.match(wire(6),core);
-  assert.doesNotMatch(wire(6),/WHAT MAKES DONE \((?:bundled|owner-edited) execution method\)|Owner completion fixture 9321|What just happened\?/);
+  assertCore(wire(6));
+  assert.doesNotMatch(wire(6),/WHAT MAKES DONE \((?:bundled|owner-edited) execution method\)|Owner completion fixture 9321/);
+  assert.ok(!wire(6).includes(completionSkill.content));
   assert.deepEqual(deletedRun.skillLoadReceipts,[antiCompletion]);
   await assert.rejects(catalog.detail({id:completion}),{status:404});
   const restored=await catalog.restore({id:completion,value:{expectedRevision:removed.revision}});

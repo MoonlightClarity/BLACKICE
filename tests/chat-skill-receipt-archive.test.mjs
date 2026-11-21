@@ -8,6 +8,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {ConversationArchive} from '../lib/conversations.mjs';
 import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
+import {readBundledSkill} from '../lib/skill-library.mjs';
 
 class EmptyEngine extends EventEmitter {
   runs=new Map();
@@ -28,8 +29,9 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
     await rm(resolved,{recursive:true,force:true});
   });
   const id='library-what-makes-done',title='What Makes Done';
-  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:'blackice-anti-completion-bias-v2'};
-  const automatic={type:'skill_context_submitted',skillId:id,title,source:'bundled',sourceRevision:'blackice-what-makes-done-v4'};
+  const [completionSkill,antiCompletionSkill]=await Promise.all([readBundledSkill(id),readBundledSkill('library-anti-completion-bias')]);
+  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:antiCompletionSkill.provenance.revision};
+  const automatic={type:'skill_context_submitted',skillId:id,title,source:'bundled',sourceRevision:completionSkill.provenance.revision};
   const read={name:'relay_skills',arguments:{action:'read',id},callId:'read-1'};
   const search={...read,callId:'search-1',arguments:{action:'search',query:'word'}};
   const invalid={...read,callId:'invalid',arguments:{action:'read',id:'no-such-skill'}};
