@@ -33,7 +33,8 @@ test('request grounding is literal evidence, not a new documentation requirement
  const check={...row(),basis:'user-request',contractQuote:'Preserve public outputs.',contractRefs:['user-request']};
  assert.equal(outcomeAssessmentConflicts(normalizeOutcomeChecks([check],snapshot(),options)).length,1);
  assert.equal(normalizeOutcomeChecks([{...check,contractQuote:'All inputs must be nonempty'}],snapshot(),options)[0].contractQuoteFound,false);
- assert.match(OUTCOME_RECONCILIATION_INSTRUCTIONS,/Missing documentation.*is not failure/);
+ assert.match(OUTCOME_RECONCILIATION_INSTRUCTIONS,/unresolved when evidence is missing/);
+ assert.match(OUTCOME_RECONCILIATION_INSTRUCTIONS,/A missing optional record is not a blocker/);
 });
 test('bounded optional rows preserve no-op compatibility',async()=>{
  const schema=modularOutcomeSchema(snapshot());assert.ok(schema.properties.outcomeChecks);assert.ok(!schema.required.includes('outcomeChecks'));

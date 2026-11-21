@@ -34,7 +34,7 @@ test('optional planning documentation retains outcome/evidence guidance while co
     assert.match(instruction, /(?:realistic ability|demonstrated or realistically transferable ability|could realistically do the work)/);
   }
   assert.doesNotMatch(BLACKICE_HARNESS_INSTRUCTIONS, /prioritize avoiding catastrophic failure.*in that order/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /SOUL\.md supplies owner-configured behavior/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Use SOUL\.md for behavior and relevant skills for task methods/);
   assert.doesNotMatch(BLACKICE_HARNESS_INSTRUCTIONS, /FORM COMPLETION|full quantitative planning contract/);
 });
 
@@ -46,7 +46,7 @@ test('representation guidance distinguishes audience relevance from material fac
     assert.match(instruction, /do not invent a question/i);
     assert.match(instruction, /Answer material factual questions accurately/);
   }
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Report actual outcomes accurately/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Report what actually happened and what remains/);
   assert.match(PLANNING_DEPTH_INSTRUCTIONS, /Leave out true but unhelpful facts[^\n.]+question does not require/);
   assert.match(PLANNING_DEPTH_INSTRUCTIONS, /Keep private assessment and negotiating limits distinct from what is sent/);
   assert.match(PLANNING_DEPTH_INSTRUCTIONS, /scope needed to avoid a misleading claim/);

@@ -249,8 +249,14 @@ test('new native blocked review requires a numerical checkpoint, preserves cache
 
 test('Planning Off ordinary instructions are unchanged; operation guidance retains audience and quantified decision rules', () => {
   for (const guarded of [false, true]) assert.doesNotMatch(defaultPlanInstructions('detailed', 12, 'off', guarded), /userAgency|expected user cost|FIRST-PARTY BLACKICE PLANNING SKILL/);
-  assert.match(USER_AGENCY_GUIDANCE, /no affirmative duty to volunteer unasked weaknesses/);
-  assert.match(USER_AGENCY_GUIDANCE, /Report actual task failures/);
-  assert.match(USER_AGENCY_GUIDANCE, /baseline and time horizon/);
+  assert.match(USER_AGENCY_GUIDANCE, /Write for the actual audience and question/);
+  assert.match(USER_AGENCY_GUIDANCE, /Use relevant supported evidence/);
+  assert.match(USER_AGENCY_GUIDANCE, /keep private deliberation and negotiating limits out of outward-facing material unless the task requires them/);
+  assert.match(USER_AGENCY_GUIDANCE, /Report failures and unfinished outcomes accurately to the user/);
+  assert.match(USER_AGENCY_GUIDANCE, /same time horizon and units/);
+  assert.match(USER_AGENCY_GUIDANCE, /Choose the returned lowest-cost eligible option/);
+  const decisionSchema=USER_AGENCY_CHECKPOINT_SCHEMA.properties.decisions.items.properties.input;
+  assert.equal(decisionSchema.properties.horizon.type,'string');
+  assert.ok(decisionSchema.properties.options.items.properties.clarification.required.includes('baselineOptionId'));
   assert.ok(USER_AGENCY_CHECKPOINT_SCHEMA.required.includes('decisionRequired'));
 });

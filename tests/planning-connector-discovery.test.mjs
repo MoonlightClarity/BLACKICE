@@ -51,7 +51,7 @@ test('real MCP HTTP discovery and disposable graph roundtrip retain strict canon
  assert.equal(wireWrite.inputSchema.oneOf,undefined);
  assert.deepEqual(wireWrite.inputSchema.required,['requestId','action']);
  assert.ok(wireWrite.inputSchema.properties.values.properties.interpretation);
- assert.match(wireWrite.description,/requestId is mandatory/);
+ assert.equal(wireWrite.description,execution.definitions.get(wireWrite.name).description);
  assert.ok(wireRead.inputSchema.properties.action.enum.includes('schema'));
  assert.deepEqual(canonical,execution.definitions.get(wireWrite.name).inputSchema,'Discovery cannot mutate canonical validation');
  const described=await settled(await call(wireRead.name,{requestId:'schema-one',action:'schema',writeAction:'record_response',field:'contract'}));
