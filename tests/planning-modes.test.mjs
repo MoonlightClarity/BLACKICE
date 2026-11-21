@@ -300,7 +300,9 @@ test('Off keeps the current optional task tool and external recovery guidance wi
     const instructions = BLACKICE_HARNESS_INSTRUCTIONS + capabilityGuidance([currentTaskTool({ executionGuardrails })], { planningMode: 'off', executionGuardrails: true });
     assert.match(instructions, /Automatic planning is off/);
     assert.doesNotMatch(instructions, /before operational work or the final answer|save this turn's plan|form a brief operational plan|For substantive work, discover relevant methods/);
-    assert.match(instructions, /When an action may have reached its destination, inspect its outcome before a conflicting repeat/);
+    assert.match(instructions, /When a tool says input was not dispatched, refresh the needed state and retry with corrected arguments/);
+    assert.match(instructions, /If it may have run, inspect the saved receipt or destination before repeating that action/);
+    assert.match(instructions, /Continue independent work while checking/);
   }
   assert.doesNotMatch(capabilityGuidance([], { planningMode: 'off' }), /form a brief operational plan/);
 });

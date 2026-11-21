@@ -23,7 +23,7 @@ const assess = entry => evaluateViabilityResponse({ requirements: [entry], sourc
 
 test('core delegates behavior rather than duplicating domain policy', () => {
   assert.doesNotMatch(BLACKICE_HARNESS_INSTRUCTIONS, /Third-party selection criteria|FORM COMPLETION/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /relevant skills supply task procedures/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Use SOUL\.md for behavior and relevant skills for task methods/);
   assert.match(PLANNING_DECISION_GUIDANCE, /time-stamped, revisable observations/);
 });
 
