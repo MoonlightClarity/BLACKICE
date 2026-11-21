@@ -4,7 +4,8 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import vm from 'node:vm';
-import { TrialRunner, PROMPTS, parseCLI, sha256, decodeFrontendResult, admissionRequest, productFileEvidence } from './runner.mjs';
+import { fileURLToPath } from 'node:url';
+import { TrialRunner, PROMPTS, parseCLI, sha256, decodeFrontendResult, admissionRequest, productFileEvidence, sourceEvidence } from './runner.mjs';
 import { ordinaryChatWorkflow } from '../../public/chat-turn-defaults.mjs';
 import { executionModesFrom } from '../../lib/conversation-execution-modes.mjs';
 
@@ -273,3 +274,27 @@ test('actual product modules still require strict byte equality',()=>{
   assert.throws(()=>productFileEvidence('lib/chat-execution-review.mjs',original,Buffer.from('export const value=1;\n')),
     error=>error.code==='SOURCE_MISMATCH');
 });
+
+for (const file of ['lib/browser.mjs','lib/application-history.mjs']) for (const change of ['changed','missing']) {
+  test(`native preflight rejects ${change} installed ${file} before admission`,async t=>{
+    const f=await fixture(t), sourceRoot=fileURLToPath(new URL('../../',import.meta.url));
+    const baseline=await sourceEvidence({appDir:sourceRoot});
+    for (const [name,evidence] of Object.entries(baseline.files)) if (evidence.installed) {
+      const destination=path.join(f.config.appDir,name);
+      await fs.mkdir(path.dirname(destination),{recursive:true});
+      await fs.copyFile(path.join(sourceRoot,name),destination);
+    }
+    const installedFile=path.join(f.config.appDir,file), candidate=await fs.readFile(path.join(sourceRoot,file));
+    await fs.mkdir(path.dirname(installedFile),{recursive:true});
+    await fs.writeFile(installedFile,candidate);
+    const runner=new TrialRunner(f.config,{...f.dependencies,sources:()=>sourceEvidence(f.config)});
+    assert.equal((await runner.preflight()).state,'prepared');
+    assert.equal((await f.read('preflight.json')).source.fingerprint,baseline.fingerprint);
+    if (change==='missing') await fs.unlink(installedFile);
+    else await fs.appendFile(installedFile,'\n// Different installed dependency.\n');
+    await assert.rejects(runner.preflight(),error=>error.code==='SOURCE_MISMATCH' && error.message.includes(file));
+    assert.equal(f.state.posts,0);
+    assert.deepEqual(f.calls,[]);
+    await assert.rejects(fs.access(path.join(f.config.out,'admission.json')),error=>error.code==='ENOENT');
+  });
+}

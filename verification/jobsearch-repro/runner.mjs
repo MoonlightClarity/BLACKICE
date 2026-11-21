@@ -170,12 +170,21 @@ export function productFileEvidence(file, candidateBytes, installedBytes) {
   throw fail('SOURCE_MISMATCH', 'Candidate and installed file differ: ' + file);
 }
 export async function sourceEvidence(config) {
-  const product = ['package.json','desktop/main.mjs','lib/browser-cli.mjs','public/mission-model.mjs','lib/harness-identity.mjs',
-    'lib/instruction-store.mjs','lib/identity.mjs','lib/release-skills.mjs','lib/skill-library/job-search.md',
-    'public/chat-turn-defaults.mjs','lib/conversation-execution-modes.mjs','lib/engine.mjs','lib/chat-execution-review.mjs'];
+  const product = ['package.json','desktop/main.mjs','lib/browser-cli.mjs','lib/browser.mjs','lib/application-history.mjs',
+    'public/mission-model.mjs','lib/harness-identity.mjs','lib/instruction-store.mjs','lib/identity.mjs',
+    'lib/release-skills.mjs','lib/skill-library/job-search.md','public/chat-turn-defaults.mjs',
+    'lib/conversation-execution-modes.mjs','lib/engine.mjs','lib/chat-execution-review.mjs'];
   const files = {};
-  for (const file of product) files[file] = productFileEvidence(file,
-    await fs.readFile(path.join(ROOT,file)), await fs.readFile(path.join(config.appDir,file)));
+  for (const file of product) {
+    const candidate = await fs.readFile(path.join(ROOT,file));
+    let installed;
+    try { installed = await fs.readFile(path.join(config.appDir,file)); }
+    catch (error) {
+      if (error.code === 'ENOENT') throw fail('SOURCE_MISMATCH','Installed file is missing: ' + file);
+      throw error;
+    }
+    files[file] = productFileEvidence(file,candidate,installed);
+  }
   for (const file of ['verification/jobsearch-repro/capture.mjs','verification/jobsearch-repro/runner.mjs'])
     files[file] = { candidate:sha256(await fs.readFile(path.join(ROOT,file))) };
   return { commit:execFileSync('git',['-C',ROOT,'rev-parse','HEAD'],{encoding:'utf8'}).trim(), files, fingerprint:sha256(JSON.stringify(files)) };
