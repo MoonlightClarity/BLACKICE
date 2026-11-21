@@ -5,6 +5,7 @@ import {mkdtemp,mkdir,rm,writeFile,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHarnessServer} from '../server.mjs';
+import {readReleaseSkill} from '../lib/release-skills.mjs';
 
 // Real .98 HTTP router + genuine Skills catalog and static delivery, but a
 // disposable profile and no Codex, model worker, installed app or browser page.
@@ -54,10 +55,14 @@ test('server delivers release-owned Skills without legacy contamination or model
   assert.equal(listResponse.status,200);
   const catalog=await listResponse.json();
   assert.equal(catalog.sources.bundled.status,'available');
-  assert.ok(catalog.entries.some(entry=>entry.id==='builtin-decomposition'));
+  const listed=catalog.entries.find(entry=>entry.id==='builtin-decomposition');
+  assert.ok(listed);assert.equal(Object.hasOwn(listed,'content'),false);
   assert.ok(!catalog.entries.some(entry=>entry.id==='saved:combined-fixture-skill'));
   const read=await get('/api/skills/builtin-decomposition');assert.equal(read.status,200);
-  const method=await read.json();assert.equal(method.immutable,true);assert.match(method.content,/When to use/);
+  const method=await read.json(),expected=readReleaseSkill('builtin-decomposition');
+  assert.equal(method.immutable,true);assert.equal(method.source,'bundled');
+  assert.equal(method.content,expected.content,'HTTP detail must deliver the complete current release-owned skill body.');
+  assert.equal(method.revision,expected.revision);assert.equal(listed.revision,method.revision);
   assert.equal((await get('/api/skills/saved%3Acombined-fixture-skill')).status,404);
   assert.equal((await get('/api/skills/builtin-..%2Fescape')).status,404);
   assert.equal(await readFile(memory,'utf8'),bytes);

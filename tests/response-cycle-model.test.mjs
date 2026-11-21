@@ -67,14 +67,17 @@ test('current Plan guidance selects attainable proof families and preserves dele
   assert.equal(responseCycleStage('plan',{pipelineVersion:1}).checks.find(item=>item.id==='outcome_covered').label,'Connect every acceptance criterion to proposed work');
 });
 
-test('current Planning guidance preserves conditional prerequisites and supports contextual inference', () => {
+test('current Planning guidance scopes conditional requirements and contextual inference', () => {
   for (const stage of RESPONSE_CYCLE_STAGES) {
     const prompt = responseCycleInstructions(stage.kind);
-    assert.match(prompt, /A minimum that applies when a value is disclosed does not require the value to be disclosed/);
-    assert.match(prompt, /Interpret the whole relevant description before treating a condition as unknown/);
-    assert.match(prompt, /Check for contrary evidence and label an inference distinctly from an explicit statement/);
-    assert.match(prompt, /A missing phrase alone is insufficient, and contrary duties or policies override the inference/);
-    assert.match(prompt, /Keep independently required counts, identities and receipt evidence exact/);
+    assert.match(prompt, /Apply each requirement to the result it governs/);
+    assert.match(prompt, /A conditional requirement applies only when its condition holds/);
+    assert.match(prompt, /Keep exact requested counts, identities and confirmation evidence exact/);
+    assert.match(prompt, /use supported estimates or ordinary inference where the task allows them/);
+    assert.match(prompt, /Preserve user-approved alternatives and tolerances/);
+    assert.match(prompt, /Distinguish stated facts, supported inferences and unknowns/);
+    assert.match(prompt, /A missing phrase alone is not a negative finding/);
+    assert.match(prompt, /Carry later user corrections into the affected criteria while preserving unrelated requirements/);
   }
 });
 

@@ -17,8 +17,10 @@ test('expected image rejection and universal validation remain interpretations, 
  const invented=normalizeReviewConcerns([{...concern(),taskClause:'At least one image must exist',basis:'inferred',expected:'reject []',evidenceRefs:['invented']}],s,options)[0];
  assert.equal(invented.clauseFoundInRequest,false);assert.equal(invented.basis,'inferred');
  assert.equal(invented.unadmittedReferenceCount,1);assert.deepEqual(invented.evidenceRefs,[]);
- assert.match(REVIEW_EXPECTATION_INSTRUCTIONS,/does not imply a nonempty collection/);
- assert.match(REVIEW_EXPECTATION_INSTRUCTIONS,/malformed probe\/invocation failure/);
+ assert.equal(invented.authority,'none');assert.equal(invented.verified,false);
+ assert.match(REVIEW_EXPECTATION_INSTRUCTIONS,/does not create new task requirements/);
+ assert.match(REVIEW_EXPECTATION_INSTRUCTIONS,/A rejected invalid input can be the expected result/);
+ assert.match(REVIEW_EXPECTATION_INSTRUCTIONS,/If the probe used invalid arguments, repair the probe before changing the implementation/);
 });
 
 test('prior resolved concern retains exact evidence identity; changes are not automatic proof of a bug',()=>{
