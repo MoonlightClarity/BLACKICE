@@ -1,0 +1,42 @@
+{
+  "schema": "blackice.minicpm.trace-build-inputs.v1",
+  "source": {
+    "commit": "b1b770d90d94cad9e9ea5b993bdbc383a522fb28",
+    "tag": "b12359",
+    "url": "https://codeload.github.com/ggml-org/llama.cpp/tar.gz/b1b770d90d94cad9e9ea5b993bdbc383a522fb28",
+    "filename": "llama-source.tar.gz",
+    "expectedFiles": {
+      "include/llama.h": "19ad09e336dd61317ff816bbf448e9b76c1d925d430191429c17df4679f9a1a4",
+      "tools/server/server-context.cpp": "9b632c3aedb0acfea3ef44308e4f04be1f5fad10110329b05ea737fcb7bb83ef",
+      "tools/server/server-task.cpp": "88b9b570e41dabf88258d0f4b614c546d7346ef99a4e23c18f5a890e9b3daf86"
+    },
+    "sha256": "ae8556670b17c25931cd39eb7c95617650eaf6091bbcff206750583ddde1acb4",
+    "bytes": 38905965
+  },
+  "assets": [
+    {
+      "name": "w64devkit",
+      "filename": "w64devkit-x64-2.11.0.7z.exe",
+      "url": "https://github.com/skeeto/w64devkit/releases/download/v2.11.0/w64devkit-x64-2.11.0.7z.exe",
+      "bytes": 68801240,
+      "sha256": "54c2bb9962e8a30c8270e34c5efc3d5fee579f53087fa7d435b95fbba2af7b2b",
+      "publisherMetadata": "https://api.github.com/repos/skeeto/w64devkit/releases/tags/v2.11.0"
+    },
+    {
+      "name": "cmake",
+      "filename": "cmake-4.5.1-windows-x86_64.zip",
+      "url": "https://github.com/Kitware/CMake/releases/download/v4.5.1/cmake-4.5.1-windows-x86_64.zip",
+      "bytes": 56581138,
+      "sha256": "bfe6eadb245dc8213e0d3feea316b520cb2aae92f5667ffd76059ba6b05c430c",
+      "publisherMetadata": "https://api.github.com/repos/Kitware/CMake/releases/tags/v4.5.1"
+    },
+    {
+      "name": "ninja",
+      "filename": "ninja-win.zip",
+      "url": "https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip",
+      "bytes": 291570,
+      "sha256": "07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65",
+      "publisherMetadata": "https://api.github.com/repos/ninja-build/ninja/releases/tags/v1.13.2"
+    }
+  ]
+}

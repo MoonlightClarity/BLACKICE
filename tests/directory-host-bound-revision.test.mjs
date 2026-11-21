@@ -16,7 +16,10 @@ for(const logging of ['off','on'])test('Planning→four parallel reads→focus�
   let state=await control({action:'read'});assert.equal(state.revision,1);assert.equal(state.actionRevision,1);
   const reads=await Promise.all(Array.from({length:4},(_,i)=>o.onToolCall({name:'relay_workspace',callId:'read-'+i,arguments:{action:'list',path:root}})));assert(reads.every(r=>r.success));
   state=await control({action:'read'});assert.equal(state.revision,9);assert.equal(state.actionRevision,1);
-  state=await control({action:'focus',id:'inspect',revision:'9'});assert.equal(state.focus,'inspect');
+  const malformed=await o.onToolCall({name:'relay_directory_action',callId:'malformed-focus',arguments:{action:'focus',id:'inspect',revision:'9'}});
+  assert.equal(malformed.success,false);assert.equal(malformed.code,'DIRECTORY_TOOL_ARGUMENTS');assert.match(malformed.contentItems[0].text,/revision must be an integer/);
+  assert.deepEqual(await control({action:'read'}),state,'A malformed revision echo must not change the Directory.');
+  state=await control({action:'focus',id:'inspect'});assert.equal(state.focus,'inspect');
   await Promise.all(Array.from({length:2},(_,i)=>o.onToolCall({name:'relay_workspace',callId:'focused-read-'+i,arguments:{action:'list',path:root}})));
   state=await control({action:'read'});const refs=state.receipts.filter(r=>r.actionId==='inspect'&&r.state==='returned').map(r=>r.id);assert.equal(refs.length,2);
   state=await control({action:'observe',outcome:'objective-met',id:'inspect',claim:'The fixture evidence was read',receipts:refs,revision:0});assert.equal(state.actions[0].state,'observed');assert(!await o.onBeforeFinal({signal:o.signal}));return{output:'Fixture evidence inspected.'};

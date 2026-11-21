@@ -1,0 +1,20 @@
+'use strict';
+const fs=require('node:fs'),p=require('node:path'),cp=require('node:child_process'),c=require('node:crypto');
+const root=process.argv[2];if(!p.isAbsolute(root||''))throw Error('ABSOLUTE_EVIDENCE_ROOT_REQUIRED');
+const hash=b=>c.createHash('sha256').update(b).digest('hex');
+const ready=JSON.parse(fs.readFileSync(p.join(root,'receipts','source-toolchain.json'),'utf8'));
+const original=JSON.parse(fs.readFileSync(p.join(root,'receipts','import-boundary.json'),'utf8'));
+const dir=p.join(root,'probes','dll-'+Date.now());fs.mkdirSync(dir,{recursive:true});
+const binary=p.join(root,'build','bin','llama-server.exe'),exe=p.join(dir,'dll-load-probe.exe');
+const source=p.join(__dirname,'dll-load-probe.cpp');
+function run(command,args,cwd){const r=cp.spawnSync(command,args,{cwd,env:{...process.env,PATH:p.dirname(ready.tools.gxx.path)+';'+process.env.PATH},encoding:'utf8',timeout:60000,maxBuffer:4e6});const rec={command,args,cwd,exitCode:r.status,signal:r.signal,error:r.error?.message||null,stdout:r.stdout||'',stderr:r.stderr||''};fs.writeFileSync(p.join(dir,'command-'+Date.now()+'.json'),JSON.stringify(rec,null,2));if(r.status!==0||r.error||r.signal)throw Error(JSON.stringify(rec));return rec;}
+const compile=run(ready.tools.gxx.path,['-std=c++17','-O2','-static-libgcc','-static-libstdc++',source,'-o',exe],root);
+const probe=run(exe,[binary,dir],p.dirname(binary));
+const events=probe.stdout.trim().split(/\r?\n/).map(line=>JSON.parse(line));
+const terminal=events.filter(e=>e.event==='exit');if(terminal.length!==1||terminal[0].code!==0||terminal[0].timedOut)throw Error('PROCESS_NOT_SETTLED');
+const loaded=events.filter(e=>e.event==='module').map(e=>e.path.startsWith('\\\\?\\')?e.path.slice(4):e.path);
+const math=loaded.filter(file=>/^(ggml.*|libomp)\.dll$/i.test(p.basename(file))).map(file=>{const expected=original.copied.find(x=>p.basename(x.path).toLowerCase()===p.basename(file).toLowerCase());if(!expected)throw Error('UNEXPECTED_MATH_DLL:'+file);const canonical=fs.realpathSync.native(file),wanted=fs.realpathSync.native(expected.path);if(canonical.toLowerCase()!==wanted.toLowerCase())throw Error('DLL_LOCATION_MISMATCH:'+file);const b=fs.readFileSync(canonical);if(hash(b)!==expected.sha256||b.length!==expected.bytes)throw Error('LOADED_DLL_HASH_MISMATCH:'+file);return{path:canonical,sha256:expected.sha256,bytes:b.length};});
+for(const name of ['ggml.dll','ggml-base.dll','ggml-vulkan.dll','libomp.dll'])if(!math.some(x=>p.basename(x.path).toLowerCase()===name))throw Error('REQUIRED_DLL_NOT_OBSERVED:'+name);
+if(!math.some(x=>/^ggml-cpu-.*\.dll$/i.test(p.basename(x.path))))throw Error('CPU_BACKEND_NOT_OBSERVED');
+const receipt={schema:'blackice.minicpm.trace-loaded-libraries.v1',at:new Date().toISOString(),binary:{path:binary,sha256:hash(fs.readFileSync(binary))},probe:{source,sourceSha256:hash(fs.readFileSync(source)),path:exe,sha256:hash(fs.readFileSync(exe))},processId:events.find(e=>e.event==='process')?.pid,terminal:terminal[0],loadedMathLibraries:math,unavailablePaths:events.filter(e=>e.event==='module_path_unavailable'||e.event==='module_path_error'),stdoutLog:p.join(dir,'device-probe.stdout.log'),stderrLog:p.join(dir,'device-probe.stderr.log'),modelStarted:false};
+const file=p.join(root,'receipts','loaded-libraries.json');const text=JSON.stringify(receipt,null,2)+'\n';fs.writeFileSync(file,text);if(fs.readFileSync(file,'utf8')!==text)throw Error('READBACK');console.log(JSON.stringify({receipt:file,sha256:hash(text),...receipt}));

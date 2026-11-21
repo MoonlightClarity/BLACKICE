@@ -2,8 +2,9 @@
 // Constructors only. This file never calls a browser, a model, or the network.
 const crypto = require('node:crypto');
 const path = require('node:path');
+const {normalizeBenchmarkBudget,inspectBenchmarkDeadline}=require('../../../lib/benchmark-run-deadline.mjs');
 const sha = value => crypto.createHash('sha256').update(typeof value === 'string' || value instanceof Uint8Array ? value : JSON.stringify(value)).digest('hex');
-const terminal = status => ['completed', 'failed', 'cancelled'].includes(status);
+const terminal = status => ['completed', 'failed', 'cancelled', 'blocked'].includes(status);
 const windowsPath = value => path.win32.normalize(value).toLowerCase();
 function check(value, message) { if (!value) throw new Error(message); }
 function int(value, min, max, field) { check(Number.isSafeInteger(value) && value >= min && value <= max, `Invalid ${field}`); }
@@ -65,12 +66,15 @@ function assertOwned(run,config,expectedId) {
   if(config.benchmark){
     const expected=validateBenchmarkRequest(config.benchmark),actual=run.benchmark;
     check(actual?.schema==='blackice.minicpm.benchmark-profile.v1'&&actual.profile===expected.profile&&windowsPath(actual.workspace||'')===windowsPath(config.workspace)&&actual.caseId===config.caseId&&actual.publicCaseCount===2&&actual.command==='node test-public.cjs'&&windowsPath(actual.scaffoldReceiptPath||'')===windowsPath(expected.scaffoldReceiptPath)&&actual.scaffoldReceiptSha256===expected.scaffoldReceiptSha256&&/^[a-f0-9]{64}$/.test(actual.contractSha256||''),'Run benchmark profile mismatch');
+    const budget=normalizeBenchmarkBudget(run.benchmarkBudget,{required:true});
+    check(budget.wallMs===config.budgets.wallMs,'Run benchmark wall budget mismatch');
+    inspectBenchmarkDeadline(run,run.createdAt);
   }
   return run;
 }
 const frontendHelpers = String.raw`
 const normalPath=s=>String(s||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
-const endStates=new Set(['completed','failed','cancelled']);
+const endStates=new Set(['completed','failed','cancelled','blocked']);
 const own=r=>{if(!r||r.id!==expected.runId||r.taskId!==r.id||r.metadata?.clientRequestId!==config.requestId||normalPath(r.cwd)!==normalPath(config.workspace)||r.workflow?.id!==config.workflowId||r.workflow?.nodes?.find(n=>n.id==='agent')?.model!==config.model||(!config.benchmark&&(r.directoryActions!=='on'||r.directoryDiagnostics!=='maximal'||r.executionModes?.directoryMode!=='off'))||r.parentRunId||r.retryOf)throw Error('OWNED_RUN_IDENTITY_MISMATCH');return r;};
 const get=async(route,method='GET',body)=>{const left=endAt-Date.now();if(left<=0)throw Error('CONTROLLER_WINDOW_EXHAUSTED');const response=await fetch(route,{method,credentials:'same-origin',cache:'no-store',headers:body===undefined?{}:{'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(Math.min(config.budgets.fetchTimeoutMs,left))});const text=await response.text();let value;try{value=JSON.parse(text);}catch{throw Error('NATIVE_API_NON_JSON_'+response.status);}if(!response.ok){const e=Error(value.error||'NATIVE_API_HTTP_'+response.status);e.status=response.status;e.code=value.code;throw e;}return value;};
 `;
@@ -84,10 +88,11 @@ function operation(config, kind, index, body, extra = {}) {
   return {kind, requestId, arguments:args, expressionSha256:sha(expression)};
 }
 function prepare(config, index) {
-  return operation(config, 'prepare', index, `const m=await import('/mission-model.mjs');const workflow=m.createMissionWorkflow({id:config.workflowId,task:config.task,model:config.model,cwd:config.workspace,planningMode:'off',context:config.context});return {kind:'prepare',at:new Date().toISOString(),body:{requestId:config.requestId,workflow,input:{task:config.task,cwd:config.workspace,directoryMode:'off',directoryActions:'on',chatPlanning:'off',pastChats:'off',directoryDiagnostics:'maximal',planningMode:'off',...(config.benchmark?{benchmark:config.benchmark}:{})}}};`);
+  return operation(config, 'prepare', index, `const m=await import('/mission-model.mjs');const workflow=m.createMissionWorkflow({id:config.workflowId,task:config.task,model:config.model,cwd:config.workspace,planningMode:'off',context:config.context});return {kind:'prepare',at:new Date().toISOString(),body:{requestId:config.requestId,workflow,input:{task:config.task,cwd:config.workspace,directoryMode:'off',directoryActions:'on',chatPlanning:'off',pastChats:'off',directoryDiagnostics:'maximal',planningMode:'off',...(config.benchmark?{benchmark:config.benchmark,benchmarkBudget:{wallMs:config.budgets.wallMs}}:{})}}};`);
 }
 function start(config, index, authoredBody) {
   check(authoredBody?.requestId === config.requestId && authoredBody?.workflow?.id === config.workflowId, 'Prepared request identity missing');
+  if(config.benchmark){const budget=normalizeBenchmarkBudget(authoredBody?.input?.benchmarkBudget,{required:true});check(budget.wallMs===config.budgets.wallMs,'Prepared benchmark wall budget mismatch');}
   return operation(config, 'start', index, `const startedAt=new Date().toISOString();const endAt=Date.now()+config.budgets.fetchTimeoutMs;${frontendHelpers}const run=await get('/api/runs','POST',${JSON.stringify(authoredBody)});return {kind:'start',startedAt,finishedAt:new Date().toISOString(),run};`);
 }
 function observe(config, index, runId, deadlineAt, cleanupDeadlineAt) {
