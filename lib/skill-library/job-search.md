@@ -58,6 +58,8 @@ Read the question, make the best supported call, and enter it. Use the resume an
 
 Before submission, recheck the chosen requisition against the reconciled history and any attempts made during this task. Submit when eligible and inspect the result. Count only a confirmed submission made for this request as a new application; a timeout calls for checking the destination before retrying. Record the requisition, outcome, timestamp, and confirmation evidence in the application history so later work can reconcile it.
 
+Complete required email confirmation through the shared follow-up procedure, including connected Gmail when it is the user's available mailbox. Keep the application pending until the required confirmation is completed and its outcome is verified. Report a failed application and continue the broader search or another suitable role when the request allows alternatives. Preserve an explicitly fixed target; a different application does not fulfill it.
+
 ## Finish the requested work
 
 For a shortlist, return distinct verified openings with enough detail to act. “Up to N” is a cap, not a completion minimum; check the intended scope and report an honest shortfall. For a required count, keep the unmet count explicit.

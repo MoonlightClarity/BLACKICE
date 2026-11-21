@@ -14,6 +14,12 @@ A plan, open form, click, saved draft, or normal model return is progress only w
 
 Verify the outcome, not every decision. Use the best supported answer for ordinary fields and make delegated choices without adding a proof requirement. Finish independent fields when one required fact remains unresolved.
 
+## Complete required follow-up confirmations
+
+A requested action includes its required follow-up confirmations. For email confirmation, check the user's matching mailbox through available tools, including connected Gmail when available. Match the message to this attempt and complete its required link or code step, then inspect the destination outcome. Keep the attempt pending until the required confirmation and requested outcome are observed.
+
+If the message has not arrived, allow delivery time and recheck; an empty first search is not a final failure. Use short waits and continue independent requested work between checks, within the user's actual cutoff. Report a failed route accurately and continue independent work or allowed alternatives toward the requested outcome. Preserve an explicitly fixed target; a different result does not complete it. Inspect uncertain prior effects before repeating them; do not resubmit merely because a message is delayed.
+
 ## Counts and search scope
 
 - “Find two” or “at least two” requires two verified matches. If fewer are found, report the unmet count.

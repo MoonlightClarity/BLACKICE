@@ -67,6 +67,24 @@ const jobSearchCalibrationContract=[
  "Stop broad history reading once that check supports the next action"
 ];
 const assertJobSearchCalibrationMethod=content=>{for(const expected of jobSearchCalibrationContract)assert.ok(content.includes(expected),expected);};
+const sharedConfirmationContract=[
+  "A requested action includes its required follow-up confirmations",
+  "check the user's matching mailbox through available tools, including connected Gmail when available",
+  "Match the message to this attempt and complete its required link or code step, then inspect the destination outcome",
+  "Keep the attempt pending until the required confirmation and requested outcome are observed",
+  "allow delivery time and recheck; an empty first search is not a final failure",
+  "Use short waits and continue independent requested work between checks, within the user's actual cutoff",
+  "Report a failed route accurately and continue independent work or allowed alternatives toward the requested outcome",
+  "Preserve an explicitly fixed target; a different result does not complete it",
+  "Inspect uncertain prior effects before repeating them; do not resubmit merely because a message is delayed"
+];
+const jobConfirmationContract=[
+  "Complete required email confirmation through the shared follow-up procedure, including connected Gmail when it is the user's available mailbox",
+  "Keep the application pending until the required confirmation is completed and its outcome is verified",
+  "Report a failed application and continue the broader search or another suitable role when the request allows alternatives",
+  "Preserve an explicitly fixed target; a different application does not fulfill it"
+];
+const assertJobConfirmationMethod=content=>{for(const expected of jobConfirmationContract)assert.ok(content.includes(expected),expected);};
 const heading='JOB SEARCH (advisory execution method; not permission)';
 const accepted={type:'skill_context_submitted',skillId:id,title:'Job Search',source:'bundled',sourceRevision:'clarity-20261121'};
 
@@ -130,6 +148,11 @@ test('job-specific recency and history calibration complements the shared task p
  const {content}=await createSkillsCatalog().detail({id});
  assertJobSearchCalibrationMethod(content);
  assert.doesNotMatch(content,/## Allocate effort by expected value/,'general effort policy belongs in common Instructions');
+});
+
+test('application confirmations remain pending until observed and failed candidates preserve the broader scope',async()=>{
+ const {content}=await createSkillsCatalog().detail({id});
+ assertJobConfirmationMethod(content);
 });
 
 test('fit ignores listed years even for director roles and credits work under adjacent titles',async()=>{
@@ -246,7 +269,17 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  const antiCompletion='library-anti-completion-bias';
  const completionReceipt=(source,sourceRevision)=>({type:'skill_context_submitted',skillId:antiCompletion,title:'Anti-Completion Bias',source,sourceRevision});
  const browserSkill='library-browser-navigation';
+  const completionId='library-what-makes-done',completionSkill=await catalog.detail({id:completionId});
+  const assertSharedConfirmationDelivery=record=>{
+   assert.ok(record.receipts.some(receipt=>receipt.skillId===completionId&&receipt.source==='bundled'&&receipt.sourceRevision==='clarity-20261121'));
+   for(const messages of record.requests){
+    const wire=JSON.stringify(messages);
+    assert.ok(wire.includes(JSON.stringify(completionSkill.content).slice(1,-1)),'the complete shared confirmation method reaches every actual provider request');
+    for(const expected of sharedConfirmationContract)assert.ok(wire.includes(expected),expected);
+   }
+  };
  const job=await invoke(example);
+  assertSharedConfirmationDelivery(job);
  assert.ok(job.prompt.includes('An empty tab list means there is no tab to reuse'));
  assert.ok(job.prompt.includes('the link opened a new tab'));
  assert.ok(job.receipts.some(r=>r.skillId===browserSkill&&r.sourceRevision==='clarity-20261121'));
@@ -267,6 +300,8 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.ok(job.receipts.every(r=>r.skillId!=='library-intent-inference'));
 
  const applicationRun=await invoke(application);
+  assertSharedConfirmationDelivery(applicationRun);
+  assertJobConfirmationMethod(applicationRun.prompt);
  assert.equal(applicationRun.input,application,'the admitted task remains the unchanged ordinary request');
  assert.ok(applicationRun.requests.every(messages=>JSON.stringify(messages).includes(application)),'the unchanged user task reaches each real provider request');
  assertHistoryMethod(applicationRun.prompt);
@@ -278,6 +313,8 @@ test('actual Compatible main-turn transport submits the job skill selectively an
 
  await catalog.save({id:antiCompletion,value:{expectedRevision:1,content:'# Anti-Completion Bias\nUse the owner-defined next-action instruction.'}});
  const ordinary=await invoke('Write a short explanation of how job search works.');
+  assertSharedConfirmationDelivery(ordinary);
+  assert.equal(ordinary.input,'Write a short explanation of how job search works.','the unrelated ordinary task remains unchanged');
  assert.ok(!ordinary.prompt.includes('BROWSER NAVIGATION AND CONTINUITY ('));
  assert.ok(ordinary.receipts.every(r=>r.skillId!==browserSkill));
  assert.ok(ordinary.prompt.includes('Use the owner-defined next-action instruction.'));
@@ -292,6 +329,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  await catalog.delete({id:alignmentId,value:{expectedRevision:1}});
  await catalog.delete({id:antiCompletion,value:{expectedRevision:2}});
  const deleted=await invoke(example);
+  assertSharedConfirmationDelivery(deleted);
  assert.ok(!deleted.prompt.includes('ANTI-COMPLETION BIAS ('));
  assert.ok(deleted.receipts.every(r=>r.skillId!==antiCompletion));
  assert.ok(deleted.receipts.some(r=>r.skillId==='library-what-makes-done'));

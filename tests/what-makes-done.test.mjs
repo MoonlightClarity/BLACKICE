@@ -44,6 +44,21 @@ test('What Makes Done is a discoverable advisory skill with actionable examples'
  assert.match(ACTION_DIRECTORY_TOOL.description,/add and take the next useful authorized step/);
 });
 
+test('required follow-up confirmation allows delivery latency and preserves the requested outcome',async()=>{
+ const {content}=await readCurrentGuidance('library-what-makes-done');
+ for(const expected of [
+  "A requested action includes its required follow-up confirmations",
+  "check the user's matching mailbox through available tools, including connected Gmail when available",
+  "Match the message to this attempt and complete its required link or code step, then inspect the destination outcome",
+  "Keep the attempt pending until the required confirmation and requested outcome are observed",
+  "allow delivery time and recheck; an empty first search is not a final failure",
+  "Use short waits and continue independent requested work between checks, within the user's actual cutoff",
+  "Report a failed route accurately and continue independent work or allowed alternatives toward the requested outcome",
+  "Preserve an explicitly fixed target; a different result does not complete it",
+  "Inspect uncertain prior effects before repeating them; do not resubmit merely because a message is delayed"
+])assert.ok(content.includes(expected),expected);
+});
+
 test('What Makes Done reconciles exact duplicate risk without importing old conversations or flattening evidence',async()=>{
  const {content}=await readCurrentGuidance('library-what-makes-done');
  assert.match(content,/Check the exact target and operation in current authorized records/);
