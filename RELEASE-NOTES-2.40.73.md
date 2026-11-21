@@ -21,6 +21,7 @@ This release integrates PR #22 and the ordinary Chat/application continuation fi
 
 - Enforce benchmark deadlines and explicit workspace/Directory tool contracts in the host.
 - Capture provider exchanges and expose native trace bindings for reproducible qualification.
+- Retain strict Directory tool rejection codes in exported and restored traces while preserving the existing privacy filters.
 - Include reusable trace, parity, lifecycle, and controller code plus self-contained synthetic tests.
 - Keep native binaries, models, machine-specific traces, application evidence, and profile data outside the public source changes.
 
