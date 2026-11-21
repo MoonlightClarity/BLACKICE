@@ -16,5 +16,9 @@ test('custom graphics keep their exact styling and mixed regions retain author c
  const mixed=compileVisual({...VISUAL_COMPOSITION_EXAMPLE,regions:[{label:'Custom',summary:'A custom inset',svg}]});assert.match(mixed.svg,/<text x="10" y="30" fill="#53627a">Custom<\/text>/);
 });
 test('design guidance supports problem-specific composition and custom SVG instead of a template requirement',()=>{
- assert.match(VISUAL_DESIGN_GUIDE.intent,/not a template/);assert.match(VISUAL_DESIGN_GUIDE.custom,/author a custom static SVG/);assert.match(VISUAL_DESIGN_GUIDE.review,/Prefer plain text/);
+ assert.match(VISUAL_DESIGN_GUIDE.intent,/Make the visual the user requested/);
+ assert.match(VISUAL_DESIGN_GUIDE.composition.join('\n'),/does not require BLACKICE colors, a particular illustration style or a fixed layout/);
+ assert.match(VISUAL_DESIGN_GUIDE.custom,/Author a complete static SVG with explicit dimensions and viewBox/);
+ assert.match(VISUAL_DESIGN_GUIDE.intent,/Use an optional visual when its spatial form helps the reader understand the answer/);
+ assert.match(VISUAL_DESIGN_GUIDE.review,/Use preview to inspect the rendered result/);
 });

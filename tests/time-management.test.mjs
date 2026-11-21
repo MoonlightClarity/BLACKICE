@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createTimeManagement} from '../lib/time-management.mjs';
-import {normalizePlanningOntology,planningOntologyInstructions} from '../public/planning-module-policy.mjs';
+import {normalizePlanningOntology,planningOntologyInstructions,TIME_MANAGEMENT_INSTRUCTIONS} from '../public/planning-module-policy.mjs';
 import {modularCompletionEnabled,createModularCompletionController,createModularEvidenceJournal,modularReviewPrompt} from '../lib/modular-completion.mjs';
 
 test('new tasks get immediate time management without enabling a review; saved choices are preserved',()=>{
@@ -10,9 +10,12 @@ test('new tasks get immediate time management without enabling a review; saved c
  const old={version:2,modules:{anti_overalignment:true}},before=JSON.stringify(old);
  assert.equal(normalizePlanningOntology(old).modules.time_management,true);assert.equal(JSON.stringify(old),before);
  assert.equal(normalizePlanningOntology({version:2,modules:{time_management:false}}).modules.time_management,false);
- assert.match(planningOntologyInstructions(p),/At task start, before optional research or planning/);
- assert.match(planningOntologyInstructions(p),/explicit hard constraints/);
- assert.match(planningOntologyInstructions(p),/User steering/);
+ assert.ok(planningOntologyInstructions(p).includes('ON: Time management: '+TIME_MANAGEMENT_INSTRUCTIONS));
+ assert.match(TIME_MANAGEMENT_INSTRUCTIONS,/requested result and the user's priorities/);
+ assert.match(TIME_MANAGEMENT_INSTRUCTIONS,/check the requested filters, act on suitable options and verify the result/);
+ assert.match(TIME_MANAGEMENT_INSTRUCTIONS,/Reassess after a concrete error, new evidence or user correction/);
+ assert.match(TIME_MANAGEMENT_INSTRUCTIONS,/Use observed clock time for deadlines/);
+ assert.match(TIME_MANAGEMENT_INSTRUCTIONS,/not model settings, permissions or stopping limits/);
  assert.equal(createTimeManagement({policy:normalizePlanningOntology({modules:{time_management:false}})}),null);
 });
 test('host clock supplies bounded feedback through existing calls without changing effect or receipt',async()=>{
@@ -57,8 +60,8 @@ test('reviewer receives guidance only when selected; journal retains original ef
  assert.equal(snapshot.records.length,1);
  assert.doesNotMatch(JSON.stringify(snapshot),/TIME MANAGEMENT OBSERVATION/);
  const base={request:'bounded',policy,evidence:{records:[]}};
- assert.match(modularReviewPrompt(base,{output:'done'}),/IMMEDIATE EFFORT CALIBRATION/);
- assert.doesNotMatch(modularReviewPrompt({...base,policy:normalizePlanningOntology({modules:{time_management:false}})},{output:'done'}),/IMMEDIATE EFFORT CALIBRATION/);
+ assert.ok(modularReviewPrompt(base,{output:'done'}).includes(TIME_MANAGEMENT_INSTRUCTIONS));
+ assert.equal(modularReviewPrompt({...base,policy:normalizePlanningOntology({modules:{time_management:false}})},{output:'done'}).includes(TIME_MANAGEMENT_INSTRUCTIONS),false);
 });
 
 test('timing wrapper forwards context identity, per-call AbortSignal and all extra arguments',async()=>{

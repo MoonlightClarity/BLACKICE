@@ -4,25 +4,27 @@ import {readReleaseSkill} from '../lib/release-skills.mjs';
 import {ACTION_DIRECTORY_INSTRUCTIONS,TaskActionDirectory} from '../lib/task-action-directory.mjs';
 
 test('Task decomposition asks for a minimal usable handoff and teaches recovery without broadening authority',()=>{
- const {content}=readReleaseSkill('builtin-decomposition');
- assert.match(content,/Leave a usable handoff/);
- assert.match(content,/stable link or ID[\s\S]*what remains unverified/);
- assert.match(content,/task-owned working artifact it names/);
- assert.match(content,/missing saved link nor a missing old tab is by itself a blocker/);
- assert.match(content,/Recovering an input does not authorize replay of an uncertain external action/);
- assert.match(content,/canonical links or posting IDs[\s\S]*requirements and application route/);
- assert.match(content,/search the current employer site or job board[\s\S]*rereading the résumé/);
- assert.match(content,/Preparing materials does not mean submitting them/);
+ const {content,revision}=readReleaseSkill('builtin-decomposition');
+ assert.equal(revision,1);
+ assert.match(content,/Preserve useful handoffs/);
+ assert.match(content,/actual link, file, ID, relevant finding, and remaining question/);
+ assert.match(content,/title or receipt ID alone may not locate the source/);
+ assert.match(content,/prior handoff lacks a link, search with the known identifiers and recover it rather than restarting unrelated work/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/obtain a new task-owned read without discarding the earlier record/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/earlier action may have run, record unresolved-effect and inspect its destination before repeating it/);
+ assert.match(content,/Job application: check the posting and materials, submit, then inspect the result/);
+ assert.match(content,/Deeper employer preparation belongs at a screen or interview unless it changes today's application/);
+ assert.match(content,/report what was completed, the observed limitation, and what is still missing/);
 });
 
 test('Directory makes handoff and recovery guidance visible without changing tool authority',()=>{
- assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/record stable source locators.*names or receipt IDs alone may not be usable/);
- assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/preserve the record and make a fresh task-owned read or search in the ready step \(or add a narrow recovery step\)/);
- assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/A missing old tab or link alone is not a blocker/);
- assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/keep it active until one option meets the conditions needed for the next step/);
- assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/a note or saying what you will do next is not the next check/);
- assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/Before writing or editing any file.*focus it.*files on your own computer/);
- assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/Unknown attempts must remain unresolved, never assume absence or replay/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/Save source locators and findings that dependent work can retrieve/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/old locator no longer works, obtain a new task-owned read without discarding the earlier record/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/A stale reference, failed click or elapsed-time estimate does not establish exhaustion/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/observe with outcome partial keeps the action active/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/Check the next useful source/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/Before a file change, form submission or message, plan and focus the action that makes that change/);
+ assert.match(ACTION_DIRECTORY_INSTRUCTIONS,/earlier action may have run, record unresolved-effect and inspect its destination before repeating it/);
 });
 
 test('a names-only discovery remains observed while its dependent step retrieves a usable source',async()=>{
