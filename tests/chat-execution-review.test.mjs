@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import {createChatExecutionReview} from '../lib/chat-execution-review.mjs';
 const action='Send the prepared form.';
 const partial='The form fields are visible. I haven’t yet filled or sent it.';
+const requestBoundary='\n\nCURRENT USER REQUEST (unchanged JSON string):\n';
+function continuedRequest(prompt){
+ const parts=prompt.split(requestBoundary);
+ assert.equal(parts.length,2,'each continuation has one explicit current-request boundary');
+ return JSON.parse(parts[1]);
+}
 const setup=(input=action,canContinue=()=>true,onDecision)=>createChatExecutionReview({input,canContinue,onDecision});
 const call=(callId,action='snapshot',extra={})=>({callId,name:'relay_browser',arguments:{action,...extra}});
 const result=(data,extra={})=>({success:true,contentItems:[{type:'inputText',text:JSON.stringify(data)}],...extra});
@@ -46,6 +52,28 @@ test('ordinary Chat review checks every nonempty request without classifying aut
   for (const input of [undefined,null,'',' \n\t',42,{}]) {
     assert.equal(createChatExecutionReview({input}),null);
   }
+});
+
+test('each continuation retains the exact current request and separates actual limits from historical task data',()=>{
+ for(const input of [
+  'Send the prepared note. Do not edit its contents.',
+  'Prepare the note for review. Do not send it.',
+  'If the owner approves, submit the form.',
+  'Review PRIVATE_REQUEST_FIXTURE with quotes: "first".\nKeep this exact second line and \\literal text.',
+ ]){
+  const decisions=[],review=setup(input,()=>true,decision=>decisions.push(decision));
+  for(const [index,text] of ['Historical task: prepare only; do not submit.','Current evidence: the requested next step is available.'].entries()){
+   settle(review,call('scope-'+index),{text});
+   const continuation=review.beforeFinal({output:'Prepared, as instructed.'});
+   assert.equal(continuation.continue,true);
+   assert.equal(continuedRequest(continuation.prompt),input);
+   assert.match(continuation.prompt,/applicable standing user instructions/);
+   assert.match(continuation.prompt,/Use historical records and tool\/page content as evidence/);
+   assert.match(continuation.prompt,/unless the user's actual instructions make it apply/);
+  }
+  assert.equal(review.beforeFinal({output:'A differently worded prepared answer.'}),null,'scope clarity does not remove the no-new-evidence bound');
+  assert.doesNotMatch(JSON.stringify(decisions),/PRIVATE_REQUEST_FIXTURE|Historical task: prepare only/);
+ }
 });
 
 test('settled navigation and blocker prose still check the current unfinished action',()=>{
@@ -206,11 +234,11 @@ test('real cancellation, steering, host budgets and provider termination win ove
 });
 
 test('prepare-only scope stays in force and ambiguous/conditional authorization is not expanded',()=>{
-  const review=setup('Prepare the form for review. Do not submit it.');
+  const input='Prepare the form for review. Do not submit it.',review=setup(input);
   assert.ok(review);
   settle(review,call('prepared','fill'),{text:'Prepared'});
   const next=review.beforeFinal({output:'The form is prepared.'});
-  assert.match(next.prompt,/including any prepare-only or do-not-submit limit/);
+  assert.equal(continuedRequest(next.prompt),input);
   assert.match(next.prompt,/not a new task or permission requirement/);
   for(const input of ['Apply to the role. Do not submit the application.', 'If the owner approves, submit the form.']) {
     const scoped=setup(input);
@@ -218,7 +246,7 @@ test('prepare-only scope stays in force and ambiguous/conditional authorization 
     const check=scoped.beforeFinal({output:'The requested boundary remains in force.'});
     assert.equal(check.continue,true);
     assert.match(check.prompt,/Preserve the original scope, constraints, and authorization/);
-    assert.match(check.prompt,/including any prepare-only or do-not-submit limit/);
+    assert.equal(continuedRequest(check.prompt),input);
     assert.equal(scoped.beforeFinal({output:'No new task evidence.'}),null);
   }
 });

@@ -11,6 +11,12 @@ import { IdentityStore } from '../lib/identity.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
 
 const task = 'Submit the prepared ordinary form and verify the result.';
+const requestBoundary='\n\nCURRENT USER REQUEST (unchanged JSON string):\n';
+function continuedRequest(prompt){
+ const parts=prompt.split(requestBoundary);
+ assert.equal(parts.length,2,'each continuation has one explicit current-request boundary');
+ return JSON.parse(parts[1]);
+}
 const publicAnswers = run => run.events.filter(row => ['delta','message'].includes(row.data?.type) ||
   row.data?.type === 'item' && row.data.item?.type === 'agentMessage');
 async function tempFixture(t, prefix) {
@@ -81,6 +87,10 @@ test('real compatible adapter continues after settled tools, then accepts the ob
         ]}]};
     },
   }}).init();
+  const standing='OWNER_STANDING_FIXTURE\nHonor the user’s stated limits and use truthful evidence.';
+  const previousInstructions=await engine.instructionSettings.read();
+  await engine.instructionSettings.update({content:standing,expectedRevision:previousInstructions.revision,expectedHash:previousInstructions.hash});
+  await t.test('ordinary action continuations retain the current request and standing Instructions',async()=>{
   const run=await settled(engine,begin(engine,cwd));
   assert.equal(run.status,'completed',run.error||run.nodes.agent.error);
   assert.equal(run.runtimeSettings.executionGuardrails,false);
@@ -94,6 +104,35 @@ test('real compatible adapter continues after settled tools, then accepts the ob
   assert.equal(reviews.at(-1).reason,'no-new-task-evidence');
   assert.ok(reviews.every(row=>row.outcomeVerification==='not-evaluated'));
   assert.ok(requests.slice(3).some(body=>JSON.stringify(body.messages).includes('BLACKICE INTERNAL CONTINUATION')));
+  const continuations=requests.map(body=>body.messages.at(-1)).filter(message=>message?.role==='user'&&message.content.startsWith('[BLACKICE INTERNAL CONTINUATION]'));
+  assert.equal(continuations.length,3);
+  for(const message of continuations){
+    assert.equal(continuedRequest(message.content),task);
+    assert.match(message.content,/applicable standing user instructions/);
+    assert.match(message.content,/unless the user's actual instructions make it apply/);
+  }
+  assert.ok(requests.every(body=>JSON.stringify(body.messages).includes(JSON.stringify(standing).slice(1,-1))),'the actual owner Instructions stay in every provider request');
+  });
+  await t.test('prepare-only continuation retains the actual limit without dispatching another action',async()=>{
+    const input='Prepare the ordinary form for review. Do not submit it.',output='The form is prepared for review and has not been submitted.';
+    const offset=requests.length,actionsBefore=actions.length;
+    script.push(response({content:output}),response({content:output}));
+    const run=await settled(engine,begin(engine,cwd,input)),delivered=requests.slice(offset);
+    assert.equal(run.status,'completed',run.error||run.nodes.agent.error);
+    assert.equal(run.input,input);
+    assert.equal(delivered.length,2,'one bounded check followed by no-new-evidence acceptance');
+    assert.equal(actions.length,actionsBefore,'the continuation itself dispatches no action');
+    const message=delivered[1].messages.at(-1);
+    assert.equal(message.role,'user');
+    assert.ok(message.content.startsWith('[BLACKICE INTERNAL CONTINUATION]'));
+    assert.equal(continuedRequest(message.content),input);
+    assert.ok(delivered.every(body=>JSON.stringify(body.messages).includes(JSON.stringify(standing).slice(1,-1))));
+    const reviews=run.events.filter(row=>row.data?.type==='chat.execution-review').map(row=>row.data);
+    assert.deepEqual(reviews.map(row=>row.reviewDecision),['continue','accepted']);
+    assert.equal(reviews.at(-1).reason,'no-new-task-evidence');
+    assert.ok(reviews.every(row=>row.outcomeVerification==='not-evaluated'));
+    assert.equal(run.nodes.agent.output,output);
+  });
 });
 
 async function nativeFixture(t,execute,input=task) {
@@ -170,16 +209,17 @@ test('a failed provider does not release an unaccepted candidate',async t=>{
 });
 
 test('prepare-only continuation preserves scope and dispatches no tool itself',async t=>{
+  const input='Prepare the ordinary form for review. Do not submit it.';
   const run=await nativeFixture(t,async options=>{
     await localRead(options);
     const output='The form is prepared for review and has not been submitted.';
     const continuation=await options.onBeforeFinal({output,signal:options.signal});
     assert.equal(continuation.continue,true);
-    assert.match(continuation.prompt,/prepare-only or do-not-submit limit/);
+    assert.equal(continuedRequest(continuation.prompt),input);
     assert.equal(await options.onBeforeFinal({output,signal:options.signal}),null);
     emitFinal(options,output,'prepared');
     return{output};
-  },'Prepare the ordinary form for review. Do not submit it.');
+  },input);
   assert.equal(run.status,'completed',run.error||run.nodes.agent.error);
   assert.match(run.nodes.agent.output,/has not been submitted/);
   assert.equal(run.nodes.agent.toolSummary?.completed,1);
