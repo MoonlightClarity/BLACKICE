@@ -321,3 +321,78 @@ test('failed browser wait is an observation while a genuinely uncertain click st
   assert.match(next.prompt,/genuinely-uncertain-click/);
   assert.doesNotMatch(next.prompt,/failed-wait-observation/);
 });
+
+const nativeSearch=(index,changes={})=>({
+ type:'item',stage:'completed',item:{
+  type:'webSearch',id:'native-search-'+index,query:'current research roles',
+  action:{type:'search',query:null,queries:['current research roles']},
+  results:[{type:'text_result',domain:'fixture.invalid',ref_id:'turn'+index+'search0',
+   title:'Fixture opportunity',snippet:'Current role evidence.',url:'https://fixture.invalid/roles/one',
+   thumbnail_url:'https://fixture.invalid/image.png',recordId:'domain-record-1'}],
+  startedAt:index,completedAt:index+1,startedAtMs:index*1000,completedAtMs:index*1000+10,
+  durationMs:10+index,callId:'transport-'+index,...changes,
+ },
+});
+
+test('native completion stage counts new evidence while started and nonterminal envelopes do not',()=>{
+ const decisions=[],review=setup('Inspect the current sources and complete the requested work.',()=>true,r=>decisions.push(r));
+ assert.equal(review.beforeFinal({output:partial})?.continue,true);
+ for(const stage of ['started','inProgress']){
+  review.observe({...nativeSearch(1,{status:'completed'}),stage});
+  assert.equal(review.beforeFinal({output:partial}),null,'an explicit nonterminal envelope is not a completion');
+  assert.equal(decisions.at(-1).evidenceRevision,0);
+ }
+ const completed=nativeSearch(1);
+ assert.equal(Object.hasOwn(completed.item,'status'),false,'use the actual status-free native search shape');
+ review.observe(completed);
+ assert.equal(review.beforeFinal({output:partial})?.continue,true);
+ assert.equal(decisions.at(-1).evidenceRevision,1);
+ const legacy=nativeSearch(2,{status:'completed'});delete legacy.stage;
+ review.observe(legacy);
+ assert.equal(review.beforeFinal({output:partial}),null,'equivalent legacy item status does not create another result');
+ review.observe(nativeSearch(3,{status:'failed'}));
+ assert.equal(review.beforeFinal({output:partial})?.continue,true,'meaningful failure status remains evidence');
+ assert.equal(decisions.at(-1).evidenceRevision,2);
+ assert.equal(decisions.at(-1).outcomeVerification,'not-evaluated');
+});
+
+test('native search fingerprints ignore only known transport identity and retain meaningful search content',()=>{
+ const review=setup(),first=nativeSearch(1);
+ review.observe(first);assert.equal(review.beforeFinal({output:partial})?.continue,true);
+ review.observe(nativeSearch(2));
+ assert.equal(review.beforeFinal({output:partial}),null,'new item IDs, timing, and result reference labels are not progress');
+ const changes=[
+  ['query',item=>{item.query='another relevant query';}],
+  ['action queries',item=>{item.action.queries=['another relevant query'];}],
+  ['result URL',item=>{item.results[0].url='https://fixture.invalid/roles/two';}],
+  ['result title',item=>{item.results[0].title='Changed role';}],
+  ['result snippet',item=>{item.results[0].snippet='Changed current evidence.';}],
+  ['result domain',item=>{item.results[0].domain='other.invalid';}],
+  ['result thumbnail',item=>{item.results[0].thumbnail_url='https://fixture.invalid/other.png';}],
+  ['domain record ID',item=>{item.results[0].recordId='domain-record-2';}],
+  ['nested domain reference',item=>{item.results[0].metadata={ref_id:'domain-reference'};}],
+  ['nested domain timestamp',item=>{item.results[0].record={startedAtMs:123};}],
+ ];
+ for(const [label,change] of changes){
+  const current=setup(),baseline=nativeSearch(1),changed=nativeSearch(2);
+  current.observe(baseline);assert.equal(current.beforeFinal({output:partial})?.continue,true);
+  change(changed.item);current.observe(changed);
+  assert.equal(current.beforeFinal({output:partial})?.continue,true,label+' must remain meaningful');
+  assert.equal(current.beforeFinal({output:partial}),null,label+' does not remove the no-new-evidence bound');
+ }
+ assert.equal(first.item.results[0].ref_id,'turn1search0','fingerprinting does not mutate delivered evidence');
+});
+
+test('completed native observations do not clear an uncertain external effect',()=>{
+ const decisions=[],review=setup(action,()=>true,r=>decisions.push(r));
+ review.observe({type:'native.write.uncertain',writeId:'native-write-unknown',tool:'command',action:'write'});
+ assert.equal(review.beforeFinal({output:partial})?.continue,true);
+ review.observe(nativeSearch(1));
+ const next=review.beforeFinal({output:partial});
+ assert.equal(next?.continue,true);
+ assert.match(next.prompt,/native-write-unknown/);
+ assert.equal(decisions.at(-1).uncertainToolCount,1);
+ assert.equal(decisions.at(-1).reason,'outcome-reconciliation-check');
+ review.observe(nativeSearch(2));
+ assert.equal(review.beforeFinal({output:partial}),null);
+});
