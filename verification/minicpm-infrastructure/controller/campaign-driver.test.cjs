@@ -1,6 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os'),cp=require('node:child_process');
 const driver=require('./campaign-driver.cjs'),journal=require('./campaign-journal.cjs'),campaign=require('./campaign-controller.cjs'),api=require('./native-api.cjs'),conditions=require('./run-conditions.cjs');
+const {createBenchmarkDeadline}=require('../../../lib/benchmark-run-deadline.mjs');
 
 const AT='2026-11-21T08:00:00.000Z',GRANT='native-driver-test',MODEL='fixture::original';
 const plus=n=>new Date(Date.parse(AT)+n).toISOString();
@@ -50,12 +51,13 @@ function setup(t){
  }
  return {dir,file,input,created,save,go,read,obs,admission,response,complete};
 }
-function body(cfg){return {requestId:cfg.requestId,workflow:{id:cfg.workflowId,nodes:[{id:'agent',type:'agent',model:cfg.model}],settings:{cwd:cfg.workspace,planningMode:'off',context:cfg.context}},input:{task:cfg.task,cwd:cfg.workspace,directoryActions:'on',directoryMode:'off',directoryDiagnostics:'maximal',chatPlanning:'off',pastChats:'off',planningMode:'off',benchmark:cfg.benchmark}};}
+function body(cfg){return {requestId:cfg.requestId,workflow:{id:cfg.workflowId,nodes:[{id:'agent',type:'agent',model:cfg.model}],settings:{cwd:cfg.workspace,planningMode:'off',context:cfg.context}},input:{task:cfg.task,cwd:cfg.workspace,directoryActions:'on',directoryMode:'off',directoryDiagnostics:'maximal',chatPlanning:'off',pastChats:'off',planningMode:'off',benchmark:cfg.benchmark,benchmarkBudget:{wallMs:cfg.budgets.wallMs}}};}
 function profile(h){
  const cfg=h.input.config,r=JSON.parse(h.input.scaffoldReceiptText),p={schema:'blackice.minicpm.benchmark-profile.v1',profile:'minicpm-code-v1',workspace:cfg.workspace,caseId:'D0',publicCaseCount:2,command:'node test-public.cjs',scaffoldReceiptPath:cfg.benchmark.scaffoldReceiptPath,scaffoldReceiptSha256:cfg.benchmark.scaffoldReceiptSha256,immutableFiles:r.immutableFiles,limits:{maxModules:32,maxSourceBytes:200000,maxDepth:8,commandTimeoutMs:10000},isolation:'Enforced benchmark tool/API boundary with a restricted pure-function worker; not an operating-system sandbox.',functionName:'directorySmoke'};p.contractSha256=conditions.digest(p);return p;
 }
 function run(h,status='running'){
- const cfg=h.input.config;return {id:'owned_driver_run',taskId:'owned_driver_run',createdAt:AT,status,settled:status==='failed',cwd:cfg.workspace,input:cfg.task.trim(),metadata:{clientRequestId:cfg.requestId},workflow:body(cfg).workflow,executionModes:{directoryMode:'off',chatPlanning:'off',pastChats:'off'},directoryActions:'on',directoryDiagnostics:'maximal',chatPlanning:'off',pastChats:'off',benchmark:profile(h),nodes:{agent:{threadId:'provider_driver',toolNames:['relay_workspace','relay_directory_action'],directoryContext:{runId:'owned_driver_run',taskId:'owned_driver_run',nodeId:'agent',hostTools:{received:0,returned:0,threw:0}}}},events:[],eventRetention:{omittedEvents:0}};
+ const cfg=h.input.config,value={id:'owned_driver_run',taskId:'owned_driver_run',createdAt:AT,status,settled:status==='failed',cwd:cfg.workspace,input:cfg.task.trim(),metadata:{clientRequestId:cfg.requestId},workflow:body(cfg).workflow,executionModes:{directoryMode:'off',chatPlanning:'off',pastChats:'off'},directoryActions:'on',directoryDiagnostics:'maximal',chatPlanning:'off',pastChats:'off',benchmark:profile(h),benchmarkBudget:body(cfg).input.benchmarkBudget,nodes:{agent:{threadId:'provider_driver',toolNames:['relay_workspace','relay_directory_action'],directoryContext:{runId:'owned_driver_run',taskId:'owned_driver_run',nodeId:'agent',hostTools:{received:0,returned:0,threw:0}}}},events:[],eventRetention:{omittedEvents:0}};
+ value.benchmarkDeadline=createBenchmarkDeadline(value);return value;
 }
 function prepared(h){h.complete({kind:'prepare',body:body(h.input.config)});}
 function running(h){prepared(h);h.complete({kind:'start',run:run(h)});}

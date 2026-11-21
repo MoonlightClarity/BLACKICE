@@ -2,26 +2,26 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {SOURCE_FILES}=require('./policy-contract.cjs');
 const {SOURCE_LAYOUTS,FIXED_PINS,DEPENDENCIES,SOURCE_CANDIDATES,inspectPolicySourceVersions:inspect}=require('./policy-source-versions.cjs');
-const final=SOURCE_LAYOUTS[2];
+const final=SOURCE_LAYOUTS[2],integrated=SOURCE_LAYOUTS[4],candidates=[final,integrated];
 function filesFor(layout=final){
  const files=Object.fromEntries(SOURCE_FILES.map(file=>[file,'1'.repeat(64)]));
  Object.assign(files,FIXED_PINS,layout.parents);
- for(const rule of DEPENDENCIES)if(files[rule.parent]===rule.parentSha256)files[rule.file]=rule.sha256;
+ for(const rule of DEPENDENCIES)if(rule.parentSha256s.includes(files[rule.parent]))files[rule.file]=rule.sha256;
  return files;
 }
 const codes=result=>[...result.missing,...result.conflicts].map(x=>x.code);
-test('all four explicitly reviewed parent combinations qualify only their own dependencies',()=>{
+test('all five explicitly reviewed parent combinations qualify only their own dependencies',()=>{
  for(const layout of SOURCE_LAYOUTS){
   const result=inspect(filesFor(layout));
   assert.equal(result.complete,true,JSON.stringify(result));
   assert.equal(result.layout,layout.id);
-  assert.equal(result.candidateSourceAvailable,layout===final);
-  assert.deepEqual(result.dependencies.map(x=>x.required),DEPENDENCIES.map(x=>layout===final));
+  assert.equal(result.candidateSourceAvailable,candidates.includes(layout));
+  assert.deepEqual(result.dependencies.map(x=>x.required),DEPENDENCIES.map(x=>candidates.includes(layout)));
  }
 });
 test('legacy composition descriptors retain their exact eight source fields',()=>{
  const expectedKeys=[...Object.keys(FIXED_PINS),...Object.keys(final.parents)].sort();
- for(const layout of SOURCE_LAYOUTS.filter(layout=>layout!==final)){
+ for(const layout of SOURCE_LAYOUTS.filter(layout=>!candidates.includes(layout))){
   const files=filesFor(layout),result=inspect(files);
   assert.deepEqual(Object.keys(result.sourceFiles).sort(),expectedKeys);
   assert.deepEqual(result.requiredFiles,[...SOURCE_FILES]);
@@ -33,24 +33,27 @@ test('legacy composition descriptors retain their exact eight source fields',()=
   assert.ok(withUnused.dependencies.every(x=>x.status==='present-unused'));
  }
 });
-test('final candidate records and requires the exact three imported helpers',()=>{
- const result=inspect(filesFor());
- for(const rule of DEPENDENCIES){
-  assert.ok(SOURCE_CANDIDATES.includes(rule.file));
-  assert.ok(result.requiredFiles.includes(rule.file));
-  assert.equal(result.sourceFiles[rule.file],rule.sha256);
-  assert.deepEqual(result.dependencies.find(x=>x.file===rule.file),{
-   file:rule.file,parent:rule.parent,required:true,status:'present-required',
-   observedSha256:rule.sha256,expectedSha256:rule.sha256
-  });
+test('both reviewed candidates record and require the exact three imported helpers',()=>{
+ for(const layout of candidates){
+  const result=inspect(filesFor(layout));
+  assert.equal(result.dependencies.length,3);
+  for(const rule of DEPENDENCIES){
+   assert.ok(SOURCE_CANDIDATES.includes(rule.file));
+   assert.ok(result.requiredFiles.includes(rule.file));
+   assert.equal(result.sourceFiles[rule.file],rule.sha256);
+   assert.deepEqual(result.dependencies.find(x=>x.file===rule.file),{
+    file:rule.file,parent:rule.parent,required:true,status:'present-required',
+    observedSha256:rule.sha256,expectedSha256:rule.sha256
+   });
+  }
  }
 });
-test('missing and wrong helper identities fail even with all final parent hashes intact',()=>{
- for(const rule of DEPENDENCIES){
-  const missing=filesFor();delete missing[rule.file];
+test('missing and wrong helper identities fail for both complete reviewed parent tuples',()=>{
+ for(const layout of candidates)for(const rule of DEPENDENCIES){
+  const missing=filesFor(layout);delete missing[rule.file];
   const a=inspect(missing);assert.equal(a.complete,false);assert.equal(a.candidateSourceAvailable,false);
   assert.ok(codes(a).includes('required-prompt-source-dependency'));
-  const wrong=filesFor();wrong[rule.file]='f'.repeat(64);
+  const wrong=filesFor(layout);wrong[rule.file]='f'.repeat(64);
   const b=inspect(wrong);assert.equal(b.complete,false);assert.equal(b.candidateSourceAvailable,false);
   assert.ok(codes(b).includes('unsupported-prompt-source-dependency'));
  }
@@ -65,7 +68,7 @@ test('coherent but unreviewed combinations of individually accepted parents are 
   const result=inspect(files);assert.equal(result.complete,expected,JSON.stringify(result));
   if(expected)accepted++;else{rejected++;assert.equal(result.layout,null);assert.ok(codes(result).includes('unsupported-prompt-source-combination'));}
  }
- assert.equal(accepted,4);assert.equal(rejected,12);
+ assert.equal(accepted,5);assert.equal(rejected,15);
 });
 test('unknown parents and changed fixed composer dependencies fail explicitly',()=>{
  for(const name of [...Object.keys(final.parents),...Object.keys(FIXED_PINS)]){

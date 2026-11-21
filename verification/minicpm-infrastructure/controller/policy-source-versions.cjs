@@ -21,7 +21,7 @@ const SOURCE_LAYOUTS=freeze([
   'lib/benchmark-workspace.mjs':'3bf76c83a06f9ef12733e2c1db75b36de9a4d83c96a79dd0f412ea64c6c7e41f',
   'lib/task-action-directory.mjs':'df7e4e94df0c217682ad2365c0297c94f20830fea5b15372d47874a4a5ac9ef4',
  }},
- {id:'reviewed-contract-deadline-candidate',parents:{
+ {id:'reviewed-contract-deadline-candidate',candidate:true,parents:{
   'lib/engine.mjs':'4713ffebc612b0fbab42974b287ab72adfc3e5dd467fc4b7d88af91bbd10d2fc',
   'lib/benchmark-workspace.mjs':'d8b438677241fb91d9afd67f34dcf11aef382f608c1e459e9ac167852ddf0901',
   'lib/task-action-directory.mjs':'a3bb9be83dff4a02281289a6645cad850b5e30cf60c1a280f978ec58878c8e1a',
@@ -31,13 +31,18 @@ const SOURCE_LAYOUTS=freeze([
   'lib/benchmark-workspace.mjs':'3bf76c83a06f9ef12733e2c1db75b36de9a4d83c96a79dd0f412ea64c6c7e41f',
   'lib/task-action-directory.mjs':'df7e4e94df0c217682ad2365c0297c94f20830fea5b15372d47874a4a5ac9ef4',
  }},
+ {id:'reviewed-integration-2.40.73',candidate:true,parents:{
+  'lib/engine.mjs':'09ded4a0222f38894e18a295bf2f4f0f76a543598653a5927f4be09ba1f91a77',
+  'lib/benchmark-workspace.mjs':'d8b438677241fb91d9afd67f34dcf11aef382f608c1e459e9ac167852ddf0901',
+  'lib/task-action-directory.mjs':'a3bb9be83dff4a02281289a6645cad850b5e30cf60c1a280f978ec58878c8e1a',
+ }},
 ]);
 const DEPENDENCIES=freeze([
- {parent:'lib/engine.mjs',parentSha256:SOURCE_LAYOUTS[2].parents['lib/engine.mjs'],
+ {parent:'lib/engine.mjs',parentSha256s:[SOURCE_LAYOUTS[2].parents['lib/engine.mjs'],SOURCE_LAYOUTS[4].parents['lib/engine.mjs']],
   file:'lib/benchmark-run-deadline.mjs',sha256:'49859c0efd7119ab8813dbb4aaa60243058d2357ea8640b8ff42863cb0472179'},
- {parent:'lib/benchmark-workspace.mjs',parentSha256:SOURCE_LAYOUTS[2].parents['lib/benchmark-workspace.mjs'],
+ {parent:'lib/benchmark-workspace.mjs',parentSha256s:[SOURCE_LAYOUTS[2].parents['lib/benchmark-workspace.mjs']],
   file:'lib/benchmark-workspace-contract.mjs',sha256:'038ae91d5548b174fe28376eefc5e80723a93864a71f238a1379c2dcea39f870'},
- {parent:'lib/task-action-directory.mjs',parentSha256:SOURCE_LAYOUTS[2].parents['lib/task-action-directory.mjs'],
+ {parent:'lib/task-action-directory.mjs',parentSha256s:[SOURCE_LAYOUTS[2].parents['lib/task-action-directory.mjs']],
   file:'lib/task-action-directory-tool-contract.mjs',sha256:'80cf808fec69bc938c87a877e5fdef99d019b2bc7a9bee73283ec1be18e2f918'},
 ]);
 const SOURCE_CANDIDATES=Object.freeze([...new Set([...SOURCE_FILES,...Object.keys(FIXED_PINS),...PARENTS,...DEPENDENCIES.map(x=>x.file)])]);
@@ -60,7 +65,7 @@ function inspectPolicySourceVersions(files,observedPresence={}){
  const requiredFiles=[...SOURCE_FILES],dependencies=[];
  for(const rule of DEPENDENCIES){
   const parentReviewed=SOURCE_LAYOUTS.some(layout=>layout.parents[rule.parent]===f[rule.parent]);
-  const required=parentReviewed?f[rule.parent]===rule.parentSha256:null,observed=f[rule.file];
+  const required=parentReviewed?rule.parentSha256s.includes(f[rule.parent]):null,observed=f[rule.file];
   const presence=presenceFacts[rule.file],usage=required===true?'required':required===false?'unused':'unreviewed-parent';
   let status=hash(observed)?'present-'+usage:'unobserved';
   if(presence===false)status='observed-absent-'+usage;
@@ -73,6 +78,6 @@ function inspectPolicySourceVersions(files,observedPresence={}){
   }
   dependencies.push({file:rule.file,parent:rule.parent,required,status,observedSha256:observed??null,expectedSha256:required?rule.sha256:null});
  }
- return {complete:!missing.length&&!conflicts.length,layout:layout?.id??null,candidateSourceAvailable:layout?.id==='reviewed-contract-deadline-candidate'&&!missing.length&&!conflicts.length,requiredFiles:[...new Set(requiredFiles)],sourceFiles,dependencies,missing,conflicts};
+ return {complete:!missing.length&&!conflicts.length,layout:layout?.id??null,candidateSourceAvailable:layout?.candidate===true&&!missing.length&&!conflicts.length,requiredFiles:[...new Set(requiredFiles)],sourceFiles,dependencies,missing,conflicts};
 }
 module.exports={SOURCE_LAYOUTS,FIXED_PINS,DEPENDENCIES,SOURCE_CANDIDATES,inspectPolicySourceVersions};
