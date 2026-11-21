@@ -1,6 +1,8 @@
 import {text,formatDate} from '../core/dom.mjs';
+import {createInstructionSettings} from './settings-instructions.mjs';
 
 const KINDS=['soul','user'];
+const TABS=[...KINDS,'instructions'];
 const LIMITS={soul:64000,user:96000};
 const NAMES={soul:'SOUL.md',user:'USER.md'};
 const HISTORY_PAGE=10,HISTORY_LIMIT=100;
@@ -19,7 +21,7 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
     '<p class="next-help">Instructions and profile shared across working folders. Saved changes apply to the next agent turn, not active work.</p>',
     '<div class="next-identity-tabs" role="tablist" aria-label="Identity files">',
     '<button id="next-identity-soul" type="button" role="tab" aria-controls="next-identity-editor">How BLACKICE works</button>',
-    '<button id="next-identity-user" type="button" role="tab" aria-controls="next-identity-editor">About you</button></div>',
+    '<button id="next-identity-user" type="button" role="tab" aria-controls="next-identity-editor">About you</button><button id="next-identity-instructions" type="button" role="tab" aria-controls="next-identity-instructions-panel">Instructions</button></div>',
     '<div id="next-identity-editor" role="tabpanel" aria-labelledby="next-identity-soul">',
     '<div class="next-identity-heading"><div><h3 id="next-identity-name">SOUL.md</h3>',
     '<p id="next-identity-description" class="next-help"></p></div>',
@@ -43,14 +45,15 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
     '<p id="next-identity-history-info" class="next-help" role="status"></p>',
     '<ol id="next-identity-versions"></ol>',
     '<button id="next-identity-more" type="button" hidden>Show more revisions</button></section>',
-    '</div></section>',
+    '</div><div id="next-identity-instructions-panel" role="tabpanel" aria-labelledby="next-identity-instructions" hidden></div></section>',
   ].join('');
   const find=id=>mount.querySelector('#next-identity-'+id);
-  const ui=Object.fromEntries(['soul','user','editor','name','description','reload','path','warning','conflict',
+  const ui=Object.fromEntries(['soul','user','instructions','instructions-panel','editor','name','description','reload','path','warning','conflict',
     'use-file','keep-draft','form','content','state','count','save','notice','recover','history','history-panel',
     'history-info','versions','more'].map(id=>[id,find(id)]));
   const states={soul:record(),user:record()};
-  let selected='soul',active=false,destroyed=false,unsubscribe=null;
+  let selected='soul',showingInstructions=false,active=false,destroyed=false,unsubscribe=null;
+  const instructionSettings=createInstructionSettings({mount:ui['instructions-panel'],api,onSelectFile:kind=>select(kind)});
   const current=()=>states[selected];
   const dirty=state=>Boolean(state.doc)&&state.draft!==state.doc.content;
   function setNotice(state,value,error=false){state.notice={message:value,error};}
@@ -85,8 +88,10 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
   }
   function render({history=true}={}){
     if(!active||destroyed)return;
+    for(const kind of TABS){const chosen=showingInstructions?kind==='instructions':kind===selected;ui[kind].setAttribute('aria-selected',String(chosen));ui[kind].tabIndex=chosen?0:-1;}
+    ui.editor.hidden=showingInstructions;ui['instructions-panel'].hidden=!showingInstructions;
+    if(showingInstructions)return;
     const state=current(),doc=state.doc;
-    for(const kind of KINDS){ui[kind].setAttribute('aria-selected',String(kind===selected));ui[kind].tabIndex=kind===selected?0:-1;}
     ui.editor.setAttribute('aria-labelledby','next-identity-'+selected);
     ui.name.textContent=NAMES[selected];
     ui.description.textContent=selected==='soul'?'Describe observable behavior: how to respond, carry out work, and verify results. Yours to edit.':'Confirmed facts and preferences about you.';
@@ -168,15 +173,18 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
   }
   const restore=(kind,revision)=>mutate(kind,revision);
   function select(kind){
-    if(!KINDS.includes(kind)||destroyed)return;selected=kind;render();
+    if(!TABS.includes(kind)||destroyed)return;
+    showingInstructions=kind==='instructions';
+    if(showingInstructions){render();if(active)instructionSettings.enter();return;}
+    instructionSettings.leave();selected=kind;render();
     const state=current();if(!state.doc||state.stale)void load(kind);
     if(state.historyOpen&&!state.history)void loadHistory(kind);
   }
-  for(const kind of KINDS){
+  for(const kind of TABS){
     ui[kind].addEventListener('click',()=>select(kind));
     ui[kind].addEventListener('keydown',event=>{
-      let next;if(event.key==='ArrowLeft'||event.key==='ArrowRight')next=kind==='soul'?'user':'soul';
-      else if(event.key==='Home')next='soul';else if(event.key==='End')next='user';else return;
+      let next;if(event.key==='ArrowLeft'||event.key==='ArrowRight')next=TABS[(TABS.indexOf(kind)+(event.key==='ArrowLeft'?-1:1)+TABS.length)%TABS.length];
+      else if(event.key==='Home')next=TABS[0];else if(event.key==='End')next=TABS.at(-1);else return;
       event.preventDefault();select(next);ui[next].focus();
     });
   }
@@ -202,11 +210,11 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
   const onEvent=receipt=>{
     if(receipt?.type!=='identity.updated')return;
     for(const state of Object.values(states)){state.stale=true;state.history=null;}
-    if(active){void load(selected);if(current().historyOpen)void loadHistory(selected);}
+    if(active&&!showingInstructions){void load(selected);if(current().historyOpen)void loadHistory(selected);}
   };
   return {
-    enter(){if(destroyed||active)return;active=true;unsubscribe=events?.subscribe?.(onEvent);render();void load(selected);if(current().historyOpen)void loadHistory(selected);},
-    leave(){active=false;unsubscribe?.();unsubscribe=null;for(const state of Object.values(states)){invalidateRead(state);invalidateHistory(state);}},
-    destroy(){this.leave();destroyed=true;mount.textContent='';},
+    enter(){if(destroyed||active)return;active=true;unsubscribe=events?.subscribe?.(onEvent);render();if(showingInstructions)instructionSettings.enter();else{void load(selected);if(current().historyOpen)void loadHistory(selected);}},
+    leave(){active=false;instructionSettings.leave();unsubscribe?.();unsubscribe=null;for(const state of Object.values(states)){invalidateRead(state);invalidateHistory(state);}},
+    destroy(){this.leave();destroyed=true;instructionSettings.destroy();mount.textContent='';},
   };
 }

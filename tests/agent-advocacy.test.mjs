@@ -78,14 +78,14 @@ test('form fixture rejects stale documents and unsupported values instead of man
   assert.equal(browser.state.submitted, false);
 });
 
-test('actual engine wiring supplies advocacy guidance and only the contained browser can dispatch', async t => {
+test('actual engine wiring supplies concise mechanics and only the contained browser can dispatch', async t => {
   const root = await temp(t);
   const runtime = new FixtureRuntime(async options => {
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS));
-    assert.match(options.developerInstructions, /FORM COMPLETION/);
-    assert.match(options.developerInstructions, /Do not stop to ask routine profile questions such as nationality/);
-    assert.match(options.developerInstructions, /Do not substitute an approval request, a routine form-profile question or an offer to continue/);
-    assert.match(options.developerInstructions, /without asking whether to start, proceed or continue/);
+    assert.doesNotMatch(options.developerInstructions, /FORM COMPLETION/);
+    assert.match(options.developerInstructions, /SOUL\.md supplies owner-configured behavior/);
+    assert.match(options.developerInstructions, /Do not invent another approval/);
+    assert.match(options.developerInstructions, /Carry the user's request through its ordinary required steps/);
     assert.equal(options.onApproval, undefined);
     const connectionTool = options.dynamicTools.find(tool => tool.name === 'relay_connections');
     assert.equal(connectionTool, undefined);
@@ -111,14 +111,14 @@ test('actual engine wiring supplies advocacy guidance and only the contained bro
   // executes the same engine path with the actual signed-in Luna model.
 });
 
-for (const planningMode of ['on', 'off']) test(`current advocacy instructions reach fresh and continued ${planningMode} conversations`, async t => {
+for (const planningMode of ['on', 'off']) test(`current mechanics and owner-policy delegation reach fresh and continued ${planningMode} conversations`, async t => {
   const root = await temp(t), cwd = path.join(root, 'work'); await mkdir(cwd);
   const tasks = await new TaskStateStore({ dataDir: root }).init();
   const runtime = new FixtureRuntime(async (options, number) => {
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS));
-    assert.match(options.developerInstructions, /Fill forms to the best of your ability/);
-    assert.match(options.developerInstructions, /limit on weak single-trait inference/);
-    assert.match(options.developerInstructions, /Use only BLACKICE.s contained browser through relay_browser/);
+    assert.match(options.developerInstructions, /relevant skills supply task procedures/);
+    assert.doesNotMatch(options.developerInstructions, /limit on weak single-trait inference/);
+    assert.match(options.developerInstructions, /Use BLACKICE.s contained relay_browser for website interaction/);
     assert.equal(options.onApproval, undefined);
     if (number === 2) assert.equal(options.threadId, 'advocacy-fixture-thread');
     return { output: `Instruction wiring observation ${number}.`, threadId: 'advocacy-fixture-thread' };

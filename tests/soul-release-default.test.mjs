@@ -43,7 +43,11 @@ test('model identity tool cannot mutate SOUL even with explicit user quote; user
  const read=await handler({name:'relay_identity',arguments:{action:'read',kind:'soul'}});assert.equal(JSON.parse(read.contentItems[0].text).hash,before.hash);
  await s.update({kind:'soul',content:'# User applied next version',expectedRevision:before.revision,expectedHash:before.diskHash,provenance:{source:'user'}});
  assert.equal(snap.documents.soul.content,DEFAULT_SOUL);assert.equal((await s.snapshot()).documents.soul.content,'# User applied next version');
- assert.match(IDENTITY_INSTRUCTIONS,/only the user may apply/i);assert.doesNotMatch(IDENTITY_INSTRUCTIONS,/perform that requested change/);
+ // Retire the blanket cross-tool prose while preserving the read-only handler and protected file contract.
+ assert.match(IDENTITY_INSTRUCTIONS,/relay_identity is read-only/);
+ assert.match(IDENTITY_INSTRUCTIONS,/fixed SOUL snapshot/);
+ assert.match(IDENTITY_INSTRUCTIONS,/workspace write, patch and undo_patch/);
+ assert.doesNotMatch(IDENTITY_INSTRUCTIONS,/only the user may apply|quoted user statement|shell commands|delegation/i);
 });
 
 test('snapshot-bound model read returns full original bytes after user edit even when prompt is truncated',async t=>{

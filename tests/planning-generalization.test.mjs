@@ -21,9 +21,9 @@ const requirement = overrides => ({
 });
 const assess = entry => evaluateViabilityResponse({ requirements: [entry], sources }, sources, { workflowNodeIds: ['worker'] });
 
-test('general operating identity and Planning are task-neutral, not a job-application prompt patch', () => {
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Third-party selection criteria, preferences, prior scores and apparent gaps are observations/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /recipient or system decide acceptance/);
+test('core delegates behavior rather than duplicating domain policy', () => {
+  assert.doesNotMatch(BLACKICE_HARNESS_INSTRUCTIONS, /Third-party selection criteria|FORM COMPLETION/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /relevant skills supply task procedures/);
   assert.match(PLANNING_DECISION_GUIDANCE, /time-stamped, revisable observations/);
 });
 

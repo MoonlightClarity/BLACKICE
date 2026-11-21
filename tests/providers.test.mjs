@@ -1450,7 +1450,8 @@ test('ordinary Chat holds an incomplete final and makes exactly one corrective p
       assert.equal(finished.status,label==='cancelled'?'cancelled':'completed',finished.error);
       if(label!=='cancelled') assert.equal(finished.nodes.agent.output,expected);
       assert.equal(requests.length,messages.length);
-      assert.equal(finished.events.filter(e=>e.data?.type==='chat.execution-review').length,repairs);
+      // Maximal receipts also record terminal decisions; only continue decisions request a repair.
+      assert.equal(finished.events.filter(e=>e.data?.type==='chat.execution-review'&&e.data?.reviewDecision==='continue').length,repairs);
       if(repairs) assert(requests.some(r=>r.body.messages.some(m=>typeof m.content==='string'&&m.content.includes('[BLACKICE INTERNAL CONTINUATION]'))));
       if(label==='progress'){
         assert(!finished.events.some(e=>e.data?.type==='message'&&e.data?.text===partial));

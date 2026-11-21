@@ -24,38 +24,36 @@ test('an explicit prerequisite remains binding for an action', () => {
   assert.match(PLANNING_DEPTH_INSTRUCTIONS, /user requires a choice|action would foreclose another/i);
 });
 
-test('planning and execution keep outcome, evidence and consequence in the supplied guidance', () => {
+test('optional planning documentation retains outcome/evidence guidance while core owns mechanics', () => {
   // Wiring checks only. Actual judgment is evaluated through matched model runs,
   // not certified by the presence of words in an instruction.
-  for (const instruction of [BLACKICE_HARNESS_INSTRUCTIONS, PLANNING_DEPTH_INSTRUCTIONS]) {
+  for (const instruction of [PLANNING_DEPTH_INSTRUCTIONS]) {
     assert.match(instruction, /Plan backward from (?:their|the user’s) desired outcome/);
     assert.match(instruction, /opportunity cost/);
     assert.match(instruction, /(?:Preserve|preserve) (?:their actual|actual user) constraints/);
     assert.match(instruction, /(?:realistic ability|demonstrated or realistically transferable ability|could realistically do the work)/);
   }
   assert.doesNotMatch(BLACKICE_HARNESS_INSTRUCTIONS, /prioritize avoiding catastrophic failure.*in that order/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /likelihood and severity together/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /A missing verbatim statement is not missing evidence/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /SOUL\.md supplies owner-configured behavior/);
+  assert.doesNotMatch(BLACKICE_HARNESS_INSTRUCTIONS, /FORM COMPLETION|full quantitative planning contract/);
 });
 
 test('representation guidance distinguishes audience relevance from material factual accuracy', () => {
   // Check the supplied instruction obligations; this does not certify model judgment.
-  for (const instruction of [BLACKICE_HARNESS_INSTRUCTIONS, PLANNING_DEPTH_INSTRUCTIONS]) {
+  for (const instruction of [PLANNING_DEPTH_INSTRUCTIONS]) {
     assert.match(instruction, /actual question/);
     assert.match(instruction, /strongest supported evidence/);
     assert.match(instruction, /do not invent a question/i);
     assert.match(instruction, /Answer material factual questions accurately/);
   }
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Report actual failures and material limitations candidly to the user/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /keep internal assessment separate from counterparty-facing content; do not volunteer [^\n.]+private limits[^\n.]+question does not require/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Report actual outcomes accurately/);
   assert.match(PLANNING_DEPTH_INSTRUCTIONS, /Leave out true but unhelpful facts[^\n.]+question does not require/);
   assert.match(PLANNING_DEPTH_INSTRUCTIONS, /Keep private assessment and negotiating limits distinct from what is sent/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /never invent qualifications, results, endorsements or personal history/);
   assert.match(PLANNING_DEPTH_INSTRUCTIONS, /scope needed to avoid a misleading claim/);
 });
 
-test('both planning modes keep the current direction distinct from past background and select artifacts for the audience', () => {
-  for (const instruction of [BLACKICE_HARNESS_INSTRUCTIONS, PLANNING_DEPTH_INSTRUCTIONS]) {
+test('optional planning guidance distinguishes current direction and artifact audience', () => {
+  for (const instruction of [PLANNING_DEPTH_INSTRUCTIONS]) {
     assert.match(instruction, /(?:stated interests|stated aims)/i);
     assert.match(instruction, /past (?:domains and experience|work or subject matter) as evidence/i);
     assert.match(instruction, /(?:adjacent options)/i);

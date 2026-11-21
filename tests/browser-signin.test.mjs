@@ -52,8 +52,9 @@ test('email-route preflight keeps the website usable instead of falsely recordin
   assert.equal(receipt.optionLabel,'Continue with email');
   assert.equal(reports.length,0,'do not pause the task while a real email alternative is available');
   assert.match(receipt.action,/verified account email/);
-  assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/verified saved resume/);
-  assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/without another routine approval prompt|instead of asking the user which email/);
+  // The observed email-route behavior is tested above; guidance need not repeat a job-application policy.
+  assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/social login fails[^.]*visible email alternative/);
+  assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/Credential helpers are optional/);
   const verification=await handler({name:'relay_browser_signin',arguments:{site:'https://jobs.lever.co/',reason:'verification',evidence:'verification-page'}});
   assert.equal(verification.success,true);
   assert.equal(reports.length,1,'a CAPTCHA is not solved merely by an email-login alternative on another site');
@@ -68,10 +69,10 @@ test('sign-in reports only a bounded public origin without carrying private URL 
  }
  assert.throws(()=>normalizeBrowserSignIn({site:'https://linkedin.com',reason:'inconvenient',evidence:'login-form'}));
  assert.throws(()=>normalizeBrowserSignIn({site:'https://linkedin.com',reason:'sign-in',evidence:'login-form',password:'secret'}));
- assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/Use only the BLACKICE contained browser/);
- assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/Account creation and routine email verification are workflow prerequisites/);
- assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/Supply the public HTTPS site and observed evidence/);
- assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/continue independent preparation/);
+ assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/contained browser/);
+ assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/records a remaining blocker/);
+ assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/public HTTPS site, matching reason and evidence/);
+ assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/Read-only inspection[^.]*independent sites remain available/);
  assert.doesNotMatch(BROWSER_SIGNIN_INSTRUCTIONS,/native session remains available|use.*configured native Chrome/i);
 });
 test('agent report stores a blocker but cannot focus a window, auto-login or retry a task',async()=>{

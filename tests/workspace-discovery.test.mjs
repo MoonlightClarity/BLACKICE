@@ -31,10 +31,14 @@ test('large Documents listing switches to native filename search from observed t
  const resumed=createWorkspaceToolHandler({cwd});const found=parsed(await resumed(call({action:'find',path:checkpoint.directory,query:checkpoint.query})));
  assert.equal(found.searchComplete,true);const file=found.matches[0].path;assert.equal(file,path.join(documents,'Z Synthetic Resume.txt'));
  assert.match(parsed(await resumed(call({action:'read',path:file}))).content,/verified outside large listing/);assert.equal(await readFile(path.join(cwd,'USER.md'),'utf8'),'');
- assert.match(WORKSPACE_INSTRUCTIONS,/Use relay_find_files to locate filenames/);assert.match(WORKSPACE_INSTRUCTIONS,/continue with its cursor/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/relay_find_files[^.]*filename\/path discovery/);assert.match(WORKSPACE_INSTRUCTIONS,/same query and returned cursor/);
 });
 test('model guidance exposes native filename discovery without profile facts or new permissions',async()=>{
- assert.match(WORKSPACE_INSTRUCTIONS,/not a filesystem sandbox/);assert.match(WORKSPACE_INSTRUCTIONS,/Use relay_find_files to locate filenames/);assert.match(WORKSPACE_INSTRUCTIONS,/search to match file contents/);assert.match(WORKSPACE_INSTRUCTIONS,/instead of guessing personal folders/);assert.match(WORKSPACE_INSTRUCTIONS,/searchComplete, skipped locations and errors/);
+ // Source-specific routing and search coverage remain; global policy no longer lives in this addendum.
+ assert.match(WORKSPACE_INSTRUCTIONS,/not a filesystem sandbox/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/relay_find_files[^.]*filename\/path discovery/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/search[^.]*literal file contents/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/searchComplete, skipped locations and errors/);
  assert.deepEqual(WORKSPACE_TOOL.inputSchema.properties.action.enum,['list','read','write','patch','patch_history','undo_patch','search','run']);
  assert.equal(FIND_FILES_TOOL.name,'relay_find_files');assert.deepEqual(FIND_FILES_TOOL.inputSchema.required,['query']);
  const engine=await readFile(new URL('../lib/engine.mjs',import.meta.url),'utf8');assert.match(engine,/WORKSPACE_INSTRUCTIONS/);

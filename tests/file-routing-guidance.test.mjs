@@ -9,9 +9,10 @@ test('current workspace guidance routes discovery and local document reads witho
  assert.equal(body.actionDispatched,false);
  assert.equal(body.error,`Choose ${WORKSPACE_TOOL.inputSchema.properties.action.enum.join(', ')}. For filename/path discovery use relay_find_files.`);
  assert.equal(WORKSPACE_TOOL.inputSchema.properties.action.enum.includes('find'),false);
- assert.match(WORKSPACE_INSTRUCTIONS,/Use relay_find_files to locate task-relevant local files/);
- assert.match(WORKSPACE_INSTRUCTIONS,/Read relevant PDF, DOCX and XLSX paths directly with relay_workspace read/);
- assert.match(WORKSPACE_INSTRUCTIONS,/Use relay_files for attachment IDs already attached to this task, not for arbitrary local paths/);
+ // Check the route and supported formats, not the retired long-form wording.
+ assert.match(WORKSPACE_INSTRUCTIONS,/relay_find_files[^.]*filename\/path discovery/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/PDF, DOCX and XLSX[^.]*relay_workspace/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/relay_files[^.]*attachment IDs/);
  assert.match(ATTACHMENT_TOOL.inputSchema.properties.pageCount.description,/only one page is read and pageCount is ignored/);
  assert.match(ATTACHMENT_TOOL.inputSchema.properties.charCount.description,/reads only startPage/);
 });

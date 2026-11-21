@@ -24,7 +24,8 @@
     "docs/mistral-acp-compatibility.md",
     "docs/user-profile-boundaries.md",
     "docs/sqlite-receipts.md",
-    "docs/persistence-diagnostics.md"
+    "docs/persistence-diagnostics.md",
+    "docs/instruction-audit.md"
   ],
   "reference": [
     "docs/local-model-download-design.md",

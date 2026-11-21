@@ -37,15 +37,17 @@ test('the model browses the paginated effective skill catalog and cannot mutate 
  for(const action of ['save','patch','remove'])await assert.rejects(invoke({action,id:selected.id,title:'Altered',content:'Altered'}));
  assert.deepEqual(await catalog.detail({id:selected.id}),edited);
 });
-test('job-specific advice stays in the browser schema and recovery routing is limited to attached browser tools',()=>{
- assert.match(BROWSER_TOOL.description,/native site search/);
- assert.match(BROWSER_TOOL.description,/relevant job boards/);
- assert.match(BROWSER_TOOL.description,/educated inference/);
+test('browser API documentation omits task-specific advice and recovery routing is limited to attached browser tools',()=>{
+ assert.doesNotMatch(BROWSER_TOOL.description,/native site search|relevant job boards|educated inference/);
+ assert.match(BROWSER_TOOL.description,/expectedUrl and expectedDocumentId/);
+ assert.match(BROWSER_TOOL.description,/Foreign ownershipCandidates are not readable tabs/);
  assert.doesNotMatch(BROWSER_TOOL.description,/citizenship|builtin:/i);
- const general=capabilityGuidance([{name:'relay_skills'},{name:'relay_browser'}],{planningMode:'off'});
+ const general=capabilityGuidance([{name:'relay_skills'},BROWSER_TOOL],{planningMode:'off'});
  assert.doesNotMatch(general,/BUNDLED TASK SKILLS|builtin:browser|job boards|BROWSER STATE RECOVERY/);
- assert.match(general,/relay_browser:.*same persistent browser profile/);
- assert.match(general,/Only for deliberate recovery.*stopped-task-recovery/);
+ assert.match(general,/relay_browser:.*empty task-owned tabs list is not sign-out/);
+ assert.match(general,/For deliberate recovery.*stopped-task-recovery.*take_ownership/);
+ const namesOnly=capabilityGuidance([{name:'relay_browser'}],{planningMode:'off'});
+ assert.doesNotMatch(namesOnly,/stopped-task-recovery|take_ownership/,'Recovery guidance requires the operation in the actual attached schema.');
  const withoutBrowser=capabilityGuidance([{name:'relay_skills'}],{planningMode:'off'});
  assert.doesNotMatch(withoutBrowser,/relay_browser|stopped-task-recovery|job boards/);
 });

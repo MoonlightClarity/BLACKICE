@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: 2.40.67 candidate source index.** Package version is **2.40.67**, not an installed or published artifact. See [2.40.67 source notes](../RELEASE-NOTES-2.40.67.md) and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
+> **Status: 2.40.68 candidate source index.** Package version is **2.40.68**, not an installed or published artifact. See [2.40.68 source notes](../RELEASE-NOTES-2.40.68.md) and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
@@ -8,6 +8,7 @@ Start with the [project README](../README.md). A named document's date, original
 
 | Need | Maintained guidance |
 | --- | --- |
+| Inspect active instruction sources and saved execution snapshots | [Instruction audit](instruction-audit.md) |
 | Product overview, setup, navigation, recurring work | [Project README](../README.md) |
 | Choose models and API connections | [API providers](API-PROVIDERS.md) and [local models](local-models.md) |
 | Connect an external assistant to BLACKICE's direct tools | [ChatGPT](../CHATGPT-CONNECTOR.md), [Gemini](GEMINI-CONNECTOR.md), [Claude](CLAUDE-CONNECTOR.md) |

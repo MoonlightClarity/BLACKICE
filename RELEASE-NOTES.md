@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.67 candidate source, not an installation or publication receipt.** Package version is **2.40.67**. Start with the [2.40.67 notes](RELEASE-NOTES-2.40.67.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
+> **Status: 2.40.68 candidate source, not an installation or publication receipt.** Package version is **2.40.68**. Start with the [2.40.68 notes](RELEASE-NOTES-2.40.68.md). Earlier notes and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases) describe separate artifacts.
 
 ## Recent versioned source notes
+
+- [2.40.68](RELEASE-NOTES-2.40.68.md) - concise execution instructions and Config audit
 
 - [2.40.67](RELEASE-NOTES-2.40.67.md) - browser navigation continuity and premature-exit recovery
 

@@ -66,6 +66,15 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   };
   const done=await run('Read a PDF for evidence.');
   assert.equal(requests.length,5);
+  const audit=Object.values(done.nodes).find(node=>node.instructionAudit)?.instructionAudit;
+  assert.equal(audit.captureStage,'adapter-prepared');
+  assert.equal(audit.adapter,'compatible');
+  assert.equal(audit.delivery,'accepted');
+  assert.equal(audit.sections.filter(section=>section.layer==='developer').map(section=>section.text).join(''),
+    requests[0].messages.find(message=>message.role==='system').content);
+  const loaded=audit.sections.find(section=>section.role==='tool'&&section.source.endsWith(skillId));
+  assert.equal(loaded.status,'delivered');assert.equal(loaded.deliveries,2);
+  assert.match(loaded.text,/Get to the relevant page/);
   assert.ok(requests[0].tools.some(tool=>tool.function?.name==='relay_skills'));
   const toolResult=(step,id)=>requests[step].messages.find(message=>message.role==='tool'&&message.tool_call_id===id)?.content??'';
   assert.match(toolResult(1,'lookup'),new RegExp(skillId));
@@ -81,7 +90,7 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   }
 
   const completion=automatic.skillId,wire=index=>requests[index].messages.map(item=>item.content).join('\n');
-  const core=/EXECUTION COMPLETION[\s\S]*Do not end the turn until you are really done/;
+  const core=/EXECUTION COMPLETION[\s\S]*Continue while a useful authorized action can advance the requested outcome/;
   assert.match(wire(0),core);
   assert.match(wire(0),/WHAT MAKES DONE \(bundled execution method\)[\s\S]*What just happened\?/);
   catalog=createSkillsCatalog({dataDir:path.join(dir,'engine')});

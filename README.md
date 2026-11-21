@@ -166,6 +166,8 @@ Model accounts, API keys, quotas, and service capabilities come from the selecte
 
 ## Configuration and troubleshooting
 
+**Instruction audit:** In Config → Behavior & profile, open **Instructions** beside SOUL.md and USER.md to inspect the current execution core or the exact captured sources used by a saved turn. See the [instruction audit guide](docs/instruction-audit.md) and [2.40.68 release notes](RELEASE-NOTES-2.40.68.md).
+
 **Find the controls.** **Settings → General** holds the working folder, default model, runtime preferences and runtime health. **Settings → Models** shows Codex, optional advanced endpoints and local-model management (where included in the tested build). **Settings → Tools** manages MCP tool connections; importing a configuration is not the same as confirming a live connection. The **Chat** composer retains model, reasoning, context, and Goal controls; retired module, Directory, and old Autonomy controls are not part of current setup. **Settings → ChatGPT connector** configures the direct remote link.
 
 - **Slow startup or an unresponsive model:** check **Settings → General → Runtime health** and the model connection status. Distinguish app startup from a Codex sign-in, unavailable server, or model request. The UI exposes **Refresh** and **Reconnect model runtime**; inspect the returned state before considering a restart, and preserve unfinished work.

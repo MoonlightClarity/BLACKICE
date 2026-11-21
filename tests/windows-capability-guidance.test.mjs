@@ -23,12 +23,12 @@ for(const available of [false,true])test('engine native Windows guidance follows
 test('worker catalog does not advertise native Windows capability',()=>{
  const text=WORKSPACE_INSTRUCTIONS+capabilityGuidance([WORKSPACE_TOOL],{planningMode:'off'});
  assert.doesNotMatch(text,/relay_windows|NATIVE APPLICATIONS|do not operate existing user windows/);
- assert.match(text,/tools actually attached to this turn/);
+ assert.match(text,/ATTACHED TOOLS\nrelay_workspace(?:\n|$)/);
 });
 test('native instructions are emitted after worker and unavailable-model catalog filtering',async()=>{
  const source=await readFile(new URL('../lib/engine.mjs',import.meta.url),'utf8');
- const emit=source.indexOf('if (dynamicTools.some(tool => tool.name === NATIVE_WINDOWS_TOOL.name)) appendHarness(NATIVE_WINDOWS_INSTRUCTIONS)');
+ const emit=source.indexOf('if (dynamicTools.some(tool => tool.name === NATIVE_WINDOWS_TOOL.name)) appendHarness(NATIVE_WINDOWS_INSTRUCTIONS');
  assert.ok(emit>source.indexOf('if (scopedWorker) dynamicTools = dynamicTools.filter'));
  assert.ok(emit>source.indexOf('if(toolCapability.available===false){dynamicTools=[]'));
- assert.equal(source.split('appendHarness(NATIVE_WINDOWS_INSTRUCTIONS)').length-1,1);
+ assert.equal(source.split('appendHarness(NATIVE_WINDOWS_INSTRUCTIONS').length-1,1);
 });

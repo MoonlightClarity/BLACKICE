@@ -297,10 +297,10 @@ test('a saved cron Maximal alias migrates to nonblocking execution across restar
 
 test('Off keeps the current optional task tool and external recovery guidance without importing default plan playbooks', () => {
   for (const executionGuardrails of [false, true]) {
-    const instructions = capabilityGuidance([currentTaskTool({ executionGuardrails })], { planningMode: 'off', executionGuardrails: true });
+    const instructions = BLACKICE_HARNESS_INSTRUCTIONS + capabilityGuidance([currentTaskTool({ executionGuardrails })], { planningMode: 'off', executionGuardrails: true });
     assert.match(instructions, /Automatic planning is off/);
     assert.doesNotMatch(instructions, /before operational work or the final answer|save this turn's plan|form a brief operational plan|For substantive work, discover relevant methods/);
-    assert.match(instructions, /Reconcile any uncertain dispatched effect before retrying/);
+    assert.match(instructions, /When an action may have reached its destination, inspect its outcome before a conflicting repeat/);
   }
   assert.doesNotMatch(capabilityGuidance([], { planningMode: 'off' }), /form a brief operational plan/);
 });

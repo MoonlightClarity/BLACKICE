@@ -27,13 +27,13 @@ test('contained ownership and sign-in pause retain BLACKICE-only task browser ro
   status(){return{connected:true,authenticated:true,defaultModel:'demo',models:[{id:'demo',model:'demo',available:true}]};}
   async runAgent(options){
    assert.match(options.prompt,/BACKGROUND WORKSPACE/);assert.match(options.developerInstructions,/contained (?:relay_browser|browser)/);
-   assert.match(options.prompt,/Use only the BLACKICE contained browser/);
-   const browserTool=options.dynamicTools.find(tool=>tool.name==='relay_browser');assert.match(browserTool.description,/Never attach or launch Chrome/);assert.match(browserTool.description,/Retain tabs and in-progress forms/);
-   assert.match(browserTool.description,/No existing tabs or prior session work is not a browser blocker/);
-   assert.match(browserTool.description,/First decompose the request and select its critical-path step/);
-   assert.match(browserTool.description,/When research needs website sources, inspect the intended owned tab or open the relevant target in this turn/);
-   assert.match(browserTool.description,/opening a browser is not a mandatory first action/);
-   assert.match(browserTool.description,/does not create background autonomy, schedule a goal, or authorize external effects beyond the current request/);
+   assert.match(options.developerInstructions,/contained relay_browser for website interaction/);
+   const browserTool=options.dynamicTools.find(tool=>tool.name==='relay_browser');
+   assert.match(browserTool.description,/contained BLACKICE browser/);
+   assert.match(browserTool.description,/Foreign ownershipCandidates are not readable tabs/);
+   assert.match(browserTool.description,/Adoption preserves the existing page without reloading or submitting/);
+   assert.match(browserTool.description,/empty tabs list means this task has no visible pages/);
+   assert.doesNotMatch(browserTool.description,/First decompose|critical-path|relevant job boards|known webmail service/);
    assert.doesNotMatch(options.prompt,/Do not call (?:host )?Chrome|Preserve an in-progress form/);
    assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_connections'),false);
    const foreign=await options.onToolCall({name:'relay_browser',arguments:{action:'read',tabId:'personal-tab'}});assert.equal(foreign.success,false);assert.equal(foreign.code,'BROWSER_TAB_OWNERSHIP');assert.equal(pages,0);

@@ -179,15 +179,12 @@ test('queued/cancelled calls do not write and application guidance describes ava
   await assert.rejects(handler(call({ action: 'write', path: 'must-not-exist.txt', text: 'No write.' }), { signal: controller.signal }), cause => cause.name === 'AbortError');
   assert.deepEqual(await readdir(cwd), []);
   assert.equal(WORKSPACE_TOOL.name, 'relay_workspace');
-  assert.match(WORKSPACE_INSTRUCTIONS, /Authorized application launches and other task-relevant operating system commands may use run/);
-  assert.match(WORKSPACE_INSTRUCTIONS, /preserve unrelated user work/);
-  assert.match(WORKSPACE_INSTRUCTIONS, /respect stop, detach and cancellation/);
-  assert.doesNotMatch(WORKSPACE_INSTRUCTIONS, /relay_desktop/);
-  assert.match(WORKSPACE_INSTRUCTIONS, /Application automation[^.]*tools actually attached/i);
-  assert.match(WORKSPACE_INSTRUCTIONS, /retired desktop UIA[^.]*does not define[^.]*capabilities[^.]*native Windows/i);
-  assert.match(WORKSPACE_INSTRUCTIONS, /current schema and capability guidance/i);
+  // Retire repeated global policy; keep actual adapter routing and cancellation checks.
+  assert.ok(WORKSPACE_TOOL.inputSchema.properties.action.enum.includes('run'));
+  assert.match(WORKSPACE_INSTRUCTIONS, /Application automation[^.]*attached adapter's schema/);
+  assert.doesNotMatch(WORKSPACE_INSTRUCTIONS, /relay_desktop|do not operate existing user windows/);
   const routing = capabilityGuidance([WORKSPACE_TOOL, {name:'relay_browser'}]);
-  assert.match(routing, /Website work stays in the contained relay_browser/);
+  assert.match(routing, /relay_browser/);
 });
 
 async function completeReadPages(handler, selected, expected) {

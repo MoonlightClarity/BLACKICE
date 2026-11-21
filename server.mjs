@@ -1,5 +1,6 @@
 import {handleTaskActionDirectoryHttp} from './lib/task-action-directory-http.mjs';
 import {handleTurnReceiptsHttp} from './lib/turn-receipts-http.mjs';
+import {BLACKICE_CLIENT_INFO,BLACKICE_HARNESS_INSTRUCTIONS} from './lib/harness-identity.mjs';
 import { stoppedBrowserOwnerStatus, activeBrowserOwnerStatus, readStoppedTabEffects } from './lib/browser-stopped-adoption.mjs';
 import {VisualArtifacts,visualTool,nativeVisualTools,handleVisualHttp} from './lib/visual-artifacts.mjs';
 import {handleConversationActivityHttp} from './lib/conversation-activity-http.mjs';
@@ -1371,6 +1372,23 @@ export async function createHarnessServer(options = {}) {
         const results=await Promise.allSettled(pending),failures=results.filter(result=>result.status==='rejected').map(result=>String(result.reason?.message||result.reason));
         return json(res,failures.length?500:200,{cancelled,...(restartCancellationRequested?{restartCancellationRequested:true}:{}),...(failures.length?{error:'Some stop actions need attention.',details:failures}:{})});
       }
+      if(pathname==='/api/instructions'&&req.method==='GET'){
+        const runs=conversations.list('active').slice(0,80).map(row=>{
+          const id=row.lastRunId||row.runId||row.id,live=engine.runs.get(id);
+          return{id,title:row.title||live?.workflowName||'Agent turn',createdAt:live?.createdAt||row.updatedAt||row.createdAt,
+            status:live?.status||row.status,captured:live?Object.values(live.nodes||{}).some(node=>node?.instructionAudit?.version===1):null};
+        });
+        return json(res,200,{version:BLACKICE_CLIENT_INFO.version,
+          core:{source:'lib/harness-identity.mjs',text:BLACKICE_HARNESS_INSTRUCTIONS},runs});
+      }
+      const instructionAuditMatch=pathname.match(/^\/api\/runs\/([a-zA-Z0-9_-]+)\/instructions$/);
+      if(instructionAuditMatch&&req.method==='GET'){
+        const run=await conversations.get(instructionAuditMatch[1]);
+        const names=new Map((run.workflow?.nodes||[]).map(node=>[node.id,node.name||node.id]));
+        return json(res,200,{runId:run.id,status:run.status,nodes:Object.entries(run.nodes||{}).map(([nodeId,node])=>({
+          nodeId,name:names.get(nodeId)||nodeId,status:node.status,audit:node.instructionAudit||null
+        }))});
+      }
       const runMatch = pathname.match(/^\/api\/runs\/([a-zA-Z0-9_-]+)(\/(?:cancel|retry|continue|steer|compact))?$/);
       if (runMatch && req.method === 'GET' && !runMatch[2]) return json(res, 200, await conversations.get(runMatch[1]));
       if (runMatch?.[2] && req.method === 'POST') {
@@ -1422,7 +1440,7 @@ export async function createHarnessServer(options = {}) {
         'workspaces/workflow-overview-model.mjs','workspaces/workflow-canvas-model.mjs','workspaces/workflow-canvas.mjs','workspaces/workflow-graph-author.mjs',
         'workspaces/workflow-graph-edit.mjs','workspaces/browser-folders.mjs','workspaces/browser-model.mjs','workspaces/browser-ownership-ui.mjs','workspaces/browser-usage-ui.mjs','workspaces/browser-scoped-cleanup-ui.mjs','workspaces/browser-native.mjs',
         'browser.css','skills.css','workspaces/skills.mjs','core/folder-tree.mjs',
-        'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-passwords.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-mcp-apps.mjs','workspaces/settings-restart.mjs',
+        'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-instructions.mjs','workspaces/instruction-audit.mjs','instruction-audit.css','workspaces/settings-passwords.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-mcp-apps.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-passwords.css','settings-identity.css','settings-providers.css',
         'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/llama-launch-settings.mjs','workspaces/settings-providers.mjs','workspaces/native-write-recovery.mjs'];
       for (const file of nextFiles) files['/next/' + file] = 'next/' + file;

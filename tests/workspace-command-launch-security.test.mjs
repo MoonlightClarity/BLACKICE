@@ -70,19 +70,32 @@ for (const failure of ['EPERM', 'EACCES', 'ENOENT']) {
     assert.equal(r.launch.securityBlockConfirmed, false); assert.equal(r.launch.securityBlockPossible, failure !== 'ENOENT');
     assert.equal(r.launch.pid, null); assert.equal(r.actionDispatched, undefined);
     assert.ok(!JSON.stringify(r).includes('Write-Output'));
-    if (failure !== 'ENOENT') assert.match(r.recovery, /Do not retry through another shell/);
+    assert.match(r.recovery, /does not confirm a protection denial/);
+    assert.match(r.recovery, /Correct the cause and use an available supported route/);
+    assert.doesNotMatch(r.recovery, /Stop and inspect|Do not retry through another shell|approved security review/);
   });
 }
+for (const failure of ['ERROR_VIRUS_INFECTED', 'ERROR_VIRUS_DELETED']) test(`${failure} retains the reported host denial without replaying or claiming independent confirmation`, async () => {
+  const f = fixture({ failure }); const r = await f.run();
+  assert.equal(r.success, false); assert.equal(r.code, failure);
+  assert.equal(f.launches.length, 1); assert.equal(r.launch.automaticRetry, false);
+  assert.equal(r.launch.securityBlockPossible, true); assert.equal(r.launch.securityBlockConfirmed, false);
+  assert.match(r.recovery, /operating system reported a protection denial/);
+  assert.match(r.recovery, /resolve that actual denial before retrying/);
+  assert.match(r.recovery, /Do not use another route to evade it/);
+});
+
 test('error after observed process start preserves uncertain outcome and known PID', async () => {
   const f = fixture({ failure: 'EPERM', observed: true }); const r = await f.run();
   assert.equal(r.launch.stage, 'process_started'); assert.equal(r.launch.processStartObserved, true);
   assert.equal(r.launch.pid, 123); assert.equal(r.launch.executionOutcome, 'unknown'); assert.equal(f.launches.length, 1);
 });
-test('guidance distinguishes confirmed blocks and uncertain receipt recovery', () => {
-  const f = fixture(); assert.match(f.instructions, /After a confirmed security block, stop the action/);
-  assert.match(f.instructions, /same requestId and identical arguments under the same connection/);
-  assert.match(f.instructions, /do not disable protection or add exclusions/);
-  assert.match(f.instructions, /For direct connector calls, transport recovery/);
+test('ordinary workspace addendum omits retired global policy and direct-connector protocol', () => {
+  const f = fixture();
+  // Runtime launch metadata and failure behavior are checked above; they are unchanged.
+  assert.match(f.instructions, /exitCode/);
+  assert.match(f.instructions, /Timeout or cancellation/);
+  assert.doesNotMatch(f.instructions, /After a confirmed security block|For direct connector calls|requestId|same connection/);
 });
 test('added launch metadata is bounded without exposing arguments', () => {
   const f = fixture(); const error = f.processFailure(Object.assign(new Error('denied'), { code: 'EPERM' }),

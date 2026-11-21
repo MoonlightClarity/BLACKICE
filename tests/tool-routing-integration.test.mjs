@@ -16,7 +16,7 @@ import { estimateContextTokens } from '../lib/context.mjs';
 
 const until=async(check,label='routing condition')=>{const end=Date.now()+5000;while(Date.now()<end){const result=check();if(result)return result;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
 const graph=model=>({id:'routing-workflow',name:'Tool routing protocol test',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',prompt:'Answer the current request using attached capabilities when needed.',model},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}});
-const manifest=instructions=>JSON.parse(instructions.split('ACTUAL ATTACHED CATALOG\n')[1].split('\nTOOL SELECTION PLAYBOOKS')[0]);
+const manifest=instructions=>instructions.split('ATTACHED TOOLS\n')[1].split('\nADAPTER NOTES')[0].split(', ').filter(Boolean).map(name=>({name}));
 const occurrences=(text,part)=>text.split(part).length-1;
 class OfflineCodex extends EventEmitter{status(){return{connected:false,authenticated:false,models:[],defaultModel:null};}async close(){}}
 const response=(type,text)=>type==='openai'?{status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text}]}],usage:{input_tokens:20,output_tokens:3,total_tokens:23}}:type==='anthropic'?{content:[{type:'text',text}],stop_reason:'end_turn',usage:{input_tokens:20,output_tokens:3}}:{choices:[{message:{role:'assistant',content:text},finish_reason:'stop'}],usage:{prompt_tokens:20,completion_tokens:3,total_tokens:23}};
@@ -30,17 +30,17 @@ for(const type of ['openai','anthropic','compatible'])test(`${type}: the engine 
   const instructions=body=>type==='openai'?body.instructions:type==='anthropic'?body.system:body.messages.find(message=>message.role==='system')?.content;
   const messages=body=>type==='openai'?body.input:body.messages.filter(message=>message.role!=='system');
   const toolNames=body=>(body.tools||[]).map(tool=>type==='compatible'?tool.function.name:tool.name);
-  const firstInstructions=instructions(requests[0].body);assert.equal(typeof firstInstructions,'string');assert.match(firstInstructions,/CAPABILITY ROUTING — BEFORE ACTION/);assert.match(firstInstructions,/GENERAL ANALYTICAL METHOD/);
-  assert.match(firstInstructions,/actual candidate wording, designs, allocations or rival predictions under common conditions/);
-  assert.match(firstInstructions,/reasoning operations, not mandatory stages, fields or an output template/);
-  assert.match(firstInstructions,/evidence and fit threshold for the next authorized action/);
+  const firstInstructions=instructions(requests[0].body);assert.equal(typeof firstInstructions,'string');assert.match(firstInstructions,/BLACKICE TOOL ROUTING/);assert.doesNotMatch(firstInstructions,/GENERAL ANALYTICAL METHOD/);
+  assert.match(firstInstructions,/SOUL\.md supplies owner-configured behavior/);
+  assert.doesNotMatch(firstInstructions,/full quantitative planning contract/);
+  assert.match(firstInstructions,/Current user directions supersede conflicting behavioral defaults/);
   assert.deepEqual(manifest(firstInstructions).map(item=>item.name),toolNames(requests[0].body));assert.deepEqual(new Set(toolNames(requests[0].body)),new Set(['relay_workspace','relay_find_files','relay_control','relay_agents','relay_skills','relay_history']));for(const name of ['relay_browser','relay_desktop','relay_connections','relay_identity','relay_files','relay_task'])assert.ok(!manifest(firstInstructions).some(item=>item.name===name),name);
-  assert.ok(!JSON.stringify(messages(requests[0].body)).includes('CAPABILITY ROUTING — BEFORE ACTION'),'routing policy must not exist only in a user prompt');
+  assert.ok(!JSON.stringify(messages(requests[0].body)).includes('BLACKICE TOOL ROUTING'),'routing policy must not exist only in a user prompt');
   // Retrieval remains available on follow-up without any mutable memory service.
   const second=engine.continueRun(first.id,{nodeId:'agent',message:'SECOND_ROUTING_USER_MESSAGE'}),two=await settled(second.id);assert.equal(two.status,'completed',two.error);assert.equal(two.nodes.agent.threadId,one.nodes.agent.threadId);assert.equal(requests.length,2);
-  const latest=requests[1].body,current=instructions(latest);assert.deepEqual(toolNames(latest),['relay_workspace','relay_find_files','relay_control','relay_agents','relay_skills','relay_history']);assert.deepEqual(manifest(current).map(item=>item.name),['relay_workspace','relay_find_files','relay_control','relay_agents','relay_skills','relay_history']);assert.ok(!current.includes('relay_memory'));assert.ok(current.includes('relay_skills'));assert.equal(occurrences(current,'CAPABILITY ROUTING — BEFORE ACTION'),1);
-  const userMessages=messages(latest).filter(message=>message.role==='user'),history=JSON.stringify(messages(latest));assert.equal(userMessages.length,2);assert.equal(userMessages.filter(message=>JSON.stringify(message.content).includes('FIRST_ROUTING_USER_MESSAGE')).length,1);assert.equal(userMessages.filter(message=>JSON.stringify(message.content).includes('SECOND_ROUTING_USER_MESSAGE')).length,1);assert.equal(occurrences(history,'CAPABILITY ROUTING — BEFORE ACTION'),0);if(type==='compatible')assert.equal(latest.messages.filter(message=>message.role==='system').length,1);
-  const disk=JSON.parse(await readFile(path.join(directory,'provider-threads',two.nodes.agent.threadId+'.json'),'utf8'));assert.equal(disk.developerInstructions,current);assert.equal(occurrences(JSON.stringify(disk.messages),'CAPABILITY ROUTING — BEFORE ACTION'),0);assert.equal(disk.transcript.filter(message=>message.role==='user'&&JSON.stringify(message.content).includes('FIRST_ROUTING_USER_MESSAGE')).length,1);
+  const latest=requests[1].body,current=instructions(latest);assert.deepEqual(toolNames(latest),['relay_workspace','relay_find_files','relay_control','relay_agents','relay_skills','relay_history']);assert.deepEqual(manifest(current).map(item=>item.name),['relay_workspace','relay_find_files','relay_control','relay_agents','relay_skills','relay_history']);assert.ok(!current.includes('relay_memory'));assert.ok(current.includes('relay_skills'));assert.equal(occurrences(current,'BLACKICE TOOL ROUTING'),1);
+  const userMessages=messages(latest).filter(message=>message.role==='user'),history=JSON.stringify(messages(latest));assert.equal(userMessages.length,2);assert.equal(userMessages.filter(message=>JSON.stringify(message.content).includes('FIRST_ROUTING_USER_MESSAGE')).length,1);assert.equal(userMessages.filter(message=>JSON.stringify(message.content).includes('SECOND_ROUTING_USER_MESSAGE')).length,1);assert.equal(occurrences(history,'BLACKICE TOOL ROUTING'),0);if(type==='compatible')assert.equal(latest.messages.filter(message=>message.role==='system').length,1);
+  const disk=JSON.parse(await readFile(path.join(directory,'provider-threads',two.nodes.agent.threadId+'.json'),'utf8'));assert.equal(disk.developerInstructions,current);assert.equal(occurrences(JSON.stringify(disk.messages),'BLACKICE TOOL ROUTING'),0);assert.equal(disk.transcript.filter(message=>message.role==='user'&&JSON.stringify(message.content).includes('FIRST_ROUTING_USER_MESSAGE')).length,1);
   const bareEstimate=estimateContextTokens([disk.messages,latest.tools]);assert.ok(two.nodes.agent.contextStatus.estimatedInputTokens>bareEstimate+200,'the real context budget includes developer instructions rather than counting only user history');
 });
 
@@ -82,15 +82,15 @@ test('native Codex sends actual developerInstructions on thread/start and thread
   const {runtime,cwd,wire}=await nativeHarness(t),firstInstructions=capabilityGuidance([WORKSPACE_TOOL])+'\nFIRST_DEVELOPER_POLICY',secondInstructions=capabilityGuidance([WORKSPACE_TOOL])+'\nUPDATED_SECOND_DEVELOPER_POLICY';
   const first=await runtime.runAgent({cwd,prompt:'FIRST_NATIVE_USER_MESSAGE',developerInstructions:firstInstructions,dynamicTools:[WORKSPACE_TOOL]});const one=JSON.parse(first.output);assert.equal(one.instructions,firstInstructions);assert.deepEqual(one.tools,['relay_workspace']);assert.deepEqual(one.input,[{type:'text',text:'FIRST_NATIVE_USER_MESSAGE'}]);
   const second=await runtime.runAgent({cwd,prompt:'SECOND_NATIVE_USER_MESSAGE',threadId:first.threadId,usageBaseline:first.usage.total,developerInstructions:secondInstructions,dynamicTools:[WORKSPACE_TOOL]});const two=JSON.parse(second.output);assert.equal(two.instructions,secondInstructions);assert.ok(!two.instructions.includes('FIRST_DEVELOPER_POLICY'));assert.deepEqual(two.input,[{type:'text',text:'SECOND_NATIVE_USER_MESSAGE'}]);
-  const records=await wire(),start=records.find(item=>item.method==='thread/start'),resume=records.find(item=>item.method==='thread/resume');assert.equal(start.params.developerInstructions,firstInstructions);assert.equal(resume.params.developerInstructions,secondInstructions);assert.equal(resume.params.threadId,first.threadId);assert.equal(resume.params.dynamicTools,undefined,'native saved catalogs are not extended on resume');for(const turn of records.filter(item=>item.method==='turn/start'))assert.ok(!JSON.stringify(turn.params.input).includes('CAPABILITY ROUTING'));
-  assert.equal(occurrences(two.instructions,'CAPABILITY ROUTING — BEFORE ACTION'),1);assert.ok(second.context.estimatedInputTokens>=estimateContextTokens([secondInstructions,'SECOND_NATIVE_USER_MESSAGE']));
+  const records=await wire(),start=records.find(item=>item.method==='thread/start'),resume=records.find(item=>item.method==='thread/resume');assert.equal(start.params.developerInstructions,firstInstructions);assert.equal(resume.params.developerInstructions,secondInstructions);assert.equal(resume.params.threadId,first.threadId);assert.equal(resume.params.dynamicTools,undefined,'native saved catalogs are not extended on resume');for(const turn of records.filter(item=>item.method==='turn/start'))assert.ok(!JSON.stringify(turn.params.input).includes('BLACKICE TOOL ROUTING'));
+  assert.equal(occurrences(two.instructions,'BLACKICE TOOL ROUTING'),1);assert.ok(second.context.estimatedInputTokens>=estimateContextTokens([secondInstructions,'SECOND_NATIVE_USER_MESSAGE']));
 });
 
 test('engine native follow-up guidance excludes newly available tools that are absent from the original saved catalog',async t=>{
   const {runtime,directory,cwd,wire,cleanup}=await nativeHarness(t);await runtime.start();const engine=await new HarnessEngine({runtime,dataDir:directory,defaultCwd:cwd}).init();cleanup.push(()=>engine.close());const settled=id=>until(()=>{const run=engine.getRun(id);return run.settled&&run;},'native engine run');
   const first=engine.startRun({workflow:graph('routing-native-model'),input:'NATIVE_ENGINE_FIRST'}),one=await settled(first.id);assert.equal(one.status,'completed',one.error);assert.deepEqual(one.nodes.agent.toolNames,['relay_workspace','relay_find_files','relay_control','relay_agents','relay_skills','relay_history']);
   engine.browser={status:()=>({available:true})};engine.connections={list:()=>[],redact:value=>String(value)};const next=engine.continueRun(first.id,{nodeId:'agent',message:'NATIVE_ENGINE_FOLLOWUP'}),two=await settled(next.id);assert.equal(two.status,'completed',two.error);const receipt=JSON.parse(two.nodes.agent.output);assert.deepEqual(receipt.tools,one.nodes.agent.toolNames);assert.deepEqual(manifest(receipt.instructions).map(item=>item.name),one.nodes.agent.toolNames);assert.doesNotMatch(receipt.instructions,/relay_browser:|relay_connections:/);assert.equal(two.nodes.agent.threadId,one.nodes.agent.threadId);
-  const records=await wire(),resume=records.find(item=>item.method==='thread/resume');assert.match(resume.params.developerInstructions,/ACTUAL ATTACHED CATALOG/);assert.equal(resume.params.dynamicTools,undefined);const turn=records.filter(item=>item.method==='turn/start').at(-1);assert.equal(occurrences(JSON.stringify(turn.params.input),'NATIVE_ENGINE_FOLLOWUP'),1);assert.equal(occurrences(JSON.stringify(turn.params.input),'CAPABILITY ROUTING — BEFORE ACTION'),0);
+  const records=await wire(),resume=records.find(item=>item.method==='thread/resume');assert.match(resume.params.developerInstructions,/ATTACHED TOOLS/);assert.equal(resume.params.dynamicTools,undefined);const turn=records.filter(item=>item.method==='turn/start').at(-1);assert.equal(occurrences(JSON.stringify(turn.params.input),'NATIVE_ENGINE_FOLLOWUP'),1);assert.equal(occurrences(JSON.stringify(turn.params.input),'BLACKICE TOOL ROUTING'),0);
 });
 
 test('the legacy relay history setting preserves native continuation and contained browser recovery guidance without changing the tool definition', async t => {
@@ -109,13 +109,17 @@ test('the legacy relay history setting preserves native continuation and contain
   const firstReceipt = JSON.parse(one.nodes.agent.output);
   assert.ok(firstReceipt.tools.includes('relay_browser'));
   assert.equal(firstReceipt.tools.includes('relay_connections'),false);
-  assert.match(firstReceipt.instructions, /A tool or method named in a prior assistant plan/);
+  assert.match(firstReceipt.instructions, /Current user directions supersede conflicting behavioral defaults and prior assistant plans/);
   const browserDefinition=(await wire()).find(record=>record.method==='thread/start').params.dynamicTools.find(tool=>tool.name==='relay_browser');
   assert.match(firstReceipt.instructions,/relay_browser:.*stopped-task-recovery/);
   assert.match(browserDefinition.description, /contained BLACKICE browser/);
-  assert.match(browserDefinition.description, /Never attach or launch Chrome/);
+  assert.match(browserDefinition.description, /expectedUrl and expectedDocumentId/);
   assert.match(browserDefinition.description, /empty tabs list means this task has no visible pages/);
-  assert.match(browserDefinition.description, /continue independent work/);
+  assert.match(browserDefinition.description, /Foreign ownershipCandidates are not readable tabs/);
+  assert.doesNotMatch(browserDefinition.description, /relevant job boards|educated inference|First decompose/);
+  const originalBrowserAudit=one.nodes.agent.instructionAudit.sections.find(item=>item.layer==='tool-definition'&&item.toolName==='relay_browser');
+  assert.ok(originalBrowserAudit.text.includes(browserDefinition.description));
+  assert.equal(originalBrowserAudit.wireSha256,createHash('sha256').update(JSON.stringify(browserDefinition)).digest('hex'));
   assert.equal(one.input, firstInput);
   const selectedInput = 'Continue this website task using only the BLACKICE browser.';
   const second = engine.continueRun(first.id, { nodeId: 'agent', message: selectedInput });
@@ -125,6 +129,10 @@ test('the legacy relay history setting preserves native continuation and contain
   assert.equal(two.input, selectedInput);
   assert.equal(two.nodes.agent.codexHistory, 'codex');
   assert.equal(two.nodes.agent.threadId, one.nodes.agent.threadId);
+  const resumedBrowserAudit=two.nodes.agent.instructionAudit.sections.find(item=>item.layer==='tool-definition'&&item.toolName==='relay_browser');
+  assert.equal(two.nodes.agent.instructionAudit.tools.status,'saved');
+  assert.equal(resumedBrowserAudit.text,originalBrowserAudit.text);
+  assert.equal(resumedBrowserAudit.wireSha256,originalBrowserAudit.wireSha256);
   const secondReceipt = JSON.parse(two.nodes.agent.output);
   assert.match(secondReceipt.instructions,/relay_browser:.*stopped-task-recovery/);
   assert.equal(secondReceipt.tools.includes('relay_connections'),false);
