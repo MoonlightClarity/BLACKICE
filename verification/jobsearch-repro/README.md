@@ -18,6 +18,8 @@ The runner supplies these exact strings. It sets Planning and Directory off in b
 
 Use Node 22.23.5 or newer. Run the checked-out source corresponding to the installed app. The runner compares actual product modules byte for byte. For package.json only, it applies the same documented electron-builder normalization as the repository's release fingerprint, then compares every remaining field; it also retains both raw hashes.
 
+Source parity includes the ordinary outcome-review adapter and its static local dependencies, the Browser Navigation skill body and catalogue manifest, and the native screenshot driver. The effective native library-browser-navigation body must match the candidate body exactly; preflight records its source, revision and content hash. A missing or mismatched owner overlay fails with SKILL_MISMATCH before observer installation or model admission. Record any authorized owner-skill synchronization separately.
+
 The selected BLACKICE instance must have a normal window renderer and a connected provider. From the checked-out repository root, an existing-profile example:
 
 ```powershell
@@ -92,7 +94,7 @@ node .\verification\jobsearch-repro\runner.mjs inspect @trialArgs
 
 Inspect the saved preflight before starting: native process/profile binding, installed-source parity, effective defaults or owner overlays, provider readiness, and explicit model/effort. Provider startup may still be asynchronous; the preflight records its state.
 
-Start requires an EventSource-open receipt followed by a fresh observer-health check. It saves an exclusive durable admission intent before posting the ordinary Chat request. The native workflow uses mission_chat_<attempt> so the engine classifies it as ordinary Chat; the independent stable request ID is jobsearch_<attempt>.
+Start requires a schema-6/public-native-actions-v6 EventSource-open receipt followed by a fresh observer-health check with that same exact schema and policy. It saves an exclusive durable admission intent before posting the ordinary Chat request. The native workflow uses mission_chat_<attempt> so the engine classifies it as ordinary Chat; the independent stable request ID is jobsearch_<attempt>.
 
 Repeat inspect against the same attempt while it runs. Do not send task coaching. When the exact run is settled:
 
@@ -110,7 +112,9 @@ A native process change invalidates the original in-memory observer assumption. 
 
 Each attempt records its exact prompt/configuration, native process, source fingerprints, effective instruction and skill identities, provider/profile declarations, durable operation journal, run inspections, and complete bounded public capture. The decoder reads only the selected public frontend result and verifies oversized artifact hashes and sizes. Private reasoning and credentials are excluded.
 
-The current observer uses schema 5 and redaction policy public-native-actions-v5. Version 5 adds native local-image read records with their reported identity, path and timing; status and success are retained only when supplied. Existing binary, secret and private-reasoning exclusions still apply. An active observer with another schema is rejected without replacing or relabeling its evidence. Archived captures retain their original schema, policy and interpretation.
+The current observer uses schema 6 and redaction policy public-native-actions-v6. Version 6 retains public chat.outcome-review v1 assessment and read-only report-phase provenance: the reported status, decision, remaining work, next action, evidence bindings and inspection metadata, model/effort, request/authority/evidence hashes and usage. The reported verified:false remains explicit. Unreviewed, stalled and failed assessments remain visible; an assessment is not proof of the task outcome. Existing exact-run binding, node identities, event order, bounds and binary/secret/private-reasoning exclusions still apply. An active observer with another schema is rejected without replacing or relabeling its evidence. Archived captures retain their original schema, policy and interpretation.
+
+Version 5 added native local-image read records with their reported identity, path and timing; status and success are retained only when supplied.
 
 Version 4 retains ordinary source-code, documentation and code-description prose while protecting credential, OTP and security-code fields, including ambiguous Code and Enter code labels.
 

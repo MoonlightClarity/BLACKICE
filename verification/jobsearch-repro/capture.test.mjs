@@ -198,7 +198,7 @@ test('audited answer preserves a long actual-shaped fill with earlier field prov
     assert.equal(audit.observed.callId,'observation');assert.equal(audit.observed.documentId,'tab-a:9');assert.equal(audit.observed.frame,'7-11');
     assert.equal(audit.originalLength,text.length);assert.equal(audit.retainedLength,text.length);
     assert.equal(audit.textComplete,true);assert.match(audit.meaning,/not.*submitted/i);
-    assert.equal(c.snapshot().schemaVersion,5);
+    assert.equal(c.snapshot().schemaVersion,6);
     assert.equal(c.snapshot().events.at(-1).data.item.arguments.text.redacted,true);
   }
 });
@@ -429,7 +429,7 @@ test('H2 unknown public native item retains only identity and explicit unsupport
 
 test('H5 generated observer retains local-image reads under the new schema and policy',async()=>{
   const f=bootstrapFixture(),pending=f.start();f.subscription.onopen();const ready=await pending;
-  assert.equal(ready.schemaVersion,5);assert.equal(ready.redactionPolicy,'public-native-actions-v5');
+  assert.equal(ready.schemaVersion,6);assert.equal(ready.redactionPolicy,'public-native-actions-v6');
   f.capture.bind(run);
   const completed={...nativeImageView,completedAtMs:1795219200001};
   for(const [stage,item]of [['started',nativeImageView],['completed',completed]])
@@ -491,4 +491,67 @@ test('H5 rejects an active schema-4 observer without replacing or relabeling its
   await assert.rejects(f.start(),/another capture schema/);
   assert.equal(f.capture,previous);assert.equal(f.constructions,1);
   assert.equal(JSON.stringify(previous.snapshot()),before);assert.equal(f.subscription.closed,false);
+});
+
+function outcomeReview(overrides={}) {
+ return {type:'chat.outcome-review',version:1,source:'ordinary-chat-outcome-assessment',phase:'assessment',status:'validated',sequence:1,
+  model:'gpt-6-luna',effort:'low',requestSha256:'a'.repeat(64),authoritySha256:'b'.repeat(64),evidenceFingerprint:'c'.repeat(64),
+  verified:false,decision:'continue',summary:'One route is incomplete; an independent step remains.',
+  remaining:['Save the corrected draft.'],nextAction:'Inspect the available source for the unfinished section.',evidenceRefs:['call-a'],
+  blockers:[],citationBindings:[{citationRef:'evidence-0001',evidenceId:'call-a'}],
+  evidenceInspection:{source:'host-observed-evidence-access',inlineEvidenceIds:['call-a'],inlineMetadataIds:[],reads:[]},
+  usage:{inputTokens:12,outputTokens:7},...overrides};
+}
+test('H6 retains public outcome assessments and unavailable states with exact run/node identities and no business verdict',()=>{
+ const c=createCapture();c.bind(run);
+ const rows=['started','validated','repairing','unreviewed','stalled','failed'].map((status,i)=>outcomeReview({status,sequence:i+1,phase:i===2?'report-synthesis':i===3?'report-reassessment':'assessment'}));
+ const {type,version,source,model,effort,requestSha256,authoritySha256,evidenceFingerprint,verified}=outcomeReview();
+ const base={type,version,source,model,effort,requestSha256,authoritySha256,evidenceFingerprint,verified};
+ rows.push({...base,phase:'assessment',status:'provider',sequence:7,providerThreadId:'review-thread-001',providerTurnId:'review-turn-001',
+   providerModel:model,providerEffort:effort,providerServiceTier:'priority'},
+  {...base,phase:'report-synthesis',status:'usage',sequence:8,usage:{inputTokens:12,outputTokens:7}});
+ for(const [i,data]of rows.entries())c.ingest({...event(data),nodeId:i===3?'worker-review':'agent'});
+ c.ingest(event(outcomeReview({sequence:99}),other));c.finish('observer-finished');
+ const captured=c.snapshot();
+ assert.deepEqual(captured.events.map(e=>e.data),rows);
+ assert.deepEqual(captured.events.map(e=>[e.runId,e.nodeId]),rows.map((_,i)=>[run,i===3?'worker-review':'agent']));
+ assert.equal(captured.captureComplete,true);assert.ok(captured.events.every(e=>e.data.verified===false));
+ assert.equal(Object.hasOwn(c.summary(),'success'),false);assert.match(c.summary().scoring,/manual evidence review/i);
+});
+test('H6 outcome assessment metadata retains existing secret reasoning and image exclusions',()=>{
+ const c=createCapture();c.bind(run);
+ c.ingest(event(outcomeReview({analysis:'h6-private-reasoning',credentials:{password:'h6-private-secret'},
+  headers:{Authorization:'Bearer h6-private-bearer'},summary:'password=h6-private-secret',
+  nested:{reasoning:'h6-private-reasoning',encrypted:'h6-private-reasoning'},imageUrl:'data:image/png;base64,h6-private-pixels'})));
+ const row=c.snapshot().events[0];
+ assert.ok(row);assert.equal(row.data.credentials.secret,true);assert.equal(row.data.headers.secret,true);
+ assert.equal(row.data.imageUrl.omitted,'binary');assert.equal(row.data.authoritySha256,'b'.repeat(64));
+ assert.doesNotMatch(JSON.stringify(c.snapshot()),/h6-private-reasoning|h6-private-secret|h6-private-bearer|h6-private-pixels/);
+});
+test('H6 outcome assessment limits remain explicit instead of implying complete evidence',()=>{
+ const c=createCapture();c.bind(run);c.ingest(event(outcomeReview({summary:'x'.repeat(200001)})));c.finish('observer-finished');
+ assert.equal(c.snapshot().events[0]?.captureLimitations.omittedCharacters,1);
+ assert.equal(c.snapshot().captureComplete,false);
+ const bounded=createCapture({maxEvents:1});bounded.bind(run);bounded.ingest(event(outcomeReview()));bounded.ingest(event(outcomeReview({sequence:2})));
+ assert.equal(bounded.dropped,1);assert.equal(bounded.snapshot().events.length,1);assert.equal(bounded.snapshot().captureComplete,false);
+ const bytes=createCapture({maxBytes:1});bytes.bind(run);bytes.ingest(event(outcomeReview()));
+ assert.equal(bytes.dropped,1);assert.equal(bytes.snapshot().captureComplete,false);
+});
+test('H6 generated observer retains the same public assessment under schema6',async()=>{
+ const f=bootstrapFixture(),pending=f.start();f.subscription.onopen();const ready=await pending;
+ assert.equal(ready.schemaVersion,6);assert.equal(ready.redactionPolicy,'public-native-actions-v6');
+ f.capture.bind(run);const input=event(outcomeReview({decision:'respond',remaining:[],nextAction:''}));
+ f.subscription.onmessage({data:JSON.stringify(input)});
+ const snapshot=f.capture.stop();
+ assert.deepEqual(JSON.parse(JSON.stringify(snapshot.events)),[captureEvent(input)]);
+ assert.equal(snapshot.events[0].data.verified,false);assert.equal(snapshot.captureComplete,true);
+});
+test('H6 rejects an active schema5 observer without replacing its evidence',async()=>{
+ const f=bootstrapFixture(),pending=f.start();f.subscription.onopen();await pending;
+ const previous=f.capture;previous.schemaVersion=5;previous.redactionPolicy='public-native-actions-v5';previous.bind(run);
+ f.subscription.onmessage({data:JSON.stringify(event({type:'message',itemId:'old-v5',text:'Original version5 public evidence.'}))});
+ const before=JSON.stringify(previous.snapshot());
+ await assert.rejects(f.start(),/another capture schema/);
+ assert.equal(f.capture,previous);assert.equal(f.constructions,1);assert.equal(JSON.stringify(previous.snapshot()),before);
+ assert.equal(f.subscription.closed,false);
 });

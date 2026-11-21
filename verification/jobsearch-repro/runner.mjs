@@ -180,7 +180,8 @@ export function projectRun(run) {
 }
 function observerReadinessInRenderer() {
   const observer = window.__blackiceJobSearchEvidence;
-  return observer ? { active:observer.active, readiness:observer.readiness, openedAtUTC:observer.openedAtUTC,
+  return observer ? { schemaVersion:observer.schemaVersion, redactionPolicy:observer.redactionPolicy,
+    active:observer.active, readiness:observer.readiness, openedAtUTC:observer.openedAtUTC,
     runId:observer.runId, errors:observer.errors, dropped:observer.dropped, limitationEvents:observer.limitationEvents } : null;
 }
 async function inspectInRenderer(runId, requestId, project) {
@@ -263,7 +264,10 @@ export async function sourceEvidence(config) {
   const product = ['package.json','desktop/main.mjs','lib/browser-cli.mjs','lib/browser.mjs','lib/application-history.mjs',
     'public/mission-model.mjs','lib/harness-identity.mjs','lib/instruction-store.mjs','lib/identity.mjs',
     'lib/release-skills.mjs','lib/skill-library/what-makes-done.md','lib/skill-library/job-search.md','public/chat-turn-defaults.mjs',
-    'lib/conversation-execution-modes.mjs','lib/engine.mjs','lib/chat-execution-review.mjs'];
+    'lib/conversation-execution-modes.mjs','lib/engine.mjs','lib/chat-execution-review.mjs',
+    'lib/chat-outcome-review.mjs','lib/modular-completion.mjs','lib/review-concern-provenance.mjs','lib/outcome-reconciliation.mjs',
+    'lib/evidence-context.mjs','lib/context.mjs','lib/browser-evidence-views.mjs','public/planning-module-policy.mjs',
+    'lib/skill-library/browser-navigation.md','lib/skill-library/index.json','desktop/browser-driver.mjs'];
   const files = {};
   for (const file of product) {
     const candidate = await fs.readFile(path.join(ROOT,file));
@@ -375,11 +379,21 @@ export class TrialRunner {
       const directory = await fs.stat(cwd).catch(() => null);
       if (!directory?.isDirectory()) throw fail('CONFIG_INVALID', 'cwd must be an existing directory.');
     }
-    const skills = [];
+    const browserBodySha256 = source.files?.['lib/skill-library/browser-navigation.md']?.candidate;
+    if (!/^[a-f0-9]{64}$/.test(browserBodySha256 || '')) throw fail('SOURCE_MISMATCH','Candidate Browser Navigation identity is unavailable.');
+    const skills = []; let browserObserved = false;
     for (const row of catalog.entries || []) {
       const value = await session.request('/api/skills/' + encodeURIComponent(row.id));
-      skills.push({id:row.id,source:value.source,revision:value.revision,sha256:sha256(JSON.stringify(value))});
+      const entry = {id:row.id,source:value.source,revision:value.revision,sha256:sha256(JSON.stringify(value))};
+      if (row.id === 'library-browser-navigation') {
+        if (value.id !== row.id || typeof value.content !== 'string' || !Number.isSafeInteger(value.revision) || value.revision < 1
+            || !['bundled','user'].includes(value.source) || sha256(value.content) !== browserBodySha256)
+          throw fail('SKILL_MISMATCH','Effective library-browser-navigation does not match the candidate body.');
+        entry.contentSha256 = browserBodySha256; browserObserved = true;
+      }
+      skills.push(entry);
     }
+    if (!browserObserved) throw fail('SKILL_MISMATCH','Effective library-browser-navigation is missing from the native catalog.');
     const account = status.codex?.account ?? status.account;
     const effective = { identitySha256:sha256(JSON.stringify(identity)), coreRevision:instructions.core?.revision,
       coreSha256:sha256(JSON.stringify(instructions.core)), skills, catalogSha256:sha256(JSON.stringify(catalog.entries || [])),
@@ -431,10 +445,12 @@ export class TrialRunner {
     const session = await this.session(), current = await this.evidence(session);
     if (current.freezeSha256 !== this.journal.preflight.freezeSha256) throw fail('PREFLIGHT_CHANGED','Source/instruction/configuration identities changed before admission.');
     const ready = await this.frontend(session,'install',captureExpression());
-    if (ready.readiness !== 'ready' || !Number.isFinite(Date.parse(ready.openedAtUTC)) || ready.alreadyActive)
+    if (ready.schemaVersion !== 6 || ready.redactionPolicy !== 'public-native-actions-v6'
+        || ready.readiness !== 'ready' || !Number.isFinite(Date.parse(ready.openedAtUTC)) || ready.alreadyActive)
       throw fail('OBSERVER_NOT_READY','A newly installed observer with an explicit stream-open receipt is required.');
     const liveReady = await this.frontend(session,'readycheck-' + Object.keys(this.journal.operations).length,'(' + observerReadinessInRenderer.toString() + ')()');
-    if (!liveReady?.active || liveReady.readiness !== 'ready' || liveReady.openedAtUTC !== ready.openedAtUTC || liveReady.runId
+    if (liveReady?.schemaVersion !== 6 || liveReady.redactionPolicy !== 'public-native-actions-v6'
+        || !liveReady.active || liveReady.readiness !== 'ready' || liveReady.openedAtUTC !== ready.openedAtUTC || liveReady.runId
         || liveReady.errors !== 0 || liveReady.dropped !== 0 || liveReady.limitationEvents !== 0)
       throw fail('OBSERVER_NOT_READY','The live observer is absent, stopped, bound, or unhealthy; cached readiness cannot admit a run.');
     await this.recordArtifacts('before');

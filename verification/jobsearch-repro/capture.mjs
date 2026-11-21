@@ -146,7 +146,7 @@ export function captureEvent(event, history = []) {
       item: { type: typeof item?.type === 'string' ? cleanText(item.type).slice(0, 200) : null,
         id: typeof item?.id === 'string' ? cleanText(item.id).slice(0, 200) : null } };
   } else if (['tool.result', 'skill_context_submitted', 'skill_context_accepted', 'instruction_context_submitted',
-    'instruction_context_accepted', 'chat.execution-review', 'host.final-review', 'provider.final', 'browser.observation'].includes(d.type)) {
+    'instruction_context_accepted', 'chat.execution-review', 'chat.outcome-review', 'host.final-review', 'provider.final', 'browser.observation'].includes(d.type)) {
     data = sanitize(d, 'output', 0, limits);
   } else return null;
   return { type: event.type, runId: event.runId, nodeId: event.nodeId, at: event.at, data, captureLimitations: limits };
@@ -180,7 +180,7 @@ export function summarize(events) {
     scoring: 'manual evidence review required; no automatic application-success verdict' };
 }
 export function createCapture(options = {}) {
-  const state = { schemaVersion: 5, redactionPolicy: 'public-native-actions-v5', active: true, runId: null, startedAt: new Date().toISOString(), records: [], bytes: 0, dropped: 0,
+  const state = { schemaVersion: 6, redactionPolicy: 'public-native-actions-v6', active: true, runId: null, startedAt: new Date().toISOString(), records: [], bytes: 0, dropped: 0,
     errors: 0, limitationEvents: 0, maxEvents: options.maxEvents ?? 3000, maxBytes: options.maxBytes ?? 16000000,
     source: 'authenticated-app-event-stream' };
   const bytes = value => new TextEncoder().encode(JSON.stringify(value)).length;
@@ -220,7 +220,7 @@ export function createCapture(options = {}) {
 export async function browserBootstrap() {
   const key = '__blackiceJobSearchEvidence';
   if (window[key]?.active) {
-    if (window[key].schemaVersion !== 5) throw Error('Existing observer uses another capture schema; stop it before replacing it.');
+    if (window[key].schemaVersion !== 6) throw Error('Existing observer uses another capture schema; stop it before replacing it.');
     if (!window[key].ready) throw Error('Existing observer has no stream readiness receipt; stop it before replacing it.');
     return { ...(await window[key].ready), alreadyActive: true };
   }

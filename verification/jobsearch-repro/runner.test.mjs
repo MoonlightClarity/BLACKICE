@@ -17,9 +17,11 @@ async function fixture(t, options={}) {
   t.after(()=>fs.rm(root,{recursive:true,force:true}));
   const config={profile:path.join(root,'profile'),executable:path.join(root,'BLACKICE.exe'),out:path.join(root,'attempt'),
     appDir:path.join(root,'app'),model:'gpt-6.2-astra',effort:'high',jobs:options.jobs || 1,profileCondition:'fresh',providerAccount:'reused'};
+  const browserGuidance=await fs.readFile(new URL('../../lib/skill-library/browser-navigation.md',import.meta.url),'utf8');
   const calls=[], jobs=new Map(), idempotency=new Map(), timers=new Map();
   const state={run:null,posts:0,source:'frozen',lostResponse:options.lostResponse,missingRun:options.missingRun,subscription:null,
-    failReadyCheckOnce:options.failReadyCheckOnce,loseBindOnce:options.loseBindOnce,bindRequests:0,nonJobSkillContent:'original editing method'};
+    failReadyCheckOnce:options.failReadyCheckOnce,loseBindOnce:options.loseBindOnce,bindRequests:0,nonJobSkillContent:'original editing method',
+    browserSkillContent:browserGuidance,browserSkillMissing:false,browserSkillSource:options.browserOwner?'user':'bundled',browserSkillRevision:options.browserOwner?7:1};
   let serial=0, timerSerial=0;
   class EventSource {
     constructor(url) {
@@ -45,7 +47,11 @@ async function fixture(t, options={}) {
       conversations:{conversations:0},execution:{activeCount:0}};
     if(route==='/api/identity') return {soul:{revision:1,content:'fresh default'},user:{revision:1,content:'unfilled template'}};
     if(route==='/api/instructions') return {core:{revision:1,content:'current core'}};
-    if(route==='/api/skills') return {entries:[{id:'library-job-search',title:'Job search',source:'bundled',revision:1},{id:'library-editing',title:'Editing',source:'bundled',revision:1}]};
+    if(route==='/api/skills') return {entries:[{id:'library-job-search',title:'Job search',source:'bundled',revision:1},{id:'library-editing',title:'Editing',source:'bundled',revision:1},
+      ...(state.browserSkillMissing?[]:[{id:'library-browser-navigation',title:'Browser Navigation and Continuity',source:state.browserSkillSource,revision:state.browserSkillRevision}])]};
+    if(route==='/api/skills/library-browser-navigation') return {id:'library-browser-navigation',title:'Browser Navigation and Continuity',
+      source:state.browserSkillSource,revision:state.browserSkillRevision,immutable:true,userEditable:true,loaded:'available_on_demand',
+      provenance:{kind:'first-party',revision:'rendered-obstacles-20261121'},content:state.browserSkillContent};
     if(route==='/api/skills/library-editing') return {id:'library-editing',source:'bundled',revision:1,content:state.nonJobSkillContent};
     if(route==='/api/skills/library-job-search') return {id:'library-job-search',source:'bundled',revision:1,content:'general method'};
     if(route==='/api/development/frontend') {
@@ -82,9 +88,11 @@ async function fixture(t, options={}) {
     throw Error('Unexpected fake native route: '+route);
   };
   const dependencies={connect:async()=>({request,runtime:{pid:123,startedAt:'2026-11-21T00:00:00Z',url:'http://127.0.0.1:42000',version:'2.40.72',profileMode:'custom',cookie:'never-archive-session-cookie'}}),
-    sources:async()=>({commit:'fixture',fingerprint:state.source,files:{}}),pause:async()=>Promise.resolve(),
+    sources:async()=>({commit:'fixture',fingerprint:state.source,files:{'lib/skill-library/browser-navigation.md':{candidate:sha256(browserGuidance)}}}),pause:async()=>Promise.resolve(),
     readResult:async(id,requestId)=>{const job=jobs.get(id);assert.equal(job.arguments.requestId,requestId);await job.pending;
       if(!job.success)throw job.error;
+      if(options.oldObserverBoundary==='install'&&requestId.endsWith('.install')||options.oldObserverBoundary==='readiness'&&requestId.includes('.readycheck-'))
+        return {...job.value,schemaVersion:5,redactionPolicy:'public-native-actions-v5'};
       if(options.wrongCapture && requestId.endsWith('.stop'))return {...job.value,runId:OTHER};
       return job.value;}};
   const runner=new TrialRunner(config,dependencies);
@@ -276,9 +284,9 @@ test('actual product modules still require strict byte equality',()=>{
     error=>error.code==='SOURCE_MISMATCH');
 });
 
-for (const file of ['lib/browser.mjs','lib/application-history.mjs','lib/skill-library/what-makes-done.md'])
+for (const file of ['lib/browser.mjs','lib/application-history.mjs','lib/skill-library/what-makes-done.md','lib/browser-evidence-views.mjs','lib/skill-library/browser-navigation.md'])
 for (const change of ['changed','missing'])
-for (const command of file === 'lib/skill-library/what-makes-done.md' ? ['preflight','start'] : ['preflight']) {
+for (const command of ['lib/skill-library/what-makes-done.md','lib/browser-evidence-views.mjs','lib/skill-library/browser-navigation.md'].includes(file) ? ['preflight','start'] : ['preflight']) {
   test(`native ${command} rejects ${change} installed ${file} before admission`,async t=>{
     const f=await fixture(t), sourceRoot=fileURLToPath(new URL('../../',import.meta.url));
     const baseline=await sourceEvidence({appDir:sourceRoot});
@@ -486,4 +494,25 @@ test('R3 BOM-prefixed JSON uses structured redaction with original raw byte iden
   assert.equal(/bom-sensitive-fixture|bom-password-fixture/.test(JSON.stringify(row)),false);
   assert.equal(row.encoding,'utf-8');assert.equal(row.redacted,true);assert.match(row.text,/ordinary visible note/);
   assert.equal(Object.hasOwn(row,'textOmitted'),false);
+});
+
+for(const missing of [false,true])test('H6 preflight rejects '+(missing?'missing':'mismatched owner')+' Browser Navigation before observer or admission',async t=>{
+ const f=await fixture(t,{browserOwner:true});f.state.browserSkillMissing=missing;
+ if(!missing)f.state.browserSkillContent+='Obsolete visual interaction method.';
+ await assert.rejects(f.runner.preflight(),error=>error.code==='SKILL_MISMATCH'&&error.message.includes('library-browser-navigation'));
+ assert.equal(f.state.posts,0);assert.deepEqual(f.calls,[]);
+ await assert.rejects(fs.access(path.join(f.config.out,'admission.json')),error=>error.code==='ENOENT');
+});
+test('H6 records exact native-shaped effective Browser Navigation owner content and revision',async t=>{
+ const f=await fixture(t,{browserOwner:true});await f.runner.preflight();
+ const row=(await f.read('preflight.json')).effective.skills.find(x=>x.id==='library-browser-navigation');
+ assert.equal(row.source,'user');assert.equal(row.revision,7);
+ assert.equal(row.contentSha256,sha256(f.state.browserSkillContent));assert.equal(f.state.posts,0);
+ assert.deepEqual(f.calls,[]);
+});
+for(const boundary of ['install','readiness'])test('H6 rejects old observer version at '+boundary+' before admission',async t=>{
+ const f=await fixture(t,{oldObserverBoundary:boundary});await f.runner.preflight();
+ await assert.rejects(f.runner.start(),error=>error.code==='OBSERVER_NOT_READY');
+ assert.equal(f.state.posts,0);assert.equal(f.calls.includes('admit'),false);
+ await assert.rejects(fs.access(path.join(f.config.out,'admission.json')),error=>error.code==='ENOENT');
 });
