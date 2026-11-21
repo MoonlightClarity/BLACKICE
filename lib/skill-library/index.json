@@ -4,21 +4,25 @@
     {
       "id": "library-browser-navigation",
       "title": "Browser Navigation and Continuity",
-      "description": "Open and follow pages, inspect navigation, recover stale controls, and verify the resulting page or record.",
+      "description": "Open and follow pages, inspect visual or embedded obstacles, recover stale controls, and verify the resulting page or record.",
       "tags": [
         "browser",
         "navigation",
-        "continuity"
+        "continuity",
+        "visual",
+        "obstacles"
       ],
       "aliases": [
         "browser navigation",
         "browser continuity",
         "resume browser task",
-        "stale browser tab"
+        "stale browser tab",
+        "browser visual obstacle",
+        "embedded challenge"
       ],
       "source": {
         "kind": "first-party",
-        "revision": "clarity-20261121"
+        "revision": "rendered-obstacles-20261121"
       },
       "bodyFile": "browser-navigation.md"
     },

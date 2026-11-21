@@ -167,3 +167,16 @@ test('domain aliases handle intervening words without awarding unrelated word fr
   'Use tabkey stickers to color-make a wordfile-themed birthday card.',
  ]) assert.equal((await search(query)).totalMatches,0,query);
 });
+
+for (const query of ['browser visual obstacle', 'An embedded challenge appeared in the browser; inspect what is actually visible.']) {
+ test('native skill retrieval finds rendered browser obstacle guidance: '+query,async()=>{
+  const handler=createRetrievalToolHandler({cwd:process.cwd()});
+  const call=async args=>decode(await handler({name:'relay_skills',arguments:args}));
+  const found=await call({action:'search',query});
+  assert.equal(found.entries[0]?.id,'library-browser-navigation');
+  assert.ok(found.entries.every(row=>!('content' in row)));
+  const selected=await call({action:'read',id:found.entries[0].id});
+  assert.equal(selected.entry.content,await fs.readFile(new URL('../lib/skill-library/browser-navigation.md',import.meta.url),'utf8'));
+  assert.equal(selected.entry.source,'bundled');
+ });
+}
