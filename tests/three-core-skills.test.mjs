@@ -10,6 +10,7 @@ import {readReleaseSkill,searchReleaseSkills} from '../lib/release-skills.mjs';
 import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
 import {SkillFolderStore} from '../lib/skill-folders.mjs';
 import {CHAT_PLANNING_MODULES} from '../lib/chat-planning-pass.mjs';
+import {createChatPlanningProviderInvoker} from '../lib/chat-planning-provider.mjs';
 const ids=['builtin-decomposition','builtin-task-grounding','builtin-structured-analysis'];
 test('the three revised inline definitions are preserved; removed defaults are not fallback content',async()=>{
  assert.deepEqual(searchReleaseSkills().map(x=>x.id),ids);
@@ -73,11 +74,73 @@ test('explicit folder mutation removes orphan placements only, preserving actual
 });
 
 
-test('over-alignment calibration connects three reward incentives to the delivered scope',()=>{
+test('over-alignment calibration connects three reward incentives to the delivered scope',async()=>{
  const {content}=readReleaseSkill('builtin-task-grounding');
- for(const pattern of [/F\/\(M\+F\)/,/three reviewers can independently veto/,/4 - 3p/,/Check what the source prevents/,/indirect evidence/,/Conflicting documents/])assert.match(content,pattern);
- const brief=CHAT_PLANNING_MODULES.find(module=>module.id==='builtin-task-grounding').brief;
- assert.match(brief,/what supposedly blocks it/);
- assert.match(brief,/an observed tool response/);
+ const patterns=[
+  /F\/\(M\+F\)/,
+  /three reviewers can independently veto/,
+  /4 - 3p/,
+  /Check what the source prevents/,
+  /indirect evidence/,
+  /Conflicting documents/,
+ ];
+ for(const pattern of patterns)assert.match(content,pattern);
  assert.doesNotMatch(content,/under-alignment|underalignment|circana|sponsor|arbitrat/i);
+
+ const module=CHAT_PLANNING_MODULES.find(module=>module.id==='builtin-task-grounding');
+ const scope={taskId:'calibration-task',runId:'calibration-run',nodeId:'calibration-node'};
+ const calls=[],audits=[];
+ const output={
+  status:'proposed',
+  focus:'inspect',
+  reason:'Inspect the observed restriction before narrowing this task.',
+  sourceRefs:[],
+ };
+ const invoke=createChatPlanningProviderInvoker({
+  ...scope,
+  model:'fixture::offline',
+  cwd:process.cwd(),
+  assertAdmission(){},
+  onInstructionAudit:value=>audits.push(value),
+  runtime:{
+   async runAgent(options){
+    calls.push(options);
+    options.onPromptAccepted(options.prompt);
+    return {output:JSON.stringify(output)};
+   },
+  },
+ });
+ await invoke({
+  ...scope,
+  module,
+  snapshot:{
+   taskId:scope.taskId,
+   revision:0,
+   objective:'Inspect an observed task restriction.',
+   actions:[{
+    id:'inspect',
+    objective:'Inspect the observed restriction.',
+    dependsOn:[],
+    state:'pending',
+   }],
+   receipts:[],
+  },
+ });
+
+ assert.equal(calls.length,1);
+ const request=calls[0];
+ assert.equal(request.prompt.split(content).length-1,1);
+ assert.equal(request.developerInstructions.includes(content),false);
+ for(const pattern of patterns)assert.match(request.prompt,pattern);
+ assert.equal(request.responseOnly,true);
+ assert.deepEqual(request.dynamicTools,[]);
+
+ const audit=audits.at(-1).audit;
+ const method=audit.sections.find(section=>section.id==='skill-'+module.id);
+ assert.equal(method.text,content);
+ assert.equal(method.source,'Bundled skill: '+module.id);
+ assert.equal(method.role,'user');
+ assert.equal(method.layer,'prompt');
+ assert.equal(method.status,'accepted');
+ assert.equal(audit.delivery,'accepted');
 });

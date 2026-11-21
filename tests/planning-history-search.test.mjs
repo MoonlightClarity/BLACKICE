@@ -50,13 +50,37 @@ test('full history matches take precedence while partial alternatives stay expli
   assert.deepEqual(result.results[1].missingTerms,['project']);
 });
 
-test('skill document search requires all query terms and removed memory is not a tool',async()=>{
+test('skill discovery ranks the relevant method and reads by identity; removed memory is not a tool',async()=>{
   const handler=handlerFor([]);
-  const entries=(await invoke(handler,{action:'search',query:'job search'},'relay_skills')).result.entries;
+  const entries=(await invoke(handler,{
+    action:'search',
+    query:'job search',
+  },'relay_skills')).result.entries;
+
   assert.ok(entries.length>0);
-  for(const entry of entries){const full=(await invoke(handler,{action:'read',id:entry.id},'relay_skills')).result.entry;assert.ok(['job','search'].every(term=>full.content.toLowerCase().includes(term)));}
-  assert.equal((await invoke(handler,{action:'search',query:'job search zzz_nonexistent_skill_query_7719'},'relay_skills')).result.entries.length,0);
-  await assert.rejects(invoke(handler,{action:'search'},'relay_memory'),/Unknown knowledge tool/);
+  assert.equal(entries[0].id,'library-job-search');
+
+  for(const entry of entries){
+    assert.equal(Object.hasOwn(entry,'content'),false);
+    const full=(await invoke(handler,{
+      action:'read',
+      id:entry.id,
+    },'relay_skills')).result.entry;
+    assert.equal(full.id,entry.id);
+    assert.equal(full.title,entry.title);
+    assert.equal(typeof full.content,'string');
+    assert.ok(full.content.trim().length>0);
+  }
+
+  assert.equal((await invoke(handler,{
+    action:'search',
+    query:'zzznonsuchskillquery7719',
+  },'relay_skills')).result.entries.length,0);
+
+  await assert.rejects(
+    invoke(handler,{action:'search'},'relay_memory'),
+    /Unknown knowledge tool/,
+  );
 });
 
 test('a natural query can discover and focus receipt-only evidence with explicit partial-match terms',async()=>{
