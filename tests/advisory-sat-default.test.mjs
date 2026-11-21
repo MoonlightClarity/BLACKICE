@@ -3,18 +3,19 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {createHash} from 'node:crypto';
 import {readReleaseSkill,searchReleaseSkills} from '../lib/release-skills.mjs';
 import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
 const id='builtin-structured-analysis';
-test('advisory SAT default is discoverable and read only on demand with all eight examples',async t=>{
+test('advisory SAT default is discoverable and read only on demand with concise techniques and concrete examples',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'advisory-sat-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const base=readReleaseSkill(id),catalog=createSkillsCatalog({dataDir:root});t.after(()=>catalog.close());
  assert.equal(base.revision,1); assert.equal(base.loaded,'available_on_demand');
  assert.ok(searchReleaseSkills('Structured Analytic').some(x=>x.id===id));
- assert.equal((base.content.match(/^### [1-8][.]/gm)||[]).length,8);
- for(const text of ['optional guidance','Choose, adapt, combine, or skip','no prerequisites, permissions, fixed budgets, mandatory workspace records, or runtime enforcement','not tiers to qualify for','unexamined possibility','not a universal proof rule'])assert.ok(base.content.includes(text),text);
+ const sections=base.content.split(/^## /m).slice(1);
+ assert.deepEqual(sections.map(section=>section.split('\n')[0]),['Test an assumption','Compare explanations','Compare actions','Challenge a consequential choice','Stop analysis and take the next step']);
+ for(const section of sections.slice(0,4))assert.match(section,/^Example: .+/m);
+ for(const text of ['the sections are alternatives, not a checklist','uncertainty alone does not stop the task','Completing an analysis method does not prove its conclusion'])assert.ok(base.content.includes(text),text);
  assert.equal((await catalog.detail({id})).content,base.content);
  const handler=createRetrievalToolHandler({cwd:root,dataDir:root});
  const found=JSON.parse((await handler({name:'relay_skills',arguments:{action:'search',query:'Structured Analytic'}})).contentItems[0].text);
@@ -24,6 +25,7 @@ test('advisory SAT default is discoverable and read only on demand with all eigh
 });
 test('adding SAT does not overwrite existing human skills; SAT edits and deletion persist',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'sat-preserve-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const groundingBefore=readReleaseSkill('builtin-task-grounding').content;
  const catalog=createSkillsCatalog({dataDir:root});t.after(()=>catalog.close());
  const prior=await catalog.detail({id:'builtin-task-grounding'});
  await catalog.save({id:prior.id,value:{content:'# Human skill\\nKeep exactly.',expectedRevision:prior.revision}});
@@ -36,5 +38,5 @@ test('adding SAT does not overwrite existing human skills; SAT edits and deletio
  await reopened.delete({id,value:{expectedRevision:2}});
  await assert.rejects(reopened.detail({id}),{status:404});
  assert.equal((await reopened.detail({id:prior.id})).content,'# Human skill\\nKeep exactly.');
- assert.equal(createHash('sha256').update(readReleaseSkill('builtin-task-grounding').content).digest('hex'),'56c729d6ed74b073df340c1640500e7dac43e57418f52c8b292bd0b94737ed5d');
+ assert.equal(readReleaseSkill('builtin-task-grounding').content,groundingBefore);
 });

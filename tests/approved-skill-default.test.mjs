@@ -13,15 +13,19 @@ test('approved skill ships the exact bundled revision and gives the model a fres
  const root=await mkdtemp(path.join(tmpdir(),'approved-skill-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const catalog=createSkillsCatalog({dataDir:root}),base=readReleaseSkill(id),entry=await catalog.detail({id});
  assert.equal(base.title,'Anti-Overalignment');
- assert.equal(base.content,await readFile(new URL('./fixtures/anti-overalignment-general-operational.md',import.meta.url),'utf8'));
- assert.equal(hash(base.content),'56c729d6ed74b073df340c1640500e7dac43e57418f52c8b292bd0b94737ed5d');
+ // Pin the current instruction-clarity default; the older operational fixture is historical.
+ assert.equal(base.revision,1);
+ assert.equal(hash(base.content),'201a3e0a45d70169a7cf6fca882ca469bac06da1e13e0733b0de94c43be790da');
  assert.ok(base.content.startsWith('# Anti-Overalignment\n'));
  assert.equal(entry.content,base.content);assert.equal(entry.source,'bundled');
  const handler=createRetrievalToolHandler({cwd:root,dataDir:root});
  const result=JSON.parse((await handler({name:'relay_skills',arguments:{action:'read',id}})).contentItems[0].text);
  assert.equal(result.entry.content,base.content);
  const saved=await catalog.save({id,value:{content:'Exact human draft\n',expectedRevision:entry.revision}});
- assert.equal(saved.revision,2);const file=path.join(root,'skill-edits','skills.json'),before=await readFile(file);
+ assert.equal(saved.revision,2);
+ const fresh=JSON.parse((await handler({name:'relay_skills',arguments:{action:'read',id}})).contentItems[0].text);
+ assert.equal(fresh.entry.content,'Exact human draft\n');assert.equal(fresh.entry.revision,2);
+ const file=path.join(root,'skill-edits','skills.json'),before=await readFile(file);
  const reopened=createSkillsCatalog({dataDir:root});assert.equal((await reopened.detail({id})).content,'Exact human draft\n');
  assert.deepEqual(await readFile(file),before);assert.equal(hash(readReleaseSkill(id).content),hash(base.content));
  await reopened.close();await catalog.close();

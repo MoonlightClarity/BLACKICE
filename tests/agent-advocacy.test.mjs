@@ -83,9 +83,9 @@ test('actual engine wiring supplies concise mechanics and only the contained bro
   const runtime = new FixtureRuntime(async options => {
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS));
     assert.doesNotMatch(options.developerInstructions, /FORM COMPLETION/);
-    assert.match(options.developerInstructions, /SOUL\.md supplies owner-configured behavior/);
-    assert.match(options.developerInstructions, /Do not invent another approval/);
-    assert.match(options.developerInstructions, /Carry the user's request through its ordinary required steps/);
+    assert.match(options.developerInstructions, /Use SOUL\.md for behavior and relevant skills for task methods/);
+    assert.match(options.developerInstructions, /without adding approval questions or prerequisites/);
+    assert.match(options.developerInstructions, /Carry the request through its ordinary steps/);
     assert.equal(options.onApproval, undefined);
     const connectionTool = options.dynamicTools.find(tool => tool.name === 'relay_connections');
     assert.equal(connectionTool, undefined);
@@ -116,9 +116,9 @@ for (const planningMode of ['on', 'off']) test(`current mechanics and owner-poli
   const tasks = await new TaskStateStore({ dataDir: root }).init();
   const runtime = new FixtureRuntime(async (options, number) => {
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS));
-    assert.match(options.developerInstructions, /relevant skills supply task procedures/);
+    assert.match(options.developerInstructions, /Use SOUL\.md for behavior and relevant skills for task methods/);
     assert.doesNotMatch(options.developerInstructions, /limit on weak single-trait inference/);
-    assert.match(options.developerInstructions, /Use BLACKICE.s contained relay_browser for website interaction/);
+    assert.match(options.developerInstructions, /Use BLACKICE.s contained browser for websites/);
     assert.equal(options.onApproval, undefined);
     if (number === 2) assert.equal(options.threadId, 'advocacy-fixture-thread');
     return { output: `Instruction wiring observation ${number}.`, threadId: 'advocacy-fixture-thread' };
