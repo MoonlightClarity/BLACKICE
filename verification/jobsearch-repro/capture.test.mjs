@@ -198,7 +198,7 @@ test('audited answer preserves a long actual-shaped fill with earlier field prov
     assert.equal(audit.observed.callId,'observation');assert.equal(audit.observed.documentId,'tab-a:9');assert.equal(audit.observed.frame,'7-11');
     assert.equal(audit.originalLength,text.length);assert.equal(audit.retainedLength,text.length);
     assert.equal(audit.textComplete,true);assert.match(audit.meaning,/not.*submitted/i);
-    assert.equal(c.snapshot().schemaVersion,4);
+    assert.equal(c.snapshot().schemaVersion,5);
     assert.equal(c.snapshot().events.at(-1).data.item.arguments.text.redacted,true);
   }
 });
@@ -362,6 +362,8 @@ test('late duplicate cannot use a later observation as prior evidence',()=>{
 });
 
 
+const nativeImageView={type:'imageView',id:'image-read',path:'C:/fixture/diagram.png',startedAtMs:1795219200000,completedAtMs:null};
+
 const nativeCommand={type:'commandExecution',id:'native-command',command:'node verify.mjs',cwd:'C:/fixture',
   status:'completed',exitCode:7,aggregatedOutput:'Actual test failure\n',durationMs:12};
 const nativeFile={type:'fileChange',id:'native-file',status:'completed',
@@ -425,15 +427,66 @@ test('H2 unknown public native item retains only identity and explicit unsupport
   assert.doesNotMatch(JSON.stringify(record),/unreviewed body|private chain/);
 });
 
-test('H3 generated observer identifies the new schema and policy',async()=>{
+test('H5 generated observer retains local-image reads under the new schema and policy',async()=>{
   const f=bootstrapFixture(),pending=f.start();f.subscription.onopen();const ready=await pending;
-  assert.equal(ready.schemaVersion,4);assert.equal(ready.redactionPolicy,'public-native-actions-v4');
+  assert.equal(ready.schemaVersion,5);assert.equal(ready.redactionPolicy,'public-native-actions-v5');
+  f.capture.bind(run);
+  const completed={...nativeImageView,completedAtMs:1795219200001};
+  for(const [stage,item]of [['started',nativeImageView],['completed',completed]])
+    f.subscription.onmessage({data:JSON.stringify(event({type:'item',stage,item}))});
+  const snapshot=f.capture.stop();
+  assert.deepEqual(JSON.parse(JSON.stringify(snapshot.events.map(e=>e.data.item))),[nativeImageView,completed]);
+  assert.equal(snapshot.limitationEvents,0);assert.equal(snapshot.captureComplete,true);
 });
 
 test('H3 rejects an active schema-3 observer without replacing or relabeling its evidence',async()=>{
   const f=bootstrapFixture(),pending=f.start();f.subscription.onopen();await pending;
   const previous=f.capture;previous.schemaVersion=3;previous.redactionPolicy='public-native-actions-v3';previous.bind(run);
   f.subscription.onmessage({data:JSON.stringify(event({type:'message',itemId:'old-evidence',text:'Original public evidence.'}))});
+  const before=JSON.stringify(previous.snapshot());
+  await assert.rejects(f.start(),/another capture schema/);
+  assert.equal(f.capture,previous);assert.equal(f.constructions,1);
+  assert.equal(JSON.stringify(previous.snapshot()),before);assert.equal(f.subscription.closed,false);
+});
+
+test('H5 retains actual-shaped image-view stages and provenance within existing run and capture bounds',()=>{
+  const started={...event({type:'item',stage:'started',item:nativeImageView}),nodeId:'image-reader'};
+  const completed={...event({type:'item',stage:'completed',item:{...nativeImageView,completedAtMs:1795219200001}}),nodeId:'image-reader'};
+  const c=createCapture();c.bind(run);c.ingest(started);c.ingest(completed);
+  c.ingest({...completed,runId:other,nodeId:'unrelated-reader'});c.finish('observer-finished');
+  const snapshot=c.snapshot();
+  assert.deepEqual(snapshot.events.map(e=>[e.runId,e.nodeId,e.data.stage,e.data.item.id]),
+    [[run,'image-reader','started','image-read'],[run,'image-reader','completed','image-read']]);
+  assert.deepEqual(snapshot.events.map(e=>e.data.item),[nativeImageView,completed.data.item]);
+  for(const record of snapshot.events){assert.equal(Object.hasOwn(record.data.item,'status'),false);assert.equal(Object.hasOwn(record.data.item,'success'),false);}
+  assert.equal(snapshot.limitationEvents,0);assert.equal(snapshot.captureHealthy,true);assert.equal(snapshot.captureComplete,true);
+  assert.equal(c.summary().lastCalls[0].tool,'imageView');assert.equal(c.summary().lastCalls[0].success,undefined);
+  assert.equal(Object.hasOwn(c.summary(),'success'),false);
+  const bounded=createCapture({maxEvents:1});bounded.bind(run);bounded.ingest(started);bounded.ingest(completed);
+  assert.equal(bounded.snapshot().events.length,1);assert.equal(bounded.snapshot().events[0].data.item.path,nativeImageView.path);
+  assert.equal(bounded.dropped,1);assert.equal(bounded.stopReason,'capacity-limit');assert.equal(bounded.snapshot().captureComplete,false);
+  const byteBounded=createCapture({maxBytes:1});byteBounded.bind(run);byteBounded.ingest(started);
+  assert.equal(byteBounded.snapshot().events.length,0);assert.equal(byteBounded.dropped,1);assert.equal(byteBounded.snapshot().captureComplete,false);
+});
+
+test('H5 image-view metadata uses unchanged secret private-reasoning and binary exclusions',()=>{
+  const c=createCapture();c.bind(run);
+  c.ingest(event({type:'item',stage:'completed',item:{...nativeImageView,completedAtMs:1795219200001,
+    path:nativeImageView.path+'?access_token=image-view-secret',analysis:'image-view-private-chain',
+    credentials:{password:'image-view-secret'},headers:{Authorization:'Bearer image-view-secret'},
+    nested:{reasoning:'image-view-private-chain',encrypted:'image-view-private-chain'},
+    dataUrl:'data:image/png;base64,image-view-pixel-body'}}));
+  c.ingest(event({type:'item',stage:'completed',item:{type:'reasoning',id:'private-image-reasoning',summary:'image-view-private-chain'}}));
+  const snapshot=c.snapshot(),kept=snapshot.events[0].data.item;
+  assert.equal(snapshot.events.length,1);assert.equal(kept.path,nativeImageView.path+'?access_token=[redacted]');
+  assert.equal(kept.credentials.secret,true);assert.equal(kept.headers.secret,true);assert.equal(kept.dataUrl.omitted,'binary');
+  assert.doesNotMatch(JSON.stringify(snapshot),/image-view-secret|image-view-private-chain|image-view-pixel-body/);
+});
+
+test('H5 rejects an active schema-4 observer without replacing or relabeling its evidence',async()=>{
+  const f=bootstrapFixture(),pending=f.start();f.subscription.onopen();await pending;
+  const previous=f.capture;previous.schemaVersion=4;previous.redactionPolicy='public-native-actions-v4';previous.bind(run);
+  f.subscription.onmessage({data:JSON.stringify(event({type:'message',itemId:'old-evidence-v4',text:'Original schema-4 public evidence.'}))});
   const before=JSON.stringify(previous.snapshot());
   await assert.rejects(f.start(),/another capture schema/);
   assert.equal(f.capture,previous);assert.equal(f.constructions,1);

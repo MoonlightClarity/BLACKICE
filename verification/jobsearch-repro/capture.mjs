@@ -134,7 +134,7 @@ export function captureEvent(event, history = []) {
     if (!publicPhase(message.phase)) return null;
     data = { type: 'message', itemId: message.itemId || message.id, phase: message.phase,
       text: sanitize(String(message.text || ''), 'output', 0, limits), questionCandidate: questionCandidate(message.text) };
-  } else if (d.type === 'item' && ['dynamicToolCall', 'webSearch', 'functionCall', 'mcpToolCall', 'commandExecution', 'fileChange', 'imageGeneration', 'collabAgentToolCall'].includes(item?.type)) {
+  } else if (d.type === 'item' && ['dynamicToolCall', 'webSearch', 'functionCall', 'mcpToolCall', 'commandExecution', 'fileChange', 'imageGeneration', 'imageView', 'collabAgentToolCall'].includes(item?.type)) {
     const copy = sanitize(item, 'output', 0, limits);
     if (item.arguments !== undefined) copy.arguments = sanitize(item.arguments, 'arguments', 0, limits);
     data = { type: 'item', stage: d.stage, item: copy };
@@ -180,7 +180,7 @@ export function summarize(events) {
     scoring: 'manual evidence review required; no automatic application-success verdict' };
 }
 export function createCapture(options = {}) {
-  const state = { schemaVersion: 4, redactionPolicy: 'public-native-actions-v4', active: true, runId: null, startedAt: new Date().toISOString(), records: [], bytes: 0, dropped: 0,
+  const state = { schemaVersion: 5, redactionPolicy: 'public-native-actions-v5', active: true, runId: null, startedAt: new Date().toISOString(), records: [], bytes: 0, dropped: 0,
     errors: 0, limitationEvents: 0, maxEvents: options.maxEvents ?? 3000, maxBytes: options.maxBytes ?? 16000000,
     source: 'authenticated-app-event-stream' };
   const bytes = value => new TextEncoder().encode(JSON.stringify(value)).length;
@@ -220,7 +220,7 @@ export function createCapture(options = {}) {
 export async function browserBootstrap() {
   const key = '__blackiceJobSearchEvidence';
   if (window[key]?.active) {
-    if (window[key].schemaVersion !== 4) throw Error('Existing observer uses another capture schema; stop it before replacing it.');
+    if (window[key].schemaVersion !== 5) throw Error('Existing observer uses another capture schema; stop it before replacing it.');
     if (!window[key].ready) throw Error('Existing observer has no stream readiness receipt; stop it before replacing it.');
     return { ...(await window[key].ready), alreadyActive: true };
   }
