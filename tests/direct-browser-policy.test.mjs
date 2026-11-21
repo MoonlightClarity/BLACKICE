@@ -68,7 +68,8 @@ test('direct read discovery matches current-page observation while input actions
   const action = api.tools().find(tool => tool.name === 'blackice_browser_action');
   assert.equal(read.inputSchema.properties.expectedUrl, undefined);
   assert.equal(read.inputSchema.properties.expectedDocumentId, undefined);
-  assert.match(read.description, /Reads observe the current page/);
+  assert.match(read.description, /snapshot returns refs and page identity for input actions/);
+  assert.match(read.description, /Read actions do not accept expectedUrl or expectedDocumentId/);
   assert.ok(action.inputSchema.properties.expectedUrl);
   assert.ok(action.inputSchema.properties.expectedDocumentId);
   for (const operation of ['read', 'snapshot', 'screenshot']) {
