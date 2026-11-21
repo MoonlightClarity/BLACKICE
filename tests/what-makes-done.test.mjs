@@ -44,12 +44,27 @@ test('What Makes Done is a discoverable advisory skill with actionable examples'
  assert.match(ACTION_DIRECTORY_TOOL.description,/add and take the next useful authorized step/);
 });
 
+test('required follow-up confirmation allows delivery latency and preserves the requested outcome',async()=>{
+ const {content}=await readCurrentGuidance('library-what-makes-done');
+ for(const expected of [
+  "A requested action includes its required follow-up confirmations",
+  "check the user's matching mailbox through available tools, including connected Gmail when available",
+  "Match the message to this attempt and complete its required link or code step, then inspect the destination outcome",
+  "Keep the attempt pending until the required confirmation and requested outcome are observed",
+  "allow delivery time and recheck; an empty first search is not a final failure",
+  "Use short waits and continue independent requested work between checks, within the user's actual cutoff",
+  "Report a failed route accurately and continue independent work or allowed alternatives toward the requested outcome",
+  "Preserve an explicitly fixed target; a different result does not complete it",
+  "Inspect uncertain prior effects before repeating them; do not resubmit merely because a message is delayed"
+])assert.ok(content.includes(expected),expected);
+});
+
 test('What Makes Done reconciles exact duplicate risk without importing old conversations or flattening evidence',async()=>{
  const {content}=await readCurrentGuidance('library-what-makes-done');
  assert.match(content,/Check the exact target and operation in current authorized records/);
  assert.match(content,/Respect the current Past Chats setting/);
  assert.match(content,/current service record or separately authorized task ledger can establish an effect without looking up old conversations/);
- assert.match(content,/Verified effect \| Count it once and continue/);
+ assert.match(content,/Verified effect within the current request's time and count \| Count it once and continue/);
  assert.match(content,/Reported effect without confirmation \| Check a stronger source, or set that item aside while continuing others/);
  assert.match(content,/Unknown after timeout\/lost response \| Inspect the destination before repeating the action/);
  assert.match(content,/This attempt was not dispatched \| Repair it and retry if still needed; consider any other known attempts/);
@@ -102,4 +117,18 @@ test('Long-Term Judgment teaches action under uncertainty without making reversi
   /later compensating action does not erase an earlier effect/,
   /do not silently discard the result/
  ])assert.match(content,expected);
+});
+
+test('shared completion distinguishes new effects from existing-state and history requests',async()=>{
+ const {content}=await readCurrentGuidance('library-what-makes-done');
+ for(const expected of [
+  "Match evidence to the current request's time and count",
+  "Distinguish a new or additional action from checking an existing state or reporting past work",
+  "Reading an old receipt now does not make its action new",
+  "Earlier effects can satisfy a state or history request",
+  "they do not count as new work when another action is requested",
+  "Count effects produced for this same request once, including earlier or resumed attempts",
+  "| Verified effect within the current request's time and count | Count it once and continue. |"
+ ])assert.ok(content.includes(expected),expected);
+ assert.match(content,/Unknown after timeout\/lost response \| Inspect the destination before repeating the action/);
 });

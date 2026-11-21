@@ -1,0 +1,42 @@
+{
+  "schema": "blackice.calibration.local-oracles.v1",
+  "note": "Evaluator-only controlled data. Never copy this file into a task workspace or send it to a model.",
+  "summary": {
+    "primaryExpectedCsv": "project,total_hours\nAster,4.00\nBirch,3.25\nClover,4.00\n",
+    "transferInputCsv": "project,hours\nDelta,0.10\nEcho,2.25\nDelta,0.20\nFoxtrot,0.50\nEcho,1.75\n",
+    "transferExpectedCsv": "project,total_hours\nDelta,0.30\nEcho,4.00\nFoxtrot,0.50\n",
+    "transferPurpose": "Verify the resulting generator on different repeated projects and decimals; do not prescribe an implementation."
+  },
+  "cases": {
+    "repair-summary": {
+      "fixture": "summary",
+      "protected": [
+        "activity.csv"
+      ],
+      "output": "summary.csv",
+      "outputKind": "csv"
+    },
+    "prepare-fix": {
+      "fixture": "summary",
+      "protected": [
+        "README.md",
+        "summary.mjs",
+        "activity.csv",
+        "summary.csv"
+      ],
+      "output": "fix-plan.md",
+      "outputKind": "text"
+    },
+    "proposal-review": {
+      "fixture": "proposal-review",
+      "protected": [
+        "brief.md",
+        "proposal-a.md",
+        "proposal-b.md",
+        "proposal-c.md"
+      ],
+      "output": "review-plan.md",
+      "outputKind": "text"
+    }
+  }
+}

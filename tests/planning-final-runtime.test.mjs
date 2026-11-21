@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { CodexRuntime } from '../lib/codex.mjs';
+import { createChatExecutionReview } from '../lib/chat-execution-review.mjs';
 
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -160,6 +161,47 @@ test('native final review normalizes legacy history input and keeps one persiste
   assert.ok(boundaries.filter(event => event.type === 'provider.final').every(event => event.terminationField === 'turn-status'));
   assert.equal(f.requests.filter(row => row.method === 'thread/unsubscribe').length, 1, 'Completion releases the subscription while retaining persistent history.');
   assert.equal(f.client.status().activeTurns, 0); assert.equal(f.client.contexts.has(result.threadId), true);
+});
+
+test('native stage-only search results renew ordinary review once and transport-only repeats remain bounded',async t=>{
+ const f=nativeFixture(t),events=[],decisions=[];
+ const input='Inspect current sources and complete the requested work.';
+ const review=createChatExecutionReview({input,onDecision:decision=>decisions.push(decision)});
+ const {work,state}=await f.begin({prompt:input,
+  onEvent:event=>{events.push(event);review.observe(event);},
+  onBeforeFinal:candidate=>review.beforeFinal(candidate),
+ });
+ f.complete(state,'Initial source inspection is unfinished.',5);await tick();
+ assert.equal(f.requests.filter(row=>row.method==='turn/start').length,2);
+ const deliverSearch=index=>{
+  const item={type:'webSearch',id:'search-'+index,query:'current evidence',
+   action:{type:'search',query:null,queries:['current evidence']},
+   results:[{type:'text_result',domain:'fixture.invalid',ref_id:'turn'+index+'search0',
+    title:'Current source',snippet:'A source needing inspection.',url:'https://fixture.invalid/source'}],
+   startedAtMs:index*1000,completedAtMs:index*1000+10};
+  const metadata={threadId:state.threadId,turnId:state.turnId};
+  f.client._notification('item/started',{...metadata,item:{...item,action:null,results:null,completedAtMs:null}});
+  f.client._notification('item/completed',{...metadata,item});
+ };
+ deliverSearch(1);
+ const delivered=events.findLast(event=>event.type==='item'&&event.item?.type==='webSearch'&&event.stage==='completed');
+ assert.ok(delivered,'the actual native adapter emitted the completed item');
+ assert.equal(Object.hasOwn(delivered.item,'status'),false,'no fixture status is added to hide the producer schema');
+ assert.equal(delivered.item.results.length,1);
+ f.complete(state,'A new source was found but has not been checked.',10);await tick();
+ assert.equal(f.requests.filter(row=>row.method==='turn/start').length,3,'new completed native evidence must reach another review turn');
+ deliverSearch(2);
+ const final='No additional evidence was obtained; the requested outcome remains unverified.';
+ f.complete(state,final,15);
+ const result=await work;
+ assert.equal(result.output,final);
+ assert.equal(f.requests.filter(row=>row.method==='thread/start').length,1);
+ assert.equal(f.requests.filter(row=>row.method==='turn/start').length,3,'transport changes alone must not reopen review');
+ assert.deepEqual(decisions.map(row=>[row.reviewDecision,row.evidenceRevision]),[['continue',0],['continue',1],['accepted',1]]);
+ assert.equal(decisions.at(-1).reason,'no-new-task-evidence');
+ assert.equal(decisions[1].evidenceFingerprint,decisions[2].evidenceFingerprint);
+ assert.ok(decisions.every(row=>row.outcomeVerification==='not-evaluated'&&row.uncertainToolCount===0));
+ assert.deepEqual(events.filter(event=>event.type==='message').map(event=>event.text),[final],'unfinished candidates stay withheld');
 });
 
 test('native review waits for admitted operation settlement and never repeats it', async t => {

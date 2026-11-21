@@ -1,6 +1,6 @@
 # Browser Navigation and Continuity
 
-Use when opening a page, following navigation, recovering stale controls, or resuming browser work.
+Use when opening a page, following navigation, inspecting visual or embedded obstacles, recovering stale controls, or resuming browser work.
 
 ## Open and identify the page
 
@@ -9,6 +9,14 @@ For a fresh task, open the supplied URL or find the relevant source. An empty ta
 Before multi-step interaction, inspect the page and make a brief outline of its main sections, navigation, and relevant controls. Wait for the effect of one action before sending the next; avoid rapid clicks on a changing page. Refresh the page when access or loading is stuck, then inspect it again.
 
 After navigation, check the current URL, title, and expected content. If a click leaves the original page unchanged, check whether the link opened a new tab and inspect that destination. Wait briefly for expected loading content, then use a confirmed direct link or the site's search if necessary.
+
+## Inspect a visual or embedded obstacle
+
+1. Inspect the intended tab without a text filter before concluding that content is absent. A provider name, iframe, or frame-local capture does not establish that a challenge is visible. Use a current screenshot to inspect visual content and the surrounding page.
+2. If no obstacle is visible, continue the normal authorized workflow and observe its result; required UI may appear only after the surrounding action. If expected content is still loading, wait briefly and inspect again before choosing an input.
+3. When a challenge or other visual control is visible, read its actual instructions and use the available native controls. Prefer current element refs. For a screenshot-based click, convert the image point to CSS coordinates using that screenshot's imageScale: x = imageX / imageScale.x and y = imageY / imageScale.y. Keep the same tab, URL and document identity. Do not assume image pixels equal CSS pixels or invent a drag capability.
+4. Use a visible refresh or accessibility alternative when it addresses the observed problem. Re-inspect each new stage before acting; old coordinates or a previous challenge answer may no longer apply. Preserve filled work, and reconcile any uncertain submission before refreshing or retrying.
+5. Verify the resulting page or record. Dismissing or completing an obstacle does not by itself complete the surrounding task. If this route remains blocked, record the exact observed limitation and continue independent authorized work.
 
 ## Recover from an input error
 

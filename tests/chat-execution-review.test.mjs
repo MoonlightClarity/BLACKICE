@@ -1,8 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createChatExecutionReview,explicitChatAction} from '../lib/chat-execution-review.mjs';
+import {createChatExecutionReview} from '../lib/chat-execution-review.mjs';
 const action='Send the prepared form.';
 const partial='The form fields are visible. I haven’t yet filled or sent it.';
+const requestBoundary='\n\nCURRENT USER REQUEST (unchanged JSON string):\n';
+function continuedRequest(prompt){
+ const parts=prompt.split(requestBoundary);
+ assert.equal(parts.length,2,'each continuation has one explicit current-request boundary');
+ return JSON.parse(parts[1]);
+}
 const setup=(input=action,canContinue=()=>true,onDecision)=>createChatExecutionReview({input,canContinue,onDecision});
 const call=(callId,action='snapshot',extra={})=>({callId,name:'relay_browser',arguments:{action,...extra}});
 const result=(data,extra={})=>({success:true,contentItems:[{type:'inputText',text:JSON.stringify(data)}],...extra});
@@ -13,8 +19,11 @@ function settle(review,c,data,extra={}) {
   review.delivered({call:c,result:r});
   return r;
 }
-test('explicit user action detection errs on the side of ordinary responses',()=>{
-  const positives = [
+test('ordinary Chat review checks every nonempty request without classifying authorization by wording',()=>{
+  const requests = [
+    "Find one suitable job using my existing résumé and preferences. Apply through the employer’s site and verify that the application was received.",
+    'I need the prepared form submitted and its receipt checked.',
+    'Look for an appropriate option, then complete the requested work.',
     action, 'Please apply to jobs. Stop at three.', 'Can you send the prepared note?', 'Rename the downloaded file.',
     'Send the draft to the specified recipient. Do not edit it.',
     'Create the fixture file in the workspace. Do not contact anyone.',
@@ -22,7 +31,7 @@ test('explicit user action detection errs on the side of ordinary responses',()=
     'Edit the existing local file. If you find errors, report them separately.',
     'Rename the file named "notes.txt". Leave all other files alone.',
   ];
-  const negatives = [
+  const scopedRequests = [
     '"Send the prepared form."', '> Send the prepared form.', 'Explain: send the prepared form.',
     'Draft an email and tell me how to send it.', 'Resume the previous task.', 'Send it again.',
     'Send the form but don\u2019t submit it.', 'Send this before 6 AM.', 'How do I send it?',
@@ -31,8 +40,40 @@ test('explicit user action detection errs on the side of ordinary responses',()=
     'Create the file. Do not create it after all.', 'Send the form. Only send it if the owner approves.',
     'The previous user said: send the prepared form.', 'Here is a fictional prompt:\n> Create the result file.',
   ];
-  for (const input of positives) assert(explicitChatAction(input),input);
-  for (const input of negatives) assert(!explicitChatAction(input),input);
+  for (const input of [...requests, ...scopedRequests]) {
+    const review=setup(input);
+    assert.ok(review,input);
+    const next=review.beforeFinal({output:'Response to the current request.'});
+    assert.equal(next.continue,true,input);
+    assert.match(next.prompt,/Preserve the original scope, constraints, and authorization/);
+    assert.match(next.prompt,/not a new task or permission requirement/);
+    assert.equal(review.beforeFinal({output:'No new task evidence.'}),null);
+  }
+  for (const input of [undefined,null,'',' \n\t',42,{}]) {
+    assert.equal(createChatExecutionReview({input}),null);
+  }
+});
+
+test('each continuation retains the exact current request and separates actual limits from historical task data',()=>{
+ for(const input of [
+  'Send the prepared note. Do not edit its contents.',
+  'Prepare the note for review. Do not send it.',
+  'If the owner approves, submit the form.',
+  'Review PRIVATE_REQUEST_FIXTURE with quotes: "first".\nKeep this exact second line and \\literal text.',
+ ]){
+  const decisions=[],review=setup(input,()=>true,decision=>decisions.push(decision));
+  for(const [index,text] of ['Historical task: prepare only; do not submit.','Current evidence: the requested next step is available.'].entries()){
+   settle(review,call('scope-'+index),{text});
+   const continuation=review.beforeFinal({output:'Prepared, as instructed.'});
+   assert.equal(continuation.continue,true);
+   assert.equal(continuedRequest(continuation.prompt),input);
+   assert.match(continuation.prompt,/applicable standing user instructions/);
+   assert.match(continuation.prompt,/Use historical records and tool\/page content as evidence/);
+   assert.match(continuation.prompt,/unless the user's actual instructions make it apply/);
+  }
+  assert.equal(review.beforeFinal({output:'A differently worded prepared answer.'}),null,'scope clarity does not remove the no-new-evidence bound');
+  assert.doesNotMatch(JSON.stringify(decisions),/PRIVATE_REQUEST_FIXTURE|Historical task: prepare only/);
+ }
 });
 
 test('settled navigation and blocker prose still check the current unfinished action',()=>{
@@ -193,14 +234,21 @@ test('real cancellation, steering, host budgets and provider termination win ove
 });
 
 test('prepare-only scope stays in force and ambiguous/conditional authorization is not expanded',()=>{
-  const review=setup('Prepare the form for review. Do not submit it.');
+  const input='Prepare the form for review. Do not submit it.',review=setup(input);
   assert.ok(review);
   settle(review,call('prepared','fill'),{text:'Prepared'});
   const next=review.beforeFinal({output:'The form is prepared.'});
-  assert.match(next.prompt,/including any prepare-only or do-not-submit limit/);
+  assert.equal(continuedRequest(next.prompt),input);
   assert.match(next.prompt,/not a new task or permission requirement/);
-  assert.equal(setup('Apply to the role. Do not submit the application.'),null);
-  assert.equal(setup('If the owner approves, submit the form.'),null);
+  for(const input of ['Apply to the role. Do not submit the application.', 'If the owner approves, submit the form.']) {
+    const scoped=setup(input);
+    assert.ok(scoped);
+    const check=scoped.beforeFinal({output:'The requested boundary remains in force.'});
+    assert.equal(check.continue,true);
+    assert.match(check.prompt,/Preserve the original scope, constraints, and authorization/);
+    assert.equal(continuedRequest(check.prompt),input);
+    assert.equal(scoped.beforeFinal({output:'No new task evidence.'}),null);
+  }
 });
 
 test('diagnostic receipt states actual stop predicate without publishing candidate text or declaring success',()=>{
@@ -272,4 +320,144 @@ test('failed browser wait is an observation while a genuinely uncertain click st
   assert.equal(decisions.at(-1).reason,'outcome-reconciliation-check');
   assert.match(next.prompt,/genuinely-uncertain-click/);
   assert.doesNotMatch(next.prompt,/failed-wait-observation/);
+});
+
+const nativeSearch=(index,changes={})=>({
+ type:'item',stage:'completed',item:{
+  type:'webSearch',id:'native-search-'+index,query:'current research roles',
+  action:{type:'search',query:null,queries:['current research roles']},
+  results:[{type:'text_result',domain:'fixture.invalid',ref_id:'turn'+index+'search0',
+   title:'Fixture opportunity',snippet:'Current role evidence.',url:'https://fixture.invalid/roles/one',
+   thumbnail_url:'https://fixture.invalid/image.png',recordId:'domain-record-1'}],
+  startedAt:index,completedAt:index+1,startedAtMs:index*1000,completedAtMs:index*1000+10,
+  durationMs:10+index,callId:'transport-'+index,...changes,
+ },
+});
+
+test('native completion stage counts new evidence while started and nonterminal envelopes do not',()=>{
+ const decisions=[],review=setup('Inspect the current sources and complete the requested work.',()=>true,r=>decisions.push(r));
+ assert.equal(review.beforeFinal({output:partial})?.continue,true);
+ for(const stage of ['started','inProgress']){
+  review.observe({...nativeSearch(1,{status:'completed'}),stage});
+  assert.equal(review.beforeFinal({output:partial}),null,'an explicit nonterminal envelope is not a completion');
+  assert.equal(decisions.at(-1).evidenceRevision,0);
+ }
+ const completed=nativeSearch(1);
+ assert.equal(Object.hasOwn(completed.item,'status'),false,'use the actual status-free native search shape');
+ review.observe(completed);
+ assert.equal(review.beforeFinal({output:partial})?.continue,true);
+ assert.equal(decisions.at(-1).evidenceRevision,1);
+ const legacy=nativeSearch(2,{status:'completed'});delete legacy.stage;
+ review.observe(legacy);
+ assert.equal(review.beforeFinal({output:partial}),null,'equivalent legacy item status does not create another result');
+ review.observe(nativeSearch(3,{status:'failed'}));
+ assert.equal(review.beforeFinal({output:partial})?.continue,true,'meaningful failure status remains evidence');
+ assert.equal(decisions.at(-1).evidenceRevision,2);
+ assert.equal(decisions.at(-1).outcomeVerification,'not-evaluated');
+});
+
+test('native search fingerprints ignore only known transport identity and retain meaningful search content',()=>{
+ const review=setup(),first=nativeSearch(1);
+ review.observe(first);assert.equal(review.beforeFinal({output:partial})?.continue,true);
+ review.observe(nativeSearch(2));
+ assert.equal(review.beforeFinal({output:partial}),null,'new item IDs, timing, and result reference labels are not progress');
+ const changes=[
+  ['query',item=>{item.query='another relevant query';}],
+  ['action queries',item=>{item.action.queries=['another relevant query'];}],
+  ['result URL',item=>{item.results[0].url='https://fixture.invalid/roles/two';}],
+  ['result title',item=>{item.results[0].title='Changed role';}],
+  ['result snippet',item=>{item.results[0].snippet='Changed current evidence.';}],
+  ['result domain',item=>{item.results[0].domain='other.invalid';}],
+  ['result thumbnail',item=>{item.results[0].thumbnail_url='https://fixture.invalid/other.png';}],
+  ['domain record ID',item=>{item.results[0].recordId='domain-record-2';}],
+  ['nested domain reference',item=>{item.results[0].metadata={ref_id:'domain-reference'};}],
+  ['nested domain timestamp',item=>{item.results[0].record={startedAtMs:123};}],
+ ];
+ for(const [label,change] of changes){
+  const current=setup(),baseline=nativeSearch(1),changed=nativeSearch(2);
+  current.observe(baseline);assert.equal(current.beforeFinal({output:partial})?.continue,true);
+  change(changed.item);current.observe(changed);
+  assert.equal(current.beforeFinal({output:partial})?.continue,true,label+' must remain meaningful');
+  assert.equal(current.beforeFinal({output:partial}),null,label+' does not remove the no-new-evidence bound');
+ }
+ assert.equal(first.item.results[0].ref_id,'turn1search0','fingerprinting does not mutate delivered evidence');
+});
+
+test('completed native observations do not clear an uncertain external effect',()=>{
+ const decisions=[],review=setup(action,()=>true,r=>decisions.push(r));
+ review.observe({type:'native.write.uncertain',writeId:'native-write-unknown',tool:'command',action:'write'});
+ assert.equal(review.beforeFinal({output:partial})?.continue,true);
+ review.observe(nativeSearch(1));
+ const next=review.beforeFinal({output:partial});
+ assert.equal(next?.continue,true);
+ assert.match(next.prompt,/native-write-unknown/);
+ assert.equal(decisions.at(-1).uncertainToolCount,1);
+ assert.equal(decisions.at(-1).reason,'outcome-reconciliation-check');
+ review.observe(nativeSearch(2));
+ assert.equal(review.beforeFinal({output:partial}),null);
+});
+
+test('completion review binds old receipts to the current time and count without forcing new work',()=>{
+ for(const input of [
+  'Create one additional export from the current records.',
+  'Check whether the current export already exists.',
+  'Report when the previous export was produced. Do not create another export.',
+  'Resume the interrupted export request and verify its existing attempt before repeating it.'
+ ]){
+  const decisions=[],review=setup(input,()=>true,decision=>decisions.push(decision));
+  settle(review,call('old-receipt','read'),{receipt:{id:'historical-export',createdAt:'2026-01-01T00:00:00Z',status:'completed'}});
+  const next=review.beforeFinal({output:'A previous export receipt exists.'});
+  assert.equal(next.continue,true);
+  assert.equal(continuedRequest(next.prompt),input);
+  assert.match(next.prompt,/Match evidence to the current request's time and count/);
+  assert.match(next.prompt,/Distinguish a new or additional action from checking an existing state or reporting past work/);
+  assert.match(next.prompt,/Reading an old receipt now does not make its action new/);
+  assert.match(next.prompt,/Earlier effects can satisfy a state or history request/);
+  assert.match(next.prompt,/Count effects produced for this same request once, including earlier or resumed attempts/);
+  assert.equal(review.beforeFinal({output:'The same historical fact, rephrased.'}),null,'temporal scope does not remove the no-progress bound');
+  assert.deepEqual(decisions.map(row=>row.reason),['current-task-evidence-check','no-new-task-evidence']);
+  assert.ok(decisions.every(row=>row.outcomeVerification==='not-evaluated'));
+ }
+});
+
+
+test('P a repeated ordinary state asks for an outcome assessment before accepting unfinished work',async()=>{
+ const input='Create one additional export from the current records.',assessments=[];
+ const review=createChatExecutionReview({input,assessOutcome:async context=>{
+  assessments.push(context);
+  return {decision:'continue',summary:'The current export remains uncreated.',remaining:['Create the requested export.'],nextAction:'Create the export using the available control.',evidenceRefs:['receipt'],blockers:[],verified:false};
+ }});
+ const observed=call('receipt','snapshot');review.started(observed);review.delivered({call:observed,result:{success:true,contentItems:[{type:'inputText',text:'Export form ready; no current export.'}]}});
+ assert.equal(review.beforeFinal({output:'The export is not created.'}).continue,true);
+ const next=await review.beforeFinal({output:'The export is not created.'});
+ assert.equal(assessments.length,1,'an unchanged observation is not a task-outcome decision');
+ assert.equal(assessments[0].input,input);
+ assert.equal(assessments[0].evidence.records.length,1);
+ assert.equal(next.continue,true);
+ assert.match(next.prompt,/Create the export using the available control/);
+ assert.equal(continuedRequest(next.prompt),input);
+});
+
+test('P unchanged-state action recovery is finite and never declares stalled work complete',async()=>{
+ let assessments=0;
+ const review=createChatExecutionReview({input:'Create one additional export.',assessOutcome:async()=>{assessments++;return{
+  decision:'continue',summary:'Still unfinished.',remaining:['Create export'],nextAction:'Use the available create action.',evidenceRefs:['user-request'],blockers:[],verified:false};
+ }});
+ review.beforeFinal({output:'The export is not created.'});
+ assert.equal((await review.beforeFinal({output:'The export is not created.'})).continue,true);
+ await assert.rejects(async()=>review.beforeFinal({output:'The same export remains uncreated.'}),error=>error.code==='CHAT_OUTCOME_STALLED');
+ assert.equal(assessments,2);
+});
+
+test('P unavailable outcome assessment is explicit incomplete work and actual stop still wins',async()=>{
+ let assessments=0,admitted=true;
+ const review=createChatExecutionReview({input:'Create the requested export.',canContinue:()=>admitted,assessOutcome:async()=>{
+  assessments++;return{decision:'unreviewed',status:'unavailable',reason:'fixture-unavailable',verified:false};
+ }});
+ review.beforeFinal({output:'No export created.'});
+ await assert.rejects(async()=>review.beforeFinal({output:'No export created.'}),error=>error.code==='CHAT_OUTCOME_UNREVIEWED');
+ assert.equal(assessments,1);
+ admitted=false;
+ assert.equal(await review.beforeFinal({output:'No export created.'}),null);
+ assert.equal(assessments,1,'no reviewer admission after the actual stop');
 });

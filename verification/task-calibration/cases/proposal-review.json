@@ -1,0 +1,12 @@
+{
+  "schema": "blackice.calibration.case.v1",
+  "id": "proposal-review",
+  "task": "Make a practical plan for reviewing these proposals this afternoon and save it as review-plan.md.",
+  "artifacts": [
+    "brief.md",
+    "proposal-a.md",
+    "proposal-b.md",
+    "proposal-c.md",
+    "review-plan.md"
+  ]
+}

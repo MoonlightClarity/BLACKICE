@@ -14,6 +14,12 @@ A plan, open form, click, saved draft, or normal model return is progress only w
 
 Verify the outcome, not every decision. Use the best supported answer for ordinary fields and make delegated choices without adding a proof requirement. Finish independent fields when one required fact remains unresolved.
 
+## Complete required follow-up confirmations
+
+A requested action includes its required follow-up confirmations. For email confirmation, check the user's matching mailbox through available tools, including connected Gmail when available. Match the message to this attempt and complete its required link or code step, then inspect the destination outcome. Keep the attempt pending until the required confirmation and requested outcome are observed.
+
+If the message has not arrived, allow delivery time and recheck; an empty first search is not a final failure. Use short waits and continue independent requested work between checks, within the user's actual cutoff. Report a failed route accurately and continue independent work or allowed alternatives toward the requested outcome. Preserve an explicitly fixed target; a different result does not complete it. Inspect uncertain prior effects before repeating them; do not resubmit merely because a message is delayed.
+
 ## Counts and search scope
 
 - “Find two” or “at least two” requires two verified matches. If fewer are found, report the unmet count.
@@ -33,11 +39,13 @@ Do not copy Directory action names or argument fields from old examples or sourc
 
 ## Effects that may already have happened
 
+Match evidence to the current request's time and count. Distinguish a new or additional action from checking an existing state or reporting past work. Reading an old receipt now does not make its action new. Earlier effects can satisfy a state or history request; they do not count as new work when another action is requested. Count effects produced for this same request once, including earlier or resumed attempts.
+
 Check the exact target and operation in current authorized records when there is a reason to suspect a duplicate.
 
 | Observation | Next action |
 | --- | --- |
-| Verified effect | Count it once and continue. |
+| Verified effect within the current request's time and count | Count it once and continue. |
 | Reported effect without confirmation | Check a stronger source, or set that item aside while continuing others. |
 | Unknown after timeout/lost response | Inspect the destination before repeating the action. |
 | This attempt was not dispatched | Repair it and retry if still needed; consider any other known attempts. |

@@ -44,7 +44,7 @@ async function fixture(t, { command = async () => ({}), loadURL = async () => {}
       contents.isOffscreen = () => options.webPreferences?.offscreen === true;
       contents.isDestroyed = () => this.destroyed; contents.getURL = () => this.url || ''; contents.getTitle = () => 'Local fixture'; contents.isLoading = () => false;
       contents.isLoadingMainFrame = () => false;
-      contents.executeJavaScript = async () => ({ width: options.width, height: options.height });
+      contents.executeJavaScript = async () => ({ width: options.width, height: options.height, devicePixelRatio: 1 });
       contents.mainFrame = { processId: 1, routingId: 1, framesInSubtree: [], executeJavaScript: async () => ({ title: 'Local fixture', url: this.url, elements: [], text: 'Owned fixture page', readyState: 'complete' }) };
       contents.setWindowOpenHandler = fn => { contents.openHandler = fn; }; contents.loadURL = async url => { this.loads.push(url); await loadURL(url, this); this.url = url; };
       contents.capturePage = async (...args) => { this.captureArgs = args; return { isEmpty: () => false, getSize: () => ({ width: 1280, height: 900 }), toDataURL: () => 'data:image/png;base64,fixture' }; };
@@ -1069,6 +1069,63 @@ test('editing keys retain modifiers and release keys without scanning a password
   assert.equal(windows[0].protocol.length, count); assertContained(windows[0]);
 });
 
+
+test('tool screenshots expose capture geometry and map image positions to guarded CSS input', async t => {
+  const { driver, windows } = await fixture(t), tab = driver.newTab('https://example.test/visual-control');
+  await tab.loading;
+  const wc = tab.window.webContents;
+  const environment = { innerWidth: 1280, innerHeight: 900, devicePixelRatio: 2.5 };
+  wc.executeJavaScript = async source => JSON.parse(JSON.stringify(vm.runInNewContext(source, environment)));
+  wc.capturePage = async () => ({ isEmpty: () => false, getSize: () => ({ width: 3200, height: 2250 }), toDataURL: () => 'data:image/png;base64,original-pixels' });
+  const shot = await driver.perform({ action: 'screenshot', tabId: tab.id });
+  assert.deepEqual(shot.viewport, { width: 1280, height: 900, devicePixelRatio: 2.5 });
+  assert.deepEqual(shot.imageScale, { x: 2.5, y: 2.5 });
+  assert.equal(shot.width, 3200); assert.equal(shot.height, 2250);
+  assert.equal(shot.imageUrl, 'data:image/png;base64,original-pixels');
+  await driver.perform({ action: 'click', tabId: tab.id, x: 1600 / shot.imageScale.x, y: 1125 / shot.imageScale.y,
+    expectedUrl: shot.url, expectedDocumentId: shot.documentId }, { source: 'user' });
+  const click = windows[0].protocol.find(item => item.method === 'Input.dispatchMouseEvent' && item.params.type === 'mousePressed');
+  assert.equal(click.params.x, 640); assert.equal(click.params.y, 450);
+  assertContained(windows[0]);
+});
+
+test('tool screenshots reject geometry that changes during capture', async t => {
+  const { driver } = await fixture(t), tab = driver.newTab('https://example.test/responsive');
+  await tab.loading;
+  const wc = tab.window.webContents, capture = wc.capturePage;
+  const environment = { innerWidth: 1280, innerHeight: 900, devicePixelRatio: 2.5 };
+  wc.executeJavaScript = async source => JSON.parse(JSON.stringify(vm.runInNewContext(source, environment)));
+  wc.capturePage = async (...args) => { const image = await capture(...args); environment.innerWidth = 1000; return image; };
+  await assert.rejects(driver.perform({ action: 'screenshot', tabId: tab.id }), { code: 'BROWSER_CAPTURE_GEOMETRY_CHANGED' });
+  assert.equal(tab.window.protocol.some(item => item.method.startsWith('Input.')), false);
+});
+
+test('tool screenshots reject unavailable geometry before returning coordinates', async t => {
+  const { driver } = await fixture(t), tab = driver.newTab('https://example.test/unready');
+  await tab.loading;
+  const wc = tab.window.webContents;
+  let captures = 0;
+  wc.capturePage = async () => { captures++; return { isEmpty: () => false, getSize: () => ({ width: 1280, height: 900 }), toDataURL: () => 'data:image/png;base64,fixture' }; };
+  for (const value of [{ width: 0, height: 900, devicePixelRatio: 1 }, { width: 1280, height: 900 }, { width: 1280, height: 900, devicePixelRatio: Infinity }]) {
+    wc.executeJavaScript = async () => value;
+    await assert.rejects(driver.perform({ action: 'screenshot', tabId: tab.id }), { code: 'BROWSER_CAPTURE_GEOMETRY_UNAVAILABLE' });
+  }
+  assert.equal(captures, 0);
+});
+
+test('local live preview keeps its image path without added geometry probes', async t => {
+  const { driver } = await fixture(t), tab = driver.newTab('https://example.test/live-preview');
+  await tab.loading;
+  const wc = tab.window.webContents;
+  wc.executeJavaScript = async () => assert.fail('The local continuous preview must not add geometry reads.');
+  wc.capturePage = async () => ({ isEmpty: () => false, getSize: () => ({ width: 1280, height: 900 }),
+    toJPEG: quality => { assert.equal(quality, 85); return Buffer.from('local-preview'); } });
+  const shot = await driver.perform({ action: 'screenshot', browser: 'relay', tabId: tab.id, preview: true,
+    expectedUrl: wc.getURL(), expectedDocumentId: tab.id + ':' + tab.revision }, { source: 'user' });
+  assert.equal(shot.imageUrl, 'data:image/jpeg;base64,' + Buffer.from('local-preview').toString('base64'));
+  assert.equal(shot.viewport, undefined); assert.equal(shot.imageScale, undefined);
+});
+
 test('actual driver pages and captures remain offscreen, nonfocusable and outside the taskbar', async t => {
   const { driver, windows } = await fixture(t), tab = driver.newTab('https://example.test/'); await tab.loading; assertContained(windows[0]);
   const image = await driver.perform({ action: 'screenshot', tabId: tab.id }); assert.equal(image.imageUrl, 'data:image/png;base64,fixture'); assert.deepEqual(windows[0].captureArgs, [undefined, { stayHidden: true }]);
@@ -1114,9 +1171,15 @@ async function popupViewportFixture(t, { viewport = { width: 0, height: 0 }, con
   const window = state.window = new f.Window(options), wc = window.webContents;
   window.url = 'https://identity.example.test/'; window.getContentSize = () => contentSize;
   wc.executeJavaScript = async expression => {
-    assert.equal(expression, '({width:innerWidth,height:innerHeight})');
+    const value = JSON.parse(JSON.stringify(vm.runInNewContext(expression, {
+      innerWidth: state.viewport.width, innerHeight: state.viewport.height, devicePixelRatio: 1,
+    })));
+    if (Object.hasOwn(value, 'devicePixelRatio')) {
+      state.geometryReads = (state.geometryReads || 0) + 1; state.events.push('capture-viewport'); return value;
+    }
+    assert.deepEqual(value, state.viewport);
     state.reads++; state.events.push('viewport');
-    const value = { ...state.viewport }; await readViewport(state); return value;
+    await readViewport(state); return value;
   };
   wc.mainFrame.executeJavaScript = async code => {
     assert.equal(state.emulated, false, 'Temporary metrics must be cleared before inspecting or preparing the page.');
@@ -1149,6 +1212,8 @@ test('a zero-sized adopted popup is initialized and reset before snapshot, point
   await f.driver.perform({ action: 'click', ...f.guard, ref: 'complete' });
   const preview = await f.driver.perform({ action: 'screenshot', tabId: f.tab.id });
   assert.equal(preview.width, 1281); assert.equal(preview.height, 824);
+  assert.deepEqual(preview.viewport, { width: 1281, height: 824, devicePixelRatio: 1 });
+  assert.deepEqual(preview.imageScale, { x: 1, y: 1 }); assert.equal(f.geometryReads, 2);
   assert.deepEqual(f.window.protocol.filter(call => call.method.startsWith('Emulation.')), [
     { method: 'Emulation.setDeviceMetricsOverride', params: { width: 1281, height: 824, deviceScaleFactor: 0, mobile: false, dontSetVisibleSize: false } },
     { method: 'Emulation.clearDeviceMetricsOverride', params: undefined },

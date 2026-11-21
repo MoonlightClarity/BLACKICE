@@ -152,10 +152,15 @@ test('browser actions serialize and caller cancellation prevents queued mutation
   await assert.rejects(second, /cancelled/); assert.deepEqual(calls, ['snapshot']); await browser.close();
 });
 test('browser screenshot tools return pixels only as image content and errors stay actionable', async () => {
-  const driver = { status: () => ({ available: true, contained: true }), perform: async args => { if (args.action === 'click') throw new Error('This ref is stale. Take a new snapshot.'); return { tabId: 'one', imageUrl: 'data:image/png;base64,AA==' }; } };
+  const driver = { status: () => ({ available: true, contained: true }), perform: async args => { if (args.action === 'click') throw new Error('This ref is stale. Take a new snapshot.'); return { tabId: 'one', width: 3200, height: 2250, viewport: { width: 1280, height: 900, devicePixelRatio: 2.5 }, imageScale: { x: 2.5, y: 2.5 }, imageUrl: 'data:image/png;base64,AA==' }; } };
   const browser = fixtureWorkspace({ driver }), handler = createBrowserToolHandler({ browser });
   const image = await handler({ name: 'relay_browser', arguments: { action: 'screenshot' } });
   assert.equal(image.contentItems[1].type, 'inputImage'); assert.doesNotMatch(image.contentItems[0].text, /base64/);
+  const geometry = JSON.parse(image.contentItems[0].text);
+  assert.deepEqual(geometry.viewport, { width: 1280, height: 900, devicePixelRatio: 2.5 });
+  assert.deepEqual(geometry.imageScale, { x: 2.5, y: 2.5 });
+  assert.equal(geometry.width, 3200); assert.equal(geometry.height, 2250);
+  assert.equal(image.contentItems[1].imageUrl, 'data:image/png;base64,AA==');
   const stale = await handler({ name: 'relay_browser', arguments: { action: 'click', ref: 'stale' } });
   assert.equal(stale.success, false); assert.match(stale.contentItems[0].text, /new snapshot/);
   await browser.close();

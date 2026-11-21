@@ -1,0 +1,12 @@
+{
+  "schema": "blackice.calibration.case.v1",
+  "id": "prepare-fix",
+  "task": "Review the summary generator and save a proposed fix in fix-plan.md. Leave the code and generated reports unchanged.",
+  "artifacts": [
+    "README.md",
+    "summary.mjs",
+    "activity.csv",
+    "summary.csv",
+    "fix-plan.md"
+  ]
+}
