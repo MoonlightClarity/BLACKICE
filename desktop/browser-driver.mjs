@@ -2421,15 +2421,36 @@ export class ElectronBrowserDriver extends EventEmitter {
       };
       assertCredentialCapture();
       if (preview) this.assertInputDocument(tab, args);
-      const revision = tab.revision, { image } = await this.capture(tab, signal, revision);
-      cancel(signal);
-      assertCredentialCapture();
-      if (tab.revision !== revision) throw Object.assign(error('The page changed while the preview was being captured. Refresh the preview before typing.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+      const revision = tab.revision;
+      const assertCaptureCurrent = () => {
+        cancel(signal); assertCredentialCapture();
+        if (tab.revision !== revision) throw Object.assign(error('The page changed while the screenshot was being captured. Take a fresh screenshot before acting.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+      };
+      const readViewport = async () => {
+        const value = await this.pageWork(tab, tab.window.webContents.executeJavaScript('({width:innerWidth,height:innerHeight,devicePixelRatio:devicePixelRatio})'), signal);
+        assertCaptureCurrent();
+        if (![value?.width, value?.height, value?.devicePixelRatio].every(number => Number.isFinite(number) && number > 0))
+          throw Object.assign(error('The screenshot CSS viewport could not be measured. Inspect or retry capture before using coordinates.'), { code: 'BROWSER_CAPTURE_GEOMETRY_UNAVAILABLE' });
+        return { width: value.width, height: value.height, devicePixelRatio: value.devicePixelRatio };
+      };
+      // Image pixels can differ from CSS input coordinates because of display
+      // scaling or page zoom. Bind their conversion to the captured viewport.
+      const viewport = preview ? undefined : await readViewport();
+      const { image } = await this.capture(tab, signal, revision);
+      assertCaptureCurrent();
+      if (viewport) {
+        const after = await readViewport();
+        if (Object.keys(viewport).some(key => viewport[key] !== after[key]))
+          throw Object.assign(error('The viewport changed during screenshot capture. Take a fresh screenshot before using coordinates.'), { code: 'BROWSER_CAPTURE_GEOMETRY_CHANGED' });
+      }
       if (preview) this.assertInputDocument(tab, args);
       // The local live view favors small, quickly encoded frames. Tool screenshots
       // retain their original lossless PNG representation.
       const imageUrl = preview ? 'data:image/jpeg;base64,' + image.toJPEG(85).toString('base64') : image.toDataURL();
-      return { tabId: tab.id, url: tab.window.webContents.getURL(), documentId: inputDocumentId(tab), width: image.getSize().width, height: image.getSize().height, imageUrl, ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
+      const { width, height } = image.getSize();
+      return { tabId: tab.id, url: tab.window.webContents.getURL(), documentId: inputDocumentId(tab), width, height,
+        ...(viewport ? { viewport, imageScale: { x: width / viewport.width, y: height / viewport.height } } : {}),
+        imageUrl, ...(tab.pendingInteraction ? { pendingInteraction: structuredClone(tab.pendingInteraction) } : {}) };
     }
     if (args.action === 'wait') {
       const expected = args.text || args.query;
