@@ -262,7 +262,7 @@ export function productFileEvidence(file, candidateBytes, installedBytes) {
 export async function sourceEvidence(config) {
   const product = ['package.json','desktop/main.mjs','lib/browser-cli.mjs','lib/browser.mjs','lib/application-history.mjs',
     'public/mission-model.mjs','lib/harness-identity.mjs','lib/instruction-store.mjs','lib/identity.mjs',
-    'lib/release-skills.mjs','lib/skill-library/job-search.md','public/chat-turn-defaults.mjs',
+    'lib/release-skills.mjs','lib/skill-library/what-makes-done.md','lib/skill-library/job-search.md','public/chat-turn-defaults.mjs',
     'lib/conversation-execution-modes.mjs','lib/engine.mjs','lib/chat-execution-review.mjs'];
   const files = {};
   for (const file of product) {

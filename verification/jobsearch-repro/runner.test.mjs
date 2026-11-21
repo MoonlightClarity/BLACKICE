@@ -276,8 +276,10 @@ test('actual product modules still require strict byte equality',()=>{
     error=>error.code==='SOURCE_MISMATCH');
 });
 
-for (const file of ['lib/browser.mjs','lib/application-history.mjs']) for (const change of ['changed','missing']) {
-  test(`native preflight rejects ${change} installed ${file} before admission`,async t=>{
+for (const file of ['lib/browser.mjs','lib/application-history.mjs','lib/skill-library/what-makes-done.md'])
+for (const change of ['changed','missing'])
+for (const command of file === 'lib/skill-library/what-makes-done.md' ? ['preflight','start'] : ['preflight']) {
+  test(`native ${command} rejects ${change} installed ${file} before admission`,async t=>{
     const f=await fixture(t), sourceRoot=fileURLToPath(new URL('../../',import.meta.url));
     const baseline=await sourceEvidence({appDir:sourceRoot});
     for (const [name,evidence] of Object.entries(baseline.files)) if (evidence.installed) {
@@ -293,7 +295,7 @@ for (const file of ['lib/browser.mjs','lib/application-history.mjs']) for (const
     assert.equal((await f.read('preflight.json')).source.fingerprint,baseline.fingerprint);
     if (change==='missing') await fs.unlink(installedFile);
     else await fs.appendFile(installedFile,'\n// Different installed dependency.\n');
-    await assert.rejects(runner.preflight(),error=>error.code==='SOURCE_MISMATCH' && error.message.includes(file));
+    await assert.rejects(runner[command](),error=>error.code==='SOURCE_MISMATCH' && error.message.includes(file));
     assert.equal(f.state.posts,0);
     assert.deepEqual(f.calls,[]);
     await assert.rejects(fs.access(path.join(f.config.out,'admission.json')),error=>error.code==='ENOENT');
