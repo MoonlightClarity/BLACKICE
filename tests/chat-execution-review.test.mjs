@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createChatExecutionReview,explicitChatAction} from '../lib/chat-execution-review.mjs';
+import {createChatExecutionReview} from '../lib/chat-execution-review.mjs';
 const action='Send the prepared form.';
 const partial='The form fields are visible. I haven’t yet filled or sent it.';
 const setup=(input=action,canContinue=()=>true,onDecision)=>createChatExecutionReview({input,canContinue,onDecision});
@@ -13,8 +13,11 @@ function settle(review,c,data,extra={}) {
   review.delivered({call:c,result:r});
   return r;
 }
-test('explicit user action detection errs on the side of ordinary responses',()=>{
-  const positives = [
+test('ordinary Chat review checks every nonempty request without classifying authorization by wording',()=>{
+  const requests = [
+    "Find one suitable job using my existing résumé and preferences. Apply through the employer’s site and verify that the application was received.",
+    'I need the prepared form submitted and its receipt checked.',
+    'Look for an appropriate option, then complete the requested work.',
     action, 'Please apply to jobs. Stop at three.', 'Can you send the prepared note?', 'Rename the downloaded file.',
     'Send the draft to the specified recipient. Do not edit it.',
     'Create the fixture file in the workspace. Do not contact anyone.',
@@ -22,7 +25,7 @@ test('explicit user action detection errs on the side of ordinary responses',()=
     'Edit the existing local file. If you find errors, report them separately.',
     'Rename the file named "notes.txt". Leave all other files alone.',
   ];
-  const negatives = [
+  const scopedRequests = [
     '"Send the prepared form."', '> Send the prepared form.', 'Explain: send the prepared form.',
     'Draft an email and tell me how to send it.', 'Resume the previous task.', 'Send it again.',
     'Send the form but don\u2019t submit it.', 'Send this before 6 AM.', 'How do I send it?',
@@ -31,8 +34,18 @@ test('explicit user action detection errs on the side of ordinary responses',()=
     'Create the file. Do not create it after all.', 'Send the form. Only send it if the owner approves.',
     'The previous user said: send the prepared form.', 'Here is a fictional prompt:\n> Create the result file.',
   ];
-  for (const input of positives) assert(explicitChatAction(input),input);
-  for (const input of negatives) assert(!explicitChatAction(input),input);
+  for (const input of [...requests, ...scopedRequests]) {
+    const review=setup(input);
+    assert.ok(review,input);
+    const next=review.beforeFinal({output:'Response to the current request.'});
+    assert.equal(next.continue,true,input);
+    assert.match(next.prompt,/Preserve the original scope, constraints, and authorization/);
+    assert.match(next.prompt,/not a new task or permission requirement/);
+    assert.equal(review.beforeFinal({output:'No new task evidence.'}),null);
+  }
+  for (const input of [undefined,null,'',' \n\t',42,{}]) {
+    assert.equal(createChatExecutionReview({input}),null);
+  }
 });
 
 test('settled navigation and blocker prose still check the current unfinished action',()=>{
@@ -199,8 +212,15 @@ test('prepare-only scope stays in force and ambiguous/conditional authorization 
   const next=review.beforeFinal({output:'The form is prepared.'});
   assert.match(next.prompt,/including any prepare-only or do-not-submit limit/);
   assert.match(next.prompt,/not a new task or permission requirement/);
-  assert.equal(setup('Apply to the role. Do not submit the application.'),null);
-  assert.equal(setup('If the owner approves, submit the form.'),null);
+  for(const input of ['Apply to the role. Do not submit the application.', 'If the owner approves, submit the form.']) {
+    const scoped=setup(input);
+    assert.ok(scoped);
+    const check=scoped.beforeFinal({output:'The requested boundary remains in force.'});
+    assert.equal(check.continue,true);
+    assert.match(check.prompt,/Preserve the original scope, constraints, and authorization/);
+    assert.match(check.prompt,/including any prepare-only or do-not-submit limit/);
+    assert.equal(scoped.beforeFinal({output:'No new task evidence.'}),null);
+  }
 });
 
 test('diagnostic receipt states actual stop predicate without publishing candidate text or declaring success',()=>{

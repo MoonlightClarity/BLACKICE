@@ -171,7 +171,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  identity=await new IdentityStore({dataDir}).init();
  engine=await new HarnessEngine({runtime,dataDir,defaultCwd:dir,identity,browser:{status:()=>({available:true,contained:true,tabs:[]}),perform:()=>assert.fail('No real browser action is part of this test')}}).init();
  const api=async(route,_method,body)=>route==='/api/workflows'?body:engine.startRun(body);
- const invoke=async (task, directoryDiagnostics, expectedCalls=1)=>{
+ const invoke=async (task, directoryDiagnostics, expectedCalls=2)=>{
   const requestOffset=prompts.length;
   const start=await submitChat({api,runs:[],task,model:'fixture::fixture',cwd:dir,chatPlanning:'off',directoryActions:'off',directoryDiagnostics});
   await engine.executions.get(start.run.id);
@@ -228,7 +228,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.ok(!deleted.prompt.includes(alignmentHeading));
  assert.ok(deleted.receipts.every(r=>r.skillId!==alignmentId));
  assert.ok(!deleted.prompt.includes(heading));assert.ok(deleted.receipts.every(r=>r.skillId!==id));
- assert.equal(prompts.length,3,'no extra provider calls for skill selection');
+ assert.equal(prompts.length,6,'three ordinary Chat requests each get one review; skill selection adds no calls');
  const instrumented=await invoke('Apply to one job for me: Senior Product Manager.','maximal',2);
  const decisions=instrumented.events.filter(event=>event.type==='chat.execution-review');
  const evidenceFingerprint=decisions[0]?.evidenceFingerprint;
