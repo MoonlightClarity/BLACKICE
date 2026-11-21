@@ -1,0 +1,8 @@
+# Keep applicant evidence and native profiles local.
+*
+!.gitignore
+!README.md
+!capture.mjs
+!capture.test.mjs
+!runner.mjs
+!runner.test.mjs
