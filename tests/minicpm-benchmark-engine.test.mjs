@@ -18,7 +18,7 @@ const fixtureContext = Object.freeze({ preset: 'custom', windowTokens: 65536, au
 const requestFor = f => ({ workflow: { ...structuredClone(fixtureWorkflow), id: 'minicpm-code-boundary-fixture',
   settings: { ...fixtureWorkflow.settings, context: { ...fixtureContext } } }, input: {
   task, cwd: f.workspace, directoryActions: 'on', chatPlanning: 'off', pastChats: 'off',
-  directoryDiagnostics: 'maximal', benchmark: structuredClone(f.request),
+  directoryDiagnostics: 'maximal', benchmark: structuredClone(f.request), benchmarkBudget: { wallMs: 30000 },
 } });
 class ScriptedRuntime extends EventEmitter {
   calls = 0;
@@ -289,7 +289,7 @@ test('ordinary mode retains outside reads, ordinary commands and its existing ca
     assert.equal(ran.success, true, JSON.stringify(ran)); assert.equal(toolJSON(ran).stdout, 'ordinary-result');
     return { output: 'Ordinary access preserved.' };
   });
-  const request = requestFor(f); delete request.input.benchmark; request.input.directoryActions = 'off';
+  const request = requestFor(f); delete request.input.benchmark; delete request.input.benchmarkBudget; request.input.directoryActions = 'off';
   const started = f.engine.startRun(request); await f.engine.executions.get(started.id);
   const run = f.engine.getRun(started.id); assert.equal(run.status, 'completed', run.error);
   assert.equal(run.benchmark, undefined); assert.equal(f.runtime.calls, 1);
