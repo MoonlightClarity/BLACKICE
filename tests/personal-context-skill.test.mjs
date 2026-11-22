@@ -60,7 +60,8 @@ test('both Past Chats modes can load Personal Context and obtain fresh evidence 
       if(mode==='seed')return {output:stale,threadId:'prior-thread'};
       const audit={mode,actions:[]};audits.push(audit);
       assert.equal(options.threadId,undefined);
-      assert.ok(options.prompt.includes('\nUSER TASK\n'+currentTask+'\n\nUPSTREAM RESULTS'));
+      assert.ok(options.prompt.startsWith('USER TASK\n'+currentTask+'\n\nHOST TURN AUTHORITY\n'));
+      assert.ok(options.prompt.includes('\nUPSTREAM RESULTS (context from previous agents)\n'));
       assert.match(options.prompt,/HOST TURN AUTHORITY\n[^\n]*No Goal is admitted for this turn/);
       // Bundled examples may also mention 6 AM. Only the saved turn's own text proves leakage.
       for(const text of [options.prompt,options.developerInstructions]){

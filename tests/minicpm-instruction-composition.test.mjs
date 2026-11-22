@@ -9,7 +9,7 @@ import {HarnessEngine} from '../lib/engine.mjs';
 
 const sha=text=>createHash('sha256').update(text).digest('hex');
 const count=(text,value)=>text.split(value).length-1;
-const userBlock=prompt=>prompt.split('\nUSER TASK\n')[1].split('\n\nUPSTREAM RESULTS (context from previous agents)\n')[0];
+const userBlock=prompt=>prompt.split(/(?:^|\n)USER TASK\n/)[1].split(/\n\n(?:HOST TURN AUTHORITY|UPSTREAM RESULTS \(context from previous agents\))\n/)[0];
 const upstreamBlock=prompt=>prompt.split('\nUPSTREAM RESULTS (context from previous agents)\n')[1].split('\n\nUse the configured working folder')[0];
 const input={id:'i',type:'input',name:'User input'};
 const output={id:'o',type:'output'};

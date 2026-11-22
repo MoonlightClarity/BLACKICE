@@ -46,7 +46,7 @@ test('API setup remains optional for keyless providers while missing credentials
   const missing=await runtime.store.save({id:'missing_mistral',preset:'mistral',enabled:false,models:['mistral-small-latest']});
   const before=await readFile(runtime.store.file,'utf8'),state=runtime.status(),id='missing_mistral::mistral-small-latest';
   assert.equal(state.providers.find(provider=>provider.id===missing.id).credentialsReady,false);assert.equal(readyDisabledProvider(state,id),null);
-  assert.throws(()=>validateChatOptions(state,{model:id}),/credentials.*Settings/);
+  assert.throws(()=>validateChatOptions(state,{model:id}),/credentials.*Config > Models/);
   await assert.rejects(runtime.enableProvider(missing.id,{expectedUpdatedAt:missing.updatedAt}),{code:'PROVIDER_CREDENTIALS_REQUIRED'});
   assert.equal(await readFile(runtime.store.file,'utf8'),before);
   for(const preset of ['ollama','compatible']){
