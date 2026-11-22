@@ -704,7 +704,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "clarity-20261121"
+        "revision": "code-artifacts-20261122"
       },
       "bodyFile": "modular-development.md"
     }

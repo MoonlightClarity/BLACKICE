@@ -6,6 +6,8 @@ Use when building, fixing, refactoring, or extending software. Work in small cha
 
 Read the current files, project instructions, relevant caller, and existing check command. Confirm the project directory and available tools. Use user-supplied absolute paths for inputs outside that directory. If an input's location is unknown, search likely user or project folders with the attached discovery tool; one miss in the working directory does not establish that it is absent. Preserve unrelated edits. Use the requested execution mode; if it is unavailable, say which capability is missing and continue useful inspection.
 
+When relay_skills is attached, search and read other methods needed for this task. Use the current effective skill; an owner edit or deletion takes precedence over a bundled example.
+
 The tool definition attached to this run is the call contract. Source files, old transcripts, and skill examples may describe another version. Use current action names and argument fields, omit unsupported fields, and supply one path when a field accepts one path. After argument validation fails, read the error and correct the call before retrying.
 
 ## Define one small change
@@ -26,8 +28,8 @@ Use the current Directory action when Directory is active. Record observations t
 ## Save, check, repair
 
 1. Read the target before editing. For a revision or hash conflict, reread and combine the current changes.
-2. Save the implementation through the available file tool. Wait for its completed result, then read back the saved file.
-3. Run the recorded check through the attached command tool from the same project directory. Use the project's actual check command, not a filename invented from an example.
+2. Save the implementation through the available file tool. When relay_code is attached, use save with language, path and code; keep explanatory prose outside code. Use the current source hash when replacing a file. Wait for its completed result and verified readback. A successful save proves saved bytes, not correctness.
+3. Run the recorded check from the same project directory. relay_code check uses only an available host checker; an unavailable check is not a pass. Use the project's actual public test or check command through the attached tool. Inspect the saved version; a syntax pass alone does not establish correct behavior.
 4. Inspect exit status and output. Confirm the intended cases executed. A skipped test, zero cases, timeout, missing result, or syntax check alone does not establish the changed behavior.
 5. Repair the observed defect and rerun the affected check. Keep the required behavior fixed.
 6. Check the affected caller or combined workflow after the small changes are composed. For a prose-only edit, inspect the final wording instead of inventing a test.
