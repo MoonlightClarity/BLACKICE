@@ -8,16 +8,16 @@ export function createRemoteTransportFixture({ hostname = 'blackice-fixture.tail
     calls.push([...args]);
     if (JSON.stringify(args) === JSON.stringify(['status', '--json'])) return JSON.stringify({ BackendState: online ? 'Running' : 'Stopped', Self: { DNSName: hostname + '.', Online: online } });
     if (JSON.stringify(args) === JSON.stringify(['serve', 'status', '--json'])) return JSON.stringify(current);
-    const port = args.includes('--https=443') ? 443 : args.includes('--https=8443') ? 8443 : null, host = `${hostname}:${port}`;
+    const port = [443, 8443, 10000].find(value => args.includes(`--https=${value}`)) ?? null, host = `${hostname}:${port}`;
     const rootPath = args.includes('--set-path=/');
-    const enableArgs = port === 443 ? ['--bg', '--https=443', '--set-path=/'] : ['--bg', '--https=8443'];
+    const enableArgs = port === 443 ? ['--bg', '--https=443', '--set-path=/'] : ['--bg', `--https=${port}`];
     if (['serve', 'funnel'].includes(args[0]) && JSON.stringify(args.slice(1, -1)) === JSON.stringify(enableArgs) && /^http:\/\/127\.0\.0\.1:\d+$/.test(args.at(-1) || '')) {
       current.TCP ||= {}; current.Web ||= {}; current.AllowFunnel ||= {};
       current.TCP[port] = { HTTPS: true }; current.Web[host] ||= { Handlers: {} }; current.Web[host].Handlers['/'] = { Proxy: args.at(-1) };
       if (args[0] === 'funnel') current.AllowFunnel[host] = true; else delete current.AllowFunnel[host];
       return '';
     }
-    const disableArgs = port === 443 ? ['--https=443', '--set-path=/', 'off'] : ['--https=8443', 'off'];
+    const disableArgs = port === 443 ? ['--https=443', '--set-path=/', 'off'] : [`--https=${port}`, 'off'];
     if (['serve', 'funnel'].includes(args[0]) && JSON.stringify(args.slice(1)) === JSON.stringify(disableArgs)) {
       if (rootPath) delete current.Web?.[host]?.Handlers?.['/'];
       if (!rootPath || !Object.keys(current.Web?.[host]?.Handlers || {}).length) { delete current.TCP?.[port]; delete current.Web?.[host]; delete current.AllowFunnel?.[host]; }

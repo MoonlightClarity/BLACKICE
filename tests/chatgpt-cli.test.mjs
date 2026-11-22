@@ -21,3 +21,18 @@ test('approval requires a matching pending code and offered scopes', async () =>
   await assert.rejects(executeChatGPTCLI({ ...options, scopes: ['files:write'] }, { connect }), /do not match/);
   assert.equal(calls.length, 1);
 });
+
+test('prepare selects a separately owned HTTPS 10000 without weakening explicit publication consent', async () => {
+  assert.throws(() => parseChatGPTArgs(['chatgpt', 'prepare', '--https-port=10000']), /confirm-public/);
+  assert.throws(() => parseChatGPTArgs(['chatgpt', 'prepare', '--confirm-public', '--https-port=10001']), /HTTPS port/);
+  assert.throws(() => parseChatGPTArgs(['chatgpt', 'status', '--https-port=10000']), /HTTPS port/);
+  const options = parseChatGPTArgs(['chatgpt', 'prepare', '--confirm-public', '--https-port=10000']);
+  assert.equal(options.httpsPort, 10000);
+  const calls = [];
+  const connect = async () => ({ request: async (route, body) => {
+    calls.push([route, body]);
+    return { enabled: false };
+  } });
+  await executeChatGPTCLI(options, { connect });
+  assert.deepEqual(calls, [['/api/chatgpt-connector/prepare', { confirmPublic: true, httpsPort: 10000 }]]);
+});

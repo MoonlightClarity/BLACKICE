@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { createHarnessServer } from '../server.mjs';
 import { RemoteAccessManager } from '../lib/remote-access.mjs';
 import { createRemoteTransportFixture } from './fixtures/remote-transport.mjs';
+import { unrelatedRemoteConfig } from '../lib/remote-access-tailscale.mjs';
 
 class Runtime extends EventEmitter {
   agentCalls = 0;
@@ -523,4 +524,30 @@ test('authenticated tool receipt capture is wired after setup and an optional wr
   await assert.doesNotReject(f.app.chatGPTConnector.onAuthenticatedToolCall(receipt)); assert.equal(f.runtime.agentCalls, 0);
   const withoutObserver = await fixture(t, { serverOptions: { chatGPTSetup: setupStub() } });
   await assert.doesNotReject(withoutObserver.app.chatGPTConnector.onAuthenticatedToolCall(receipt));
+});
+
+test('ChatGPT preparation supports free port 10000 while preserving existing 443 and 8443 endpoints', async t => {
+  const f = await fixture(t), host = f.transport.hostname;
+  const existing = f.transport.config;
+  existing.TCP['8443'] = { HTTPS: true };
+  existing.Web[`${host}:8443`] = { Handlers: { '/': { Proxy: 'http://127.0.0.1:8766' } } };
+  existing.AllowFunnel[`${host}:8443`] = true;
+  f.transport.setConfig(existing);
+
+  const malformed = await f.request(prepareRoute, { body: { confirmPublic: true, httpsPort: 10001 } });
+  assert.equal(malformed.status, 400);
+  assert.deepEqual(f.transport.config, existing);
+
+  const prepared = await f.request(prepareRoute, { body: { confirmPublic: true, httpsPort: 10000 } });
+  assert.equal(prepared.status, 200, await prepared.clone().text());
+  const state = await prepared.json();
+  assert.equal(state.setup.ready, true);
+  assert.equal(f.app.remoteAccess.status().url, `https://${host}:10000`);
+  assert.equal(f.app.chatGPTConnector.origin, `https://${host}:10000`);
+  assert.equal(state.endpoint, `https://${host}:10000/mcp/chatgpt`);
+  assert.deepEqual(unrelatedRemoteConfig(f.transport.config, f.app.remoteAccess.config.ownership), existing);
+  const migration = await f.request(prepareRoute, { body: { confirmPublic: true, httpsPort: 8443 } });
+  assert.equal(migration.status, 409, 'do not silently move an already-owned public endpoint');
+  assert.equal(f.app.remoteAccess.status().url, `https://${host}:10000`);
+  assert.deepEqual(unrelatedRemoteConfig(f.transport.config, f.app.remoteAccess.config.ownership), existing);
 });
