@@ -133,7 +133,7 @@ const planningScope={taskId:'task1',runId:'run1',nodeId:'agent'};
 const planningArtifact={status:'proposed',focus:'route',reason:'Check the failed route',
   actions:[{id:'route',objective:'Inspect the installed route',dependsOn:[]}]};
 async function nativePlanningFixture(t,opts={}) {
- const f=await fixture(t,{answer:JSON.stringify(planningArtifact),...opts});
+ const f=await fixture(t,{answer:JSON.stringify({artifact:planningArtifact}),...opts});
  const runtime=await new ProviderRuntime({codex:f.client,dataDir:f.dir}).init();
  const model='gpt-6-luna',events=[],writes=[];
  const pass=createChatPlanningPass({mode:'on',...planningScope,signal:opts.signal,emit:event=>events.push(event),

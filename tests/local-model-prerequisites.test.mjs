@@ -1,25 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { LLAMA_BUNDLE_VERSION } from '../lib/llama-cpp-bundle.mjs';
+import { createLlamaBundleFixture } from './fixtures/llama-bundle.mjs';
 import { inspectLocalModelPrerequisites } from '../lib/local-model-prerequisites.mjs';
 
 async function bundle(t) {
-  const bundleRoot = await mkdtemp(path.join(os.tmpdir(), 'blackice-prerequisites-'));
-  t.after(() => rm(bundleRoot, { recursive: true, force: true }));
-  const files = [];
-  for (const name of ['cpu', 'vulkan']) {
-    await mkdir(path.join(bundleRoot, name));
-    const file = name + '/llama-server.exe';
-    const bytes = Buffer.from(name);
-    await writeFile(path.join(bundleRoot, file), bytes);
-    files.push({ path: file, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
-  }
-  await writeFile(path.join(bundleRoot, 'manifest.json'), JSON.stringify({ version: LLAMA_BUNDLE_VERSION, files }));
-  return { bundleRoot, platform: 'win32', arch: 'x64' };
+  const { root, verify } = await createLlamaBundleFixture(t);
+  return { bundleRoot: root, verifyBundle: verify, platform: 'win32', arch: 'x64' };
 }
 
 test('records both prerequisites without claiming GPU offload or inference', async t => {

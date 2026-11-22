@@ -293,7 +293,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  const browserSkill='library-browser-navigation';
   const completionId='library-what-makes-done',completionSkill=await catalog.detail({id:completionId});
   const assertSharedConfirmationDelivery=record=>{
-   assert.ok(record.receipts.some(receipt=>receipt.skillId===completionId&&receipt.source==='bundled'&&receipt.sourceRevision==='clarity-20261121'));
+   assert.ok(record.receipts.some(receipt=>receipt.skillId===completionId&&receipt.source==='bundled'&&receipt.sourceRevision===completionSkill.provenance.revision));
    for(const messages of record.requests){
     const wire=JSON.stringify(messages);
     assert.ok(wire.includes(JSON.stringify(completionSkill.content).slice(1,-1)),'the complete shared confirmation method reaches every actual provider request');
@@ -304,7 +304,8 @@ test('actual Compatible main-turn transport submits the job skill selectively an
   assertSharedConfirmationDelivery(job);
  assert.ok(job.prompt.includes('An empty tab list means there is no tab to reuse'));
  assert.ok(job.prompt.includes('the link opened a new tab'));
- assert.ok(job.receipts.some(r=>r.skillId===browserSkill&&r.sourceRevision==='rendered-obstacles-20261121'));
+ const browserRevision=(await catalog.detail({id:browserSkill})).provenance.revision;
+ assert.ok(job.receipts.some(r=>r.skillId===browserSkill&&r.sourceRevision===browserRevision));
  assert.equal(job.prompt.split('ANTI-COMPLETION BIAS (bundled execution method)').length,2);
  assert.ok(job.prompt.includes('Compare the request with the last result you actually observed'));
  assert.deepEqual(job.receipts.filter(r=>r.skillId===antiCompletion),[completionReceipt('bundled','clarity-20261121')]);
