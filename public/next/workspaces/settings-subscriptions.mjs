@@ -129,7 +129,7 @@ export function createSubscriptionModelSettings(props, createProvider) {
     enter(){if(destroyed||active)return;active=true;selectModelSection(modelSection);render();void load();},
     leave(){active=false;providers.setCodexActive?.(false);revision++;local.leave();render();if(expanded){providers.leave?.();expanded=false;}},
     updateStatus,
-    focusProvider(id){if(id==='mistral-vibe'&&!destroyed&&active){selectModelSection('accounts');native.open=true;native.focus({preventScroll:false});}},
+    focusProvider(id){if(destroyed||!active)return;if(id==='local'){selectModelSection('local');return;}if(id==='mistral-vibe'){selectModelSection('accounts');native.open=true;native.focus({preventScroll:false});}},
     updateRuntimeSettings(value){providers.updateRuntimeSettings?.(value);},
     destroy(){if(destroyed)return;this.leave();destroyed=true;local.destroy();providers.destroy?.();mount.replaceChildren();}
   };

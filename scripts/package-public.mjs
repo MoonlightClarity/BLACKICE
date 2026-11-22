@@ -1,4 +1,4 @@
-import { inspectLlamaBundle } from '../lib/llama-cpp-bundle.mjs';
+import { inspectLlamaBundle, verifyLlamaBundle } from '../lib/llama-cpp-bundle.mjs';
 import { prepareLlamaRuntime } from './prepare-llama-runtime.mjs';
 import { promises as fs, createReadStream } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -20,20 +20,22 @@ const config=publicBuilderConfiguration(signing,{source,output:buildRoot,require
 let previousMoved=false,promoted=false;
 await fs.mkdir(path.dirname(configFile),{recursive:true});await fs.mkdir(outputs,{recursive:true});
 try{
-  await prepareLlamaRuntime({destination:path.join(source,'.build/llama.cpp'),cache:path.join(source,'.build/llama-cache')});
+  const preparedRuntime = await prepareLlamaRuntime({destination:path.join(source,'.build/llama.cpp'),cache:path.join(source,'.build/llama-cache'),repairBundle:process.env.BLACKICE_LLAMA_REPAIR_BUNDLE});
   // This file contains public certificate selectors only. Passwords/PFX values
   // remain in the inherited signing environment and never enter build inputs.
   await fs.writeFile(configFile,JSON.stringify(config,null,2),{flag:'wx',mode:0o600});
   await new Promise((resolve,reject)=>{const child=spawn(process.execPath,[path.join(source,'node_modules/electron-builder/cli.js'),'--win','nsis','--x64','--config',configFile,'--publish','never'],{cwd:source,env:{...process.env},stdio:'inherit',windowsHide:true});child.once('error',reject);child.once('exit',code=>code===0?resolve():reject(Error(`Public packaging failed with exit code ${code}.`)));});
   const name=`Blackice-${version}-Setup.exe`,installer=path.join(buildRoot,name),application=path.join(buildRoot,'win-unpacked','BLACKICE.exe');
   if(signing.configured)for(const file of [application,installer]){const signature=await verifyPublisherSignature(file,signing.publisher);if(!signature.valid)throw Error(`The ${path.basename(file)} publisher signature was not valid (${signature.status}). The public output was left untouched.`);}
-  const runtime = await inspectLlamaBundle({root:path.join(buildRoot,'win-unpacked','resources','llama.cpp')});
+  const runtimeRoot = path.join(buildRoot,'win-unpacked','resources','llama.cpp');
+  const runtimeReceipt = await verifyLlamaBundle({root:runtimeRoot,expected:preparedRuntime.runtime});
+  const runtime = await inspectLlamaBundle({root:runtimeRoot});
   if(!runtime.available)throw Error('Packaged llama.cpp verification failed: '+runtime.message);
   const fingerprint=await appFingerprint(path.join(buildRoot,'win-unpacked','resources/app'));
   if(fingerprint!==await appFingerprint(source))throw Error('Application sources changed during packaging. Rebuild and retest this candidate.');
   await fs.mkdir(stage,{recursive:false});await fs.copyFile(installer,path.join(stage,name));
   const info=await fs.stat(path.join(stage,name)),digest=createHash('sha256');for await(const chunk of createReadStream(path.join(stage,name)))digest.update(chunk);
-  await fs.writeFile(path.join(stage,'blackice-public-release.json'),JSON.stringify({format:1,product:'BLACKICE',version,appFingerprint:fingerprint,builtAt:new Date().toISOString(),publisher:signing.configured?signing.publisher:null,signing:{status:signing.configured?'signed':'unsigned',publisher:signing.configured?signing.publisher:null,publisherVerified:signing.configured},releasePolicy:{requireCodeSigning},artifact:{name,size:info.size,sha256:digest.digest('hex')},published:false},null,2)+'\n');
+  await fs.writeFile(path.join(stage,'blackice-public-release.json'),JSON.stringify({format:1,product:'BLACKICE',version,appFingerprint:fingerprint,builtAt:new Date().toISOString(),publisher:signing.configured?signing.publisher:null,signing:{status:signing.configured?'signed':'unsigned',publisher:signing.configured?signing.publisher:null,publisherVerified:signing.configured},releasePolicy:{requireCodeSigning},artifact:{name,size:info.size,sha256:digest.digest('hex')},runtime:runtimeReceipt,published:false},null,2)+'\n');
   await fs.writeFile(path.join(stage,'Read me.txt'),[`BLACKICE ${version} ${signing.configured?'signed':'unsigned'} public candidate.`,signing.configured?'Run Setup.exe. Its configured publisher was verified in Windows.':'Run Setup.exe. This installer is unsigned; Windows cannot verify an BLACKICE publisher identity.','Publication is a separate human-operated step. This command never uploads artifacts.','Run npm run release:check with matching test, installed-integrity, profile backup/restore and diagnostics receipts before publishing.','Agents execute directly without per-action permission prompts. Provided AS IS, without warranty; use at your own risk.'].join('\r\n'));
   try{await fs.rename(destination,previous);previousMoved=true;}catch(error){if(error.code!=='ENOENT')throw error;}
   await fs.rename(stage,destination);promoted=true;

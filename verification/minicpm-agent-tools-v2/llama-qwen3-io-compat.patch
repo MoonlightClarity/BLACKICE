@@ -1,0 +1,139 @@
+diff --git a/src/llama-mmap.h b/src/llama-mmap.h
+index 6c6393d..70e8b06 100644
+--- a/src/llama-mmap.h
++++ b/src/llama-mmap.h
+@@ -9,6 +9,9 @@
+ // staging buffer size for direct I/O reads, 64MB works well for NVMe drives
+ #define LLAMA_DIRECT_IO_BUFFER_SIZE (64 * 1024 * 1024)
+ 
++// Filename handles opened here belong to the core CRT.
++FILE * llama_file_fopen(const char * fname, const char * mode);
++
+ struct llama_file;
+ struct llama_mmap;
+ struct llama_mlock;
+diff --git a/src/llama-mmap.cpp b/src/llama-mmap.cpp
+index 9688a7e..f612282 100644
+--- a/src/llama-mmap.cpp
++++ b/src/llama-mmap.cpp
+@@ -65,6 +65,27 @@ static std::string llama_format_win_err(DWORD err) {
+ }
+ #endif
+ 
++// Keep FILE ownership in the core runtime; the GGML DLL may use a different CRT.
++FILE * llama_file_fopen(const char * fname, const char * mode) {
++    if (!fname || !mode) { errno = EINVAL; return nullptr; }
++#if defined(_WIN32)
++    auto convert = [](const char * input, std::wstring & output) {
++        const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, input, -1, nullptr, 0);
++        if (count <= 0) { errno = EINVAL; return false; }
++        output.resize(static_cast<size_t>(count));
++        if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, input, -1, output.data(), count) != count) {
++            errno = EINVAL; return false;
++        }
++        return true;
++    };
++    std::wstring wide_name, wide_mode;
++    if (!convert(fname, wide_name) || !convert(mode, wide_mode)) { return nullptr; }
++    return _wfopen(wide_name.c_str(), wide_mode.c_str());
++#else
++    return std::fopen(fname, mode);
++#endif
++}
++
+ // llama_file
+ 
+ struct llama_file::impl {
+@@ -169,7 +190,7 @@ struct llama_file::impl {
+     }
+ 
+     void init_buffered_io(const char * mode) {
+-        fp = ggml_fopen(fname.c_str(), mode);
++        fp = llama_file_fopen(fname.c_str(), mode);
+         if (fp == NULL) {
+             throw std::runtime_error(format("failed to open %s: %s", fname.c_str(), strerror(errno)));
+         }
+@@ -442,7 +463,7 @@ struct llama_file::impl {
+ #endif
+ 
+     void init_fp(const char * mode) {
+-        fp = ggml_fopen(fname.c_str(), mode);
++        fp = llama_file_fopen(fname.c_str(), mode);
+         if (fp == NULL) {
+             throw std::runtime_error(format("failed to open %s: %s", fname.c_str(), strerror(errno)));
+         }
+diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
+index 2cbee61..7ba73d4 100644
+--- a/src/llama-model-loader.cpp
++++ b/src/llama-model-loader.cpp
+@@ -663,7 +663,7 @@ llama_model_loader::llama_model_loader(
+         for (size_t idx = 1; idx < paths.size(); idx++) {
+             const char * fname_split = paths[idx].c_str();
+             if (skip_shard_order_validation && idx < n_backbone) {
+-                FILE * f = ggml_fopen(fname_split, "rb");
++                FILE * f = llama_file_fopen(fname_split, "rb");
+                 if (f == nullptr) {
+                     LLAMA_LOG_INFO("%s: GGUF split %s not found, assuming it only holds the per-layer embedding table\n", __func__, fname_split);
+                     n_skipped++;
+diff --git a/src/llama-adapter.cpp b/src/llama-adapter.cpp
+index 824601e..50637a2 100644
+--- a/src/llama-adapter.cpp
++++ b/src/llama-adapter.cpp
+@@ -148,22 +148,28 @@ llama_adapter_lora_weight * llama_adapter_lora::get_weight(ggml_tensor * w) {
+     return nullptr;
+ }
+ 
+-static void llama_adapter_lora_init_impl(llama_model & model, FILE * file, llama_adapter_lora & adapter) {
++static void llama_adapter_lora_init_impl(llama_model & model, FILE * file, llama_adapter_lora & adapter, const char * path_lora = nullptr) {
+     ggml_context * ctx_init;
+     gguf_init_params meta_gguf_params = {
+         /* .no_alloc = */ true,
+         /* .ctx      = */ &ctx_init,
+     };
+ 
+-    gguf_context_ptr ctx_gguf { gguf_init_from_file_ptr(file, meta_gguf_params) };
++    // Filename metadata is parsed and owned entirely by the GGML DLL.
++    gguf_context_ptr ctx_gguf { path_lora
++        ? gguf_init_from_file(path_lora, meta_gguf_params)
++        : gguf_init_from_file_ptr(file, meta_gguf_params) };
+     if (!ctx_gguf) {
+         throw std::runtime_error("failed to load lora adapter from file");
+     }
+ 
+     ggml_context_ptr ctx { ctx_init };
+ 
+-    // must come after gguf_init_from_file_ptr, the llama_file constructor moves the file position
+-    llama_file gguf_file(file);
++    // Keep the FILE route ordering unchanged; filename tensor reads use a separate core-owned file.
++    auto gguf_file_owner = path_lora
++        ? std::make_unique<llama_file>(path_lora, "rb")
++        : std::make_unique<llama_file>(file);
++    llama_file & gguf_file = *gguf_file_owner;
+ 
+     // check metadata
+     {
+@@ -430,16 +436,15 @@ static void llama_adapter_lora_init_impl(llama_model & model, FILE * file, llama
+ llama_adapter_lora * llama_adapter_lora_init(llama_model * model, const char * path_lora) {
+     LLAMA_LOG_INFO("%s: loading lora adapter from '%s' ...\n", __func__, path_lora);
+ 
+-    FILE * file = ggml_fopen(path_lora, "rb");
+-    if (!file) {
+-        LLAMA_LOG_ERROR("%s: failed to open '%s': %s\n", __func__, path_lora, strerror(errno));
+-        return nullptr;
++    llama_adapter_lora * adapter = new llama_adapter_lora(model);
++    try {
++        llama_adapter_lora_init_impl(*model, nullptr, *adapter, path_lora);
++        return adapter;
++    } catch (const std::exception & err) {
++        LLAMA_LOG_ERROR("%s: failed to apply lora adapter: %s\n", __func__, err.what());
++        delete adapter;
+     }
+-
+-    llama_adapter_lora * adapter = llama_adapter_lora_init_from_file_ptr(model, file);
+-    fclose(file);
+-
+-    return adapter;
++    return nullptr;
+ }
+ 
+ llama_adapter_lora * llama_adapter_lora_init_from_file_ptr(llama_model * model, FILE * file) {

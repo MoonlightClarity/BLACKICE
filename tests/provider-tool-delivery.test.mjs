@@ -4,7 +4,8 @@ import http from 'node:http';
 import { Writable } from 'node:stream';
 import { CodexRuntime } from '../lib/codex.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
-import { providerToolResultDeliveries, providerToolDeliveryObserver } from '../lib/provider-tool-delivery.mjs';
+import { providerToolResultDeliveries, providerToolDeliveryObserver, ACCEPTED_PROVIDER_TOOL_DELIVERY } from '../lib/provider-tool-delivery.mjs';
+import { recordConversationToolResult } from '../lib/conversation-tool-continuity.mjs';
 import { projectNativeTaskResult } from '../lib/task-tool-view.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -69,7 +70,8 @@ const finalResponses = {
   compatible: { choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: 'done' } }] },
 };
 for (const type of ['openai', 'anthropic', 'compatible']) test(type + ' adapter acknowledges cached result only after actual HTTP acceptance', async t => {
-  const delivered = [], received = [], accepted = [];
+  const delivered = [], received = [], accepted = [], continuity = [];
+  const savedRun = { id: 'http-' + type, taskId: 'task-' + type, events: [] };
   const current={role:'user',content:'Exact current operational prompt with bundled guidance.'};
   const { runtime, config } = await apiFixture(t, type, async (req, res) => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
@@ -78,29 +80,48 @@ for (const type of ['openai', 'anthropic', 'compatible']) test(type + ' adapter 
     assert.equal(delivered.length, received.length - 1, 'No early acknowledgment before the request is accepted.');
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(finalResponses[type]));
   });
-  const state = { record: { model: 'fixture', messages: [...structuredClone(histories[type]),current] }, tools: [spec], controller: new AbortController(), inputImages: [], inputImageMessage:current, providerIdleTimeoutMs: 2000, onPromptAccepted:value=>accepted.push(value), onToolResultDelivered: value => delivered.push(value) };
+  const state = { record: { model: 'fixture', messages: [...structuredClone(histories[type]),current] }, tools: [spec], controller: new AbortController(), inputImages: [], inputImageMessage:current, providerIdleTimeoutMs: 2000, onPromptAccepted:value=>accepted.push(value), onToolResultDelivered: value => {
+    delivered.push(value); continuity.push(recordConversationToolResult(savedRun, 'agent', value));
+  } };
   const method = type === 'openai' ? 'responses' : type === 'anthropic' ? 'messages' : 'chat';
   assert.equal((await runtime[method](state, config)).text, 'done');
   assert.equal(delivered.length, 1);
   assert.equal(delivered[0].result.contentItems[0].text, type === 'compatible' ? payload + '\nseparate exact text' : payload);
+  assert.equal(delivered[0].delivery, ACCEPTED_PROVIDER_TOOL_DELIVERY);
+  assert.equal(delivered[0].providerType, type);
+  assert.deepEqual(continuity, [{ changed: true }]);
+  const retained = savedRun.toolContinuity.records[0];
+  assert.equal(retained.text, payload + '\nseparate exact text');
+  assert.equal(retained.delivery, 'provider-request-accepted-not-provider-consumption');
+  assert.equal(retained.success, type === 'anthropic' ? true : null);
+  assert.equal(retained.status, type === 'anthropic' ? 'completed' : 'unknown');
+  assert.equal(retained.actionDispatched, null);
+  if (type !== 'anthropic') {
+    assert.equal(retained.kind, 'unknown'); assert.equal(retained.effectStatus, 'UNKNOWN'); assert.equal(retained.code, null);
+  }
   await runtime[method](state, config);
   assert.equal(delivered.length, 2, 'A delivered cached transcript receipt is acknowledged again, without executing a tool.');
   assert.equal(received.length, 2);
+  assert.deepEqual(continuity, [{ changed: true }, { changed: false }]);
+  assert.equal(savedRun.toolContinuity.records.length, 1, 'Repeated accepted history is idempotent in continuity.');
   assert.deepEqual(accepted,[current.content],'Correction requests do not repeat the initial submission receipt.');
 });
 
-test('HTTP rejection and network uncertainty do not acknowledge retained result texts', async t => {
-  const delivered = [];
-  const { runtime, config } = await apiFixture(t, 'compatible', async (req, res) => {
+for (const type of ['compatible', 'openai']) test(type + ' HTTP rejection and network uncertainty do not acknowledge or retain result texts', async t => {
+  const delivered = [], savedRun = { id: 'rejected-' + type, taskId: 'task-rejected-' + type, events: [] };
+  const { runtime, config } = await apiFixture(t, type, async (req, res) => {
     for await (const _ of req) {}
     res.writeHead(400, { 'content-type': 'application/json' }); res.end('{"error":{"message":"fixture rejected"}}');
   });
-  const observer = providerToolDeliveryObserver({ tools: [spec], onToolResultDelivered: value => delivered.push(value) }, 'compatible');
-  await assert.rejects(runtime.request(config, 'chat/completions', bodyFor('compatible'), undefined, undefined, 2000, observer));
-  assert.equal(delivered.length, 0);
+  const observer = providerToolDeliveryObserver({ tools: [spec], onToolResultDelivered: value => {
+    delivered.push(value); recordConversationToolResult(savedRun, 'agent', value);
+  } }, type);
+  const endpoint = type === 'openai' ? 'responses' : 'chat/completions';
+  await assert.rejects(runtime.request(config, endpoint, bodyFor(type), undefined, undefined, 2000, observer));
+  assert.equal(delivered.length, 0); assert.equal(savedRun.toolContinuity, undefined);
   runtime.fetchImpl = async () => { throw new TypeError('network failed'); };
-  await assert.rejects(runtime.request(config, 'chat/completions', bodyFor('compatible'), undefined, undefined, 2000, observer));
-  assert.equal(delivered.length, 0);
+  await assert.rejects(runtime.request(config, endpoint, bodyFor(type), undefined, undefined, 2000, observer));
+  assert.equal(delivered.length, 0); assert.equal(savedRun.toolContinuity, undefined);
 });
 
 function codexFixture(receipt, delivered) {

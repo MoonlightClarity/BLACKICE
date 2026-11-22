@@ -161,3 +161,163 @@ test('a model already loading is not dispatched again and an unresolved load tim
     {code:'LOCAL_MODEL_LOAD_UNCONFIRMED',status:504});
   assert.equal(clock,500);
 });
+
+function routerLoadSequence(states, otherModels = []) {
+  const calls = []; let reads = 0, clock = 0;
+  const request = async (engine, route, options) => {
+    assert.equal(engine, 'llamacpp');
+    calls.push({route, options});
+    if (route === '/props') return {role: 'router'};
+    if (route === '/models') return {data: [
+      {id: 'test', status: states[Math.min(reads++, states.length - 1)]}, ...otherModels,
+    ]};
+    assert.equal(route, '/models/load', 'load confirmation must not perform inference');
+    assert.deepEqual(options, {body: {model: 'test'}, timeoutMs: 300000});
+    return {success: true};
+  };
+  return {request, calls, get elapsed() { return clock; },
+    options: {confirmationTimeoutMs: 1000, now: () => clock, wait: async ms => { clock += ms; }}};
+}
+
+test('router catalog preserves valid child failure metadata without coercing malformed values', async () => {
+  const {llamaCppCatalog} = await import('../lib/llama-cpp-local.mjs');
+  const statuses = [
+    {value: 'unloaded', failed: true, exit_code: 1},
+    {value: 'unloaded', failed: false, exit_code: 0},
+    {value: 'unloaded', failed: 'true', exit_code: '1'},
+    {value: 'unloaded', failed: 1, exit_code: 1.5},
+    {value: 'unloaded', failed: null, exit_code: Number.MAX_SAFE_INTEGER + 1},
+    {value: 'unloaded', failed: undefined, exit_code: NaN},
+    Object.assign([], {value: 'unloaded', failed: true, exit_code: 1}),
+    'unloaded',
+  ];
+  const result = await llamaCppCatalog(async (_engine, route) => route === '/props'
+    ? {role: 'router'} : {data: statuses.map((status, i) => ({id: 'model-' + i, status}))});
+  assert.equal(result.models[0].failed, true);
+  assert.equal(result.models[0].exitCode, 1);
+  assert.equal(result.models[0].loaded, false);
+  assert.equal(result.models[1].failed, false);
+  assert.equal(result.models[1].exitCode, 0);
+  for (const row of result.models.slice(2)) {
+    assert.equal(Object.hasOwn(row, 'failed'), false);
+    assert.equal(Object.hasOwn(row, 'exitCode'), false);
+  }
+});
+
+for (const [name, terminal, exitCode] of [
+  ['observed unloaded child exit', {value: 'unloaded', failed: true, exit_code: 1}, 1],
+  ['explicit failure without exit metadata', {value: 'unloaded', failed: true}, undefined],
+  ['nonzero exit without failure flag', {value: 'unloaded', exit_code: -9}, -9],
+  ['legacy error status', {value: 'error'}, undefined],
+  ['legacy failed status', 'failed', undefined],
+]) test(name + ' rejects promptly after one accepted load', async () => {
+  const {loadLlamaCpp} = await import('../lib/llama-cpp-local.mjs');
+  const f = routerLoadSequence([{value: 'unloaded'}, terminal]);
+  await assert.rejects(loadLlamaCpp(f.request, {model: 'test'}, f.options), error => {
+    assert.equal(error.code, 'LOCAL_MODEL_LOAD_FAILED');
+    assert.equal(error.status, 502);
+    assert.match(error.message, /selected model failed to load/);
+    if (exitCode === undefined) assert.doesNotMatch(error.message, /exit code/i);
+    else assert.ok(error.message.includes('Child exit code: ' + exitCode + '.'));
+    assert.ok(error.message.length < 200);
+    return true;
+  });
+  assert.equal(f.elapsed, 0, 'a reported child failure must not wait for the readiness timeout');
+  assert.equal(f.calls.filter(call => call.route === '/models/load').length, 1);
+});
+
+test('an explicit retry replaces historical failure and ignores stale metadata during new loading', async () => {
+  const {loadLlamaCpp} = await import('../lib/llama-cpp-local.mjs');
+  const failed = {failed: true, exit_code: 1};
+  const f = routerLoadSequence([
+    {value: 'unloaded', ...failed}, {value: 'loading', ...failed}, {value: 'loaded', ...failed},
+  ]);
+  assert.equal((await loadLlamaCpp(f.request, {model: 'test'}, f.options)).loaded, true);
+  assert.equal(f.calls.filter(call => call.route === '/models/load').length, 1);
+  assert.equal(f.elapsed, 250);
+});
+
+test('a retried child that fails before the first poll is reported even with the same exit code', async () => {
+  const {loadLlamaCpp} = await import('../lib/llama-cpp-local.mjs');
+  // The pinned router changes mapping to LOADING before replying success; a fast
+  // new failure can therefore reproduce the prior status before the first poll.
+  const failed = {value: 'unloaded', failed: true, exit_code: 1};
+  const f = routerLoadSequence([failed, failed]);
+  await assert.rejects(loadLlamaCpp(f.request, {model: 'test'}, f.options),
+    {code: 'LOCAL_MODEL_LOAD_FAILED', status: 502});
+  assert.equal(f.calls.filter(call => call.route === '/models/load').length, 1);
+  assert.equal(f.elapsed, 0);
+});
+
+for (const value of ['loaded', 'sleeping']) test(value + ' ignores historical exit metadata without another load', async () => {
+  const {loadLlamaCpp} = await import('../lib/llama-cpp-local.mjs');
+  const f = routerLoadSequence([{value, failed: true, exit_code: 1}]);
+  assert.equal((await loadLlamaCpp(f.request, {model: 'test'}, f.options)).loaded, true);
+  assert.equal(f.calls.filter(call => call.route === '/models/load').length, 0);
+});
+
+test('an already loading model with stale exit metadata receives no duplicate load', async () => {
+  const {loadLlamaCpp} = await import('../lib/llama-cpp-local.mjs');
+  const f = routerLoadSequence([
+    {value: 'loading', failed: true, exit_code: 1}, {value: 'sleeping', failed: true, exit_code: 1},
+  ]);
+  assert.equal((await loadLlamaCpp(f.request, {model: 'test'}, f.options)).loaded, true);
+  assert.equal(f.calls.filter(call => call.route === '/models/load').length, 0);
+});
+
+test('unloaded exit zero and malformed failure fields still allow asynchronous loading', async () => {
+  const {loadLlamaCpp} = await import('../lib/llama-cpp-local.mjs');
+  const f = routerLoadSequence([
+    {value: 'unloaded'}, {value: 'unloaded', failed: false, exit_code: 0},
+    {value: 'unloaded', failed: 'true', exit_code: '1'}, {value: 'loaded'},
+  ]);
+  assert.equal((await loadLlamaCpp(f.request, {model: 'test'}, f.options)).loaded, true);
+  assert.equal(f.elapsed, 500);
+  assert.equal(f.calls.filter(call => call.route === '/models/load').length, 1);
+});
+
+test('a different catalog model failure cannot poison the selected load', async () => {
+  const {loadLlamaCpp} = await import('../lib/llama-cpp-local.mjs');
+  const f = routerLoadSequence([{value: 'unloaded'}, {value: 'loading'}, {value: 'loaded'}],
+    [{id: 'different-model', status: {value: 'unloaded', failed: true, exit_code: 1}}]);
+  assert.equal((await loadLlamaCpp(f.request, {model: 'test'}, f.options)).loaded, true);
+  assert.equal(f.elapsed, 250);
+});
+
+test('actual child failure propagates through manager and HTTP, releases shared leases and never registers a provider', async () => {
+  let posts = 0, active = 0, released = 0, registered = 0;
+  const routes = [], supervisor = {
+    async acquire() {
+      active++; let done = false;
+      return {owned: true, release() { assert.equal(done, false); done = true; active--; released++; }};
+    },
+  };
+  const fetchImpl = async (url, options = {}) => {
+    const route = new URL(url).pathname; routes.push(route);
+    if (route === '/props') return reply({role: 'router'});
+    if (route === '/models') return reply({data: [
+      {id: 'test', status: posts ? {value: 'unloaded', failed: true, exit_code: 1} : {value: 'unloaded'}},
+    ]});
+    assert.equal(route, '/models/load', 'failure must not reach discovery or inference');
+    assert.deepEqual(JSON.parse(options.body), {model: 'test'});
+    posts++; return reply({success: true});
+  };
+  const manager = new LocalModelManager({fetchImpl, llamaSupervisor: supervisor});
+  const results = await Promise.allSettled([manager.acquireLlama('test'), manager.acquireLlama('test')]);
+  assert.equal(posts, 1, 'concurrent callers share the same failed load');
+  for (const result of results) {
+    assert.equal(result.status, 'rejected');
+    assert.equal(result.reason.code, 'LOCAL_MODEL_LOAD_FAILED');
+    assert.match(result.reason.message, /Child exit code: 1/);
+  }
+  assert.equal(active, 0); assert.equal(released, 2);
+  const runtime = {listProviders: () => [], saveProvider: async () => { registered++; }};
+  const response = await localModelHTTP({manager, runtime, pathname: '/api/local-models/load',
+    method: 'POST', value: {engine: 'llamacpp', model: 'test'}});
+  assert.equal(response.status, 502);
+  assert.equal(response.body.code, 'LOCAL_MODEL_LOAD_FAILED');
+  assert.match(response.body.error, /Child exit code: 1/);
+  assert.equal(posts, 2, 'the separate explicit HTTP retry is admitted once');
+  assert.equal(active, 0); assert.equal(released, 3); assert.equal(registered, 0);
+  assert.equal(routes.every(route => ['/props', '/models', '/models/load'].includes(route)), true);
+});

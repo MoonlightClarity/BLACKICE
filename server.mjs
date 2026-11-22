@@ -43,6 +43,7 @@ import { assertExecutablePlanningMode } from './public/response-cycle-model.mjs'
 import { createDirectProviderSetupTools } from './lib/provider-setup-tools.mjs';
 import { providerSetupHTTP, providerPreviewHTTP } from './lib/provider-setup-http.mjs';
 import { LocalModelManager } from './lib/local-model-manager.mjs';
+import { createMiniCPMLocalProfileSetup } from './lib/minicpm-local-profile.mjs';
 import { localModelHTTP } from './lib/local-model-http.mjs';
 import { connectorBrowserOwner } from './lib/connector-browser-owner.mjs';
 import { browserConversationStatus, browserConversationTransfer, resolveBrowserConversationOwner } from './lib/browser-conversations.mjs';
@@ -130,6 +131,8 @@ export async function createHarnessServer(options = {}) {
   const localModels = options.localModels || new LocalModelManager({dataDir});
   await localModels.init?.();
   runtime.localModels = localModels;
+  const localModelProfile = options.localModelProfile || createMiniCPMLocalProfileSetup({manager:localModels, runtime, dataDir:path.resolve(dataDir)});
+  await localModelProfile.init();
   const desktop = new RetiredDesktopController();
   const nativeWindows = options.nativeWindowManager || (options.nativeWindows ? new NativeWindowManager({ ...options.nativeWindows, dataDir }) : null);
   const browser = options.browser || new BrowserWorkspace();
@@ -354,7 +357,7 @@ export async function createHarnessServer(options = {}) {
   const assertRestartPrepared = () => restartBarrier.assertPrepared();
   const beginRestart = context => restartBarrier.begin(context);
   const endRestart = () => restartBarrier.end();
-  const status = req => { const info = runtime.status(); return { ...info, chatGPTConnector: connectorPresence(), browserCredentials: { available: true, localManagement: req?.headers?.['x-blackice-remote'] !== '1' }, error: info.error || info.lastError || null, cwd: defaultCwd, app: 'relay-agent-harness', version: APP_VERSION, maintenance:options.maintenanceStatus?.()||null, diagnostics:diagnostics.status(), desktopApp: Boolean(options.installPath), ...(options.installPath ? { installPath: options.installPath } : {}), runtimeSettings: runtimeSettings.get(), execution: engine.executionStatus(), planningBrowser: planningBrowserRuntime.status(), storage: engine.storageStatus(), prompts: prompts.status(), email: email?.status?.() || { available: false, retired: true }, browser: browserStatus(req), applicationSessions:applicationWorkspace.status(), nativeWindows:nativeWindows?.availability()||{available:false}, identity: identity.status(), connections: connections.status(), attachments: attachments.status(), inbox: inbox.status(), conversations:conversations.status(),conversationFolders:conversationFolders.status(),operations:operations.status(),projects:projects.status(),capabilities:capabilities.status(),methods:methods.status() }; };
+  const status = req => { const info = runtime.status(); return { ...info, localModelProfile:req?.headers?.['x-blackice-remote'] === '1' ? {available:false, offerSetup:false} : localModelProfile.summary(), chatGPTConnector: connectorPresence(), browserCredentials: { available: true, localManagement: req?.headers?.['x-blackice-remote'] !== '1' }, error: info.error || info.lastError || null, cwd: defaultCwd, app: 'relay-agent-harness', version: APP_VERSION, maintenance:options.maintenanceStatus?.()||null, diagnostics:diagnostics.status(), desktopApp: Boolean(options.installPath), ...(options.installPath ? { installPath: options.installPath } : {}), runtimeSettings: runtimeSettings.get(), execution: engine.executionStatus(), planningBrowser: planningBrowserRuntime.status(), storage: engine.storageStatus(), prompts: prompts.status(), email: email?.status?.() || { available: false, retired: true }, browser: browserStatus(req), applicationSessions:applicationWorkspace.status(), nativeWindows:nativeWindows?.availability()||{available:false}, identity: identity.status(), connections: connections.status(), attachments: attachments.status(), inbox: inbox.status(), conversations:conversations.status(),conversationFolders:conversationFolders.status(),operations:operations.status(),projects:projects.status(),capabilities:capabilities.status(),methods:methods.status() }; };
   const diagnosticRunStates=new Map();
   const supportSnapshot=()=>{const value=status();return diagnostics.snapshot({version:APP_VERSION,counts:{savedRuns:engine.listRuns().length,activeRuns:value.execution.activeCount,conversations:value.conversations.conversations,providers:value.providers?.length||0,connections:value.connections?.connections?.length||value.connections?.count||0},health:{storageHealthy:value.storage.healthy,conversationStorageHealthy:value.conversations.healthy,identityHealthy:value.identity.healthy,attachmentsHealthy:value.attachments.healthy,promptsHealthy:value.prompts.healthy,browserAvailable:value.browser.available,desktopAvailable:value.desktop?.available,inboxPaused:value.inbox.paused,operationsPaused:value.operations.paused}});};
   const sendEvent = event => {
@@ -1107,14 +1110,23 @@ export async function createHarnessServer(options = {}) {
       const identityMatch = pathname.match(/^\/api\/identity\/(soul|user)(?:\/(versions|restore))?$/);
       if (identityMatch && req.method === 'GET' && identityMatch[2] !== 'restore') return json(res, 200, identityMatch[2] === 'versions' ? await identity.versions(identityMatch[1]) : await identity.read(identityMatch[1]));
       if (identityMatch && (req.method === 'PUT' && !identityMatch[2] || req.method === 'POST' && identityMatch[2] === 'restore')) { const value = await body(req); const result = identityMatch[2] === 'restore' ? await identity.restore({ ...value, kind: identityMatch[1], provenance: { source: 'user' } }) : await identity.update({ ...value, kind: identityMatch[1], provenance: { source: 'user' } }); sendEvent({ type: 'identity.updated', data: identity.status(), at: new Date().toISOString() }); return json(res, 200, result); }
-      if (pathname === '/api/local-models' || /^\/api\/local-models\/(?:load|unload|import|downloads|config|activate|discover|missing-files|remove)$/.test(pathname)) {
-        const result = await localModelHTTP({
-          manager: localModels, runtime, pathname, method: req.method,
-          remote: req.headers['x-blackice-remote'] === '1',
-          value: req.method === 'POST' ? await body(req, 15000) : undefined,
-        });
-        if (result?.status === 200 && req.method === 'POST') runtimeUpdate();
-        return json(res, result.status, result.status === 200 && pathname === '/api/local-models/remove' ? {...result.body, status:status(req)} : result.body);
+      if (pathname === '/api/local-models' || /^\/api\/local-models\/(?:load|unload|import|downloads|config|activate|discover|missing-files|remove|default|profile)$/.test(pathname)) {
+        const controller = new AbortController();
+        const abortLocalSetup = () => controller.abort();
+        const localSetupClosed = () => { if (!res.writableEnded) abortLocalSetup(); };
+        const cancellable = pathname === '/api/local-models/profile' && req.method === 'POST';
+        if (cancellable) { req.once('aborted', abortLocalSetup); res.once('close', localSetupClosed); }
+        try {
+          const result = await localModelHTTP({
+            manager:localModels, runtime, profileSetup:localModelProfile, pathname, method:req.method,
+            remote:req.headers['x-blackice-remote'] === '1', signal:cancellable ? controller.signal : undefined,
+            value:req.method === 'POST' ? await body(req, 15000) : undefined,
+          });
+          if (result?.status === 200 && req.method === 'POST') runtimeUpdate();
+          return json(res, result.status, result.status === 200 && pathname === '/api/local-models/remove' ? {...result.body, status:status(req)} : result.body);
+        } finally {
+          if (cancellable) { req.off('aborted', abortLocalSetup); res.off('close', localSetupClosed); }
+        }
       }
       if (pathname === '/api/providers/setup' || /^\/api\/providers\/setup\/jobs\/direct_[a-f0-9]{64}$/.test(pathname)) {
         const result = await providerSetupHTTP({
@@ -1572,6 +1584,7 @@ export async function createHarnessServer(options = {}) {
         await cleanup(() => tasks.close());
         await cleanup(() => attachments.close());
         await cleanup(() => browser.close());
+        await cleanup(() => localModelProfile.close());
         await cleanup(() => runtime.close?.());
         await cleanup(() => localModels.close?.());
         for (const res of clients) await cleanup(() => res.end());

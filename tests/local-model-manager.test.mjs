@@ -267,7 +267,7 @@ test('registering another local model preserves explicit output choices and does
   }
 });
 
-test('llama provider id collisions and other local engines retain their existing output policy behavior', async t => {
+test('new suffixed llama providers use native output defaults while other local engines and collisions stay unchanged', async t => {
   const f = await registrationStore(t);
   await f.store.save({
     id: 'local_llamacpp', preset: 'compatible', type: 'compatible',
@@ -279,10 +279,12 @@ test('llama provider id collisions and other local engines retain their existing
   assert.equal((await registerLocalModel(f.runtime, 'ollama', 'public-fixture')).providerId, 'local_ollama');
   assert.equal((await registerLocalModel(f.runtime, 'lmstudio', 'public/fixture')).providerId, 'local_lmstudio');
   const reopened = await f.reopen();
-  for (const id of ['local_llamacpp_2', 'local_ollama', 'local_lmstudio'])
+  assert.equal(reopened.get('local_llamacpp_2').outputTokenPolicy, 'provider-default');
+  for (const id of ['local_ollama', 'local_lmstudio'])
     assert.equal(Object.hasOwn(reopened.get(id), 'outputTokenPolicy'), false, id);
   assert.equal(reopened.get('local_llamacpp').baseUrl, 'http://127.0.0.1:45678/v1');
   assert.equal(reopened.get('local_llamacpp').maxTokens, 2048);
   assert.deepEqual(reopened.get('local_llamacpp').models.map(model => model.id), ['unrelated']);
-  assert.ok(f.calls.every(call => !Object.hasOwn(call.value, 'outputTokenPolicy')));
+  assert.equal(f.calls.find(call => call.value.id === 'local_llamacpp_2').value.outputTokenPolicy, 'provider-default');
+  assert.ok(f.calls.filter(call => call.value.id !== 'local_llamacpp_2').every(call => !Object.hasOwn(call.value, 'outputTokenPolicy')));
 });

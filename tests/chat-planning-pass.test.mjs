@@ -96,3 +96,48 @@ test('invalid planning receipts name the rejected field without recording model 
  await malformed.pass.run(decomposition);
  assert.equal(malformed.events.at(-1).validationField,'providerOutput');
 });
+
+
+test('canonical needs-evidence variants and intent advice never fabricate a Directory action',async()=>{
+  for(const id of [decomposition,grounding,analysis]) {
+    const extra=id===decomposition?{actions:[]}:id===analysis?{alternatives:[]}:{};
+    const f=fixture({invoke:()=>({transport:'completed',output:{status:'needs-evidence',reason:'Need a current observation',
+      sourceRefs:[],focus:null,...extra},usage:{inputTokens:7,outputTokens:5,totalTokens:12}})});
+    assert.equal((await f.pass.run(id)).status,'needs-evidence');
+    assert.equal(f.writes.length,0);assert.equal(f.events.at(-1).usage.totalTokens,12);
+    assert.equal(f.events.filter(event=>event.usage).length,1);
+  }
+  const f=fixture({invoke:()=>({transport:'completed',output:{status:'proposed',interpretation:'Check the stated constraint.',reason:'The current request supplies it.'}})});
+  const result=await f.pass.run('builtin-intent-inference');
+  assert.equal(result.status,'completed');
+  assert.deepEqual(result.advice,{interpretation:'Check the stated constraint.',reason:'The current request supplies it.'});
+  assert.equal(f.writes.length,0);
+  assert.equal(f.events.at(-1).usage.totalTokens,null);
+});
+
+test('parsed JSON missing actions remains a semantic failure with reported usage and no CAS',async()=>{
+  const f=fixture({invoke:()=>({transport:'completed',output:{status:'proposed',focus:'scan',reason:'Need the first action',sourceRefs:[]},
+    usage:{inputTokens:9,outputTokens:4,totalTokens:13},providerDiagnostics:{parseOutcome:'parsed',threadId:'prep1',turnId:'turn1'}})});
+  assert.equal((await f.pass.run(decomposition)).status,'failed');
+  assert.equal(f.events.at(-1).validationField,'actions');
+  assert.equal(f.events.at(-1).providerDiagnostics.parseOutcome,'parsed');
+  assert.equal(f.events.at(-1).usage.totalTokens,13);assert.equal(f.writes.length,0);
+  assert.equal(f.events.filter(event=>event.usage).length,1);
+  assert.equal(f.pass.run(decomposition),f.pass.run(decomposition));
+  await f.pass.run(decomposition);
+  assert.equal(f.events.length,2);
+});
+
+test('receipt metadata is allowlisted and invalid counts are never presented as measured zero',async()=>{
+  const f=fixture({invoke:()=>({transport:'completed',output:plan,
+    usage:{inputTokens:-1,outputTokens:false,totalTokens:'not a count',samples:1,private:'SECRET_META'},
+    providerDiagnostics:{parseOutcome:'SECRET_META',outputChars:7,outputSha256:'invalid',threadId:'x'.repeat(241),
+      turnId:'valid-turn',structuredOutput:'SECRET_META',structuredOutputReason:'SECRET_META',
+      hostValidationRequired:false,output:'SECRET_META',parserError:'SECRET_META'}})});
+  assert.equal((await f.pass.run(decomposition)).status,'completed');
+  const receipt=f.events.at(-1);
+  assert.deepEqual(receipt.providerDiagnostics,{turnId:'valid-turn'});
+  assert.equal(receipt.usage.totalTokens,null);assert.equal(receipt.usage.inputTokens,null);assert.equal(receipt.usage.outputTokens,null);
+  assert.equal(receipt.usage.availability.totalTokens,'unavailable');assert.equal(receipt.usage.samples,1);
+  assert.doesNotMatch(JSON.stringify(f.events),/SECRET_META/);
+});
