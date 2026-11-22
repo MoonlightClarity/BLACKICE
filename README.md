@@ -228,6 +228,8 @@ npm ci
 npm run desktop
 ```
 
+**Windows PowerShell:** If `npm` reports that `npm.ps1` cannot run because script execution is disabled, use `npm.cmd`; for example, `npm.cmd ci` and `npm.cmd run desktop`. The same substitution applies to the other npm commands below and in the release guide. This invokes npm's Windows command launcher without changing your PowerShell execution policy.
+
 | Command | Purpose |
 | --- | --- |
 | `npm run desktop` | Start the Electron app. |
