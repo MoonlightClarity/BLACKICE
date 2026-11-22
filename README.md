@@ -10,7 +10,7 @@ The goal is to reduce the work of managing the agent: copying instructions betwe
 
 ## Source version and Windows releases
 
-This is **BLACKICE 2.40.73 source**, integrating ordinary Chat outcome assessment, application-history reconciliation, measured browser screenshot coordinates, and MiniCPM trace and benchmark infrastructure. See the [2.40.73 release notes](RELEASE-NOTES-2.40.73.md), [instruction clarity guide](docs/instruction-clarity.md), and [instruction audit guide](docs/instruction-audit.md) for the changes and their qualification limits.
+This is **BLACKICE 2.40.74 source**, integrating browser recovery, conversation continuity, Directory diagnostics and MiniCPM tool delivery fixes. See the [2.40.74 release notes](RELEASE-NOTES-2.40.74.md), [instruction clarity guide](docs/instruction-clarity.md), and [instruction audit guide](docs/instruction-audit.md) for the changes and their qualification limits.
 
 Published Windows installers, build manifests, and tagged source archives are listed on the [Releases page](https://github.com/MoonlightClarity/BLACKICE/releases). A release tag identifies its source snapshot; the current branch and an installed version can differ. The earlier [v2.40.57 Windows release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.57) remains pinned to [commit `67c94d8`](https://github.com/MoonlightClarity/BLACKICE/commit/67c94d87dc99f91c946b7d48082c1d75c50033ea). Subsequent source includes model-readiness and browser-recovery work as well as the instruction audit.
 
@@ -20,7 +20,7 @@ Published Windows installers, build manifests, and tagged source archives are li
 
 ## Current capability and evidence boundaries
 
-The distinction between an implemented tool, a verified integration, and a reliably completed real-world task matters. These boundaries describe the **2.40.73 source**; installed versions and provider capabilities can differ.
+The distinction between an implemented tool, a verified integration, and a reliably completed real-world task matters. These boundaries describe the **2.40.74 source**; installed versions and provider capabilities can differ.
 
 | Area | What the current source provides | What is **not** established |
 | --- | --- | --- |
@@ -31,6 +31,13 @@ The distinction between an implemented tool, a verified integration, and a relia
 | **Skills and model choices** | Owner-editable Skills with revision tracking and read-only model retrieval; native Codex and optional advanced or local-model configurations. SOUL.md supplies owner behavior and selected Skills supply task procedures. | Automatic learning, guaranteed local-model tool use, or free access to a particular hosted provider. Existing captured turns retain the instruction text they actually used. |
 
 **Historical capability boundaries:** The [2.40.6 notes](RELEASE-NOTES-2.40.6.md) document retired Planning, Directory, memory/automatic-learning, and Autonomy/Swarm execution paths, along with unresolved legacy dependencies. Historical files can remain on disk; their presence does not establish that an old execution path is active. Use the current tool catalogs and version-specific release notes when assessing an installed version.
+
+## Still in active development
+
+- **MiniCPM benchmark qualification.** The runtime and tool-contract fixes are included. A completed, reproducible MiniCPM benchmark score and a validated comparison of sampler and thinking settings are still pending.
+- **Long-running Chat and Directory recovery.** The candidate improves continuity and makes rejected Directory calls easier to recover from. End-to-end reliability across long tasks and providers still needs validation.
+
+The closed-source context-management proposal and weight-modification experiments are deferred research.
 
 ## Why BLACKICE exists
 
