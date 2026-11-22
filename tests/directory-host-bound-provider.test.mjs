@@ -4,7 +4,7 @@ class Native extends EventEmitter{status(){return{connected:false,authenticated:
 for(const mode of ['off','on','maximal'])test('real compatible adapter completes planned action after parallel receipt churn without any revision echo: '+mode,{timeout:20000},async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'directory-wire-'));let engine,runtime,stage=0,prep=0,wireSchema;const delivered=[];
  const server=http.createServer(async(req,res)=>{if(req.method==='GET'){res.end(JSON.stringify({data:[{id:'fixture'}]}));return;}let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw),all=JSON.stringify(body.messages);const send=message=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{index:0,finish_reason:message.tool_calls?'tool_calls':'stop',message}]}));};
-  if(all.includes('This is one bounded planning phase')){prep++;send({role:'assistant',content:JSON.stringify({status:'proposed',focus:'inspect',reason:'Inspect fixture evidence',sourceRefs:[],actions:[{id:'inspect',objective:'Inspect fixture evidence',dependsOn:[]}]})});return;}
+  if(all.includes('This is one bounded planning phase')){prep++;send({role:'assistant',content:JSON.stringify({artifact:{status:'proposed',focus:'inspect',reason:'Inspect fixture evidence',sourceRefs:[],actions:[{id:'inspect',objective:'Inspect fixture evidence',dependsOn:[]}]}})});return;}
   const tool=(id,name,args)=>({id,type:'function',function:{name,arguments:JSON.stringify(args)}});let calls;
   switch(stage++){
    case 0:wireSchema=body.tools?.find(t=>t.function?.name==='relay_directory_action')?.function?.parameters?.properties;calls=[tool('read-initial','relay_directory_action',{action:'read'})];break;
