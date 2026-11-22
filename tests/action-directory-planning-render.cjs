@@ -33,7 +33,13 @@ class Runtime extends EventEmitter {
   };
   const state=await use({action:'read'});
   assert.equal(state.actions[0].id,'inspect');
-  await use({action:'block',id:'inspect',blocker:'prerequisite-unavailable',claim:'Synthetic starter sighted; required fixture source unavailable'});
+  await use({action:'focus',id:'inspect'});
+  const missing={name:'relay_workspace',callId:'fixture-missing-source',arguments:{action:'read',path:'missing-fixture.txt'}};
+  const failed=await options.onToolCall(missing);
+  assert.equal(failed.success,false);
+  options.onToolResultDelivered?.({call:missing,result:failed});
+  const verified=await use({action:'read'});
+  await use({action:'block',id:'inspect',blocker:'prerequisite-unavailable',claim:'Synthetic starter sighted; required fixture source unavailable',receipts:[verified.receipts.at(-1).id]});
   options.onEvent?.({type:'message',text:'Offline fixture turn completed.'});
   return {output:'Offline fixture turn completed.'};
  }
@@ -66,7 +72,7 @@ class Runtime extends EventEmitter {
  await until('Directory opening from real button',async()=>String(await text(dialog)).includes('Review starter row'));
  await fill(dialog+' input[aria-label="New action objective"]','App-authored independent follow-up');
  await click('Add action',dialog);
- await until('added action appears',async()=>String(await text(dialog)).includes('pending · App-authored independent follow-up'));
+ await until('added action appears',async()=>String(await text(dialog)).includes('App-authored independent follow-upPending'));
  const row=async()=>{
   const ledger=await server.engine.actionDirectories.get(done.taskId||done.id,done.input);
   return ledger.read().actions.find(action=>action.objective==='App-authored independent follow-up');
@@ -78,18 +84,18 @@ class Runtime extends EventEmitter {
  await until('dependent fixture step is saved',async()=>String(await text(dialog)).includes('Dependent fixture step'));
  const selected=dialog+' details';
  const rowClick=label=>run(`(()=>{const row=[...document.querySelectorAll(${JSON.stringify(selected)})].find(r=>r.querySelector('summary').textContent.includes('App-authored independent follow-up'));row.open=true;[...row.querySelectorAll('button')].find(b=>b.textContent===${JSON.stringify(label)}).click();})()`);
- await rowClick('Focus');
+ await rowClick('Set as current');
  await until('canonical focus persisted',async()=>(await row())?.state==='active');
  await fill(dialog+' input[aria-label="Reason to block '+added.id+'"]','User redirect from renderer');
- await rowClick('Block');
+ await rowClick('Mark blocked');
  await until('canonical block persisted',async()=>(await row())?.state==='blocked');
  assert.equal((await row()).observation.claim,'User redirect from renderer');
- await until('derived dependency blocker displayed',async()=>String(await text(dialog)).includes('blocked by '+added.id));
+ await until('derived dependency blocker displayed',async()=>String(await text(dialog)).includes('Blocked by: '+added.id));
  assert(await run("[...document.querySelectorAll('dialog[open] details')].find(r=>r.querySelector('summary').textContent.includes('Dependent fixture step')).querySelector('button').disabled"));
  await click('Close',dialog);
  await click('Action outline');
  await run(`document.querySelector(${JSON.stringify(dialog)}).dispatchEvent(new Event('close'))`);
- await until('reopened outline shows persisted block',async()=>String(await text(dialog)).includes('blocked · App-authored independent follow-up'));
+ await until('reopened outline shows persisted block',async()=>String(await text(dialog)).includes('App-authored independent follow-upBlocked'));
  for(const width of [1200,390]){
   win.setContentSize(width,650);await sleep(150);
   const dims=await run(`(()=>{const d=document.querySelector(${JSON.stringify(dialog)}).getBoundingClientRect();return {left:d.left,right:d.right,width:innerWidth};})()`);
