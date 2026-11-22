@@ -817,9 +817,9 @@ export async function createHarnessServer(options = {}) {
         if (['open-chatgpt', 'prepare', 'check-connection', 'confirm-connection', 'enable-startup'].includes(action) && req.url.includes('?')) return json(res, 400, { error: 'Connection setup does not accept URL parameters.' });
         const value = await body(req, 8192);
         if ((maintenanceRequested || closePromise) && !restartControl) return json(res, 503, { error: 'BLACKICE is closing for maintenance.' });
-        const keys = action === 'prepare' ? ['confirmPublic'] : action === 'confirm-connection' ? ['nonce'] : action === 'approve-access' ? ['id', 'scopes'] : ['reject-access', 'revoke', 'cancel-action'].includes(action) ? ['id'] : ['reject-action', 'resolve-action'].includes(action) ? ['id', 'interactionId'] : [];
+        const keys = action === 'prepare' ? ['confirmPublic', 'httpsPort'] : action === 'confirm-connection' ? ['nonce'] : action === 'approve-access' ? ['id', 'scopes'] : ['reject-access', 'revoke', 'cancel-action'].includes(action) ? ['id'] : ['reject-action', 'resolve-action'].includes(action) ? ['id', 'interactionId'] : [];
         if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !keys.includes(key)) || keys.includes('id') && (typeof value.id !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(value.id)) || keys.includes('interactionId') && (typeof value.interactionId !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(value.interactionId)) || action === 'approve-access' && (!Array.isArray(value.scopes) || value.scopes.some(scope => typeof scope !== 'string'))) return json(res, 400, { error: 'Use the exact pending request and permissions shown in BLACKICE.' });
-        if (action === 'prepare' && typeof value.confirmPublic !== 'boolean' || action === 'confirm-connection' && (typeof value.nonce !== 'string' || !/^[A-Za-z0-9_.:-]{1,120}$/.test(value.nonce))) return json(res, 400, { error: 'Use the confirmation fields shown in connection setup.' });
+        if (action === 'prepare' && (typeof value.confirmPublic !== 'boolean' || value.httpsPort !== undefined && ![443, 8443, 10000].includes(value.httpsPort)) || action === 'confirm-connection' && (typeof value.nonce !== 'string' || !/^[A-Za-z0-9_.:-]{1,120}$/.test(value.nonce))) return json(res, 400, { error: 'Use the confirmation fields shown in connection setup.' });
         if (action === 'enable-startup') {
           if (typeof options.connectionStartup?.enable !== 'function') return json(res, 409, { error: 'Automatic startup setup is available in BLACKICE desktop on Windows.' });
           if (!connectorStartupEnabling) {
@@ -838,17 +838,18 @@ export async function createHarnessServer(options = {}) {
         }
         if (action === 'prepare') {
           if (!remoteAccess) return json(res, 503, { error: 'Public HTTPS is unavailable in this runtime.' });
-          if (connectorPreparing && connectorPreparing.confirmPublic !== value.confirmPublic) return json(res, 409, { error: 'Connection preparation is already in progress. Wait for its result before changing the publication choice.' });
+          if (connectorPreparing && (connectorPreparing.confirmPublic !== value.confirmPublic || connectorPreparing.httpsPort !== value.httpsPort)) return json(res, 409, { error: 'Connection preparation is already in progress. Wait for its result before changing the publication choice.' });
           if (!connectorPreparing) {
-            const confirmPublic = value.confirmPublic;
+            const confirmPublic = value.confirmPublic, requestedHttpsPort = value.httpsPort;
             const pending = Promise.resolve().then(async () => {
               const requireOpen = () => { if (connectorClosing()) throw Object.assign(new Error('BLACKICE is closing for maintenance.'), { status: 503 }); };
               requireOpen();
               await remoteAccess.refresh(); requireOpen();
               let remote = remoteAccess.status();
-              if (!remote.enabled || remote.mode !== 'public' || remote.state !== 'ready') {
+              if (remote.enabled && requestedHttpsPort !== undefined && remote.transport.httpsPort !== requestedHttpsPort) throw Object.assign(new Error('Disable the existing HTTPS route before choosing another port.'), { status: 409 });
+               if (!remote.enabled || remote.mode !== 'public' || remote.state !== 'ready') {
                 if (!confirmPublic) throw Object.assign(new Error('Confirm public HTTPS publication before preparing this connection.'), { status: 409 });
-                await remoteAccess.enable({ mode: 'public', confirmPublic: true });
+                await remoteAccess.enable({ mode: 'public', confirmPublic: true, ...(requestedHttpsPort === undefined ? {} : { httpsPort: requestedHttpsPort }) });
                 requireOpen(); remote = remoteAccess.status();
               }
               let owned = false;
@@ -858,7 +859,7 @@ export async function createHarnessServer(options = {}) {
               if (!chatGPTConnector.enabled) await chatGPTConnector.setEnabled(true);
               requireOpen(); return connectorSnapshot();
             });
-            connectorPreparing = { confirmPublic, pending }; fileMutations.add(pending);
+            connectorPreparing = { confirmPublic, httpsPort: requestedHttpsPort, pending }; fileMutations.add(pending);
             const settled = () => { if (connectorPreparing?.pending === pending) connectorPreparing = null; fileMutations.delete(pending); };
             pending.then(settled, settled);
           }
@@ -915,8 +916,8 @@ export async function createHarnessServer(options = {}) {
         if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Manage remote access from BLACKICE on this computer.' });
         if (!remoteAccess) return json(res, 503, { error: 'Remote access is unavailable in this runtime.' });
         const value = await body(req, 4096), action = remoteAction[1];
-        const keys = action === 'enable' ? ['mode', 'confirmPublic'] : action === 'create-agent' ? ['label', 'scopes'] : action === 'pair' ? ['kind', 'scopes'] : action === 'revoke' ? ['id'] : [];
-        if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !keys.includes(key)) || action === 'revoke' && (typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.id))) return json(res, 400, { error: 'Use the fields shown in the remote-access action.' });
+        const keys = action === 'enable' ? ['mode', 'confirmPublic', 'httpsPort'] : action === 'create-agent' ? ['label', 'scopes'] : action === 'pair' ? ['kind', 'scopes'] : action === 'revoke' ? ['id'] : [];
+        if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !keys.includes(key)) || action === 'enable' && value.httpsPort !== undefined && ![443, 8443, 10000].includes(value.httpsPort) || action === 'revoke' && (typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.id))) return json(res, 400, { error: 'Use the fields shown in the remote-access action.' });
         const method = action === 'create-agent' ? 'createAgent' : action;
         const pending = Promise.resolve().then(() => remoteAccess[method](...(action === 'revoke' ? [value.id] : ['enable', 'create-agent', 'pair'].includes(action) ? [value] : [])));
         fileMutations.add(pending);
