@@ -1,0 +1,346 @@
+diff --git a/common/parsers/qwen3-coder.cpp b/common/parsers/qwen3-coder.cpp
+index a2d2d0a..7c3946c 100644
+--- a/common/parsers/qwen3-coder.cpp
++++ b/common/parsers/qwen3-coder.cpp
+@@ -339,6 +339,15 @@ common_chat_params common_chat_params_init_qwen3_coder(const common_chat_templat
+                 std::string name     = function.at("name");
+ 
+                 auto parameters = common_chat_tool_parameters(function);
++                // The prompt advertises root properties in insertion order. Keep
++                // that order for generation even when a closed branch differs.
++                std::vector<std::string> property_order;
++                if (parameters.is_object() && parameters.contains("properties") &&
++                    parameters.at("properties").is_object()) {
++                    for (const auto & property : parameters.at("properties").items()) {
++                        property_order.push_back(property.key());
++                    }
++                }
+                 std::vector<json> variants;
+                 if (!qwen3_closed_action_variants(parameters, variants)) {
+                     // Retain QX1's limited structural fallback for unsupported
+@@ -361,6 +370,7 @@ common_chat_params common_chat_params_init_qwen3_coder(const common_chat_templat
+                     const auto variant_name = variants.size() == 1 ? tool_name : tool_name + "-variant-" + std::to_string(variant_index);
+                     std::vector<common_peg_parser> required_args;
+                     std::vector<common_peg_parser> optional_args;
++                    std::vector<std::pair<size_t, std::string>> optional_grammar_rules;
+ 
+                     foreach_parameter(function, [&](size_t param_index, const common_chat_schema_property & param, const common_chat_schema_document_ptr & doc) {
+                         auto rule_name = variant_name + "-arg-" + std::to_string(param_index);
+@@ -421,12 +431,28 @@ common_chat_params common_chat_params_init_qwen3_coder(const common_chat_templat
+                         auto arg_rule = p.rule(rule_name, p.tool_arg(arg_open + arg_value));
+ 
+                         (param.required ? required_args : optional_args).push_back(arg_rule);
++                        if (!param.required) {
++                            const auto position = std::find(property_order.begin(), property_order.end(), param.name);
++                            optional_grammar_rules.emplace_back(static_cast<size_t>(position - property_order.begin()), rule_name);
++                        }
+                     });
+ 
+                     // Required arguments retain Qwen's supported arbitrary order.
+                     auto args = p.permute(variant_name + "-args", required_args);
+                     if (!optional_args.empty()) {
+-                        args = args + p.zero_or_more(p.choice(optional_args));
++                        // Keep legacy PEG parsing unchanged. Constrained generation
++                        // uses each optional rule at most once, in advertised order.
++                        // Stable sorting retains branch order for root-absent names.
++                        std::stable_sort(optional_grammar_rules.begin(), optional_grammar_rules.end(),
++                            [](const auto & a, const auto & b) { return a.first < b.first; });
++                        std::string optional_grammar;
++                        for (const auto & entry : optional_grammar_rules) {
++                            if (!optional_grammar.empty()) { optional_grammar += " "; }
++                            optional_grammar += entry.second + "?";
++                        }
++                        // The original child keeps every referenced argument rule
++                        // reachable for emission; this override changes GBNF only.
++                        args = args + p.gbnf(p.zero_or_more(p.choice(optional_args)), optional_grammar);
+                     }
+ 
+                     auto func = p.tool(p.tool_open("<function=" + p.tool_name(p.literal(name)) + ">\n") +
+diff --git a/tests/test-chat.cpp b/tests/test-chat.cpp
+index 86ddd03..29aa157 100644
+--- a/tests/test-chat.cpp
++++ b/tests/test-chat.cpp
+@@ -1106,6 +1106,7 @@ struct peg_test_case {
+     common_chat_msg              expect;
+     bool                         is_partial            = false;
+     bool                         expect_reconstruction = false;
++    bool                         expect_grammar_acceptance = true;
+     std::vector<std::string>     expect_rules;
+ };
+ 
+@@ -1245,6 +1246,10 @@ static void test_peg_parser(common_chat_templates *                      tmpls,
+         }
+     }
+ 
++    if (!tc.expect_grammar_acceptance && (tc.is_partial || session.grammar().empty())) {
++        throw std::runtime_error("Negative grammar expectation requires a full input and an emitted grammar");
++    }
++
+     // Test grammar if present in params
+     if (!session.grammar().empty()) {
+         auto grammar = build_grammar(session.grammar());
+@@ -1406,10 +1411,17 @@ static void test_peg_parser(common_chat_templates *                      tmpls,
+             grammar_triggered = true;
+         }
+ 
++        if (!tc.expect_grammar_acceptance && !grammar_triggered) {
++            throw std::runtime_error("Negative grammar expectation requires an activated grammar");
++        }
++
+         // Test the constrained portion against the grammar
+         if (grammar_triggered && !tc.is_partial) {
+             auto result = match_string_detailed(constrained, grammar.get());
+-            if (!result.success) {
++            if (result.success && !tc.expect_grammar_acceptance) {
++                throw std::runtime_error("Grammar unexpectedly accepted a legacy parser-only input");
++            }
++            if (!result.success && tc.expect_grammar_acceptance) {
+                 std::string error_msg;
+                 if (result.incomplete) {
+                     error_msg =
+@@ -1576,6 +1588,11 @@ class peg_test_builder {
+         return *this;
+     }
+ 
++    peg_test_builder & expect_grammar_acceptance(bool val) {
++        tc_.expect_grammar_acceptance = val;
++        return *this;
++    }
++
+     // Expect setters
+     peg_test_builder & expect(const common_chat_msg & msg) {
+         tc_.expect = msg;
+@@ -3812,8 +3829,15 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
+                 }
+                 for (const auto & test : qx1_cases) {
+                     const auto xml = qx1_xml(test.first, test.second);
++                    // The unsupported unions retain root requirements. Preserve
++                    // this historical XML for PEG, while generation follows the
++                    // advertised revision/actions order for its optional tail.
++                    auto generation_fields = test.second;
++                    const bool legacy_optional_order = test.first == "relay_directory_action";
++                    if (legacy_optional_order) { std::swap(generation_fields[1], generation_fields[2]); }
++                    const auto generation_xml = qx1_xml(test.first, generation_fields);
+                     auto grammar = build_grammar(compiled.grammar);
+-                    if (!grammar || !match_string(xml, grammar.get())) {
++                    if (!grammar || !match_string(generation_xml, grammar.get())) {
+                         // Flush the exact failing check even when the platform's
+                         // uncaught-exception handler terminates without diagnostics.
+                         std::cerr << "QX1 valid XML rejected: " << union_key << "/" << test.first << std::endl;
+@@ -3823,12 +3847,13 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
+                     for (const auto & field : test.second) {
+                         expected[field.first] = field.second;
+                     }
+-                    tst.test(xml).tools(tools).expect_tool_calls({{test.first, expected.dump(), {}}}).run();
++                    tst.test(xml).tools(tools).expect_tool_calls({{test.first, expected.dump(), {}}})
++                        .expect_grammar_acceptance(!legacy_optional_order).run();
+                     grammar = build_grammar(compiled.grammar);
+                     assert_equals(false, match_string(qx1_xml(test.first, {}), grammar.get()));
+                     for (const auto & required : schemas.at(test.first).at("required")) {
+                         qx1_fields missing;
+-                        for (const auto & field : test.second) {
++                        for (const auto & field : generation_fields) {
+                             if (field.first != required.get<std::string>()) {
+                                 missing.push_back(field);
+                             }
+@@ -4089,6 +4114,7 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
+                 { "tool_2req_4opt", R"({"req1": "hello", "req2": 42, "opt4": 100, "opt2": 200})", {} },
+             })
+             .expect_reconstruction()
++            .expect_grammar_acceptance(false)
+             .run();
+ 
+         // Test flexible optional argument ordering (2 required + 5 optional, reversed optional order)
+@@ -4107,6 +4133,7 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
+                 { "tool_2req_5opt", R"({"req1": "world", "req2": 7, "opt5": "last", "opt3": "middle", "opt1": "first"})", {} },
+             })
+             .expect_reconstruction()
++            .expect_grammar_acceptance(false)
+             .run();
+ 
+         // Test flexible optional argument ordering (2 required + 5 optional, all 5 in shuffled order)
+@@ -4127,6 +4154,7 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
+                 { "tool_2req_5opt", R"({"req1": "test", "req2": 99, "opt3": "c", "opt1": "a", "opt5": "e", "opt4": 4, "opt2": 2})", {} },
+             })
+             .expect_reconstruction()
++            .expect_grammar_acceptance(false)
+             .run();
+ 
+         // nullable string type ["string", "null"]
+@@ -8863,10 +8891,149 @@ static bool test_qwen3_action_schema_fixture(const std::string & filename) {
+     return failures == 0;
+ }
+ 
++
++// QX4: exercise emitted native GBNF, independently of legacy PEG acceptance.
++// This path never loads a model or runs tool commands.
++static bool test_qwen3_unique_parameter_fixture(const std::string & filename,
++                                                const std::string & output_dir,
++                                                bool baseline) {
++    const auto fixture = json::parse(read_file(filename));
++    if (fixture.at("schema") != "blackice.qx4.unique-tool-parameters.v1") {
++        throw std::runtime_error("QX4 invalid fixture");
++    }
++    const auto tmpls = read_templates("models/templates/Qwen3-Coder.jinja");
++    size_t number = 0, failures = 0;
++    json measurements = json::array();
++    const auto check = [&](bool passed, const std::string & name) {
++        ++number;
++        if (!passed) ++failures;
++        std::cout << (passed ? "ok " : "not ok ") << number << " - QX4 " << name << std::endl;
++    };
++    const auto save_text = [&](const std::string & name, const std::string & text) {
++        std::ofstream out(output_dir + "/" + name, std::ios::binary);
++        out << text;
++        if (!out.good()) throw std::runtime_error("QX4 evidence write failed: " + name);
++    };
++    std::cout << "TAP version 13\n";
++    for (const auto & group : fixture.at("groups")) {
++        const std::string id = group.at("id");
++        if (baseline && id != "actual") continue;
++        common_chat_templates_inputs inputs;
++        inputs.messages = {message_user};
++        inputs.add_generation_prompt = true;
++        inputs.tool_choice = COMMON_CHAT_TOOL_CHOICE_AUTO;
++        for (const auto & wire : group.at("tools")) {
++            const auto & function = wire.at("function");
++            inputs.tools.push_back({function.at("name").get<std::string>(),
++                                    function.value("description", std::string()),
++                                    function.at("parameters").dump()});
++        }
++        const auto original_tools = inputs.tools;
++        const auto compiled = common_chat_templates_apply(tmpls.get(), inputs);
++        auto pure_inputs = inputs;
++        pure_inputs.force_pure_content = true;
++        const auto pure = common_chat_templates_apply(tmpls.get(), pure_inputs);
++        bool untouched = original_tools.size() == inputs.tools.size();
++        for (size_t i = 0; i < original_tools.size(); ++i) {
++            untouched = untouched && original_tools[i].parameters == inputs.tools[i].parameters;
++        }
++        check(untouched && compiled.prompt.str() == pure.prompt.str(),
++              id + " original schemas and rendered prompt unchanged");
++        check(!compiled.grammar.empty() && build_grammar(compiled.grammar) != nullptr,
++              id + " native grammar exists and compiles");
++        save_text(id + ".gbnf", compiled.grammar);
++        const size_t rule_count = std::count(compiled.grammar.begin(), compiled.grammar.end(), '\n');
++        measurements.push_back({{"id", id}, {"bytes", compiled.grammar.size()}, {"rules", rule_count}});
++        if (!baseline) {
++            for (const auto & tail : group.at("tails")) {
++                const std::string rule = tail.at("rule"), expected = tail.at("expression");
++                const auto start = compiled.grammar.find(rule + " ::=");
++                const auto end = start == std::string::npos ? start : compiled.grammar.find('\n', start);
++                const auto line = start == std::string::npos ? std::string() :
++                    compiled.grammar.substr(start, end == std::string::npos ? end : end - start);
++                check(!line.empty() && (expected.empty() || line.find(expected) != std::string::npos),
++                      id + " emitted optional order " + rule);
++            }
++        }
++        for (const auto & test : group.at("cases")) {
++            if (baseline && !test.contains("baselineExpected")) continue;
++            const std::string name = test.at("name"), tool = test.at("tool");
++            const bool expected = test.at(baseline ? "baselineExpected" : "expected").get<bool>();
++            std::string xml = "<tool_call>\n<function=" + tool + ">\n";
++            json expected_args = json::object();
++            for (const auto & field : test.at("fields")) {
++                const std::string key = field.at(0);
++                const auto & value = field.at(1);
++                xml += "<parameter=" + key + ">\n";
++                xml += value.is_string() ? value.get<std::string>() : value.dump();
++                xml += "\n</parameter>\n";
++                expected_args[key] = value;
++            }
++            xml += "</function>\n</tool_call>";
++            bool passed = false;
++            std::string detail;
++            try {
++                auto grammar = build_grammar(compiled.grammar);
++                if (!grammar) throw std::runtime_error("QX4 grammar did not compile");
++                const bool accepted = match_string(xml, grammar.get());
++                passed = accepted == expected;
++                if (!passed) detail = std::string("expected native grammar acceptance ") +
++                    (expected ? "true" : "false") + ", observed " + (accepted ? "true" : "false");
++                if (test.value("parse", false)) {
++                    common_chat_parser_params params(compiled);
++                    const auto message = common_chat_peg_parse(compiled.parser, common_chat_input(xml), false, params);
++                    const bool exact = message.tool_calls.size() == 1 &&
++                        message.tool_calls[0].name == tool &&
++                        json::parse(message.tool_calls[0].arguments) == expected_args;
++                    passed = passed && exact;
++                    if (!exact) detail += " legacy PEG result changed";
++                    if (exact && test.contains("rawOccurrences")) {
++                        for (const auto & occurrence : test.at("rawOccurrences").items()) {
++                            const auto needle = json(occurrence.key()).dump() + ":";
++                            const auto & args = message.tool_calls[0].arguments;
++                            size_t count = 0, at = 0;
++                            while ((at = args.find(needle, at)) != std::string::npos) {
++                                ++count; at += needle.size();
++                            }
++                            passed = passed && count == occurrence.value().get<size_t>();
++                            if (count != occurrence.value().get<size_t>()) detail += " raw PEG member count changed";
++                        }
++                    }
++                }
++            } catch (const std::exception & error) {
++                passed = false;
++                detail = error.what();
++            }
++            check(passed, id + " " + name);
++            if (!detail.empty()) std::cerr << "QX4 case " << id << "/" << name << ": " << detail << std::endl;
++        }
++    }
++    if (!baseline) {
++        const auto measure = [&](const std::string & id) {
++            for (const auto & item : measurements) if (item.at("id") == id) return item;
++            throw std::runtime_error("QX4 missing grammar measurement: " + id);
++        };
++        const auto a = measure("large16"), b = measure("large32"), c = measure("large64");
++        const size_t ar = a.at("rules").get<size_t>(), br = b.at("rules").get<size_t>(), cr = c.at("rules").get<size_t>();
++        const size_t ab = a.at("bytes").get<size_t>(), bb = b.at("bytes").get<size_t>(), cb = c.at("bytes").get<size_t>();
++        check(br > ar && cr > br && cr - br == 2 * (br - ar), "16/32/64 optional fields grow linearly in native rule count");
++        check(bb > ab && cb > bb && double(cb - bb) / double(bb - ab) >= 1.9 &&
++              double(cb - bb) / double(bb - ab) <= 2.1, "16/32/64 optional fields grow linearly in native grammar bytes");
++    }
++    save_text("measurements.json", measurements.dump(2) + "\n");
++    std::cout << "1.." << number << "\n# tests " << number << "\n# pass " << number - failures
++              << "\n# fail " << failures << "\n";
++    std::cout << "QX4 unique-parameter " << (baseline ? "BASELINE" : "FIXED")
++              << " " << (failures ? "FAIL" : "PASS") << std::endl;
++    return failures == 0;
++}
++
+ int main(int argc, char ** argv) {
+     bool detailed_debug    = false;
+     bool only_run_filtered = false;
+     std::string action_schema_fixture;
++    std::string unique_parameter_fixture, unique_parameter_output;
++    bool unique_parameter_baseline = false;
+ 
+     // Check for --template and --detailed flags
+     for (int i = 1; i < argc; i++) {
+@@ -8880,6 +9047,11 @@ int main(int argc, char ** argv) {
+             action_schema_fixture = argv[++i];
+             only_run_filtered = true;
+         }
++        if ((arg == "--unique-parameter-fixture" || arg == "--unique-parameter-baseline") && i + 2 < argc) {
++            unique_parameter_baseline = arg == "--unique-parameter-baseline";
++            unique_parameter_fixture = argv[++i];
++            unique_parameter_output = argv[++i];
++        }
+         if (arg == "--detailed") {
+             detailed_debug = true;
+             common_log_set_verbosity_thold(999);
+@@ -8890,6 +9062,14 @@ int main(int argc, char ** argv) {
+         }
+     }
+ 
++    if (!unique_parameter_fixture.empty()) {
++        try { return test_qwen3_unique_parameter_fixture(unique_parameter_fixture, unique_parameter_output, unique_parameter_baseline) ? 0 : 1; }
++        catch (const std::exception & error) {
++            std::cerr << "QX4 fixture setup failed: " << error.what() << std::endl;
++            return 2;
++        }
++    }
++
+     if (only_run_filtered) {
+         test_template_output_peg_parsers(detailed_debug);
+         if (!action_schema_fixture.empty()) {

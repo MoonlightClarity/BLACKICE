@@ -15,7 +15,7 @@ const identity = bytes => ({size:bytes.length,sha256:hash(bytes)});
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(),'blackice-bundle-test-'));
   t.after(()=>fs.rm(root,{recursive:true,force:true}));
-  const executable = Buffer.from('qualified synthetic QX3 executable'), contents = new Map([['LICENSE',Buffer.from('MIT fixture license')]]);
+  const executable = Buffer.from('qualified synthetic QX4 executable'), contents = new Map([['LICENSE',Buffer.from('MIT fixture license')]]);
   const patches = LLAMA_PATCH_NAMES.map(name=>{
     const bytes=Buffer.from('portable fixture patch '+name+'\n');contents.set('patches/'+name,bytes);return {name,...identity(bytes)};
   });
@@ -31,7 +31,7 @@ async function fixture(t) {
     runtimeId:LLAMA_RUNTIME_ID,release:'b12359',sourceCommit:LLAMA_RUNTIME_COMMIT,
     sourceArchive:identity(Buffer.from('source archive')),
     repairArchive:{name:LLAMA_RUNTIME_ID+'.zip',url:'https://github.com/MoonlightClarity/BLACKICE/releases/download/'+LLAMA_RUNTIME_ID+'/'+LLAMA_RUNTIME_ID+'.zip',...identity(Buffer.from('synthetic portable repair archive'))},
-    buildManifest:{schema:'blackice.minicpm.qx3.bundle.v1',...identity(Buffer.from('private build manifest'))},
+    buildManifest:{schema:'blackice.minicpm.qx4.bundle.v1',...identity(Buffer.from('private build manifest'))},
     executable:identity(executable),
     archives:Object.fromEntries(['cpu','vulkan'].map(backend=>[backend,{name:LLAMA_RUNTIME_PIN[backend].name,...identity(Buffer.from(backend+' archive'))}])),
     patches,repairFiles,files:[...contents].map(([name,bytes])=>({path:name,...identity(bytes)})),
@@ -43,7 +43,7 @@ async function fixture(t) {
 async function inspect(f,run) {return inspectLlamaBundle({root:f.root,platform:'win32',arch:'x64',verify:f.verify,run});}
 test('production source pins reject synthetic manifests and caller-supplied trust before execution',async t=>{
   const f=await fixture(t),accepted=llamaBundleManifest(LLAMA_RUNTIME_REPAIR_PIN);let calls=0;
-  assert.equal(accepted.runtimeId,LLAMA_RUNTIME_ID);assert.equal(accepted.files.length,67);
+  assert.equal(accepted.runtimeId,LLAMA_RUNTIME_ID);assert.equal(accepted.files.length,68);
   assert.deepEqual(accepted.provenance.patches.map(patch=>patch.name),LLAMA_PATCH_NAMES);
   await assert.rejects(verifyLlamaBundle({root:f.root,repairPin:f.pin}),{code:'LLAMA_BUNDLE_INTEGRITY'});
   const result=await inspectLlamaBundle({root:f.root,platform:'win32',arch:'x64',run:async()=>{calls++;}});
@@ -68,7 +68,10 @@ for (const [label,mutate] of [
   ['wrong runtime ID',pin=>pin.runtimeId='stock-b12359'],
   ['wrong source commit',pin=>pin.sourceCommit='0'.repeat(40)],
   ['wrong repair schema',pin=>pin.buildManifest.schema='old-qx1'],
-  ['missing third source patch',pin=>pin.patches.pop()],
+  ['missing third source patch',pin=>pin.patches.splice(2,1)],
+  ['missing fourth source patch',pin=>pin.patches.pop()],
+  ['wrong fourth source patch hash',pin=>pin.patches[3].sha256='0'.repeat(64)],
+  ['legacy QX3 portable schema',pin=>pin.buildManifest.schema='blackice.minicpm.qx3.bundle.v1'],
   ['wrong repair artifact repository',pin=>pin.repairArchive.url=pin.repairArchive.url.replace('MoonlightClarity','another-owner')],
   ['application draft used as runtime source',pin=>pin.repairArchive.url=pin.repairArchive.url.replace('/download/'+LLAMA_RUNTIME_ID+'/', '/download/v99.0.0/')],
   ['unencrypted repair artifact',pin=>pin.repairArchive.url=pin.repairArchive.url.replace('https:','http:')],
@@ -91,6 +94,8 @@ for (const [label,mutate] of [
   ['stock server in CPU variant',async root=>fs.writeFile(path.join(root,'cpu','llama-server.exe'),'stock tiny launcher')],
   ['altered Vulkan DLL',async root=>fs.appendFile(path.join(root,'vulkan','ggml.dll'),'bad')],
   ['missing license',async root=>fs.unlink(path.join(root,'LICENSE'))],
+  ['missing fourth patch file',async root=>fs.unlink(path.join(root,'patches',LLAMA_PATCH_NAMES[3]))],
+  ['altered fourth patch file',async root=>fs.appendFile(path.join(root,'patches',LLAMA_PATCH_NAMES[3]),'bad')],
   ['unlisted DLL',async root=>fs.writeFile(path.join(root,'cpu','extra.dll'),'extra')],
   ['unlisted directory',async root=>fs.mkdir(path.join(root,'extra'))],
   ['old stock manifest',async root=>fs.writeFile(path.join(root,'manifest.json'),JSON.stringify({version:LLAMA_BUNDLE_VERSION,files:[]}))],
@@ -133,4 +138,22 @@ test('explicit custom runtime settings remain outside bundled-runtime probing',a
   manager.bundledRuntime=()=>{throw Error('must not probe bundle');};
   assert.equal((await manager.llamaRuntimeStatus()).source,'custom');assert.equal(manager.llamaConfig().settings.executablePath,executable);
   assert.equal(manager.llamaConfig().settings.modelPaths.saved,path.join(f.root,'saved.gguf'));
+});
+
+test('RB4 source binding pins the exact QX4 native qualification',async()=>{
+  const accepted=llamaBundleManifest(LLAMA_RUNTIME_REPAIR_PIN),pin=accepted.provenance;
+  assert.equal(accepted.runtimeId,'blackice-b12359-qwen3-unique-parameters-io-v3');
+  assert.deepEqual(pin.buildManifest,{schema:'blackice.minicpm.qx4.bundle.v1',size:5128,sha256:'d90814fb28438f0d77ef3ec55d5f51979799ce83dc92859e385f6c175f4b9d03'});
+  assert.deepEqual(pin.executable,{size:18919876,sha256:'4277c145aa9f8705a21b8970a3e19ae9b2563c2f83db79ed57c071f8a1c56b2e'});
+  assert.equal(pin.repairArchive.size,83795396);
+  assert.equal(pin.repairArchive.sha256,'257696fce676fa42946195ab01620c67eec3732899bec53adc7ae24402e77a07');
+  assert.equal(pin.repairArchive.url,'https://github.com/MoonlightClarity/BLACKICE/releases/download/runtime-'+accepted.runtimeId+'/'+accepted.runtimeId+'.zip');
+  assert.deepEqual(LLAMA_PATCH_NAMES,['llama-qwen3-object-schema.patch','llama-qwen3-io-compat.patch','llama-qwen3-action-schema.patch','llama-qwen3-unique-parameters.patch']);
+  assert.equal(accepted.files.length,68);
+  for(const patch of pin.patches){
+    const bytes=await fs.readFile(new URL('../verification/minicpm-agent-tools-v2/'+patch.name,import.meta.url));
+    assert.deepEqual(identity(bytes),{size:patch.size,sha256:patch.sha256});
+  }
+  assert.deepEqual(pin.patches.at(-1),{name:'llama-qwen3-unique-parameters.patch',size:19985,sha256:'3dd918002874b9993beceb28e20756424f64f36af2ea9a7e6768128da5981688'});
+  for(const backend of ['cpu','vulkan'])assert.deepEqual(accepted.files.find(file=>file.path===backend+'/llama-server.exe'),{path:backend+'/llama-server.exe',...pin.executable});
 });

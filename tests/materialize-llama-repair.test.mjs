@@ -33,10 +33,10 @@ async function fixture(t,{cached=true}={}){
   const sourceRoot=path.join(root,'source'),cache=path.join(root,'cache'),destination=path.join(root,'repair');
   for(const folder of [sourceRoot,cache,destination])await fs.mkdir(folder);
   await fs.writeFile(path.join(destination,'prior.txt'),'previous accepted repair');
-  const executable=Buffer.from('accepted synthetic QX3 executable'),sourceArchive=Buffer.from('upstream source archive');
+  const executable=Buffer.from('accepted synthetic QX4 executable'),sourceArchive=Buffer.from('upstream source archive');
   const files=[{name:'llama-server.exe',bytes:executable},...Array.from({length:19},(_,i)=>({name:'fixture-'+i+'.dll',bytes:Buffer.from('accepted DLL '+i)}))];
   const patches=LLAMA_PATCH_NAMES.map(name=>({name,...identity(Buffer.from('accepted patch '+name))}));
-  const manifest={schema:'blackice.minicpm.qx3.bundle.v1',runtimeId:LLAMA_RUNTIME_ID,sourceCommit:LLAMA_RUNTIME_COMMIT,release:'b12359',
+  const manifest={schema:'blackice.minicpm.qx4.bundle.v1',runtimeId:LLAMA_RUNTIME_ID,sourceCommit:LLAMA_RUNTIME_COMMIT,release:'b12359',
     archive:{bytes:sourceArchive.length,sha256:hash(sourceArchive)},
     patches:patches.map(({name,size,sha256})=>({name,bytes:size,sha256})).sort((a,b)=>ordinal(a.name,b.name)),
     files:files.map(({name,bytes})=>({name,relativePath:'bin/'+name,bytes:bytes.length,sha256:hash(bytes)})).sort((a,b)=>ordinal(a.relativePath,b.relativePath))};
@@ -157,6 +157,9 @@ test('exact archive identity cannot replace the accepted manifest or repair file
     ['wrong commit',value=>value.sourceCommit='0'.repeat(40)],
     ['wrong action patch',value=>value.patches.find(patch=>patch.name==='llama-qwen3-action-schema.patch').sha256='0'.repeat(64)],
     ['missing action patch',value=>value.patches=value.patches.filter(patch=>patch.name!=='llama-qwen3-action-schema.patch')],
+    ['wrong fourth patch',value=>value.patches.find(patch=>patch.name==='llama-qwen3-unique-parameters.patch').sha256='0'.repeat(64)],
+    ['missing fourth patch',value=>value.patches=value.patches.filter(patch=>patch.name!=='llama-qwen3-unique-parameters.patch')],
+    ['duplicate fourth patch',value=>value.patches[3]={...value.patches[0]}],
   ])await t.test(label,async()=>{
     const value=structuredClone(f.manifest);change(value);const bytes=Buffer.from(JSON.stringify(value,null,2)+'\n'),pin=structuredClone(f.pin);
     pin.buildManifest={schema:value.schema,...identity(bytes)};

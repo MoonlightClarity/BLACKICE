@@ -33,7 +33,7 @@ async function fixture(t) {
   const sourceRoot=path.join(root,'source'),repairBundle=path.join(root,'repair'),cache=path.join(root,'cache'),destination=path.join(root,'prepared');
   for(const folder of [path.join(sourceRoot,'desktop'),path.join(sourceRoot,'verification','minicpm-agent-tools-v2'),path.join(repairBundle,'bin'),cache,destination])await fs.mkdir(folder,{recursive:true});
   await fs.writeFile(path.join(destination,'prior-runtime.txt'),'prior accepted runtime');
-  const executable=Buffer.from('qualified synthetic QX3 executable\n'),license=Buffer.from('fixture MIT license\n'),sourceArchive=Buffer.from('pinned source archive');
+  const executable=Buffer.from('qualified synthetic QX4 executable\n'),license=Buffer.from('fixture MIT license\n'),sourceArchive=Buffer.from('pinned source archive');
   const patches=LLAMA_PATCH_NAMES.map(name=>({name,bytes:Buffer.from('portable source patch '+name+'\n')}));
   for(const patch of patches)await fs.writeFile(path.join(sourceRoot,'verification','minicpm-agent-tools-v2',patch.name),patch.bytes);
   await fs.writeFile(path.join(sourceRoot,'desktop','llama.cpp-LICENSE'),license);
@@ -50,7 +50,7 @@ async function fixture(t) {
   await zipFiles(root,archives);
   const archiveBytes=Object.fromEntries(await Promise.all(['cpu','vulkan'].map(async backend=>[backend,await fs.readFile(path.join(cache,LLAMA_RUNTIME_PIN[backend].name))])));
   const manifest={
-    schema:'blackice.minicpm.qx3.bundle.v1',runtimeId:LLAMA_RUNTIME_ID,sourceCommit:LLAMA_RUNTIME_COMMIT,release:'b12359',
+    schema:'blackice.minicpm.qx4.bundle.v1',runtimeId:LLAMA_RUNTIME_ID,sourceCommit:LLAMA_RUNTIME_COMMIT,release:'b12359',
     archive:{bytes:sourceArchive.length,sha256:hash(sourceArchive)},
     files:repairEntries.map(([name,bytes])=>({name,relativePath:'bin/'+name,bytes:bytes.length,sha256:hash(bytes)})),
     patches:patches.map(patch=>({name:patch.name,bytes:patch.bytes.length,sha256:hash(patch.bytes)})),
@@ -74,7 +74,7 @@ const marker=f=>fs.readFile(path.join(f.destination,'prior-runtime.txt'),'utf8')
 async function noStage(f) {assert.deepEqual((await fs.readdir(f.root)).filter(name=>name.startsWith('.llama-runtime-stage-')),[]);}
 test('production preparation ignores caller trust and rejects an untrusted manifest before effects',async t=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'blackice-source-pinned-runtime-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));let fetches=0;
-  const manifest=Buffer.from(JSON.stringify({schema:'blackice.minicpm.qx3.bundle.v1',runtimeId:LLAMA_RUNTIME_ID,files:[]})+'\n');
+  const manifest=Buffer.from(JSON.stringify({schema:'blackice.minicpm.qx4.bundle.v1',runtimeId:LLAMA_RUNTIME_ID,files:[]})+'\n');
   await fs.writeFile(path.join(root,'manifest.json'),manifest);
   await assert.rejects(prepareLlamaRuntime({destination:path.join(root,'destination'),cache:path.join(root,'cache'),repairBundle:root,repairPin:{runtimeId:'caller-selected-runtime'},fetchImpl:async()=>{fetches++;}}),{code:'LLAMA_RUNTIME_PREPARATION'});
   assert.equal(fetches,0);assert.deepEqual(await fs.readdir(root),['manifest.json']);
@@ -106,9 +106,15 @@ test('invalid repair inputs are rejected before staging or extraction and preser
     ['extra repair DLL',async()=>fs.writeFile(path.join(f.repairBundle,'bin','extra.dll'),'bad')],
     ['changed checked-in I/O patch',async()=>fs.appendFile(patchPath,'bad')],
     ['changed checked-in action schema patch',async()=>fs.appendFile(path.join(f.sourceRoot,'verification','minicpm-agent-tools-v2',LLAMA_PATCH_NAMES[2]),'bad')],
+    ['missing checked-in unique parameter patch',async()=>fs.unlink(path.join(f.sourceRoot,'verification','minicpm-agent-tools-v2',LLAMA_PATCH_NAMES[3]))],
+    ['changed checked-in unique parameter patch',async()=>fs.appendFile(path.join(f.sourceRoot,'verification','minicpm-agent-tools-v2',LLAMA_PATCH_NAMES[3]),'bad')],
     ['wrong source provenance',async pin=>changedManifest(pin,value=>value.sourceCommit='0'.repeat(40))],
     ['wrong patch provenance',async pin=>changedManifest(pin,value=>value.patches[1].sha256='0'.repeat(64))],
-    ['missing third patch provenance',async pin=>changedManifest(pin,value=>value.patches.pop())],
+    ['missing third patch provenance',async pin=>changedManifest(pin,value=>value.patches.splice(2,1))],
+    ['missing fourth patch provenance',async pin=>changedManifest(pin,value=>value.patches.pop())],
+    ['wrong fourth patch provenance',async pin=>changedManifest(pin,value=>value.patches[3].sha256='0'.repeat(64))],
+    ['duplicate fourth patch provenance',async pin=>changedManifest(pin,value=>value.patches[3]={...value.patches[0]})],
+    ['legacy QX3 portable schema',async pin=>changedManifest(pin,value=>value.schema='blackice.minicpm.qx3.bundle.v1')],
     ['duplicate third patch provenance',async pin=>changedManifest(pin,value=>value.patches[2]={...value.patches[0]})],
     ['private audit fields in portable manifest',async pin=>changedManifest(pin,value=>value.privateDiagnosticPath='C:\\private\\logs')],
     ['duplicate repair manifest entry',async pin=>changedManifest(pin,value=>value.files.push({...value.files[0]}))],
