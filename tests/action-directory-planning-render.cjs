@@ -23,7 +23,7 @@ class Runtime extends EventEmitter {
  async close(){}
  async runAgent(options){
   calls.push({prep:options.responseOnly===true,tools:options.dynamicTools?.map(tool=>tool.name)||[]});
-  if(options.responseOnly)return {output:JSON.stringify({status:'proposed',focus:'inspect',reason:'Test the openable outline',actions:[{id:'inspect',objective:'Review starter row',dependsOn:[]}]})};
+  if(options.responseOnly)return {output:JSON.stringify({artifact:{status:'proposed',focus:'inspect',reason:'Test the openable outline',actions:[{id:'inspect',objective:'Review starter row',dependsOn:[]}]}})};
   const use=async args=>{
    const call={name:'relay_directory_action',callId:'fixture-'+args.action,arguments:args};
    const result=await options.onToolCall(call);

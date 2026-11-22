@@ -11,7 +11,7 @@ class Runtime extends EventEmitter{status(){return{connected:true,authenticated:
 for(const logging of ['off','on'])test('Planning→four parallel reads→focus→observed final without revision echo, logging '+logging,async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'directory-bound-revision-')),runtime=new Runtime();const engine=await new HarnessEngine({runtime,dataDir:root,defaultCwd:root}).init();t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});let prep=0;
  runtime.execute=async o=>{
-  if(o.prompt.includes('CURRENT DIRECTORY PROJECTION (data):')){prep++;return{output:JSON.stringify({status:'proposed',focus:'inspect',reason:'Inspect evidence first',sourceRefs:[],actions:[{id:'inspect',objective:'Inspect local evidence',dependsOn:[]}]})};}
+  if(o.prompt.includes('CURRENT DIRECTORY PROJECTION (data):')){prep++;return{output:JSON.stringify({artifact:{status:'proposed',focus:'inspect',reason:'Inspect evidence first',sourceRefs:[],actions:[{id:'inspect',objective:'Inspect local evidence',dependsOn:[]}]}})};}
   const control=async args=>{const result=await o.onToolCall({name:'relay_directory_action',callId:'control-'+Math.random().toString(36).slice(2),arguments:args});assert.equal(result.success,true,JSON.stringify(result));return JSON.parse(result.contentItems[0].text);};
   let state=await control({action:'read'});assert.equal(state.revision,1);assert.equal(state.actionRevision,1);
   const reads=await Promise.all(Array.from({length:4},(_,i)=>o.onToolCall({name:'relay_workspace',callId:'read-'+i,arguments:{action:'list',path:root}})));assert(reads.every(r=>r.success));
