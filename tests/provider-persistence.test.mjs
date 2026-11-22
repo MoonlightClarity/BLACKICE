@@ -15,9 +15,9 @@ const originalEntry = (id, at) => ({
   legacyExtension: { description: 'Preserve an untouched stored record', nested: [1, { value: id }] },
 });
 const temporary = id => ({ id, type: 'compatible', name: id, baseUrl: `https://${id}.example/v1`, models: [] });
-async function fixture(t, options = {}) {
+async function fixture(t, { localDefaultFields = {}, ...options } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'provider-persistence-'));
-  const original = { version: 1, defaultModel: null, automaticDefaultModel: null, customCodexModels: [], providers: [
+  const original = { version: 1, ...localDefaultFields, defaultModel: null, automaticDefaultModel: null, customCodexModels: [], providers: [
     originalEntry('alpha', '2026-01-02T03:04:05.006Z'), originalEntry('beta', '2026-02-03T04:05:06.007Z'), originalEntry('gamma', '2026-03-04T05:06:07.008Z'),
   ] };
   const file = path.join(dataDir, 'providers.json'), bytes = JSON.stringify(original);
@@ -59,6 +59,49 @@ test('unrelated add/remove and default-model persistence retain original provide
   await f.store.removeCodexModel('fixture-hidden-model'); await f.assertOriginals();
   await f.store.remove('temporary'); await f.assertOriginals();
   assert.equal(await readFile(f.file, 'utf8'), f.bytes);
+});
+
+test('unrelated writes retain absent and legacy local preference fields and their reload semantics', async t => {
+  const cases = [
+    ['absent', {}, false],
+    ['legacy clear', { localDefaultModel: null }, true],
+    ['explicit unconfigured', { localDefaultModel: null, localDefaultInitialized: false }, false],
+    ['explicit clear', { localDefaultModel: null, localDefaultInitialized: true }, true],
+    ['selected with legacy false marker', { localDefaultModel: 'local_llamacpp::fixture-local', localDefaultInitialized: false }, true],
+    ['false marker only', { localDefaultInitialized: false }, false],
+    ['true marker only', { localDefaultInitialized: true }, true],
+  ];
+  for (const [name, localDefaultFields, initialized] of cases) await t.test(name, async t => {
+    const f = await fixture(t, { localDefaultFields });
+    assert.equal(f.store.localDefaultInitialized, initialized);
+    await f.store.save(temporary('temporary'));
+    await f.store.setDefaultModel('codex'); await f.store.setDefaultModel(null);
+    await f.store.remove('temporary');
+    assert.equal(await readFile(f.file, 'utf8'), f.bytes);
+    const reloaded = new ProviderStore(f.settings); await reloaded.init();
+    assert.equal(reloaded.localDefaultModel, localDefaultFields.localDefaultModel ?? null);
+    assert.equal(reloaded.localDefaultInitialized, initialized);
+    assert.equal(await readFile(f.file, 'utf8'), f.bytes);
+  });
+});
+
+test('an explicit local clear becomes durable only after a successful write and survives unrelated writes', async t => {
+  const f = await fixture(t), blocker = path.join(f.dataDir, 'blocked-local-default');
+  await writeFile(blocker, 'block writes here'); f.store.file = path.join(blocker, 'providers.json');
+  try {
+    await assert.rejects(f.store.setLocalDefaultModel(null, { expectedLocalDefaultModel: null }));
+  } finally { f.store.file = f.file; }
+  assert.equal(f.store.localDefaultModel, null); assert.equal(f.store.localDefaultInitialized, false);
+  assert.equal(await readFile(f.file, 'utf8'), f.bytes);
+  await f.store.save(temporary('temporary')); await f.store.remove('temporary');
+  assert.equal(await readFile(f.file, 'utf8'), f.bytes, 'a failed local save must not leak a schema migration into the next write');
+  await f.store.setLocalDefaultModel(null, { expectedLocalDefaultModel: null });
+  const committed = await readFile(f.file, 'utf8'), saved = JSON.parse(committed);
+  assert.equal(saved.localDefaultModel, null); assert.equal(saved.localDefaultInitialized, true);
+  await f.store.save(temporary('temporary')); await f.store.remove('temporary');
+  assert.equal(await readFile(f.file, 'utf8'), committed);
+  const reloaded = new ProviderStore(f.settings); await reloaded.init();
+  assert.equal(reloaded.localDefaultModel, null); assert.equal(reloaded.localDefaultInitialized, true);
 });
 
 test('an own edit writes a new canonical record and advances its revision, which remains usable after reload', async t => {

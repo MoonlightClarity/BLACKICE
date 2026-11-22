@@ -13,7 +13,13 @@ async function readCurrentGuidance(id){
  assert.ok(declaration,'current bundled guidance is declared');
  const skill=await readBundledSkill(id);
  assert.deepEqual(skill.provenance,declaration.source);
- assert.equal(skill.provenance.revision,'clarity-20261121');
+ const expectedRevisions={
+  'library-what-makes-done':'method-reassessment-20261122',
+  'library-simplest-complete-path':'clarity-20261121',
+  'library-long-term-judgment':'clarity-20261121',
+ };
+ assert.ok(Object.hasOwn(expectedRevisions,id),'guidance has an explicit current revision expectation');
+ assert.equal(skill.provenance.revision,expectedRevisions[id]);
  assert.equal(skill.content,await readFile(new URL(declaration.bodyFile,root),'utf8'));
  return skill;
 }
@@ -42,6 +48,18 @@ test('What Makes Done is a discoverable advisory skill with actionable examples'
  assert.match(TASK_COMPLETION_GUIDANCE,/A time limit stops work; it does not complete it/);
  assert.match(TASK_COMPLETION_GUIDANCE,/When a route fails, try the next useful route within scope/);
  assert.match(ACTION_DIRECTORY_TOOL.description,/add and take the next useful authorized step/);
+});
+
+test('What Makes Done revisits working methods while preserving direct requirements and prior effects',async()=>{
+ const {content}=await readCurrentGuidance('library-what-makes-done');
+ for(const expected of [
+  "Keep direct user requirements distinct from working steps and optional improvements",
+  "Treat inferred preferences, hypotheses, filters, and earlier plans as revisable strategy",
+  "Compare feasible approaches when the choice could affect the result",
+  "Results selected by your own filter do not independently establish that excluded possibilities are unsuitable",
+  "Honor explicitly fixed scope and methods",
+  "Preserve pending work and inspect uncertain effects before any replay",
+ ])assert.ok(content.includes(expected),expected);
 });
 
 test('required follow-up confirmation allows delivery latency and preserves the requested outcome',async()=>{

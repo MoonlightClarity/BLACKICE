@@ -55,7 +55,8 @@ for (const type of ['openai', 'anthropic', 'compatible']) test(type + ': browser
     const wireTool=body.tools[0].function||body.tools[0];
     assert.equal(wireTool.description,BROWSER_TOOL.description);
     assert.doesNotMatch(JSON.stringify(body.tools),/relevant job boards|educated inference|First decompose|Check Sent for the specific recipient/);
-    assert.match(wireTool.description,/expectedUrl and expectedDocumentId/);
+    assert.match(wireTool.description,/expectedUrl(?:,| and) expectedDocumentId/);
+     assert.match(wireTool.description,/BROWSER_INPUT_DOCUMENT_CHANGED with actionDispatched:false/);
     const captured=audits[index].sections.find(item=>item.layer==='tool-definition');
     assert.equal(captured.role,'tool-definition');
     assert.ok(captured.text.includes(wireTool.description));
