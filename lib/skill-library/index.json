@@ -554,7 +554,7 @@
     {
       "id": "library-what-makes-done",
       "title": "What Makes Done",
-      "description": "Check whether the requested result exists and continue the missing work or report the actual stop condition.",
+      "description": "Check the requested outcome, reassess methods against the full task, and continue missing work or report the actual stop condition.",
       "tags": [
         "methods",
         "completion",
@@ -568,7 +568,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "clarity-20261121"
+        "revision": "method-reassessment-20261122"
       },
       "bodyFile": "what-makes-done.md"
     },

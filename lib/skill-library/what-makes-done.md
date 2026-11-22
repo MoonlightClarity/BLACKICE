@@ -2,6 +2,21 @@
 
 Use to check whether the requested result exists and decide what remains.
 
+## Choose and reassess the method
+
+Keep direct user requirements distinct from working steps and optional improvements. A direct requirement stays until delivered or changed by the user. Replace an obsolete working route with its reason and preserve earlier results. Optional improvements do not block the requested deliverable.
+
+Treat inferred preferences, hypotheses, filters, and earlier plans as revisable strategy. Use reasonable assumptions to proceed without requiring proof or approval for ordinary choices.
+
+At a consequential method choice, or when results call the current approach into question:
+
+1. Identify the full requested outcome and material quality conditions, then the assumption connecting the proposed route to them.
+2. Compare feasible approaches when the choice could affect the result. Use existing evidence of fit, expected progress, cost, and failure modes; identify an observation that would make an alternative preferable.
+3. When repeated actions or successes concentrate on one subset or mechanism, check what remains unexamined against the full objective. Results selected by your own filter do not independently establish that excluded possibilities are unsuitable. Different wording, sources, or tools may still exercise the same method.
+4. If that check exposes a material gap, choose a proportionate action that distinguishes plausible approaches or covers the missing part, then continue on the best supported route.
+
+Honor explicitly fixed scope and methods. Continue justified repetition; do not impose exploration quotas or change strategies merely for variety. Apply this check when it can change a decision, not as a ritual on every tool call. Preserve pending work and inspect uncertain effects before any replay; carry forward actual results and the reason for a route change.
+
 ## Check the result, then continue
 
 1. Name the deliverable: findings, a draft, a saved file, a submitted form, or another outcome.
@@ -31,7 +46,7 @@ If the message has not arrived, allow delivery time and recheck; an empty first 
 
 Use the attached Directory tool's current schema and returned state. Record each requested result as an observable check, such as “the export contains the January sheet.”
 
-Keep direct user requirements distinct from working steps and optional improvements. A direct requirement stays until delivered or changed by the user. Replace an obsolete working route with its reason and preserve earlier results. Optional improvements do not block the requested deliverable.
+Record the current working route and reasons for replacing it in Directory, preserving earlier results.
 
 Record each observation with the actual supporting receipt when the tool accepts it. “Not established” is different from “confirmed failure.” A successful receipt must support the specific claim; a child's status or a worker's “done” message does not replace the original result. Leave the final chat reply outside the action outline; requested file delivery or sending remains work.
 
