@@ -26,32 +26,51 @@ test('the fixed covered-target receipt distinguishes unissued pointer input from
   }
 });
 
-test('missing, contradictory and unrelated no-input claims preserve UNKNOWN replay protection', () => {
-  const code = 'BROWSER_TARGET_COVERED';
-  const guarded = data => result(false, code, {code, inputDispatched:false, ...data});
-  const cases = [
-    ['missing flag', 'relay_browser', 'click', result(false, code, {code})],
-    ['input sent', 'relay_browser', 'click', guarded({inputDispatched:true})],
-    ['nonboolean flag', 'relay_browser', 'click', guarded({inputDispatched:'false'})],
-    ['top-level flag alone', 'relay_browser', 'click', {...result(false, code, {code}), inputDispatched:false}],
-    ['top-level input contradicts receipt', 'relay_browser', 'click', {...guarded(), inputDispatched:true}],
-    ['receipt input contradicts top-level', 'relay_browser', 'click', {...guarded({inputDispatched:true}), inputDispatched:false}],
-    ['action dispatched', 'relay_browser', 'click', guarded({actionDispatched:true})],
-    ['action flags disagree', 'relay_browser', 'click', {...guarded({actionDispatched:true}), actionDispatched:false}],
-    ['input sent contradicts no action', 'relay_browser', 'click', guarded({inputDispatched:true, actionDispatched:false})],
-    ['missing receipt code', 'relay_browser', 'click', result(false, code, {inputDispatched:false})],
-    ['codes disagree', 'relay_browser', 'click', guarded({code:'BROWSER_ELEMENT_ACTION_FAILED'})],
-    ['generic renderer failure', 'relay_browser', 'click', result(false, 'BROWSER_ELEMENT_ACTION_FAILED', {code:'BROWSER_ELEMENT_ACTION_FAILED', inputDispatched:false})],
-    ['unrelated browser action', 'relay_browser', 'fill', guarded()],
-    ['unrelated tool', 'other_tool', 'click', guarded()],
-  ];
-  for (const [label, tool, action, response] of cases) {
-    const operation = call(tool, {action, tabId:'form', ref:'continue'});
+test('the fixed embedded-frame receipt preserves unissued pointer input with frame-specific recovery', () => {
+  const code = 'BROWSER_FRAME_IDENTITY_AMBIGUOUS';
+  for (const action of ['click', 'hover']) {
+    const operation = call('relay_browser', {action, tabId:'form', ref:'continue'});
+    const response = result(false, code, {code, inputDispatched:false});
     const row = observeGoalToolOutcome(operation, response);
-    assert.equal(row.kind, 'uncertain_external_effect', label);
-    assert.equal(detectUnknownEffectReplay([row], operation)?.code, 'GOAL_EFFECT_UNRESOLVED', label);
-    if (label.includes('contradicts') || label === 'action flags disagree') {
-      assert.equal(row.actionDispatched, null, label + ' must not become no-dispatch evidence.');
+    assert.equal(row.kind, 'recoverable_no_input');
+    assert.equal(row.inputDispatched, false); assert.equal(row.actionDispatched, null);
+    assert.match(row.guidance, /Preparation may already have scrolled/);
+    assert.match(row.guidance, /fresh snapshot/); assert.match(row.guidance, /frame identity/);
+    assert.doesNotMatch(row.guidance, /covering control/);
+    assert.equal(detectUnknownEffectReplay([row], operation), null);
+    assert.equal(observeGoalToolOutcome(operation, {...response, success:true}).kind, 'tool_executed_unverified');
+  }
+});
+
+test('missing, contradictory and unrelated no-input claims preserve UNKNOWN replay protection', () => {
+  for (const code of ['BROWSER_TARGET_COVERED', 'BROWSER_FRAME_IDENTITY_AMBIGUOUS']) {
+    const guarded = data => result(false, code, {code, inputDispatched:false, ...data});
+    const cases = [
+      ['missing flag', 'relay_browser', 'click', result(false, code, {code})],
+      ['input sent', 'relay_browser', 'click', guarded({inputDispatched:true})],
+      ['nonboolean flag', 'relay_browser', 'click', guarded({inputDispatched:'false'})],
+      ['top-level flag alone', 'relay_browser', 'click', {...result(false, code, {code}), inputDispatched:false}],
+      ['top-level input contradicts receipt', 'relay_browser', 'click', {...guarded(), inputDispatched:true}],
+      ['receipt input contradicts top-level', 'relay_browser', 'click', {...guarded({inputDispatched:true}), inputDispatched:false}],
+      ['action dispatched', 'relay_browser', 'click', guarded({actionDispatched:true})],
+      ['action flags disagree', 'relay_browser', 'click', {...guarded({actionDispatched:true}), actionDispatched:false}],
+      ['input sent contradicts no action', 'relay_browser', 'click', guarded({inputDispatched:true, actionDispatched:false})],
+      ['missing top-level code', 'relay_browser', 'click', result(false, null, {code, inputDispatched:false})],
+      ['conflicting trusted codes', 'relay_browser', 'click', guarded({code:code === 'BROWSER_TARGET_COVERED' ? 'BROWSER_FRAME_IDENTITY_AMBIGUOUS' : 'BROWSER_TARGET_COVERED'})],
+      ['missing receipt code', 'relay_browser', 'click', result(false, code, {inputDispatched:false})],
+      ['codes disagree', 'relay_browser', 'click', guarded({code:'BROWSER_ELEMENT_ACTION_FAILED'})],
+      ['generic renderer failure', 'relay_browser', 'click', result(false, 'BROWSER_ELEMENT_ACTION_FAILED', {code:'BROWSER_ELEMENT_ACTION_FAILED', inputDispatched:false})],
+      ['unrelated browser action', 'relay_browser', 'fill', guarded()],
+      ['unrelated tool', 'other_tool', 'click', guarded()],
+    ];
+    for (const [label, tool, action, response] of cases) {
+      const operation = call(tool, {action, tabId:'form', ref:'continue'});
+      const row = observeGoalToolOutcome(operation, response);
+      assert.equal(row.kind, 'uncertain_external_effect', label);
+      assert.equal(detectUnknownEffectReplay([row], operation)?.code, 'GOAL_EFFECT_UNRESOLVED', label);
+      if (label.includes('contradicts') || label === 'action flags disagree') {
+        assert.equal(row.actionDispatched, null, label + ' must not become no-dispatch evidence.');
+      }
     }
   }
 });
@@ -62,6 +81,24 @@ test('new no-input evidence never clears a previously persisted UNKNOWN operatio
     id:'old-unknown', runId:'previous-turn', at:'2026-01-01T00:00:00.000Z'};
   const current = observeGoalToolOutcome(operation, result(false, 'BROWSER_TARGET_COVERED',
     {code:'BROWSER_TARGET_COVERED', inputDispatched:false}));
+  assert.equal(current.kind, 'recoverable_no_input');
+  assert.equal(detectUnknownEffectReplay([old, current], operation).code, 'GOAL_EFFECT_UNRESOLVED');
+  const conversations = {states:{root:{goalUnresolvedEffects:[structuredClone(old)]}}};
+  const manager = new ConversationGoals({engine:{runs:new Map()}, conversations, autoStart:false});
+  const run = {id:'turn', taskId:'root', goal:{id:'goal'}, goalEvidence:[current]};
+  let reached = 0;
+  const wrapped = manager.wrapTools(run, 'agent', async () => {reached++; return result(true);});
+  assert.equal((await wrapped(operation)).code, 'GOAL_EFFECT_UNRESOLVED');
+  assert.equal(reached, 0);
+  assert.deepEqual(conversations.states.root.goalUnresolvedEffects, [old]);
+});
+
+test('frame-identity no-input evidence never clears a historical ambiguous UNKNOWN operation', async () => {
+  const operation = call('relay_browser', {action:'click', tabId:'form', ref:'continue'});
+  const old = {...observeGoalToolOutcome(operation, result(false, 'BROWSER_ACTION_FAILED')),
+    id:'old-unknown', runId:'previous-turn', at:'2026-01-01T00:00:00.000Z'};
+  const current = observeGoalToolOutcome(operation, result(false, 'BROWSER_FRAME_IDENTITY_AMBIGUOUS',
+    {code:'BROWSER_FRAME_IDENTITY_AMBIGUOUS', inputDispatched:false}));
   assert.equal(current.kind, 'recoverable_no_input');
   assert.equal(detectUnknownEffectReplay([old, current], operation).code, 'GOAL_EFFECT_UNRESOLVED');
   const conversations = {states:{root:{goalUnresolvedEffects:[structuredClone(old)]}}};

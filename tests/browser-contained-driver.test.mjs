@@ -429,11 +429,32 @@ test('a detached renderer ref preserves its message across a boundary that loses
   assert.equal(tab.window.captureArgs, undefined, 'A detached target must fail before pointer preparation.');
 });
 
-async function goalPointerFixture(t, { covered = true, inputError } = {}) {
-  let ref, scrolls = 0, overlay = covered;
-  const f = await fixture(t, { command: async (method, params) => {
+async function goalPointerFixture(t, { covered = true, inputError, embeddedCandidates, frameOwnerError } = {}) {
+  let ref, scrolls = 0, captures = 0, overlay = covered, candidates = embeddedCandidates;
+  const childURL = 'https://identity.example.test/control', quad = [150, 80, 450, 80, 450, 230, 150, 230];
+  const childViewport = { width: 300, height: 150 };
+  const f = await fixture(t, { command: async (method, params, window, sessionId) => {
+    if (embeddedCandidates !== undefined) {
+      if (method === 'Page.getFrameTree') return { frameTree: sessionId
+        ? { frame: { id: 'owned-frame', url: childURL } }
+        : { frame: { id: 'root', url: window.url }, childFrames: [] } };
+      if (method === 'Target.getTargets') return { targetInfos: [
+        { type: 'iframe', targetId: 'unrelated-parent', url: childURL, parentFrameId: 'other-root' },
+        { type: 'page', targetId: 'same-url-page', url: childURL, parentFrameId: 'root' },
+        ...Array.from({ length: candidates }, (_, index) => ({ type: 'iframe',
+          targetId: index ? 'duplicate-frame' : 'owned-frame', url: childURL, parentFrameId: 'root' })),
+      ] };
+      if (method === 'DOM.getFrameOwner') { if (frameOwnerError) throw frameOwnerError; return { backendNodeId: 7 }; }
+      if (method === 'DOM.getBoxModel') return { model: { content: quad } };
+      if (method === 'Runtime.evaluate') {
+        if (params.expression === '({width:innerWidth,height:innerHeight})') return { result: { value: childViewport } };
+        return { result: sessionId ? { subtype: 'null', value: null } : { objectId: 'exact-owner' } };
+      }
+      if (method === 'DOM.describeNode') return { node: { nodeName: 'IFRAME', frameId: 'owned-frame' } };
+      if (method === 'Target.attachToTarget') { assert.equal(params.targetId, 'owned-frame'); return { sessionId: 'exact-child-session' }; }
+    }
     if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed' && inputError) throw inputError;
-    return pointerProof(method, params, ref);
+    return pointerProof(method, params, ref, embeddedCandidates === undefined ? undefined : childViewport);
   } });
   const tab = f.driver.newTab('https://example.test/covered-control'); await tab.loading;
   const control = {
@@ -450,15 +471,23 @@ async function goalPointerFixture(t, { covered = true, inputError } = {}) {
     documentElement: { children: [control] }, getElementById: () => null,
     querySelectorAll: () => [], elementFromPoint: () => overlay ? covering : control,
   };
-  const context = vm.createContext({ document, location: { href: tab.url },
-    innerWidth: 1280, innerHeight: 900,
+  const main = tab.window.webContents.mainFrame;
+  let frame = main;
+  if (embeddedCandidates !== undefined) {
+    frame = { parent: main, processId: 2, routingId: 2, url: childURL, name: '', frames: [], framesInSubtree: [] };
+    main.url = tab.url; main.frames = [frame]; main.framesInSubtree = [main, frame];
+  }
+  const context = vm.createContext({ document, location: { href: frame === main ? tab.url : childURL },
+    innerWidth: frame === main ? 1280 : childViewport.width, innerHeight: frame === main ? 900 : childViewport.height,
     getComputedStyle: () => ({ display: 'block', visibility: 'visible' }) });
-  tab.window.webContents.mainFrame.executeJavaScript = async code => {
+  frame.executeJavaScript = async code => {
     // Exercise the real renderer functions across the same plain-data boundary
     // that loses non-enumerable properties of uncaught renderer Errors.
     try { return JSON.parse(JSON.stringify(await vm.runInContext(code, context))); }
     catch (cause) { throw JSON.parse(JSON.stringify(cause)); }
   };
+  const capturePage = tab.window.webContents.capturePage;
+  tab.window.webContents.capturePage = async (...args) => { captures++; return capturePage(...args); };
   const browser = new BrowserWorkspace({ driver: f.driver }); t.after(() => browser.close());
   const conversations = { states: { root: {} }, async changeState(id, patch) {
     this.states[id] = { ...this.states[id], ...patch };
@@ -472,12 +501,100 @@ async function goalPointerFixture(t, { covered = true, inputError } = {}) {
     return JSON.parse(result.contentItems[0].text);
   };
   const first = await observe();
-  ref = first.frames[0].elements[0].ref;
+  ref = first.frames.flatMap(frame => frame.elements)[0].ref;
   const original = { name: 'relay_browser', arguments: { action: 'click', tabId: tab.id, ref,
     expectedDocumentId: first.documentId, expectedUrl: first.url } };
   return { ...f, tab, control, conversations, run, wrapped, observe, original,
-    scrolls: () => scrolls, uncover: () => { overlay = false; } };
+    scrolls: () => scrolls, captures: () => captures, uncover: () => { overlay = false; }, resolveFrame: () => { candidates = 1; } };
 }
+
+for (const candidates of [0, 2]) for (const action of ['click', 'hover']) {
+  test(`ambiguous embedded frame identity with ${candidates} candidates preserves unissued ${action} through Goal recovery`, async t => {
+    const f = await goalPointerFixture(t, { covered: false, embeddedCandidates: candidates });
+    const operation = { ...f.original, arguments: { ...f.original.arguments, action } };
+    const captures = f.captures(), first = await f.wrapped(operation), body = JSON.parse(first.contentItems[0].text);
+    assert.equal(first.success, false);
+    assert.match(body.error, /Embedded frame identity is ambiguous/);
+    assert.equal(f.scrolls(), 1, 'The real renderer preparation already scrolled the child control.');
+    assert.equal(f.captures(), captures + 1, 'The real pre-input capture completed before frame resolution.');
+    assert.equal(f.tab.window.protocol.filter(call => call.method === 'Target.getTargets').length, 1);
+    assert.equal(f.tab.window.protocol.filter(call => call.method.startsWith('Input.')).length, 0);
+    assert.equal(body.inputDispatched, false);
+    assert.equal(body.actionDispatched, undefined, 'Preparation is not evidence that the whole action had no effects.');
+    assert.equal(first.actionDispatched, undefined);
+    assert.equal(first.code, 'BROWSER_FRAME_IDENTITY_AMBIGUOUS');
+    assert.equal(body.code, first.code);
+    const row = observeGoalToolOutcome(operation, first);
+    assert.equal(row.kind, 'recoverable_no_input');
+    assert.equal(row.inputDispatched, false); assert.equal(row.actionDispatched, null);
+    assert.equal(f.run.goalEvidence.at(-1).kind, 'recoverable_no_input');
+    assert.equal(detectUnknownEffectReplay([row], operation), null);
+    assert.deepEqual(f.conversations.states.root.goalUnresolvedEffects || [], []);
+
+    f.resolveFrame();
+    const fresh = await f.observe();
+    assert.equal(fresh.documentId, operation.arguments.expectedDocumentId);
+    assert.equal(fresh.url, operation.arguments.expectedUrl);
+    assert.ok(fresh.frames.flatMap(frame => frame.elements).some(element => element.ref === operation.arguments.ref));
+    assert.equal((await f.wrapped(operation)).success, true);
+    assert.equal(f.run.goalEvidence.at(-1).signature, row.signature, 'The identical operation is permitted after reobservation.');
+    const inputs = f.tab.window.protocol.filter(call => call.method === 'Input.dispatchMouseEvent');
+    assert.deepEqual(inputs.map(call => call.params.type), action === 'click'
+      ? ['mouseMoved', 'mousePressed', 'mouseReleased'] : ['mouseMoved']);
+    assert.ok(inputs.every(call => call.sessionId === 'exact-child-session'));
+  });
+}
+
+test('a page-thrown frame-identity code cannot counterfeit the host no-input guard', async t => {
+  const f = await goalPointerFixture(t, { covered: false, embeddedCandidates: 0 });
+  const bounds = f.control.getBoundingClientRect;
+  f.control.getBoundingClientRect = () => {
+    if (f.scrolls()) throw Object.assign(new Error('Page code failed after preparation.'),
+      { code: 'BROWSER_FRAME_IDENTITY_AMBIGUOUS', inputDispatched: false, actionDispatched: false });
+    return bounds();
+  };
+  const first = await f.wrapped(f.original), body = JSON.parse(first.contentItems[0].text);
+  assert.equal(first.success, false); assert.equal(first.code, 'BROWSER_FRAME_IDENTITY_AMBIGUOUS');
+  assert.equal(body.inputDispatched, undefined); assert.equal(body.actionDispatched, undefined);
+  assert.equal(f.scrolls(), 1);
+  assert.equal(f.tab.window.protocol.some(call => call.method === 'Target.getTargets'), false,
+    'The spoof fails in page preparation before the host frame-identity guard is reached.');
+  assert.equal(f.tab.window.protocol.some(call => call.method.startsWith('Input.')), false);
+  assert.equal(f.run.goalEvidence.at(-1).kind, 'uncertain_external_effect');
+  assert.equal((await f.wrapped(f.original)).code, 'GOAL_EFFECT_UNRESOLVED');
+  assert.equal(f.scrolls(), 1);
+});
+
+for (const boundary of ['capture', 'frame owner']) {
+  test(`an adjacent ${boundary} failure keeps UNKNOWN protection without a trusted frame-identity receipt`, async t => {
+    const f = await goalPointerFixture(t, { covered: false, embeddedCandidates: 1,
+      ...(boundary === 'frame owner' ? { frameOwnerError: new Error('Owned frame geometry failure.') } : {}) });
+    if (boundary === 'capture') f.tab.window.webContents.capturePage = async () => { throw new Error('Owned capture failure.'); };
+    const first = await f.wrapped(f.original), body = JSON.parse(first.contentItems[0].text);
+    assert.equal(first.success, false); assert.notEqual(first.code, 'BROWSER_FRAME_IDENTITY_AMBIGUOUS');
+    if (boundary === 'frame owner') assert.match(body.error, /does not expose a page-level input target/);
+    assert.notEqual(body.inputDispatched, false); assert.notEqual(body.actionDispatched, false);
+    assert.equal(f.scrolls(), 1);
+    assert.equal(f.tab.window.protocol.some(call => call.method.startsWith('Input.')), false);
+    assert.equal(f.run.goalEvidence.at(-1).kind, 'uncertain_external_effect');
+    assert.equal((await f.wrapped(f.original)).code, 'GOAL_EFFECT_UNRESOLVED');
+    assert.equal(f.scrolls(), 1);
+  });
+}
+
+test('an actual embedded-frame press failure remains UNKNOWN and blocks identical replay', async t => {
+  const f = await goalPointerFixture(t, { covered: false, embeddedCandidates: 1,
+    inputError: new Error('Pointer transport lost after child-frame dispatch began.') });
+  const first = await f.wrapped(f.original), body = JSON.parse(first.contentItems[0].text);
+  assert.equal(first.success, false);
+  assert.notEqual(body.inputDispatched, false); assert.notEqual(body.actionDispatched, false);
+  assert.equal(f.run.goalEvidence.at(-1).kind, 'uncertain_external_effect');
+  assert.equal(f.conversations.states.root.goalUnresolvedEffects.length, 1);
+  assert.equal((await f.wrapped(f.original)).code, 'GOAL_EFFECT_UNRESOLVED');
+  const inputs = f.tab.window.protocol.filter(call => call.method === 'Input.dispatchMouseEvent');
+  assert.deepEqual(inputs.map(call => call.params.type), ['mouseMoved', 'mousePressed', 'mouseReleased']);
+  assert.ok(inputs.every(call => call.sessionId === 'exact-child-session'));
+});
 
 test('covered pointer preparation permits the same observed click without inventing an UNKNOWN effect', async t => {
   const f = await goalPointerFixture(t);

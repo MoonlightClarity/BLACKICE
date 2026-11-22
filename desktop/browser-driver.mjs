@@ -2014,7 +2014,9 @@ export class ElectronBrowserDriver extends EventEmitter {
       else {
         const targets = (await this.cdp(tab, 'Target.getTargets', {}, signal)).targetInfos;
         const embedded = targets.filter(t => t.type === 'iframe' && t.url === frame.url && (frame.parent !== main || t.parentFrameId === tree.frame.id || t.parentId === tree.frame.id));
-        if (embedded.length !== 1) throw error('Embedded frame identity is ambiguous. Refresh the snapshot or use screenshot coordinates for this control.');
+        // This host identity guard precedes pointer dispatch, but preparation
+        // and capture may already have changed the page.
+        if (embedded.length !== 1) throw Object.assign(error('Embedded frame identity is ambiguous. Refresh the snapshot or use screenshot coordinates for this control.'), { code: 'BROWSER_FRAME_IDENTITY_AMBIGUOUS', inputDispatched: false });
         branch = { frame: { id: embedded[0].targetId } };
       }
     }
