@@ -12,7 +12,7 @@ const output={status:'proposed',focus:'scan',reason:'Inspect the first failing r
 const make=(runAgent,assertAdmission=()=>{})=>createChatPlanningProviderInvoker({ runtime:{runAgent},...scope,cwd:'test-workspace',model:'api1::model1',effort:'low',assertAdmission });
 test('selected model gets one bounded isolated response-only phase with no tools',async()=>{
   let options;
-  const invoke=make(value=>{options=value;return {output:JSON.stringify(output)};});
+  const invoke=make(value=>{options=value;return {output:JSON.stringify({artifact:output})};});
   const response=await invoke({module,...scope,snapshot});
   assert.equal(response.transport,'completed'); assert.deepEqual(response.output,output);
   assert.equal(response.providerDiagnostics.parseOutcome,'parsed');
@@ -43,7 +43,7 @@ test('a tool attempt aborts even if transport catches its error and returns vali
   const invoke=make(options=>{
     assert.throws(()=>options.onToolCall({name:'relay_browser'}),{code:'PLANNING_PROVIDER_TOOL_DENIED'});
     assert.equal(options.signal.aborted,true);
-    return {output:JSON.stringify(output)};
+    return {output:JSON.stringify({artifact:output})};
   });
   await assert.rejects(invoke({module,...scope,snapshot}),{code:'PLANNING_PROVIDER_TOOL_DENIED'});
 });
@@ -57,7 +57,7 @@ test('a successful plain-text final records a failed phase, never CAS or executi
 });
 
 
-test('schemas retain every host artifact variant, current receipt scope, and immutable wire projection',()=>{
+test('closed artifact alternatives retain discriminators and cardinality after immutable wire projection',()=>{
   const current={...snapshot,actions:[{id:'pending_a',state:'pending'},{id:'pending_b',state:'pending'},{id:'finished',state:'observed'}],
     receipts:[{id:'own',state:'returned'},{id:'foreign',state:'returned',taskId:'other'},{id:'unresolved',state:'unknown'}]};
   const before=structuredClone(current);
@@ -66,36 +66,86 @@ test('schemas retain every host artifact variant, current receipt scope, and imm
     assert.equal(strictProviderSchema(schema),true,module.id);
     const wire=compatibleWireOutputSchema(schema);
     assert.ok(wire,module.id);assert.deepEqual(schema,original);
-    assert.equal(wire.additionalProperties,false);assert.deepEqual(wire.required,Object.keys(wire.properties));
-    assert.equal(wire.if,undefined);
+    assert.equal(wire.additionalProperties,false);assert.deepEqual(wire.required,['artifact']);
+    assert.deepEqual(Object.keys(wire.properties),['artifact']);assert.equal(wire.anyOf,undefined);
     if(module.artifact==='intent-advice') {
-      assert.deepEqual(Object.keys(schema.properties),['status','interpretation','reason']);
-      assert.equal(schema.properties.status.const,'proposed');
+      const advice=wire.properties.artifact;
+      assert.deepEqual(Object.keys(advice.properties),['status','interpretation','reason']);
+      assert.equal(advice.properties.status.const,'proposed');
     } else {
-      assert.deepEqual(schema.properties.status.enum,['proposed','needs-evidence']);
-      assert.deepEqual(schema.properties.sourceRefs.items.enum,['own']);
-      assert.deepEqual(schema.else.properties.focus,{type:'null'});
+      const [proposed,missing]=wire.properties.artifact.anyOf;
+      assert.equal(proposed.properties.status.const,'proposed');
+      assert.equal(missing.properties.status.const,'needs-evidence');
+      for(const branch of [proposed,missing]) {
+        assert.equal(branch.additionalProperties,false);assert.deepEqual(branch.required,Object.keys(branch.properties));
+        assert.deepEqual(branch.properties.sourceRefs.items.enum,['own']);
+      }
+      assert.deepEqual(missing.properties.focus,{type:'null'});
+      assert.equal(proposed.properties.focus.type,'string');
       if(module.artifact==='pending-actions') {
-        assert.equal(schema.then.properties.actions.minItems,1);
-        assert.equal(schema.else.properties.actions.maxItems,0);
-        assert.deepEqual(schema.properties.actions.items.required,['id','objective','dependsOn']);
-        assert.equal(schema.properties.actions.items.additionalProperties,false);
+        assert.equal(proposed.properties.actions.minItems,1);assert.equal(proposed.properties.actions.maxItems,8);
+        assert.equal(missing.properties.actions.maxItems,0);
+        assert.deepEqual(proposed.properties.actions.items.required,['id','objective','dependsOn']);
+        assert.equal(proposed.properties.actions.items.additionalProperties,false);
       } else {
-        assert.deepEqual(schema.properties.focus.anyOf[0].enum,['pending_a','pending_b']);
-        assert.equal(Object.hasOwn(schema.properties,'actions'),false);
+        assert.deepEqual(proposed.properties.focus.enum,['pending_a','pending_b']);
+        assert.equal(Object.hasOwn(proposed.properties,'actions'),false);
         if(module.artifact==='revised-choice') {
-          assert.equal(schema.then.properties.alternatives.minItems,2);
-          assert.equal(schema.else.properties.alternatives.maxItems,0);
-          assert.deepEqual(schema.properties.alternatives.items.enum,['pending_a','pending_b']);
+          assert.equal(proposed.properties.alternatives.minItems,2);assert.equal(proposed.properties.alternatives.maxItems,2);
+          assert.equal(missing.properties.alternatives.maxItems,0);
+          assert.deepEqual(proposed.properties.alternatives.items.enum,['pending_a','pending_b']);
         }
       }
     }
-    const empty=chatPlanningArtifactSchema(module,snapshot);
-    assert.ok(compatibleWireOutputSchema(empty),module.id+' empty projection remains a usable schema');
+    const empty=compatibleWireOutputSchema(chatPlanningArtifactSchema(module,snapshot));
+    assert.ok(empty,module.id+' empty projection remains a usable schema');
     assert.doesNotMatch(JSON.stringify(empty),/"enum":\[\]/);
-    if(module.artifact!=='intent-advice') assert.equal(empty.properties.sourceRefs.maxItems,0);
+    if(module.artifact!=='intent-advice')
+      for(const branch of empty.properties.artifact.anyOf)assert.equal(branch.properties.sourceRefs.maxItems,0);
   }
   assert.deepEqual(current,before);
+});
+
+test('no pending choices and a single alternative preserve only satisfiable artifact branches',()=>{
+  for(const count of [0,1,2]) {
+    const current={...snapshot,actions:Array.from({length:count},(_,i)=>({id:'pending_'+i,state:'pending'}))};
+    for(const module of CHAT_PLANNING_MODULES.filter(item=>['grounded-choice','revised-choice'].includes(item.artifact))) {
+      const wire=compatibleWireOutputSchema(chatPlanningArtifactSchema(module,current)),branches=wire.properties.artifact.anyOf;
+      const expected=module.artifact==='revised-choice'?count>=2:count>=1;
+      assert.equal(branches.some(branch=>branch.properties.status.const==='proposed'),expected);
+      assert.equal(branches.at(-1).properties.status.const,'needs-evidence');
+    }
+  }
+});
+
+test('only an exact artifact envelope reaches the unchanged host validator',async()=>{
+  const invalid=[output,{artifact:output,extra:true},{artifact:null},{artifact:[]},{artifact:'text'},{other:output},null,[]];
+  for(const value of invalid) {
+    const response=await make(()=>({output:JSON.stringify(value)}))({module,...scope,snapshot});
+    assert.equal(response.providerDiagnostics.parseOutcome,'parsed');
+    assert.equal(Object.hasOwn(response,'output'),false);
+  }
+  for(const selected of CHAT_PLANNING_MODULES) {
+    const artifact=selected.artifact==='intent-advice'
+      ?{status:'proposed',interpretation:'Inspect the supplied request.',reason:'The user supplied it.'}
+      :{status:'needs-evidence',reason:'Need a current observation',sourceRefs:[],focus:null,
+        ...(selected.artifact==='pending-actions'?{actions:[]}:selected.artifact==='revised-choice'?{alternatives:[]}:{})};
+    const events=[],invoke=make(()=>({output:JSON.stringify({artifact}),usage:{inputTokens:7,outputTokens:5,totalTokens:12}}));
+    const pass=createChatPlanningPass({mode:'on',...scope,read:()=>snapshot,invoke,assertAdmission:()=>{},
+      commit:()=>assert.fail('No operational proposal'),emit:event=>events.push(event)});
+    assert.equal((await pass.run(selected.id)).status,selected.artifact==='intent-advice'?'completed':'needs-evidence');
+    assert.equal(events.at(-1).usage.totalTokens,12);
+  }
+});
+
+test('a parsed proposed envelope with empty actions still fails host validation without repair or CAS',async()=>{
+  const events=[],invoke=make(()=>({output:JSON.stringify({artifact:{...output,actions:[]}}),
+    usage:{inputTokens:2143,outputTokens:43,totalTokens:2186}}));
+  const pass=createChatPlanningPass({mode:'on',...scope,read:()=>snapshot,invoke,assertAdmission:()=>{},
+    commit:()=>assert.fail('No invalid plan commit'),emit:event=>events.push(event)});
+  assert.equal((await pass.run(module.id)).status,'failed');
+  assert.equal(events.at(-1).validationField,'actions');assert.equal(events.at(-1).providerDiagnostics.parseOutcome,'parsed');
+  assert.equal(events.at(-1).usage.totalTokens,2186);assert.equal(events.filter(event=>event.usage).length,1);
 });
 
 test('the observed malformed artifact retains actual usage, identity and bounded diagnostics without committing',async()=>{
@@ -156,7 +206,7 @@ test('unknown catalog remains prompt fallback; explicit declared support follows
 test('reported inference survives cancellation after return without mutating the cancellation reason',async()=>{
   const controller=new AbortController(),reason=Object.freeze(Object.assign(new Error('Stopped by owner'),{code:'OWNER_STOP'}));
   const events=[];
-  const invoke=make(()=>{controller.abort(reason);return {output:JSON.stringify(output),usage:{inputTokens:8,outputTokens:3,totalTokens:11},threadId:'prep'};});
+  const invoke=make(()=>{controller.abort(reason);return {output:JSON.stringify({artifact:output}),usage:{inputTokens:8,outputTokens:3,totalTokens:11},threadId:'prep'};});
   const pass=createChatPlanningPass({mode:'on',...scope,signal:controller.signal,read:()=>snapshot,invoke,
     assertAdmission:()=>{},commit:()=>assert.fail('cancelled phase cannot commit'),emit:event=>events.push(event)});
   assert.equal((await pass.run(module.id)).status,'cancelled');

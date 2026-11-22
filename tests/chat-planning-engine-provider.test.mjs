@@ -34,7 +34,7 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   const requests=[];
   const receivedText=index=>requests[index].body.messages.map(message=>message.content).join('\n');
   const [completionSkill,antiCompletionSkill]=await Promise.all([readBundledSkill('library-what-makes-done'),readBundledSkill('library-anti-completion-bias')]);
-  let answerToPlanning=JSON.stringify(plan), heldResponse;
+  let answerToPlanning=JSON.stringify({artifact:plan}), heldResponse;
   let engine,runtime,skillCatalog;
   const server=http.createServer(async(req,res)=>{
     if(req.method==='GET'){res.end(JSON.stringify({data:[{id:'fixture'}]}));return;}
