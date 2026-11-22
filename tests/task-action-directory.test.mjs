@@ -201,3 +201,121 @@ test('restart preserves interrupted observations without treating them as unknow
   }
  }
 });
+
+const CHOICE_PREFIX = 'Current Directory choices (same task): ';
+function choicesIn(message) {
+ const rows=message.split('\n').filter(line=>line.startsWith(CHOICE_PREFIX));
+ assert.equal(rows.length,1,'One quoted current-task choice projection is returned.');
+ return JSON.parse(rows[0].slice(CHOICE_PREFIX.length));
+}
+
+test('unknown action IDs receive exact current choices without changing the Directory',async()=>{
+ let persisted=0;const ledger=create({persist:async()=>{persisted++;}});await plan(ledger);
+ const before=ledger.read(),writes=persisted;
+ await assert.rejects(ledger.handleModelTool({action:'focus',id:'host-turn-authORITY'},
+  {expectedActionRevision:before.actionRevision,runId:'run',nodeId:'agent'}),error=>{
+   assert.equal(error.code,'DIRECTORY_ACTION');assert.equal(error.status,409);
+   assert.equal(Object.hasOwn(error,'actionDispatched'),false);
+   assert.ok(error.message.startsWith('Choose an existing action.'));
+   assert.deepEqual(choicesIn(error.message),{taskId:'task',actionRevision:before.actionRevision,focus:null,ready:['find'],actions:[
+    {id:'find',objective:'Find candidate jobs',state:'pending'},
+    {id:'check',objective:'Check candidate requirements',state:'pending'}]});
+   assert.match(error.message,/exact existing ID whose objective matches the work/);
+   assert.match(error.message,/action "plan".*action "read"/);return true;
+  });
+ assert.deepEqual(ledger.read(),before);assert.equal(persisted,writes);
+});
+
+test('missing focus returns choices before any receipt reservation or dispatch',async()=>{
+ let persisted=0,calls=0;const ledger=create({persist:async()=>{persisted++;}});await plan(ledger);
+ const before=ledger.read(),writes=persisted,trace=[];
+ await assert.rejects(ledger.execute({name:'relay_workspace'},async()=>{calls++;return{success:true};},
+  {runId:'run',nodeId:'agent',trace:value=>trace.push(value)}),error=>{
+   assert.equal(error.code,'DIRECTORY_FOCUS');assert.equal(error.status,409);assert.equal(error.actionDispatched,false);
+   assert.ok(error.message.startsWith('This tool call did not run.'));
+   assert.match(error.message,/Focus that step with relay_directory_action.*Keep earlier successful reads\./);
+   assert.deepEqual(choicesIn(error.message),{taskId:'task',actionRevision:before.actionRevision,focus:null,ready:['find'],actions:[
+    {id:'find',objective:'Find candidate jobs',state:'pending'},
+    {id:'check',objective:'Check candidate requirements',state:'pending'}]});return true;
+  });
+ assert.equal(calls,0);assert.equal(persisted,writes);assert.deepEqual(ledger.read(),before);
+ assert.equal(trace.length,1);assert.equal(trace[0].phase,'gate');assert.equal(trace[0].decision,'reject');
+ assert.equal(trace[0].code,'DIRECTORY_FOCUS');assert.equal(trace[0].receiptId,undefined);
+});
+
+test('empty Directory hints preserve the empty outline and ask for model planning',async()=>{
+ let persisted=0,calls=0;const ledger=create({persist:async()=>{persisted++;}}),before=ledger.read();
+ for(const operation of [
+  ()=>ledger.edit({action:'focus',revision:0,id:'invented'}),
+  ()=>ledger.execute({name:'relay_workspace'},async()=>{calls++;},{runId:'run',nodeId:'agent'})
+ ])await assert.rejects(operation,error=>{
+  assert.deepEqual(choicesIn(error.message),{taskId:'task',actionRevision:0,focus:null,ready:[],actions:[]});
+  assert.match(error.message,/If matching work is missing.*action "plan"/);return true;
+ });
+ assert.equal(calls,0);assert.equal(persisted,0);assert.deepEqual(ledger.read(),before);
+});
+
+test('choice hints distinguish existing closed and blocked work from ready IDs and active focus',async()=>{
+ const ledger=create(),actions=[
+  {id:'done',objective:'Read the source',dependsOn:[]},
+  {id:'blocked',objective:'Unavailable route',dependsOn:[]},
+  {id:'waiting',objective:'Dependent work',dependsOn:['blocked']},
+  {id:'ready',objective:'Independent work',dependsOn:[]}];
+ await ledger.edit({action:'plan',revision:0,actions});await focus(ledger,'done');
+ const result=await ledger.execute({name:'relay_workspace'},async()=>({success:true}),{runId:'run',nodeId:'agent'});
+ await ledger.edit({action:'observe',revision:ledger.read().revision,id:'done',outcome:'objective-met',claim:'Source read',receipts:[result.receiptId]});
+ await ledger.edit({action:'block',revision:ledger.read().revision,id:'blocked',blocker:'no-viable-route',claim:'Route unavailable'});
+ let before=ledger.read();
+ await assert.rejects(focus(ledger,'missing'),error=>{
+  const choices=choicesIn(error.message);
+  assert.deepEqual(choices.actions,[
+   {id:'done',objective:'Read the source',state:'observed'},
+   {id:'blocked',objective:'Unavailable route',state:'blocked'},
+   {id:'waiting',objective:'Dependent work',state:'pending'},
+   {id:'ready',objective:'Independent work',state:'pending'}]);
+  assert.deepEqual(choices.ready,['ready']);assert.equal(choices.focus,null);return true;
+ });
+ assert.deepEqual(ledger.read(),before);
+ await focus(ledger,'ready');before=ledger.read();
+ await assert.rejects(focus(ledger,'missing'),error=>{
+  const choices=choicesIn(error.message);
+  assert.equal(choices.focus,'ready');assert.deepEqual(choices.ready,[]);
+  assert.equal(choices.actions.find(row=>row.id==='ready').state,'active');return true;
+ });
+ assert.deepEqual(ledger.read(),before);
+});
+
+test('replanning refreshes task-local choice hints while stale revisions keep their original rejection',async()=>{
+ const left=create({taskId:'left'}),right=create({taskId:'right'});
+ await left.edit({action:'plan',revision:0,actions:[{id:'left_old',objective:'Old pending work',dependsOn:[]}]});
+ await right.edit({action:'plan',revision:0,actions:[{id:'right_only',objective:'Other task work',dependsOn:[]}]});
+ const old=left.read(),rightBefore=right.read();
+ await left.edit({action:'plan',revision:old.revision,actions:[{id:'left_new',objective:'Revised work',dependsOn:[]}]});
+ const before=left.read();
+ await assert.rejects(left.edit({action:'focus',revision:old.revision,id:'missing'}),error=>{
+  assert.equal(error.code,'DIRECTORY_CHANGED');assert.equal(error.message,'Read the current Directory revision before editing.');
+  assert.doesNotMatch(error.message,/Current Directory choices/);return true;
+ });
+ const seen=[];
+ await Promise.all([left,right].map(ledger=>assert.rejects(focus(ledger,'missing'),error=>{
+  seen.push(choicesIn(error.message));return true;
+ })));
+ assert.deepEqual(seen.find(row=>row.taskId==='left'),{taskId:'left',actionRevision:before.actionRevision,focus:null,
+  ready:['left_new'],actions:[{id:'left_new',objective:'Revised work',state:'pending'}]});
+ assert.deepEqual(seen.find(row=>row.taskId==='right'),{taskId:'right',actionRevision:rightBefore.actionRevision,focus:null,
+  ready:['right_only'],actions:[{id:'right_only',objective:'Other task work',state:'pending'}]});
+ assert.deepEqual(left.read(),before);assert.deepEqual(right.read(),rightBefore);
+});
+
+test('choice hints preserve all 24 existing objectives with Unicode and quoted newlines',async()=>{
+ const ledger=create(),actions=Array.from({length:24},(_,index)=>({id:'stage_'+index,
+  objective:'Step '+index+' — résumé 東京 "quoted"\nsecond line '+ 'x'.repeat(1100),dependsOn:[]}));
+ await ledger.edit({action:'plan',revision:0,actions});const before=ledger.read();
+ await assert.rejects(focus(ledger,'missing'),error=>{
+  const choices=choicesIn(error.message);
+  assert.equal(choices.actions.length,24);assert.deepEqual(choices.ready,actions.map(row=>row.id));
+  assert.deepEqual(choices.actions,actions.map(({id,objective})=>({id,objective,state:'pending'})));
+  assert.equal(error.message.split('\n').filter(line=>line.startsWith(CHOICE_PREFIX)).length,1);return true;
+ });
+ assert.deepEqual(ledger.read(),before);
+});
