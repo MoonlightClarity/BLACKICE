@@ -20,7 +20,9 @@ Setup uses the BLACKICE program name, `BLACKICE.exe`, Start menu and Desktop sho
 
 **Windows policy and unsigned builds:** Windows security or organizational policy may block an unsigned BLACKICE installer or application. Verify the exact installer filename, SHA-256 and release verification record, then check the applicable device or organizational policy. A matching checksum identifies the artifact; it does not establish publisher identity or guarantee that Windows will allow it to run. A successful install on another device does not establish compatibility with this device's policy.
 
-Do not attempt to install incomplete Setup files or bypass a policy block by disabling Smart App Control, antivirus, firewall rules or other protections. Resolve a blocked launch according to the device's policy, involving its administrator where applicable. Validation of the actual packaged binary and release SHA-256 remains valuable even without code signing.
+**Owner choice and experimental features:** On a personally managed device, the owner decides what level of risk is acceptable, including whether to keep a protection in place or make an exception. This is a tradeoff: some experimental features depend on unsigned or unfamiliar components that protections block, so making those features usable can require an exception or relaxing the specific blocking protection. Keeping that protection unchanged can mean the feature cannot realistically be offered or used in that configuration. Identify the affected component and required change rather than implying every BLACKICE feature needs it.
+
+Use a complete installer and its published release record to inform that decision. A matching SHA-256 establishes that the bytes match the published release checksum; it does not establish that an antivirus detection is a false positive. Changes on a managed device remain subject to its administrator's policy. Validation of the actual packaged binary and installation remains valuable even without code signing.
 
 ## Repeatable source and native verification
 
