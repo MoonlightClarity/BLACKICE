@@ -347,6 +347,24 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
   }
   if (action === 'fill') {
     if (el.readOnly) throw new Error('This field is read only.');
+    if (el.tagName === 'INPUT' && el.type === 'month') {
+      // Chromium's segmented month control does not accept ordinary text
+      // replacement. Set only canonical YYYY-MM values through its native
+      // value setter; unlike text fill, this path emits synthetic form events.
+      // Never report a no-input failure after focus or a possible value write.
+      if (args.text !== '' && (!/^\d{4}-(0[1-9]|1[0-2])$/.test(args.text) || args.text.slice(0, 4) === '0000')) {
+        return { __blackiceElementError: { message: 'Month input requires YYYY-MM (or an empty string to clear).', code: 'BROWSER_VALIDATION', inputDispatched: false } };
+      }
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (typeof setter !== 'function') throw new Error('Native month input is unavailable. Inspect the field before continuing.');
+      el.focus({ preventScroll: true });
+      if (!el.isConnected || el.type !== 'month' || document.activeElement !== el && el.getRootNode()?.activeElement !== el) throw new Error('The month field changed before input. Take a fresh snapshot.');
+      setter.call(el, args.text);
+      if (el.value !== args.text) throw new Error('The month field did not retain its value. Inspect the field before continuing.');
+      el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+      return { filled: true, characters: args.text.length, input: 'browser-native-month' };
+    }
     if (!el.isContentEditable && (!['INPUT', 'TEXTAREA'].includes(el.tagName) || el.tagName === 'INPUT' && !['text','search','tel','url','email','password','number'].includes(el.type))) throw new Error('Choose an editable text field to fill. Use the page controls for dates, colors, files or other non-text inputs.');
     el.focus({ preventScroll: true });
     if (!el.isConnected || document.activeElement !== el && el.getRootNode()?.activeElement !== el) throw new Error('This field could not be focused for text input. Take a fresh snapshot before trying again.');
@@ -1434,7 +1452,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       // Only fixed renderer guards return this metadata; the generic catch
       // strips page-supplied dispatch claims even when its code matches a guard.
       const inputPrevented = inputDispatched === false
-        && (action === 'select' || action === 'prepare' && code === 'BROWSER_TARGET_COVERED');
+        && (action === 'select' || action === 'fill' && code === 'BROWSER_VALIDATION' || action === 'prepare' && code === 'BROWSER_TARGET_COVERED');
       throw Object.assign(error(message), {
         code,
         ...(code === 'BROWSER_REF_STALE' ? { browserReferenceDiagnostic: { ...this.referenceDiagnostic(tab, args.ref, 'control-changed'), ...projectBrowserControlBinding(result.__blackiceElementError, action) } } : {}),

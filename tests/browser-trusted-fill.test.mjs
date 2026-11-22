@@ -58,6 +58,38 @@ test('readonly and disabled fields fail before focus or replacement preparation'
   }
 });
 
+test('native month fill accepts a canonical YYYY-MM value, clears explicitly, and rejects invalid values before focus', () => {
+  class NativeMonth {
+    constructor() { this.tagName = 'INPUT'; this.type = 'month'; this.isConnected = true; this._value = '2020-01'; this.events = []; this.focused = 0; }
+    get value() { return this._value; }
+    set value(value) { this._value = value; }
+    getAttribute() { return null; }
+    getRootNode() { return {}; }
+    focus() { this.focused++; context.document.activeElement = this; }
+    dispatchEvent(event) { this.events.push(event.type); }
+  }
+  const context = vm.createContext({
+    fixture: { elements: new Map() }, document: { activeElement: null },
+    HTMLInputElement: NativeMonth, Event: class { constructor(type) { this.type = type; } },
+  });
+  const perform = text => vm.runInContext('(' + elementSource + ')("fixture","month","fill",' + JSON.stringify({ text }) + ')', context);
+  for (const value of ['2026-11', '2000-02', '']) {
+    const field = new NativeMonth(); context.fixture.elements.set('month', field); context.document.activeElement = null;
+    const result = perform(value);
+    assert.equal(result.filled, true); assert.equal(result.characters, value.length);
+    assert.equal(result.input, 'browser-native-month');
+    assert.equal(field.value, value); assert.equal(field.focused, 1);
+    assert.deepEqual(field.events, ['input', 'change']);
+  }
+  for (const value of ['2026-13', '2026-1', '0000-12', 'November 2026', '2026-11-01']) {
+    const field = new NativeMonth(); context.fixture.elements.set('month', field); context.document.activeElement = null;
+    const result = perform(value);
+    assert.equal(result.__blackiceElementError.code, 'BROWSER_VALIDATION');
+    assert.equal(result.__blackiceElementError.inputDispatched, false);
+    assert.equal(field.value, '2020-01'); assert.equal(field.focused, 0); assert.deepEqual(field.events, []);
+  }
+});
+
 test('non-text native controls fail before focus rather than claim a text fill', () => {
   for (const type of ['file', 'checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'date', 'color', 'range', 'hidden']) {
     let focused = false; const field = { isConnected: true, tagName: 'INPUT', type, getAttribute: () => null, focus() { focused = true; } };

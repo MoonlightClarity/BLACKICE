@@ -14,7 +14,7 @@ const report = { fixtureOnly: true, liveUserBrowserAccessed: false, checks: [], 
 let driver, server;
 const markup = (frame = false) => `<!doctype html><title>Trusted fill fixture</title><style>body{padding:24px}input,textarea{display:block;margin:10px;width:260px}iframe{width:450px;height:220px}</style>
 <input aria-label="${frame ? 'Frame field' : 'Preferred Name'}" id="name" value="Initial text"><input aria-label="Address" id="address"><textarea aria-label="Notes" id="notes">Initial notes</textarea>
-<input aria-label="Email" id="email" type="email" required value="old@example.test"><input aria-label="Number" id="number" type="number" value="123"><input aria-label="Read only" id="readonly" readonly value="preserve"><input aria-label="Disabled" id="disabled" disabled value="preserve">
+<input aria-label="Start Month" id="startmonth" type="month" value="2020-01"><input aria-label="Email" id="email" type="email" required value="old@example.test"><input aria-label="Number" id="number" type="number" value="123"><input aria-label="Read only" id="readonly" readonly value="preserve"><input aria-label="Disabled" id="disabled" disabled value="preserve">
 <input aria-label="Navigate on focus" id="navigate" value="preserve"><input aria-label="Redirect on select" id="redirect" value="preserve">
 <input aria-label="Retire after focus" id="retire" value="preserve"><button id="commit">Commit fixture</button><div aria-label="Rich text" role="textbox" contenteditable="true" id="rich">Initial rich</div>
 ${frame ? '' : '<iframe title="Cross-origin fixture" src="http://localhost:PORT/frame"></iframe><iframe title="Empty embedded fixture" hidden src="http://localhost:PORT/empty"></iframe>'}
@@ -30,6 +30,7 @@ document.getElementById('navigate').addEventListener('focus',()=>location.hash='
 document.getElementById('retire').addEventListener('focus',event=>{fixture.retiredTarget=event.target;queueMicrotask(()=>{fixture.retirements=(fixture.retirements||0)+1;event.target.remove();});});
 const redirect=document.getElementById('redirect'), nativeSelect=redirect.select.bind(redirect);
 redirect.select=()=>{nativeSelect();fixture.selectionRedirects=(fixture.selectionRedirects||0)+1;document.getElementById('address').focus();};
+document.getElementById('startmonth').addEventListener('change',event=>{fixture.nativeMonthChange={value:event.target.value,trusted:event.isTrusted};});
 </script>`;
 const check = (name, fn) => { fn(); report.checks.push(name); };
 async function main() {
@@ -80,6 +81,25 @@ async function main() {
   check('textarea replacement and Unicode newlines commit through trusted input', () => assert.equal(current.fields.notes.committed, 'Line1\n東京🚀'));
   await fill('Email', 'new@example.test'); await fill('Number', '456'); await commit(); current = await state();
   check('email and numeric text inputs replace existing values', () => { assert.equal(current.fields.email.committed, 'new@example.test'); assert.equal(current.fields.number.committed, '456'); });
+  const nativeMonth = await fill('Start Month', '2021-09');
+  const monthState = await wc.executeJavaScript("({value:document.getElementById('startmonth').value,change:fixture.nativeMonthChange})");
+  check('native Chromium month fill dispatches the canonical date with synthetic change', () => {
+    assert.equal(nativeMonth.receipt.filled, true);
+    assert.equal(nativeMonth.receipt.input, 'browser-native-month');
+    assert.equal(monthState.value, '2021-09');
+    assert.deepEqual(monthState.change, { value: '2021-09', trusted: false });
+  });
+  await fill('Start Month', '');
+  const clearedMonth = await wc.executeJavaScript("({value:document.getElementById('startmonth').value,change:fixture.nativeMonthChange})");
+  check('native Chromium month clearing dispatches a synthetic change', () => {
+    assert.equal(clearedMonth.value, ''); assert.deepEqual(clearedMonth.change, { value: '', trusted: false });
+  });
+  await fresh(); await assert.rejects(driver.perform({ action: 'fill', tabId: tab.id, ref: ref('Start Month'), text: '2021-13', expectedUrl: snapshot.url, expectedDocumentId: snapshot.documentId }), error => {
+    assert.equal(error.code, 'BROWSER_VALIDATION');
+    assert.equal(error.inputDispatched, false); return true;
+  });
+  const unchangedMonth = await wc.executeJavaScript("document.getElementById('startmonth').value");
+  check('invalid native month input rejects without changing the field', () => assert.equal(unchangedMonth, ''));
   await fill('Rich text', 'Rich replacement'); await commit(); current = await state();
   check('contenteditable trusted replacement remains supported', () => assert.equal(current.fields.rich.committed, 'Rich replacement'));
   await fill('Rich text', ''); await commit(); current = await state();
