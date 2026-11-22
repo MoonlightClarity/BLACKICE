@@ -65,6 +65,20 @@ After finishing runtime changes and setting the release version, use `npm run pa
 
 The **Verify Windows release installer** GitHub workflow accepts an existing draft tag, its exact installer SHA-256, application fingerprint, full source commit, and `source_test_receipt`. Supply a tracked path such as `verification/windows-VERSION.json` containing actual Windows source-test results for that version and fingerprint. The workflow forwards it as `-SourceTestReceipt` to `scripts/verify-windows-release.ps1`; untracked, stale, unsuccessful, or mismatched evidence is rejected. The historical receipt is never selected implicitly. This workflow runs only on a disposable GitHub-hosted Windows VM, checks the actual installer, and attaches sanitized supporting evidence to the existing draft. Publication remains a separate step.
 
+## Release qualification and the availability responder
+
+The tracked [`retireReleaseAvailability`](scripts/release-availability-retirement.mjs) export supports release qualification controllers that need a matching, already-offline availability responder to exit before installation. It accepts a nonsecret marker identity, the captured generation, and caller-supplied control, admission, durable-intent and retirement-observation callbacks. It validates the raw authenticated ping response without flattening its nested state, checks admission again before sending one stop request, and reconciles the observed outcome even when the stop acknowledgement is uncertain. It does not replay the stop request.
+
+The caller owns native process and creation-time checks, saved marker/profile identity, absence of a newly opened owner, and the durable attempt record. After the helper returns, the controller still enforces its complete zero-process installer gate. An uncertain outcome requires inspection of that attempt before another invocation. This module does not locate credentials, copy profiles, launch Setup, or modify normal app quit, the updater or NSIS behavior.
+
+The [composed regression suite](tests/release-availability-retirement.test.mjs) checks the real exported helper, including the raw-response boundary that a previous external qualification controller mishandled:
+
+```powershell
+node --test tests/release-availability-retirement.test.mjs
+```
+
+Passing that suite establishes the orchestration contract. Record actual native retirement, installer execution and reopened build identity separately. For a release pass that includes owner-machine cleanup, finish source and documentation changes, test and package the exact revision, install and verify that installer, then measure and complete the authorized cleanup before public source/release publication. Keep a verified rollback installer and the exact new bundle; preserve profiles, models, chats, source, uncommitted work and qualification evidence.
+
 ## Requested release automation
 
 The **Build and publish requested Windows release** workflow provides the complete hosted build path. It runs only through **Run workflow** (`workflow_dispatch`) on `main`. Editing `.github/release-request.json` or pushing ordinary source commits does not start publication. The request file supplies the exact version, fingerprint, source-test receipt and publication choice for that explicit dispatch.
@@ -125,7 +139,7 @@ Fill the template from actual results and retain the underlying logs. It is inte
 
 1. The current required test suite passes, with failed tests, required skips, and optional integration skips reported separately.
 2. The actual public Setup.exe is exercised. Its installed runtime matches the candidate, the Desktop shortcut targets that installation, and Windows registration and uninstall behavior are checked.
-3. A profile backup passes integrity verification and restores successfully into a disposable profile.
+3. The release runner's disposable profile fixture passes backup-integrity verification and restores into another disposable profile. This qualifies the backup/restore path without requiring a whole copy or hash of the owner's real profile for every program update.
 4. A diagnostics export passes redaction and credential-leak checks.
 5. The complete Setup.exe matches its manifest. Signing checks become required when signing is requested, the manifest declares a signed candidate, or the release policy requires signing.
 
@@ -145,7 +159,9 @@ The receipt is an operator attestation backed by retained test artifacts. The re
 
 ## Updates, rollback, and historical portable bundles
 
-Use **Blackice-<version>-Setup.exe** to install, reinstall, or update the registered Windows program. Verify the exact candidate's installation path, Windows uninstall registration, and shortcuts. Before rollback or profile maintenance, quit BLACKICE and copy the retained `%APPDATA%\Relay` profile folder, or the explicit profile folder chosen for that installation. Back up working folders separately. The release runner verifies backup integrity and a disposable restore as separate installer evidence. Restoring application files alone does not restore profile data or schema.
+Use **Blackice-<version>-Setup.exe** to install, reinstall, or update the registered Windows program while preserving its existing profile. Check for active work and use the supported shutdown or restart flow before running Setup. Verify the exact candidate's installation path, Windows uninstall registration and shortcuts, then reopen it and check its running version and application fingerprint. A built installer or queued restart does not establish installation.
+
+Routine program qualification does not require copying, hashing or restoring the owner's entire profile tree. If a rollback or planned profile maintenance needs a data recovery point, quit BLACKICE and back up the retained `%APPDATA%\Relay` profile folder, or the explicit profile chosen for that installation; back up working folders separately. The release runner's backup-integrity and restore gate uses disposable qualification data. Restoring application files alone does not restore profile data or schema.
 
 `scripts/Install-Relay.ps1`, `relay-distribution.json`, and `release:check -- --local` remain compatibility tools for historical Relay portable bundles. Current packaging commands do not produce that format. Its existing `Relay.exe` and manifest identities must remain intact when verifying those older bundles. A local verification report never establishes public release readiness, and a portable deployment test cannot replace the actual Setup.exe installation gate.
 

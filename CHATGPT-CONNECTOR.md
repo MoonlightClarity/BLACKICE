@@ -31,7 +31,7 @@ The connector retains `chatSurfaceVerification: "not-recorded"`; it cannot indep
 
 ### ChatGPT plans and hosted schedules
 
-Custom MCP connection creation is available across personal tiers. A Free-account creation check was reported on **2026-11-22**, consistent with prior Plus and Pro use. The remaining check is BLACKICE-specific end-to-end connection and tool execution:
+Custom MCP connection creation is available across personal tiers. A Free-account creation check was reported on **2026-11-22**, consistent with prior Plus and Pro use. Qualify each BLACKICE account/endpoint route with its own end-to-end connection and tool receipts:
 
 1. In the intended ChatGPT account, open **Plugins → + → Add custom MCP server**.
 2. Add the endpoint displayed by BLACKICE, choose **OAuth**, and complete local owner approval in BLACKICE. Attach the connection in ordinary Chat and verify that its tools appear.
@@ -201,7 +201,7 @@ Planning decision criteria are user-authored, revision-checked metadata, visible
 
 Open **Cronjobs** to inspect each schedule's full instructions, trigger, timezone, next execution, saved model/workflow, revision, limits, and recent job receipts. Choose **Inspect / edit → Edit schedule** to change task text, model for a single-agent workflow, enabled state, cron or interval, concurrency/overlap policy, retries, and lifetime limits. **Preview next runs** checks the live backend parser but does not save or execute. **Save changes** uses the exact revision read when the editor opened. If another editor changed that revision, the unsaved draft remains visible until you explicitly reload and reconcile it. Changing a schedule never retroactively changes admitted jobs or overwrites their history.
 
-Native scheduling in BLACKICE adds no permission layer or approval prompts. The external ChatGPT connector retains its existing OAuth scope checks solely for compatibility: schedule reading uses the existing read capability, and remote editing or manual triggering uses the already-granted command capability. No new OAuth scopes, consent controls, or reauthorization requirements are introduced. Edits still use `scheduleId`, `expectedRevision`, and a bounded `patch`; manual runs use a stable idempotency key and return an admission receipt, not a completion claim. Multi-agent workflow editing remains in Workflows. Credentials and webhook secrets are not exposed by inspection.
+Native scheduling in BLACKICE adds no permission layer or approval prompts. The external ChatGPT connector retains its existing OAuth scope checks solely for compatibility: schedule reading uses the existing read capability, and remote editing or manual triggering uses the already-granted command capability. No new OAuth scopes, consent controls, or reauthorization requirements are introduced. Edits still use `scheduleId`, `expectedRevision`, and a bounded `patch`; manual runs use a stable idempotency key and return an admission receipt, not a completion claim. Multi-agent workflow editing is under **Cronjobs → Manage saved workflows**. Credentials and webhook secrets are not exposed by inspection.
 
 On a clean restart the scheduler preserves the user's prior enabled/paused choice. A stopped or ambiguous execution remains paused until its receipts are inspected and the user explicitly resumes it. Scheduled work still requires BLACKICE to remain running and the host awake. New scheduled jobs save a durable local result receipt when the job settles, separate from the job's execution outcome. In **Cronjobs**, expand a cronjob's **Result conversations** and choose **View conversation** where a run has a linked conversation. The current workspace does not expose the former standalone Results tab. Local availability does not imply delivery to ChatGPT or another remote service. An already connected ChatGPT client can inspect result receipts with the read-only `blackice_list_schedule_results` tool (filter by schedule and local availability state). Reading a result does not record human acknowledgement; recorded review state remains separate from the run.
 
@@ -265,7 +265,7 @@ The local `BLACKICE browser` command line reaches the same host-owned tools and 
 
 ## Planning and swarms
 
-In **canonical contract v2** (shipped in 2.39.23), the connector reads the same authoritative plan of cohesive work items, criteria, dependencies, revisions and host-owned execution evidence as the desktop. A direct plan edit does not become an operation receipt. For canonical tasks, use the returned current revision with the sole `replace_contract` operation and omit host-owned `planEpoch`; older tasks retain their actual legacy graph-edit contract. See [current planning](docs/RECURSIVE-PLANNING.md).
+In **canonical contract v2** (shipped in 2.39.23), the connector reads the same authoritative plan of cohesive work items, criteria, dependencies, revisions and host-owned execution evidence as the desktop. A direct plan edit does not become an operation receipt. For canonical tasks, use the returned current revision with the sole `replace_contract` operation and omit host-owned `planEpoch`; older tasks retain their actual legacy graph-edit contract. See the [Planning contract v2 implementation reference](docs/planning-contract-v2-20261105.md).
 
 The connector reads the same durable plan outline, dependencies, groups, and revisions as the desktop. Active plans are the default. Renaming or regrouping changes organization metadata separately from plan content; stale revisions fail with a conflict rather than overwriting another edit. Editing a plan does not start a worker, clear a stopped worker's interruption, or create a false execution receipt. Swarm summaries expose bounded task/attempt metadata; detailed saved output is retrieved separately.
 
@@ -281,7 +281,7 @@ Verify each boundary separately:
 | --- | --- |
 | Local metadata/catalog checks | Those endpoints responded from the checking computer. |
 | ChatGPT's form discovers the native endpoints | The host's discovery step worked; no grant or tool result is implied. |
-| **Allow selected access** in BLACKICE | The owner made the local consent decision; callback and token exchange must still finish. |
+| **Connect with full BLACKICE access** in BLACKICE | The owner made the local consent decision; callback and token exchange must still finish. |
 | Matching authenticated `blackice_direct_status` result in the intended Chat | That connection completed the direct tool round trip with its reported scopes and availability. |
 | **I see the matching result in ChatGPT** | The person confirmed that observed result; BLACKICE does not independently inspect the conversation. |
 
@@ -292,6 +292,8 @@ Official integration requirements: [ChatGPT custom MCP servers](https://develope
 ## Availability while BLACKICE is closed
 
 An enabled BLACKICE profile keeps a small availability responder and its existing owned HTTPS route after the application exits. The main application still owns all execution, model work, browser sessions and OAuth writes. The responder only forwards requests while that application is connected, or returns its availability status. It never starts the application, queues work, replays actions or starts at Windows boot by itself. Explicitly disabling remote access removes the route and stops the responder.
+
+Release qualification controllers can use the tracked [availability-retirement helper](SIGNING-AND-RELEASE.md#release-qualification-and-the-availability-responder) when an installer needs the matching, already-offline responder to exit. Its caller must prove the process and profile identity, record the stop intent, and observe retirement. It does not change normal app shutdown or disable the saved remote-access configuration.
 
 Authenticated connector status distinguishes `closed`, `starting`, `closing` and `unreachable`. A refused HTTP connection alone does not establish that the application is closed. A local lifetime connection clears the proxy target when its owning application disconnects; reopening attaches the new application generation to the same responder and route. Existing grant IDs and scopes are preserved.
 

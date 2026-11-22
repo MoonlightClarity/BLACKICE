@@ -10,14 +10,14 @@ Start with the [project README](../README.md). A named document's date, original
 | --- | --- |
 | Inspect active instruction sources and saved execution snapshots | [Instruction audit](instruction-audit.md), [instruction clarity](instruction-clarity.md), and [tool responsibilities](tool-responsibilities.md) |
 | Product overview, setup, navigation, recurring work | [Project README](../README.md) |
-| Choose models and API connections | [API providers](API-PROVIDERS.md) and [local models](local-models.md) |
+| Choose models and API connections | [API providers](API-PROVIDERS.md), [local models](local-models.md), and [optional Mistral account compatibility](mistral-acp-compatibility.md) |
 | Connect an external assistant to BLACKICE's direct tools | [ChatGPT](../CHATGPT-CONNECTOR.md), [Gemini](GEMINI-CONNECTOR.md), [Claude](CLAUDE-CONNECTOR.md) |
 | Remote access and connection scope | [Remote access](../REMOTE-ACCESS.md) |
 | Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md), [stopped-task tab adoption](stopped-task-tab-adoption.md) |
 | Keep work moving within a conversation | [Goal mode](GOAL-MODE.md) |
 | Current architecture and verification limits | [2.40.75 candidate scope](../RELEASE-NOTES-2.40.75.md) |
 | Organize work | Conversation folders, nested Skills and Browser folders, Cronjobs and [Goal mode](GOAL-MODE.md). No automatic Swarm dispatch. |
-| Build or publish a Windows release | [Signing and release](../SIGNING-AND-RELEASE.md) and [third-party notices](../THIRD-PARTY-NOTICES.md) |
+| Build or publish a Windows release | [Signing and release](../SIGNING-AND-RELEASE.md), [release qualification tooling](../SIGNING-AND-RELEASE.md#release-qualification-and-the-availability-responder), and [third-party notices](../THIRD-PARTY-NOTICES.md) |
 
 **Current candidate:** Chat has optional Action Directory for the current task. The old module controls, automatic learning and old Autonomy/Swarm execution are retired. Skills have bundled originals plus human-edited persistent overrides, with user-organized folders. Model skill tools are read-only; unrestricted shell access is not an OS-level immutability guarantee. The separate To-do and My workflows spaces have been removed; Cronjobs retain their current saved-workflow editor. Historical documents below do not reactivate those features.
 
