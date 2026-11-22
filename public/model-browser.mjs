@@ -12,6 +12,10 @@ const rawIdentifier = model => {
   const id = identifier(model), delimiter = id.indexOf('::');
   return delimiter < 0 ? id : id.slice(delimiter + 2);
 };
+const defaultPickerHiddenModelIds = new Set(['gpt-reserve','codex-auto-review']);
+export function modelIsDefaultPickerVisible(model) {
+  return !defaultPickerHiddenModelIds.has(rawIdentifier(model).toLowerCase());
+}
 const providerPrefix = model => {
   const id = identifier(model), delimiter = id.indexOf('::');
   return delimiter > 0 ? id.slice(0, delimiter) : '';
@@ -61,6 +65,7 @@ export function browseModels(models = [], options = {}) {
   const hidden = new Set(Array.isArray(options.hiddenModelProviders) ? options.hiddenModelProviders : []);
   const minimum = positiveLimit(options.minContextTokens);
   const filtered = (Array.isArray(models) ? models : []).filter(model => {
+    if (!modelIsDefaultPickerVisible(model)) return false;
     const provider = modelProvider(model, options);
     if (hidden.has(provider.id) || options.freeOnly && !modelIsFree(model) || options.toolsOnly && model?.supportsTools !== true || options.visionOnly && !hasVision(model)) return false;
     const capacity = positiveLimit(model?.contextWindowTokens);

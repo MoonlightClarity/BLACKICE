@@ -1,4 +1,4 @@
-import { browseModels, groupModels, modelProvider } from '../../model-browser.mjs';
+import { browseModels, groupModels, modelIsDefaultPickerVisible, modelProvider } from '../../model-browser.mjs';
 import { readyDisabledProvider } from '../../provider-availability.mjs';
 
 const PAGE=80;
@@ -127,12 +127,12 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
     if(!opened)return;const prior=doc.activeElement,focusValue=prior?.dataset?.modelValue,focusProvider=prior?.dataset?.modelProvider,focusSetup=prior?.dataset?.modelSetupProvider,focusRemove=prior?.dataset?.modelRemove,restore=results.contains(prior);
     // Preserve the exact historical selection in the trigger, but never list
     // a retired native CLI as a new model choice, even with a stale catalog.
-    const selectable=models.filter(model=>!model.historical&&!/^(?:antigravity|qwen_code)::/.test(model.id));
+    const selectable=models.filter(model=>modelIsDefaultPickerVisible(model)&&!model.historical&&!/^(?:antigravity|qwen_code)::/.test(model.id));
     setChildren(results);const filter=options(),entries=browseModels(selectable.filter(model=>!model.alias),filter),allGroups=groupModels(entries,{...providerOptions(),mode:'connection'});
     // A Local shortcut keeps its concrete provider identity and all ordinary
     // visibility, availability, activation and removal checks.
     const local=entries.filter(model=>model.shortcut==='local'),groups=allGroups.map(group=>({...group,models:group.models.filter(model=>model.shortcut!=='local')})).filter(group=>group.models.length);
-    const aliases=models.filter(model=>model.alias&&(model.id!=='codex'||!hiddenProviders().includes('codex'))&&(!search.value.trim()||`${model.label} ${model.id}`.toLowerCase().includes(search.value.trim().toLowerCase())));
+    const aliases=selectable.filter(model=>model.alias&&(model.id!=='codex'||!hiddenProviders().includes('codex'))&&(!search.value.trim()||`${model.label} ${model.id}`.toLowerCase().includes(search.value.trim().toLowerCase())));
     const shortcuts=[...aliases,...local];
     if(shortcuts.length){const defaults=create('div','next-model-picker-aliases');defaults.setAttribute('aria-label','Default model choices');for(const model of shortcuts)defaults.append(modelRow(model));results.append(defaults);}
     const query=search.value.trim().toLowerCase().split(/\s+/).filter(Boolean),connections=setupProviders().filter(provider=>query.every(word=>(provider.name+' '+provider.id).toLowerCase().includes(word)));
