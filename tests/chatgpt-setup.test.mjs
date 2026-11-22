@@ -115,6 +115,25 @@ test('public checks are bounded discovery-only requests with no credentials or m
   assert.match(result.diagnostics.limitation, /Only a matching result shown in ChatGPT/);
 });
 
+test('public tools probe recognizes the expected OAuth challenge without confirming a grant', async t => {
+  const discovery = validFetch([]);
+  const metadata = origin + '/.well-known/oauth-protected-resource/mcp/chatgpt';
+  for (const [challenge, expected] of [
+    [`Bearer resource_metadata="${metadata}", error="invalid_token"`, true],
+    ['Bearer resource_metadata="https://example.org/metadata"', false],
+    ['Basic realm="proxy"', false],
+    ['', false],
+  ]) {
+    const f = await fixture(t, { fetchImpl: (url, options) => options.method === 'POST'
+      ? new Response(null, { status: 401, headers: { 'WWW-Authenticate': challenge } })
+      : discovery(url, options) });
+    const result = await f.setup.check();
+    assert.equal(result.diagnostics.ok, expected);
+    assert.equal(result.verification.receivedAt, undefined);
+    assert.equal(result.verification.confirmedAt, undefined);
+  }
+});
+
 test('wrong OAuth issuer, redirects, and oversized responses cannot pass diagnostics or confirm a chat', async t => {
   const f = await fixture(t, { fetchImpl: async () => json({ resource: endpoint, authorization_servers: [origin], issuer: 'https://attacker.example' }) });
   const result = await f.setup.check(); assert.equal(result.diagnostics.ok, false); assert.equal(result.diagnostics.checks.find(check => check.key === 'oauth').ok, false);
