@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
@@ -288,4 +288,50 @@ test('isolated history cannot adopt an old persistent compaction checkpoint or s
   assert.equal(session.app.engine.getRun(run.id).nodes.agent.threadId,run.nodes.agent.threadId);
   assert.equal(session.app.engine.recoverNativeHistoryMigration,undefined);
   assert.equal(session.app.engine.readNativeHistoryMigration,undefined);
+});
+
+test('isolated tool result continuity retains opaque facts across fresh sessions and reopen without unrelated receipts', async t => {
+  const fact = 'TOOL_ONLY_FACT_8947_copper_rook';
+  const unrelatedFact = 'UNRELATED_TOOL_FACT_6418_silver_bishop';
+  const body = 'Context detail. '.repeat(210) + fact + '\n' + 'Supporting detail. '.repeat(170);
+  assert.ok(body.length > 6000 && body.indexOf(fact) > 1800);
+  const session = await application(t, async () => isolatedFixture(async (options, {index, threadId, turnId}) => {
+    options.onEvent({type:'thread', model:options.model, threadId, turnId, codexHistory:options.codexHistory, resumed:false});
+    if (!options.prompt.includes('RELAY CONTINUITY')) {
+      const unrelated = options.prompt.includes('READ_UNRELATED_TOOL_FACT');
+      const file = path.join(options.cwd, unrelated ? 'unrelated-facts.txt' : 'saved-facts.txt');
+      const call = {name:'relay_workspace', arguments:{action:'read',path:file}, callId:`continuity-read-${index}`};
+      const result = await options.onToolCall(call);
+      assert.equal(result.success,true,JSON.stringify(result));
+      assert.ok(JSON.stringify(result).includes(unrelated ? unrelatedFact : fact),'The actual tool result must contain the fact.');
+      assert.equal(typeof options.onToolResultDelivered,'function');
+      options.onToolResultDelivered({call,result});
+    }
+    const output = 'The requested file was read. Continue using the saved facts.';
+    options.onEvent({type:'message',threadId,turnId,text:output,phase:'final_answer'});
+    return {output,threadId,turnId,codexHistory:options.codexHistory};
+  }));
+  await mkdir(session.cwd,{recursive:true});
+  await writeFile(path.join(session.cwd,'saved-facts.txt'),body);
+  await writeFile(path.join(session.cwd,'unrelated-facts.txt'),'Other detail. '.repeat(200)+unrelatedFact);
+  const first = await start(session,'READ_TOOL_ONLY_FACT: read the saved facts file.');
+  assert.equal(first.status,'completed',first.error);
+  assert.ok(!first.output.includes(fact),'Final prose deliberately omits the tool-only fact.');
+  await start(session,'READ_UNRELATED_TOOL_FACT: read the other facts file.');
+  const second = await follow(session,first,'Continue from the observed facts without reading the file again.');
+  assert.equal(second.status,'completed',second.error);
+  const secondPrompt = session.runtime.calls[2].prompt;
+  assert.equal(session.runtime.calls[2].threadId,undefined);
+  assert.equal(session.runtime.calls[2].codexHistory,'relay');
+  assert.notEqual(first.nodes.agent.threadId,second.nodes.agent.threadId);
+  assert.ok(secondPrompt.includes(fact),'A fresh actual provider prompt must retain the full tool-only fact beyond legacy excerpts.');
+  assert.ok(!secondPrompt.includes(unrelatedFact),'Another conversation must not leak its tool result.');
+  assert.match(secondPrompt,/historical/i);
+  const reopened = await session.reopen();
+  const third = await follow(reopened,second,'Continue from the saved observations after reopening.');
+  assert.equal(third.status,'completed',third.error);
+  assert.equal(reopened.runtime.calls[0].threadId,undefined);
+  assert.equal(reopened.runtime.calls[0].codexHistory,'relay');
+  assert.ok(reopened.runtime.calls[0].prompt.includes(fact),'Persisted tool facts must survive application reopen.');
+  assert.ok(!reopened.runtime.calls[0].prompt.includes(unrelatedFact));
 });
