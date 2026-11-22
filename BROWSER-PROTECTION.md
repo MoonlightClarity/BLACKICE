@@ -4,7 +4,7 @@ BLACKICE provides a tab strip and optional embedded ad and tracker filtering in 
 
 ## Tabs
 
-Enter an address and choose **New tab** to open another page. Select a tab to hold that page in the Activity viewer. The separate **Follow active page** control follows the page being used by the agent. Background browser work can continue while you inspect another tab.
+Use **New tab** in the Browser workspace to open another page, then enter an address. Select a tab to view its contained page. Background browser work can continue while you inspect another tab. **Close all unused tabs** closes eligible pages while retaining tabs marked in use and pages protected by current work; inspect the reported result rather than assuming every tab closed.
 
 Each tab has a close control. Closing the selected tab selects a neighboring page; closing a background tab keeps the current selection. Left/Right, Home and End select tabs from the keyboard, and Delete closes the focused tab. Long titles truncate within the strip, which scrolls inside narrow screens. The address field keeps a draft for each tab through status updates and tab switching.
 
@@ -50,4 +50,4 @@ Primary references:
 
 ## Validation
 
-The release checks combine model-level browser UI tests, real rendered Activity journeys, and an isolated Electron request-blocking fixture. The native fixture uses a disposable browser profile and controlled pages; it does not use personal sign-ins or infer general website compatibility from one test. See `UI-VALIDATION.md` and the update's acceptance reports for the exact completed checks.
+Browser model/UI regressions and an isolated Electron request-blocking fixture cover filtering behavior. The native fixture uses a disposable browser profile and controlled pages; it does not use personal sign-ins or infer general website compatibility from one test. See the exact release's acceptance reports for completed checks. The preserved [UI validation record](UI-VALIDATION.md) describes an earlier Activity-based interface, not current Browser controls.

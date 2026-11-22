@@ -17,6 +17,7 @@ confirmation prompt, method allowlist, or model worker.
 | `evaluate` | Arbitrary JavaScript through `Runtime.evaluate`, including asynchronous expressions and caller-supplied protocol options. |
 | `cdp` | A raw DevTools Protocol `method` and `params`; frontend subtargets may include `sessionId`. |
 | `events` | Buffered protocol events with cursor, explicit overflow counts, optional clearing, and caller-adjustable event/byte capacity. |
+| `interact` | Click, fill, press, scroll or drag against a current snapshot's control refs and document identity. |
 
 `target: "frontend"` selects the app renderer. `target: "main"` selects a native
 Node inspector session in the actual Electron host process, not a helper process.
@@ -43,7 +44,7 @@ For example, the start call for the Electron host is:
 }
 ```
 
-Use observed DOM controls and their rectangles for input. Raw input methods such
+For `interact`, copy `documentId` from a current snapshot into `expectedDocumentId`, copy its URL into `expectedUrl`, and use the observed control `ref` with the chosen operation. Take another snapshot after input to verify the result. Use observed DOM controls and their rectangles for input. Raw input methods such
 as `Input.dispatchMouseEvent` work on the frontend target. Keep the investigation
 focused on the reported interaction; the resulting profile includes the tool's
 own requests as well as application work.

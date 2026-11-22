@@ -2,15 +2,15 @@
 
 **Applies to BLACKICE 2.39.27 and later.** Gemini uses BLACKICE's existing public HTTPS **MCP direct-execution server**, but receives its **own Google OAuth grant**. It does not start a BLACKICE model worker and does not share, replace or revoke ChatGPT's separate authorization.
 
-This is different from selecting **Google Gemini as an API model inside BLACKICE** under Settings → Models. The API model is an outgoing provider connection; the Gemini connector is an **incoming** assistant calling BLACKICE tools.
+This is different from selecting **Google Gemini as an API model inside BLACKICE** under Config → Models → Add API. The API model is an outgoing provider connection; the Gemini connector is an **incoming** assistant calling BLACKICE tools.
 
 ## Connect
 
-1. Keep BLACKICE and the host's published Tailscale HTTPS endpoint available. Open **Settings → Gemini connector**.
+1. Keep BLACKICE and the host's published Tailscale HTTPS endpoint available. Open **Config → App connections → Gemini**.
 2. Use **Open Gemini connector setup in BLACKICE Browser**. BLACKICE opens Gemini's custom-connector page in its contained browser. The panel shows the actual **Shared MCP endpoint**; use that displayed address rather than guessing a hostname or port. If the endpoint is unavailable, repair the host's [remote-access setup](../REMOTE-ACCESS.md) first.
 3. In Gemini, add the BLACKICE direct-execution MCP connector using the host's displayed endpoint, then begin its OAuth authorization.
 4. Return to BLACKICE's Gemini panel. Match the **pending Google request code** with the request in Gemini. Choose **Connect Gemini** to authorize the full BLACKICE tool catalog. There are no per-capability checkboxes in BLACKICE's connector approval.
-5. Complete Gemini's redirect and return to **Settings → Gemini connector**. **Check status** should display the Google grant, expiry and full connection-level tool access. This establishes authorization, **not** successful tool execution.
+5. Complete Gemini's redirect and return to **Config → App connections → Gemini**. **Check status** should display the Google grant, expiry and full connection-level tool access. This establishes authorization, **not** successful tool execution.
 6. In an actual Gemini conversation with BLACKICE connected, use the panel's **Copy test prompt**, which asks the tool to call `blackice_direct_status` with a nonce. Confirm the same nonce, `available` and `connectionId` from the real tool result.
 
 The settings screen manages only Google requests and Google MCP grants. **Disconnect Gemini only → Confirm disconnect Gemini** revokes that Google grant, not an existing ChatGPT grant.

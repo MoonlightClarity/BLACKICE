@@ -7,7 +7,7 @@ BLACKICE owns the saved credential and can help copy it into the user's normal b
 1. The agent inspects an ordinary contained HTTPS page and generates a credential for that exact origin and intended username.
 2. BLACKICE saves the generated password in its encrypted vault before returning a handle. Repeating the same generation request with identical inputs and the same trusted owner returns the original credential.
 3. The host fills only the specified, freshly observed password fields. It verifies origin, document, visibility, field type and editability before accessing the secret and again before writing. Filling does not submit a form.
-4. In **Settings → Password manager**, the user selects saved login revisions and a destination: Chrome, Firefox or BrowserOS Neo.
+4. In **Config → Passwords**, the user selects saved login revisions and a destination: Chrome, Firefox or BrowserOS Neo.
 5. **Copy to browser password manager** opens the chosen browser's password-manager/settings page and reveals the selected temporary CSV. The user chooses the intended browser profile, then uses that browser's native **Import passwords** controls to import the file.
 6. **I imported these passwords** records confirmation by the user and removes the temporary file. BLACKICE does not independently inspect the destination password database.
 

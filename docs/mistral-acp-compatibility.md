@@ -1,6 +1,8 @@
 # Mistral ACP-first catalog compatibility
 
-## Contract (2.40.0 working source)
+The adapter behavior below is source-backed. The dated verification section records controlled fixtures, not qualification of every current Mistral account or CLI version. Use **Config → Models → Accounts → Optional Mistral account** for the native connection and [Add API](API-PROVIDERS.md) for the separately billed API route.
+
+## Adapter contract
 Mistral subscription access continues through the official `vibe-acp` executable and the existing authentication path. No API key migration, paid API fallback, account modification, CLI installation, or provider inference is part of this change.
 
 ACP session `configOptions` is authoritative for available model identities. Standard `model` and `thought_level` categories use the agent's opaque selector IDs, with legacy Vibe `model`/`thinking` IDs supported. Grouped choices are supported. Unknown or absent model selectors do not invent choices.

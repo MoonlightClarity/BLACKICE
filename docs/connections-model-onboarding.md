@@ -1,5 +1,7 @@
 ﻿# Shared app connections and local-model onboarding
 
+> **Status: Historical documentation.** This records the 2.39.104 onboarding change and its follow-ups. Its original labels, fixed source line numbers, model-download limits and future-work proposals are not current setup instructions. Use the [API provider guide](API-PROVIDERS.md), [local models guide](local-models.md), and [instruction audit](instruction-audit.md) for current controls, the optional MiniCPM setup, and catalog-refresh behavior. The measured results below retain their original scope.
+
 ## Findings against 2.39.104
 
 - App connections uses one BLACKICE MCP endpoint. ChatGPT, Claude and Gemini setup panels are client-specific onboarding, not mutually exclusive servers. Each external app still needs its own configuration and OAuth authorization; one server cannot install itself in another app.

@@ -4,10 +4,10 @@
 
 ChatGPT owns the calling conversation and reasoning. BLACKICE supplies tools for local files and commands, contained and connected native browsers, browser profile imports, durable action receipts, and saved planning data. Ordinary direct operations do not start a BLACKICE model or depend on ChatGPT Work computer tools. Explicit tools for starting a saved Chat, Goal, or Planning module can start the selected BLACKICE model; the current catalog and status identify those tools. The experimental BLACKICE-to-ChatGPT browser provider has been removed; the supported direction is ChatGPT calling BLACKICE.
 
-1. Keep BLACKICE and Tailscale running. In **Settings → ChatGPT connector**, choose **Prepare this computer** and confirm public publication when requested. Copy the displayed server URL ending in `/mcp/chatgpt`. Reuse a healthy existing connection.
+1. Keep BLACKICE and Tailscale running. In **Config → App connections → ChatGPT**, choose **Prepare this computer** and confirm public publication when requested. Copy the displayed server URL ending in `/mcp/chatgpt`. Reuse a healthy existing connection.
 2. In the intended ChatGPT account, open **Plugins → + → Add custom MCP server**. Name it **BLACKICE connection**, paste this computer's URL, and choose **OAuth** with client metadata discovery (**CIMD**). Discovery should populate BLACKICE's authorization and token endpoints. No manual client ID, client secret or Owner login key is needed.
 3. Review the host's warning, choose **Create as a plugin**, then **Connect BLACKICE connection**. Complete **Install** if the host offers that separate step; some flows make the connection available automatically. Do not create another copy just because there is no Install button.
-4. On the authorization page, match its request code with the pending request in **BLACKICE → Settings → ChatGPT connector**. Choose **Connect with full BLACKICE access**. The connection authorizes the complete BLACKICE tool catalog; there are no per-capability checkboxes. The browser returns to ChatGPT after the connection decision.
+4. On the authorization page, match its request code with the pending request in **BLACKICE → Config → App connections → ChatGPT**. Choose **Connect with full BLACKICE access**. The connection authorizes the complete BLACKICE tool catalog; there are no per-capability checkboxes. The browser returns to ChatGPT after the connection decision.
 5. Start a new conversation in ordinary **Chat mode**. Type `@BLACKICE` and choose **Plugins → BLACKICE connection**. A typed name, uploaded source archive, package listing, or Files-only picker does not attach this computer's tools.
 6. Send the setup guide's unique status-check prompt in that conversation. Verify the returned nonce, `app: "BLACKICE"`, `mode: "direct-execution"`, `available: true`, `modelStarted: false` and `providerTurns: false`. Check the actual `connectionId`, `grantedScopes`, and live tool count. The compatibility OAuth scope `read` does not limit the connected tool catalog. Only after seeing that actual matching result, choose **I see the matching result in ChatGPT** in BLACKICE.
 
@@ -37,7 +37,7 @@ Compare the refreshed list with the live **toolCatalog.toolCount** and **toolCat
 
 ### Other MCP clients and independent authorization
 
-These steps are **specific to ChatGPT**. The same published MCP endpoint supports **Google Gemini → BLACKICE** and **Claude → BLACKICE** with independent OAuth grants. Manage them in **Settings → Gemini connector** and **Settings → Claude connector**, respectively. Disconnecting one client does not revoke the others. See [Gemini setup](docs/GEMINI-CONNECTOR.md) and [Claude setup](docs/CLAUDE-CONNECTOR.md).
+These steps are **specific to ChatGPT**. The same published MCP endpoint supports **Google Gemini → BLACKICE** and **Claude → BLACKICE** with independent OAuth grants. Manage them in **Config → App connections → Gemini** and **Config → App connections → Claude**, respectively. Disconnecting one client does not revoke the others. See [Gemini setup](docs/GEMINI-CONNECTOR.md) and [Claude setup](docs/CLAUDE-CONNECTOR.md).
 ## MCP authorization
 
 BLACKICE exposes MCP Streamable HTTP and OAuth at the displayed server URL ending in `/mcp/chatgpt`. It supports dynamic client registration with public, HTTP Basic and POST client authentication, alongside ChatGPT's verified CIMD identity and Claude's independently verified published OAuth client identity. Each client receives its own grant; registering another client does not replace an existing grant or change its request and job identifiers.
@@ -46,13 +46,13 @@ Existing ChatGPT grants and registered-client grants survive normal token renewa
 
 ## Models inside BLACKICE
 
-For work inside BLACKICE, **Mistral Vibe Code** is a native account connection under **Settings → Models**. Sign in through BLACKICE's browser and refresh its models; only the catalog reported by the authenticated official CLI supplies its model choices. This native connection does not use the incoming MCP gateway.
+For work inside BLACKICE, **Mistral Vibe Code** is a native account connection under **Config → Models → Accounts**. Sign in through BLACKICE's browser and refresh its models; only the catalog reported by the authenticated official CLI supplies its model choices. This native connection does not use the incoming MCP gateway.
 
-**Mistral API**, **OpenRouter** and compatible endpoints are optional API connections, configured separately with credentials when required. Native account connections and API connections keep the existing model default and saved chat identities when added. See [Mistral model connection setup](README.md#choose-the-mistral-connection-for-your-task).
+**Mistral API**, **OpenRouter** and compatible endpoints are optional API connections, configured separately with credentials when required. Native account connections and API connections keep the existing model default and saved chat identities when added. See [native Mistral compatibility](docs/mistral-acp-compatibility.md) and [API connection setup](docs/API-PROVIDERS.md).
 
 ## Production startup on Windows
 
-In **Settings → ChatGPT connector**, inspect **After Windows restarts** in the preparation step. Startup setup is included in the Windows desktop app. Its checks distinguish two prerequisites:
+In **Config → App connections → ChatGPT**, inspect **After Windows restarts** in the preparation step. Startup setup is included in the Windows desktop app. Its checks distinguish two prerequisites:
 
 | Check | What must be configured |
 | --- | --- |
@@ -128,6 +128,7 @@ Only the current durable restart protocol is supported. Verify the replacement p
 | What you see | Check and recovery |
 | --- | --- |
 | **Couldn't discover**, before any consent page | Check the exact displayed URL, public route and host policy. Compare actual ChatGPT discovery with the local gateway's bounded discovery trace. Local endpoint checks alone do not prove ChatGPT reachability. |
+| Public checks report **Needs attention** at the protected resource | A protected MCP endpoint normally answers an unauthenticated discovery probe with HTTP 401 and a Bearer `resource_metadata` challenge. The metadata URL must match the configured protected resource. This expected challenge can pass discovery; it does not verify an OAuth grant or a tool call. An empty, Basic, or mismatched challenge remains a failure. |
 | A bare probe returns **406** | Check the request's MCP method and Accept headers. One ordinary browser/HTTP probe is not an MCP handshake. Validate the real catalog exchange and authenticated tool POST before declaring a transport failure. |
 | Only **Files**, Avalon, or another integration appears | Register and connect the native **BLACKICE connection** in the intended account, then select it in a new Chat. A package/source upload or similarly named integration is insufficient. |
 | A client secret, manual client ID or **Owner login key** seems necessary | Check that this is the native BLACKICE OAuth/CIMD connection. This flow uses none of those manual credentials; a legacy integration's key is a separate authentication system. |
@@ -140,9 +141,9 @@ Only the current durable restart protocol is supported. Verify the replacement p
 
 In one diagnosed setup, ChatGPT's form failed discovery on the same hostname at **8443** without a completed native discovery trace; standard **443** discovered the native metadata successfully. This is an observed failure before completed native discovery, not an official claim that all nonstandard ports are unsupported. The successful path still required native registration, human consent and a matching authenticated status result in ordinary Chat. Neither a generic authorization error nor a bare 406 response identified that failure by itself.
 
-## Plugin check for each BLACKICE-backed request
+## Connection checks and reuse
 
-For each user request that needs BLACKICE, discover the available tools and call `blackice_direct_status` once with a fresh harmless nonce through the existing authenticated connection. Check the matching nonce, `mode: "direct-execution"`, and actual availability before using the needed tool. The authenticated result includes the caller's own `connectionId` and `grantedScopes`. The verified connection grants access to the full published tool catalog; the wire `read` scope is for OAuth compatibility. `supportedScopes` lists legacy capability categories, not separate approvals required during connection.
+Discover the available BLACKICE tools and their actual schemas. When connection health or identity is unknown, after a restart or authorization change, or when a result reports a connection problem, call `blackice_direct_status` with a fresh harmless nonce through the existing authenticated connection. Reuse a known healthy connection across follow-up actions; a new turn alone does not require another status check or authorization. Check the matching nonce, `mode: "direct-execution"`, and actual availability before using the needed tool. The authenticated result includes the caller's own `connectionId` and `grantedScopes`. The verified connection grants access to the full published tool catalog; the wire `read` scope is for OAuth compatibility. `supportedScopes` lists legacy capability categories, not separate approvals required during connection.
 
 Reuse a valid connection and refresh its access token when needed; do not require a new authorization ceremony for every request. Retain the current `connectionId` alongside action IDs so that a later authorization replacement is detectable. An unavailable tool or insufficient grant is a prerequisite to resolve, not permission to substitute a BLACKICE worker or another execution path. This plugin workflow does not automatically attach tools to every ChatGPT conversation. The intended surface must actually discover and invoke the connector.
 

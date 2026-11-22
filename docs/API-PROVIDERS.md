@@ -4,7 +4,7 @@ BLACKICE supports three request protocols: **OpenAI Responses**, **Anthropic Mes
 
 ## Add a connection
 
-1. Open **Settings → Models → API connections → Connect another endpoint**.
+1. Open **Config → Models → Add API → API connections → Connect another endpoint**.
 2. Select the provider. Use the displayed official documentation and key links for account setup.
 3. Enter an API key or supported custom authorization headers when required. For a custom or local server, enter its API base URL and select the matching protocol.
 4. Use **Check connection** or **Load models**. These actions read the current form without saving it or running a model.
@@ -31,7 +31,7 @@ Pollinations Classic is a retained legacy preset, not a current setup choice. Op
 
 ## Find independent model providers
 
-In Settings → Models, expand Find model API providers · keyed or keyless. Search provider names, model IDs, and API addresses, or filter by authentication, source and provider-reported free-model pricing.
+In Config → Models → Add API, expand Find model API providers · keyed or keyless. Search provider names, model IDs, and API addresses, or filter by authentication, source and provider-reported free-model pricing.
 
 Reviewed BLACKICE adapters include their implemented request protocol and setup guidance. Keyless applies only to documented no-key operation (such as Kilo anonymous access or a local Ollama endpoint). It does not mean unlimited quota.
 

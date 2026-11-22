@@ -1,19 +1,19 @@
 # Remote access for people and agents
 
-BLACKICE exposes one running workspace through two interfaces: the normal browser application for a human, and a scoped MCP/REST connection for an outside agent. Both use the same chats, durable plans, run results and registered artifacts. Model execution, tool access and credential storage happen on the host computer.
+BLACKICE exposes one running workspace through two interfaces: the normal browser application for a human, and an authenticated MCP/REST connection for an outside agent. Both use the same chats, durable plans, run results and registered artifacts. Model execution, tool access and credential storage happen on the host computer.
 
 ## Enable an address
 
-Open **Settings → Remote access** on the computer running BLACKICE. Tailscale must be installed, signed in and connected on that host. **Check connection** reports its current state.
+For the current desktop's guided public setup, open **Config → App connections → ChatGPT** and use **Prepare this computer** with its explicit publication confirmation. Tailscale must be installed, signed in and connected on that host. The guide reports the endpoint and connection checks.
 
-Choose the reachability you need, then enable it:
+The underlying remote service retains the two modes below. The current Config workspace does not expose a separate **Remote access** tab; private Serve configuration and manual pairing remain retained service/CLI interfaces. The pairing commands in this guide require an already-enabled, ready route.
 
 | Mode | Clients that can connect | Transport |
 | --- | --- | --- |
 | Private | Devices connected to your Tailscale network and permitted by its access rules | Tailscale Serve HTTPS |
 | Public | Browsers and outside agents with internet access | Tailscale Funnel HTTPS |
 
-Public mode has a separate **Publish the authenticated BLACKICE endpoint to the internet** selection. Human browsers still pair, and outside agents still need their own credential. New profiles use standard HTTPS port **443**. BLACKICE refuses to replace an unowned root route or change the public/private exposure of other paths. Other paths, such as an existing Vision route, and unrelated ports remain intact. If the Tailscale account does not permit Serve, HTTPS or Funnel, Settings reports the failure; the desktop application stays available.
+Public setup requires an explicit choice to publish the authenticated BLACKICE endpoint to the internet. Human browsers still pair, and outside agents still need their own credential. New profiles use standard HTTPS port **443**. BLACKICE refuses to replace an unowned root route or change the public/private exposure of other paths. Other paths, such as an existing Vision route, and unrelated ports remain intact. If the Tailscale account does not permit Serve, HTTPS or Funnel, the setup result reports the failure; the desktop application stays available.
 
 For new profiles, the displayed address has the form `https://your-computer.your-network.ts.net`, without a port suffix. Existing saved profiles using **8443** retain their address, such as `https://your-computer.your-network.ts.net:8443`; they are not silently migrated. Use the exact address displayed by the running app. Enabling or switching access does not create a client credential automatically.
 
@@ -27,39 +27,35 @@ A changed hostname, conflicting route, unreadable configuration, or failed verif
 
 ## Connect ChatGPT
 
-For ordinary ChatGPT Chat mode, use **Settings → ChatGPT connector** to prepare the public route and register the displayed address ending in `/mcp/chatgpt`. This connection uses separate OAuth authorization: begin connection in ChatGPT, match the pending code in BLACKICE, and have the local owner approve the needed permissions. Changing the server address requires fresh authorization.
+For ordinary ChatGPT Chat mode, use **Config → App connections → ChatGPT** to prepare the public route and register the displayed address ending in `/mcp/chatgpt`. This connection uses separate OAuth authorization: begin connection in ChatGPT, match the pending code in BLACKICE, and choose **Connect with full BLACKICE access** for the matching request. Changing the server address requires fresh authorization.
 
 After connecting, select BLACKICE in the intended Chat conversation and send the setup guide's unique status-test prompt. Confirm the guide only after the matching nonce and actual status result appear in that conversation. Successful endpoint discovery alone does not prove that ChatGPT can invoke the tools. See [Direct ChatGPT connector setup](CHATGPT-CONNECTOR.md) for the full steps.
 
 ## Connect Gemini
 
-BLACKICE 2.39.27 adds **Settings → Gemini connector**, independent from **Settings → ChatGPT connector**. Google Gemini uses the same already-published HTTPS MCP server, but its Google OAuth request, granted scopes, expiration and revocation are separate from ChatGPT's grant. Adding or disconnecting Gemini does not authorize, replace or disconnect ChatGPT.
+Use **Config → App connections → Gemini** for Gemini's incoming connection, independently from the **ChatGPT** guide. Google Gemini uses the same already-published HTTPS MCP server, but its Google OAuth request, granted scopes, expiration and revocation are separate from ChatGPT's grant. Adding or disconnecting Gemini does not authorize, replace or disconnect ChatGPT.
 
-Open Gemini's connector setup from BLACKICE's **Gemini connector** panel, use the **Shared MCP endpoint** displayed there, match the Google pending authorization code, and choose **Allow selected access**. Then verify a real `blackice_direct_status` tool result from Gemini; a successful OAuth grant alone is insufficient evidence of execution. The panel includes a copyable nonce probe and a two-step **Disconnect Gemini only** action.
+Open Gemini's connector setup from BLACKICE's **Gemini connector** panel, use the **Shared MCP endpoint** displayed there, match the Google pending authorization code, and choose **Connect Gemini**. Then verify a real `blackice_direct_status` tool result from Gemini; a successful OAuth grant alone is insufficient evidence of execution. The panel includes a copyable nonce probe and a two-step **Disconnect Gemini only** action.
 
 See [full Gemini setup](docs/GEMINI-CONNECTOR.md) and [2.39.27 release notes](RELEASE-NOTES-2.39.27.md).
 ## Connect a human browser
 
-1. Select **Create pairing code** in the host's Remote access settings.
+1. On the host, run the `BLACKICE --access-code` command below for the already-enabled route.
 2. Open the displayed HTTPS address on the other device. You can also copy its pairing link.
 3. Enter the one-use code and give that browser a recognizable name.
-4. Use the same Chat, Planning, Activity and Settings workspace from the remote browser.
+4. Use the web-accessible Chat, Cronjobs, Browser, Skills and Config surfaces. Controls requiring the host's native window remain local; the remote interface is not a second Windows desktop.
 
 Pairing codes expire after five minutes. A successful pairing consumes the code. Browser sessions expire after 30 days and use a Secure, HttpOnly cookie. The host lists each paired browser separately; **Revoke** disconnects that browser and closes its ongoing remote streams.
 
-Normal server-based model and connection settings, connected mailbox reads, and local email drafts remain usable by a paired human. Email setup and OAuth authorization, network publication, remote client credential management, profile maintenance and controls that require a host-native window stay on the host. **Disconnect this browser** ends its own session.
+Normal server-based model and connection settings remain available subject to the gateway's route restrictions. Network publication, remote credential management, profile maintenance and controls requiring a host-native window stay on the host. The former Email workspace is retired; retained endpoint code is not evidence of a current mailbox or email-draft UI. **Disconnect this browser** ends its own session.
 
 ## Connect an outside agent
 
-In host Settings, open **Connect an outside agent**, enter a name, select its permissions and create the credential. Copy it immediately: the plaintext credential is shown only when it is created. BLACKICE stores its hash, and lists the client's name, permissions and expiration time.
+Use the native **agent code** command below and redeem its code into an agent credential. The plaintext credential is returned only at redemption unless the helper saves it to the requested private connection file. BLACKICE stores the credential hash and retains the client's name and expiration time.
 
-| Permission | What the agent can do |
-| --- | --- |
-| `read` | Inspect runtime availability; search models and saved tasks; read plans, outputs and registered files; follow change events |
-| `planning:write` | Edit the shared visual plan at an expected revision |
-| `tasks:write` | Start authorized work, continue a settled chat, and request cancellation |
+New paired agents receive the full retained `read`, `tasks:write`, and `planning:write` capability set. The legacy `--scope` option is accepted for compatibility and does **not** narrow that access. The gateway still enforces host-only management routes; pairing is not permission to create new credentials through those blocked routes. The manually paired `/mcp` catalog below is distinct from the OAuth direct-tool catalog at `/mcp/chatgpt`.
 
-An agent credential expires after 30 days and can be revoked independently. It cannot call the broad browser/desktop API or create more credentials. Use Public mode when the outside agent cannot join the private Tailscale network.
+An agent credential expires after 30 days and can be revoked independently. Use Public mode when the outside agent cannot join the private Tailscale network.
 
 ### Let an agent create and redeem a code
 
@@ -73,11 +69,11 @@ For a person connecting from another browser, the shortest host command is:
 
 It prints the address, one-use code, pairing link, permissions and expiration times. Add `--json` for a machine-readable receipt. Browser codes retain the normal browser pairing flow.
 
-For an agent that needs to build an app or start other work, issue an **agent** code with explicit task permissions:
+For an agent that needs to build an app or start other work, issue an **agent** code:
 
 ```powershell
 $blackiceExecutable = "$env:LOCALAPPDATA\Programs\BLACKICE\BLACKICE.exe"
-$grant = & $blackiceExecutable remote code --kind agent --scope=read --scope=tasks:write --json | ConvertFrom-Json
+$grant = & $blackiceExecutable remote code --kind agent --json | ConvertFrom-Json
 ```
 
 The agent can use that receipt without asking the person to copy or retype the code. On the connecting computer, redeem the code through standard input:
@@ -90,7 +86,7 @@ This example saves the credential in a private connection file and returns its p
 
 For an agent that manages its own credential storage, omit `--output` and retain `--json`: the redemption response returns the bearer credential once. Without `--json`, redemption saves a private connection automatically and prints its location. Codes are accepted only through standard input; error messages and desktop diagnostics do not include them or the bearer credential.
 
-Agent codes default to `read`. Repeat `--scope=NAME` at issuance to select the existing permissions listed above. Use the shown `--scope=`, `--url=` and `--name=` forms with the native Windows executable; these keep colon-containing values inside their option. Code type, permissions and the session's expiration are fixed when the host issues the code; redemption cannot widen them or renew the expiration. An agent code cannot become a browser session, and a browser code cannot become an agent credential. Issuing a fresh code replaces the previous unredeemed code, and every code expires within five minutes and works once. A lost redemption response is reported without automatically retrying or issuing another code.
+Agent codes use the full retained capability set. Legacy `--scope=NAME` arguments do not restrict newly paired agents. Use the shown `--url=` and `--name=` forms with the native Windows executable; these keep values inside their option. Code type and session expiration are fixed when the host issues the code; redemption does not renew the expiration. An agent code cannot become a browser session, and a browser code cannot become an agent credential. Issuing a fresh code replaces the previous unredeemed code, and every code expires within five minutes and works once. A lost redemption response is reported without automatically retrying or issuing another code.
 
 Use `--profile-dir ABSOLUTE_PATH` on a host code command to select an already running custom profile. The command verifies the existing runtime record, process and owned loopback listener, then uses BLACKICE's normal authenticated local routes. It does not create a profile, activate the existing window, or enable network publication. Remote access must already be enabled at the address the host returns. Host discovery currently targets the Windows desktop/headless runtime; agent redemption does not need a running local BLACKICE instance.
 
@@ -111,13 +107,13 @@ The server supports MCP **2026-07-28**, **2025-11-25** and **2025-06-18**. Curre
 
 Client software must support a user-configured bearer authorization header. The `/mcp` endpoint uses manually configured bearer credentials; the separate `/mcp/chatgpt` endpoint offers the OAuth flow described above. This is not a claim that every hosted agent connector accepts manually configured credentials.
 
-The tool catalog is filtered by the authenticated client's permissions:
+The retained manually paired agent endpoint exposes this catalog. New paired agents receive its full capability set; inspect the actual schema for the running version:
 
 | Tool | Purpose |
 | --- | --- |
 | `blackice_status` | Runtime availability, execution capacity, current client identity and permissions |
 | `blackice_models` | Compact, searchable, paginated model choices |
-| `blackice_list_tasks` | Saved tasks and plan summaries; active and archived by default |
+| `blackice_list_tasks` | Saved tasks and plan summaries; active by default, with explicit archived/all filters |
 | `blackice_get_task` | The exact durable plan, revision, readiness, artifact records and current editing/worker-read awareness |
 | `blackice_get_run` | Execution status, worker statuses and a bounded result window |
 | `blackice_read_output` | A paginated run result or individual worker output |
@@ -129,7 +125,7 @@ The tool catalog is filtered by the authenticated client's permissions:
 
 ### REST connection
 
-REST uses the same bearer header and the same permission checks. `GET /api/agent` returns the scoped tool schemas and connection instructions. Paths below are relative to the displayed HTTPS address.
+REST uses the same bearer header, authenticated client identity and gateway route restrictions. `GET /api/agent` returns the scoped tool schemas and connection instructions. Paths below are relative to the displayed HTTPS address.
 
 | Method and path | Request/result |
 | --- | --- |
@@ -171,7 +167,9 @@ Give each intended start or follow-up a stable `requestId`. After a connection f
 
 ### Editing the shared plan
 
-Read the task first. A plan write requires its saved `revision` as `expectedRevision`, with 1–100 edit operations. Supported operations are `add`, `update`, `remove`, `move`, `dependencies`, `choose` and `metadata`. MCP's tool schema gives their complete supported fields. For example:
+Read the task and its current protocol first. A plan write requires the saved `revision` as `expectedRevision` and operations from the running endpoint's schema. A new canonical task at revision 0 uses `create_contract` with a complete contract; an existing canonical plan uses `replace_contract` as its sole operation. The host retains its plan epoch and execution evidence. Legacy graph plans retain `add`, `update`, `remove`, `move`, `dependencies`, `choose` and `metadata` where their schema permits them.
+
+The following is a **legacy graph-plan example**, not a canonical-contract recipe:
 
 ```json
 {

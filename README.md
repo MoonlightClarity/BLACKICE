@@ -10,9 +10,9 @@ The goal is to reduce the work of managing the agent: copying instructions betwe
 
 ## Source version and Windows releases
 
-This is **BLACKICE 2.40.74 source**, integrating browser recovery, conversation continuity, Directory diagnostics and MiniCPM tool delivery fixes. See the [2.40.74 release notes](RELEASE-NOTES-2.40.74.md), [instruction clarity guide](docs/instruction-clarity.md), and [instruction audit guide](docs/instruction-audit.md) for the changes and their qualification limits.
+This is **BLACKICE 2.40.75 source**, completing the browser, continuity, Directory and MiniCPM integration with connector-discovery and provider-persistence corrections. See the [2.40.75 release notes](RELEASE-NOTES-2.40.75.md), [instruction clarity guide](docs/instruction-clarity.md), and [instruction audit guide](docs/instruction-audit.md) for the changes and their qualification limits.
 
-Published Windows installers, build manifests, and tagged source archives are listed on the [Releases page](https://github.com/MoonlightClarity/BLACKICE/releases). A release tag identifies its source snapshot; the current branch and an installed version can differ. The earlier [v2.40.57 Windows release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.57) remains pinned to [commit `67c94d8`](https://github.com/MoonlightClarity/BLACKICE/commit/67c94d87dc99f91c946b7d48082c1d75c50033ea). Subsequent source includes model-readiness and browser-recovery work as well as the instruction audit.
+Published Windows installers, build manifests, and tagged source archives are listed on the [Releases page](https://github.com/MoonlightClarity/BLACKICE/releases). A release tag identifies its source snapshot; the current branch and an installed version can differ. Match the installer checksum and application fingerprint to that release's evidence instead of selecting a build by filename or timestamp alone.
 
 > **Evidence boundary:** This README describes the current source. Version-specific release notes and verification records establish what was packaged, installed, and tested. Source tests, renderer checks, and synthetic trials do not establish that every external integration works or that complex tasks reliably complete unattended. Check the exact installer’s manifest and verification records for its build identity, hashes, and signing status.
 
@@ -20,7 +20,7 @@ Published Windows installers, build manifests, and tagged source archives are li
 
 ## Current capability and evidence boundaries
 
-The distinction between an implemented tool, a verified integration, and a reliably completed real-world task matters. These boundaries describe the **2.40.74 source**; installed versions and provider capabilities can differ.
+The distinction between an implemented tool, a verified integration, and a reliably completed real-world task matters. These boundaries describe the **2.40.75 source**; installed versions and provider capabilities can differ.
 
 | Area | What the current source provides | What is **not** established |
 | --- | --- | --- |
@@ -80,7 +80,7 @@ Conversations retain their recorded model and provider. Changing the default aff
 
 **Why this helps:** you can choose a model appropriate to the task and keep its execution environment, files, and work history together.
 
-Configure native or optional model connections under **Settings → Models** and the new-chat default under **Settings → General**. For the separate direct ChatGPT connection, see the [connector guide](CHATGPT-CONNECTOR.md).
+Configure native or optional model connections under **Config → Models** and the new-chat default under **Config → General**. For the separate direct ChatGPT connection, see the [connector guide](CHATGPT-CONNECTOR.md).
 
 ### From an external assistant
 
@@ -92,11 +92,11 @@ For the verified local setup path, see the [ChatGPT connector guide](CHATGPT-CON
 
 ## Models and providers
 
-**Codex and hosted models.** For native inference, install and sign in with the [Codex CLI](https://github.com/openai/codex) separately from BLACKICE. Check **Settings → Models → Codex subscription** and choose the exact model for a chat or set a default in **Settings → General**. Saved conversations retain their original model/provider identity. Native Codex uses your account's access and quotas; optional hosted API connections use the provider's API address, model ID and required credentials. A model listed as free or accessible today may still have limits, and **some providers charge for API calls**. BLACKICE does not supply paid credits or guarantee third-party endpoint compatibility.
+**Codex and hosted models.** For native inference, install and sign in with the [Codex CLI](https://github.com/openai/codex) separately from BLACKICE. Check **Config → Models → Accounts** and choose the exact model for a chat or set a default in **Config → General**. Saved conversations retain their original model/provider identity. Native Codex uses your account's access and quotas; optional hosted API connections use the provider's API address, model ID and required credentials. A model listed as free or accessible today may still have limits, and **some providers charge for API calls**. BLACKICE does not supply paid credits or guarantee third-party endpoint compatibility.
 
-**Local models.** Settings → Models → Local models supports the included Windows x64 llama.cpp runtime and separately installed Ollama or LM Studio services. For llama.cpp, choose **Load GGUF file…** and confirm an existing model file. To switch to a saved model, choose it and click **Load**. GGUF weights are not bundled or automatically downloaded. The pinned runtime probes Vulkan and falls back to an independent CPU build; actual status, model support and performance depend on the hardware and model.
+**Local models.** Config → Models → Local models supports the included Windows x64 llama.cpp runtime and separately installed Ollama or LM Studio services. For llama.cpp, choose **Load GGUF file…** and confirm an existing model file. To switch to a saved model, choose it and click **Load**. GGUF weights are not bundled or automatically downloaded. The pinned runtime probes Vulkan and falls back to an independent CPU build; actual status, model support and performance depend on the hardware and model.
 
-**Advanced llama.cpp setups.** Existing custom executables and external servers remain supported. Saving a new model catalog restarts only an idle BLACKICE-owned router; active work reports a retryable deferral rather than being interrupted. See [local models](docs/local-models.md) and [prior runtime validation plan](docs/RELEASE-2.39.102-VERIFICATION.md). This source preparation does not establish that an installed version contains the bundle.
+**Advanced llama.cpp setups.** Existing custom executables and external servers remain supported. Saving launch settings does not restart a server. A later discovery or load can apply those settings by restarting an idle BLACKICE-owned router; active work reports a retryable deferral rather than being interrupted. See [local models](docs/local-models.md) and [prior runtime validation plan](docs/RELEASE-2.39.102-VERIFICATION.md). This source preparation does not establish that an installed version contains the bundle.
 
 
 ## A browser the user and agent can work in
@@ -121,7 +121,7 @@ The installed Windows account and available applications determine which files a
 
 ## Planning and Activity
 
-Ordinary Chat does not require a Planning module selection or Directory mode. The old module switches, automatic planning loops, and Directory context editor are removed.
+Ordinary Chat can run with **Planning** and **Directory** off. Their current per-chat controls are separate: Planning creates task work records, while Action Directory organizes execution around the current task's actions and observations. **Config → General → New Chat defaults** changes the defaults for future chats; existing chats retain their settings. The old module-selection switches and former Directory context editor remain retired.
 
 **Goal controls** let you state and inspect an objective for a conversation. The retained Planning view also provides access to saved graph requests: explicit objectives, steps, dependencies, and recorded responses. These are inspectable work records, not a claim that an automatic coordinator is always running.
 
@@ -135,9 +135,9 @@ The **Knowledge/memory**, **My workflows**, and **To-do** workspaces are removed
 
 ### Current navigation and compatibility limits
 
-The top-level workspaces are **Chat, Cronjobs, Browser, Skills, and Settings**. Saved workflow graphs are available through **Cronjobs → Manage saved workflows**. Planning is a retained task-inspection route, not a top-level tab.
+The top-level workspaces are **Chat, Cronjobs, Browser, Skills, and Config**. Saved workflow graphs are available through **Cronjobs → Manage saved workflows**. Planning is a retained task-inspection route, not a top-level tab.
 
-Automatic learning, old Autonomy/Swarm execution, Directory processing, and the module-selection UI are retired. The repository-wide zero-legacy inventory is not complete; this release must not be read as a guarantee that every historical reference or compatibility path has been eliminated. Incompatible legacy native sessions are rejected rather than migrated. Preserve any history you need and start a current session instead of assuming an old native session can continue.
+Automatic learning, the former Autonomy/Swarm execution system, and the old module-selection UI remain retired. Current Action Directory and conversation-scoped Goal autonomy are supported independently of those retired systems. The repository-wide zero-legacy inventory is not complete; this release must not be read as a guarantee that every historical reference or compatibility path has been eliminated. Incompatible legacy native sessions are rejected rather than migrated. Preserve any history you need and start a current session instead of assuming an old native session can continue.
 
 ## Parallel work and saved workflow graphs
 
@@ -149,7 +149,7 @@ Core delegation remains available for independent research questions or implemen
 
 An ordinary chat can use available tools for the current request and then stop. **Goal Mode** tracks an explicitly stated objective, progress, and completion or unresolved effects, with pause and resume controls. A goal does not authorize unrelated work or establish that an external action succeeded.
 
-The old **Autonomous operation** controls and their automatic execution are removed. Do not assume an unattended self-drive replacement, automatic model selection, calibration, or an autonomous-model allowlist has shipped. Core delegation and scheduled work remain separate capabilities.
+The composer shows **Autonomy: Off** until enabled. Its calibration editor saves the objective and optional limits; **Turn on autonomy** continues the same conversation through the Goal engine. Turning it off pauses further continuation and requests cancellation of the active turn. See the [Goal mode guide](docs/GOAL-MODE.md) for completion, deadline, wait and recovery semantics. This does not restore the former Swarm coordinator or automatic model-selection system.
 
 A saved uncertain action receipt is not proof of success or failure. Check the destination before retrying a consequential action; preventing some duplicate in-flight work does not guarantee exactly-once delivery to an external website.
 
@@ -183,9 +183,9 @@ The aim is to reduce supervision while making results easier to verify. Reliabil
 ## Getting started
 
 1. **Install on 64-bit Windows.** Open the [published Windows releases](https://github.com/MoonlightClarity/BLACKICE/releases), read the release notes and installer/checksum information, run the appropriate `Blackice-<version>-Setup.exe`, and launch BLACKICE from its shortcut. The Windows x64 installer bundles the desktop application and a pinned llama.cpp runtime. It does **not** bundle your model account, cloud API quota, model weights, or separate Ollama/LM Studio services.
-2. **Connect a model.** For the supported native route, install and sign in to the [Codex CLI](https://github.com/openai/codex) separately. Check **Settings → Models → Codex subscription** and choose an available model in **Settings → General** or Chat. If you prefer an optional API or local endpoint, configure and verify it deliberately in **Settings → Models**.
-3. **Choose the workspace.** In **Settings → General**, select a working folder and start **Chat**. Supply any relevant files and constraints. For ChatGPT using BLACKICE directly, follow the separate [connector setup](CHATGPT-CONNECTOR.md), which may require Tailscale and an authorized MCP connection.
-4. **Choose the model and reasoning controls.** Select the model, available reasoning effort, and context options for your chat. Use Goal controls for an explicit continuing objective. There are no Planning-module or Directory switches in the current interface.
+2. **Connect a model.** For the supported native route, install and sign in to the [Codex CLI](https://github.com/openai/codex) separately. Check **Config → Models → Accounts** and choose an available model in **Config → General** or Chat. If you prefer an optional API or local endpoint, configure and verify it deliberately in **Config → Models**.
+3. **Choose the workspace.** In **Config → General**, select a working folder and start **Chat**. Supply any relevant files and constraints. For ChatGPT using BLACKICE directly, follow the separate [connector setup](CHATGPT-CONNECTOR.md), which may require Tailscale and an authorized MCP connection.
+4. **Choose the model and reasoning controls.** Select the model, available reasoning effort, and context options for your chat. Use the current chat's **Planning** and **Action → Directory** controls as needed, and **Autonomy (Goal)** for an explicit continuing objective. The older Planning-module selection interface is retired.
 5. **Try a first task.** Ask: *“Create `blackice-check.txt` in the working folder containing `BLACKICE file check`, read it back, and tell me the file path and exact content.”* Verify that the actual file and content exist; a model assertion alone is not enough.
 6. **Inspect and continue.** Review the browser state, file changes, command outputs and action receipts. Correct or resume the same conversation as needed; use **Cronjobs** if the work should repeat on a schedule.
 
@@ -195,18 +195,18 @@ Model accounts, API keys, quotas, and service capabilities come from the selecte
 
 **Instructions you control:** In Config → Behavior & profile, open **Instructions** beside SOUL.md and USER.md to edit the common instruction text, review its saved revisions, and inspect the exact sources captured for an execution. Saved text is pinned across upgrades; model tools have no save/restore operation and structured file mutations are denied. The [instruction guide](docs/instruction-audit.md) explains the application-level boundary and the remaining authority of unrestricted shell/development access. See the [2.40.68 release notes](RELEASE-NOTES-2.40.68.md).
 
-**Find the controls.** **Settings → General** holds the working folder, default model, runtime preferences and runtime health. **Settings → Models** shows Codex, optional advanced endpoints and local-model management (where included in the tested build). **Settings → Tools** manages MCP tool connections; importing a configuration is not the same as confirming a live connection. The **Chat** composer retains model, reasoning, context, and Goal controls; retired module, Directory, and old Autonomy controls are not part of current setup. **Settings → ChatGPT connector** configures the direct remote link.
+**Find the controls.** **Config → General** holds the working folder, default model, runtime preferences and new-chat defaults. **Config → Models** contains **Accounts**, **Local models**, and **Add API**. **Config → App connections** contains the **ChatGPT**, **Gemini**, **Claude**, and **Other MCP apps** guides for external clients calling BLACKICE. The **Chat** composer retains model, reasoning, context, Planning, Directory and Goal autonomy controls. There is no separate **Tools** tab in the current Config workspace; an imported external-tool configuration still needs a successful live connection before its tools are usable.
 
-- **Slow startup or an unresponsive model:** check **Settings → General → Runtime health** and the model connection status. Distinguish app startup from a Codex sign-in, unavailable server, or model request. The UI exposes **Refresh** and **Reconnect model runtime**; inspect the returned state before considering a restart, and preserve unfinished work.
+- **Slow startup or an unresponsive model:** check **Config → Troubleshooting** and the model connection status. Distinguish app startup from a Codex sign-in, unavailable server, or model request. The UI exposes **Refresh** and **Reconnect model runtime**; inspect the returned state before considering a restart, and preserve unfinished work.
 - **Missing provider or model:** verify the Codex CLI is installed and authenticated, or that the explicitly configured API/local server is reachable. Refresh its model list, check the exact model and provider quota, and inspect any reported error. A downloaded llama.cpp archive alone is not a running server.
-- **Missing tool:** review **Settings → Tools** and whether its connection is enabled and actually connected; also check that the selected model supports tool use. Available tools depend on both the host and the active model.
+- **Missing tool:** inspect the current tool catalog and whether the relevant external-tool connection is enabled and actually connected; also check that the selected model supports tool use. Available tools depend on both the host and the active model.
 - **After an update:** refresh runtime status and reconnect the model runtime only if needed. For direct ChatGPT use, reuse a healthy existing connection and verify a fresh status request. If its address or authorization changed, follow the [connector recovery instructions](CHATGPT-CONNECTOR.md) instead of blindly registering duplicates.
 
 **Known limits:** the host must be running for tools and schedules; website authentication, changing pages, unsupported controls, and model/tool incompatibility can interrupt work; external action receipts can remain uncertain. **File discovery, long-run context isolation, startup variability, and multi-site job-search throughput remain validation priorities.** One successful focused or synthetic check must not be generalized into a reliability guarantee. Source-level fixes are **not installed-release guarantees**. Incompatible legacy native sessions are rejected, old v1/v2 effects may remain unreconciled, and the repository-wide zero-legacy inventory remains incomplete.
 
 ### Data and remote access
 
-**Settings → Storage & Data** shows disk usage and selective cleanup controls. User-selected cleanup is scheduled for the next application startup and can be cancelled before it runs. Custom external working folders remain outside app-managed cleanup.
+**Config → Storage & Data** shows disk usage and selective cleanup controls. User-selected cleanup is scheduled for the next application startup and can be cancelled before it runs. Custom external working folders remain outside app-managed cleanup.
 
 A running Windows host can expose its authenticated tools over configured HTTPS connectivity, including supported Tailscale configurations. Remote access lets an external assistant use that host's workspace while it is running and reachable. See [remote access](REMOTE-ACCESS.md) and [ChatGPT connection setup](CHATGPT-CONNECTOR.md).
 
@@ -214,7 +214,7 @@ A running Windows host can expose its authenticated tools over configured HTTPS 
 
 ### Build from source
 
-Requirements: supported **64-bit Windows** and **Node.js 22 or newer**.
+Requirements: supported **64-bit Windows** and **Node.js 22.23.5 or newer**, matching the minimum in `package.json`.
 
 ```powershell
 git clone https://github.com/MoonlightClarity/BLACKICE.git
@@ -228,6 +228,7 @@ npm run desktop
 | `npm run desktop` | Start the Electron app. |
 | `npm run headless` | Start the runtime without the normal main window. |
 | `npm test` | Run the source test suite. |
+| `npm run docs:check` | Check documentation classification, current-version links and local targets. |
 | `npm run release:check` | Run release validation. |
 | `npm run package:public` | Build an unsigned Windows installer candidate. |
 
@@ -235,6 +236,6 @@ npm run desktop
 
 `desktop/` contains Electron startup and desktop integration; `lib/` contains the agent runtime and tool services; `public/` contains the interface; `server.mjs` starts the local server; `tests/` holds regression tests; `scripts/` has build and verification tooling; `docs/` contains more detailed guides. Use the exact checkout's scripts and acceptance criteria for the feature under change.
 
-See [frontend development](docs/frontend-development.md), [UI validation](UI-VALIDATION.md), and [release/build verification](SIGNING-AND-RELEASE.md) rather than relying on this overview for detailed instructions. Source tests are not a substitute for verification of a packaged installer. Report bugs and propose changes through [Issues](https://github.com/MoonlightClarity/BLACKICE/issues) and [Pull requests](https://github.com/MoonlightClarity/BLACKICE/pulls).
+See [frontend development](docs/frontend-development.md) and [release/build verification](SIGNING-AND-RELEASE.md) for current procedures. The preserved [UI validation record](UI-VALIDATION.md) describes an earlier interface; use current native fixtures and their observed results for the release being checked. Source tests are not a substitute for verification of a packaged installer. Report bugs and propose changes through [Issues](https://github.com/MoonlightClarity/BLACKICE/issues) and [Pull requests](https://github.com/MoonlightClarity/BLACKICE/pulls).
 
 BLACKICE-authored code is licensed under [Apache-2.0](LICENSE). Third-party dependencies retain their own licenses.

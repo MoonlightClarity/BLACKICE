@@ -18,9 +18,9 @@ Setup uses the BLACKICE program name, `BLACKICE.exe`, Start menu and Desktop sho
 
 **The current BLACKICE project intentionally ships unsigned Windows builds.** BLACKICE is free and open source, maintained by one person without a signing budget. Code signing is a possible later improvement *after adoption*, not a required milestone or a reason to divert development time from working features. No paid certificate or signing service should be purchased to publish this project.
 
-**Recommended Windows configuration for unsigned builds:** turn **Smart App Control Off** at **Windows Security → App & browser control → Smart App Control settings → Off**. On November 1, 2026, the developer's Windows machine was running Smart App Control in enforcement mode and it **blocked a locally built unsigned BLACKICE installer**, as shown by Code Integrity events 3033/3077. Smart App Control On is therefore not a compatibility target for unsigned BLACKICE releases; **Off is recommended and now configured (registry value 0)**; a freshly compiled unsigned test executable ran without a Code Integrity block, but the Windows policy-refresh command hung, but the previously blocked unsigned NSIS build subsequently succeeded with no new Code Integrity blocks. That November 1 observation covered policy behavior. Use the verification record for the exact installer you intend to run. The setting is system-wide, reducing Windows blocking of other untrusted applications. Switching it back on depends on Windows version and eligibility. The developer's UAC consent setting was separately observed as **Never notify** (`ConsentPromptBehaviorAdmin=0`, `EnableLUA=1`); do not conflate UAC with Smart App Control.
+**Windows policy and unsigned builds:** Windows security or organizational policy may block an unsigned BLACKICE installer or application. Verify the exact installer filename, SHA-256 and release verification record, then check the applicable device or organizational policy. A matching checksum identifies the artifact; it does not establish publisher identity or guarantee that Windows will allow it to run. A successful install on another device does not establish compatibility with this device's policy.
 
-Do not attempt to install incomplete or blocked Setup files. Do not work around this by disabling Defender antivirus, firewall rules or other unrelated protections. Validation of the actual packaged binary and release SHA-256 remains valuable even without code signing.
+Do not attempt to install incomplete Setup files or bypass a policy block by disabling Smart App Control, antivirus, firewall rules or other protections. Resolve a blocked launch according to the device's policy, involving its administrator where applicable. Validation of the actual packaged binary and release SHA-256 remains valuable even without code signing.
 
 ## Repeatable source and native verification
 
@@ -65,17 +65,17 @@ The **Verify Windows release installer** GitHub workflow accepts an existing dra
 
 ## Requested release automation
 
-The **Build and publish requested Windows release** workflow provides the complete hosted build path. It runs on an explicit change to `.github/release-request.json` on `main`, or a manual dispatch on `main`. Ordinary source commits do not trigger publication.
+The **Build and publish requested Windows release** workflow provides the complete hosted build path. It runs only through **Run workflow** (`workflow_dispatch`) on `main`. Editing `.github/release-request.json` or pushing ordinary source commits does not start publication. The request file supplies the exact version, fingerprint, source-test receipt and publication choice for that explicit dispatch.
 
 Finish the current source tests and installed application acceptance first, then commit the sanitized Windows source-test receipt. To request the release, add or update this file with the real fingerprint from that tested source:
 
 ```json
 {
   "format": 1,
-  "version": "2.38.0",
+  "version": "2.40.75",
   "appFingerprint": "<actual application SHA-256>",
-  "sourceTestReceipt": "verification/windows-2.38.0.json",
-  "publish": true
+  "sourceTestReceipt": "verification/windows-2.40.75.json",
+  "publish": false
 }
 ```
 
@@ -149,21 +149,21 @@ Use **Blackice-<version>-Setup.exe** to install, reinstall, or update the regist
 
 The historical helper supports same-version redeployment, refuses accidental downgrades, and provides explicit `-AllowDowngrade` and `-RequirePublisher` options. Do not use it to overwrite an installation registered by Setup; update that installation through Setup so files and Windows registration remain consistent.
 
-## Explicit publication and product/build versioning (next release)
+## Explicit publication and product/build versioning
 
 The Windows publisher is started only with **Run workflow** (`workflow_dispatch`) on `main`. Ordinary source pushes, including edits to `.github/release-request.json`, do not run the publisher. This does not hide or reclassify earlier failed runs. The separate documentation and attribution workflows keep their own triggers.
 
 An explicit dispatch still checks the exact source, test evidence, candidate bytes and tag identity. `publish: false` requests draft preparation, not a validation bypass; `publish: true` permits the final publication step only after all existing checks pass. A request without passing qualification evidence must still fail when deliberately dispatched. Do not manufacture a passing receipt or promote a different artifact to make a check green.
 
-### Next product version: 2.40.0
+### Version and build identity
 
-Use **2.40.0** as the next working product version for the coherent usability release. Set the version, lockfile metadata, notes and release request together in the integration lane before qualification. This policy-only change does not bump the currently published 2.39.106 version.
+Use the version in the exact candidate's `package.json`; this source is **2.40.75**. Set the version, lockfile metadata, notes and release request together in the integration lane before qualification. A working version does not establish that the corresponding release has been published or installed.
 
 - Minor versions identify coherent backward-compatible feature/usability improvements. Patch versions identify fixes to a released product version, not each agent iteration or packaging attempt.
 - Keep internal attempts separate using a build record such as `buildId: 20261117.3`, with exact `sourceCommit`, application fingerprint, installer SHA-256 and `channel: internal`.
 - Put attempts in distinct build/evidence directories. Preserve failed attempts. Promote the exact qualified artifact; never overwrite a published installer or retag historical releases.
 - Retain existing 2.39 tags and releases. There is no need to publish missing patch numbers or rewrite history.
 - Keep the current numeric `X.Y.Z` package version. The release validator and Windows version handling are not presently suffix-compatible. A `+build` suffix is not an upgrade-order mechanism; preview channels need separate compatibility work before adoption.
-- 2.40.0 sorts above 2.39.106. Preserve application identity, installer/profile paths and migration behavior, and verify the actual upgrade rather than assuming numeric ordering proves compatibility.
+- Preserve application identity, installer/profile paths and migration behavior, and verify the actual upgrade rather than assuming numeric version ordering proves compatibility.
 
 A build ID display in diagnostics/About is a later implementation item, not a feature claimed by this documentation change. Public release timing follows a useful verified change, not a per-build or daily quota.

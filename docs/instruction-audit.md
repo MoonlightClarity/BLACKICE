@@ -1,6 +1,6 @@
 # User-owned instructions and execution audit
 
-Open **Config → Behavior & profile → Instructions**, beside **SOUL.md** and **USER.md**.
+Open **Config → Behavior & profile → Instructions**, beside the **Behavior** and **About you** tabs for SOUL.md and USER.md.
 
 ## Edit the persistent instructions
 
@@ -24,7 +24,7 @@ Choose a saved turn or paste its ID. Expand a section to read the captured text,
 
 Current saved instructions and historical execution snapshots are separate. Editing the current setting does not rewrite a saved execution. Historical turns created before capture are labelled unavailable; current source is never presented as their historical payload. Provider-owned hidden instructions remain outside BLACKICE's capture boundary.
 
-An existing native conversation can retain its original tool catalog. Its audit uses the saved same-thread catalog when available and explicitly marks an uncaptured historical catalog unavailable. New conversations use the current catalog.
+An active native execution retains the catalog captured for that execution. On a later requested continuation, BLACKICE compares the saved descriptor fingerprint with the current source catalog; a changed catalog can use the existing context-preserving handoff to a fresh native session. Saved messages, receipts and the previous native-thread identity remain inspectable. The audit still shows the catalog actually captured for each execution and marks uncaptured historical definitions unavailable. A source update does not rewrite past snapshots.
 
 ## Skill and data boundaries
 

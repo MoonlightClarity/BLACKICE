@@ -1,5 +1,7 @@
 # User profile scope and write boundaries
 
+> **Status: Engineering reference with historical sections.** Current owner controls are in **Config → Behavior & profile**; model identity retrieval remains read-only. The learning, memory-approval and automatic-profile passages below record earlier store-hardening work. Automatic learning and its former UI are retired; those passages do not establish active memory-write tools or a current approval workflow. See the [instruction audit](instruction-audit.md) and [current capability boundaries](../README.md#current-capability-and-evidence-boundaries).
+
 USER.md is an owner-maintained profile of enduring facts and preferences about the user. Task actions, project instructions, procedures and permissions belong with their task or project. New installations receive an unfilled template; initialization preserves existing and intentionally empty profiles.
 
 ## Model and owner paths

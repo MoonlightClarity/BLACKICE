@@ -1,13 +1,13 @@
 # Local models in BLACKICE
 
-BLACKICE can discover, load, unload and use models from local runtimes. The **Settings → Models → Local models** panel is separate from optional cloud API connections. A loaded model is registered in the normal chat model picker; adding it does not replace the selected default model or rewrite existing conversations.
+BLACKICE can discover, load, unload and use models from local runtimes. The **Config → Models → Local models** panel is separate from optional cloud API connections. A loaded model is registered in the normal chat model picker; adding it does not replace the selected default model or rewrite existing conversations.
 
 Use **Remove** beside a saved local model in the Chat picker to take it out of the list, even if its file is missing. This keeps model files and chat history. To add the model to the picker again, load it from Local models.
 
 ## Ollama
 
 1. Install and start Ollama so its local API is available at `http://127.0.0.1:11434`.
-2. Open **Settings → Models → Local models**, choose **Ollama**, and refresh.
+2. Open **Config → Models → Local models**, choose **Ollama**, and refresh.
 3. Choose an installed model and **Load**.
 4. To import local weights, expand **Import local weights into Ollama**. Supply an absolute path to a `.gguf` file, or a directory containing `config.json` and `.safetensors` weights, and a local Ollama model name.
 5. Choose the registered model (for example `local_ollama::my-model`) from the BLACKICE chat model picker.
@@ -22,7 +22,7 @@ Start LM Studio's local server at `http://127.0.0.1:1234`, refresh the Local mod
 
 BLACKICE connects directly to the official `llama-server` OpenAI-compatible API. Neither Ollama nor LM Studio is required.
 
-1. The Windows x64 installer includes a pinned **llama.cpp v1.0.0** runtime; no separate runtime installation is needed. Other platforms or custom setups can use a compatible `llama-server` from the [official release](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0). Model weights remain separate. See [bundled runtime provenance](BUNDLED-LLAMA.md).
+1. The Windows x64 installer includes a pinned **llama.cpp** runtime; no separate runtime installation is needed. This candidate includes the MiniCPM QX4 tool-schema repair. See [bundled runtime provenance](BUNDLED-LLAMA.md) for the exact upstream and repair revisions. Custom setups can use a compatible `llama-server` from the [upstream release](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0), but an upstream binary is not proof that it contains BLACKICE's qualified repair. Model weights remain separate.
 2. Under **Models → Local models**, click **Load GGUF file…** and confirm the file to load it immediately. To return to a saved model, select it and click **Load**. Switching does not require deleting the previous model or its weights.
 3. **More options** contains folder discovery, runtime setup, and tuning. Discovery starts or refreshes the owned idle router without loading a model. The router may unload cached weights when it restarts. BLACKICE does not create a missing custom folder. Unavailable saved files are skipped when launching other models; their entries are retained if the files return.
 
@@ -34,7 +34,7 @@ For an independently managed server, follow this separate path:
    llama-server --host 127.0.0.1 --port 8080 --models-dir "C:\Models" --models-max 1 --no-models-autoload
    ```
 
-2. Open **Config → Local Models**, choose **llama.cpp**, and refresh. An independently managed server supplies its own catalog and does not use the BLACKICE folder setting.
+2. Open **Config → Models → Local models**, choose **llama.cpp**, and refresh. An independently managed server supplies its own catalog and does not use the BLACKICE folder setting.
 3. Choose an available model, then **Load**. BLACKICE calls `POST /models/load`, confirms the model is loaded, and registers `local_llamacpp::model-id` without changing any conversation defaults.
 4. **Unload** calls `POST /models/unload`; it releases the active model but never deletes its GGUF weights or saved BLACKICE conversations.
 
@@ -136,14 +136,14 @@ lifecycle tests.
 
 ## A separate local default
 
-In **Settings → Models → Local models**, choose an available registered llama.cpp model under **Local default model**, then select **Use as local default**. **Clear local default** removes this preference. This setting uses the managed compatible route at `http://127.0.0.1:8080/v1`; custom inference endpoints and other provider types are not eligible.
+In **Config → Models → Local models**, choose an available registered llama.cpp model under **Local default model**, then select **Use as local default**. **Clear local default** removes this preference. This setting uses the managed compatible route at `http://127.0.0.1:8080/v1`; custom inference endpoints and other provider types are not eligible.
 
 Chat displays the selected model as **Local · model name**. Choosing it saves the concrete `provider::model` identifier through the existing model picker. Changing the local preference leaves the app-wide default and models already selected in existing chats intact. The choice still follows normal provider visibility, activation, availability and removal checks.
 
 The preference records a saved registration, not proof that weights exist or a model is loaded. Missing or disabled models remain visibly unavailable; use the existing **Add GGUF** setup to restore a model, choose another, or clear the preference. Saving or clearing the preference does not load a model, download weights, or initialize a MiniCPM calibration profile.
 
 The local-session-only `POST /api/local-models/default` accepts `{ "model": "local_llamacpp::model-id", "expectedLocalDefaultModel": null }`; `model: null` clears the preference. Supply the current nullable preference as `expectedLocalDefaultModel`. A stale value returns `409` without changing it. `GET /api/local-models` includes `localDefaultModelStatus` (`model`, `eligible`, `reason`) and minimal `localDefaultChoices` for registered eligible models. `eligible` describes registration and routing; it is separate from runtime/file availability. The ordinary app status includes the same preference status.
-# MiniCPM setup for Local
+## MiniCPM setup for Local
 
 When the bundled MiniCPM setup is available, **Set up MiniCPM for Local** opens the existing Local models settings and prepares its pinned model and vision projector. The two original assets total 1,756,723,456 bytes (about 1.64 GiB). Setup verifies existing configured files at their actual locations, including model and projector files stored in different folders. Correct renamed files are reusable because verification checks their size and SHA-256, not their basename. A configured missing or mismatched file is reported; it is never silently replaced or repointed.
 

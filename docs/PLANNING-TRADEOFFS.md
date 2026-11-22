@@ -1,5 +1,7 @@
 # Planning and Directory: benchmark trade-offs
 
+> **Status: Historical documentation.** These results and proposed comparisons concern the earlier selectable Planning modules and Directory implementation. Those module controls are retired. The measurements below do not qualify current Action Directory, MiniCPM, or closed-source context management. The general practice of comparing quality with time and token cost remains useful; use the current [source notes](../RELEASE-NOTES.md) and [Directory reference](directory-chat-mode.md) for present scope. Preserve the original measured outcomes below.
+
 ## Product decision
 
 Planning modules and Directory are opt-in. A module may be useful on a particular task without earning default-on status. Keep it on by default only after repeated benefit at low incremental cost across relevant tasks. Missing evidence means opt-in, not useless. Remove a recommended module or preset that has no identified use case; do not delete a capability merely because it was not exercised in one benchmark.

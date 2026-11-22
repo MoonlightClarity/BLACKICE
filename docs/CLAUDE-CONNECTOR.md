@@ -4,14 +4,14 @@ Claude uses BLACKICE's existing Streamable HTTP MCP endpoint and receives its **
 
 ## Set up
 
-1. Keep BLACKICE and its published HTTPS endpoint available. Open **BLACKICE → Settings → Claude connector**.
+1. Keep BLACKICE and its published HTTPS endpoint available. Open **BLACKICE → Config → App connections → Claude**.
 2. In BLACKICE's contained Browser, sign in to [Claude](https://claude.ai/). Under **Customize → Connectors**, add a **custom connector**.
 3. Use a name such as **BLACKICE Direct Execution** and paste the exact **Shared MCP endpoint** displayed in BLACKICE. The endpoint may end in `/mcp/chatgpt` for historical compatibility; **that route serves all supported MCP clients**, not just ChatGPT.
 4. Choose **Sign in now**. BLACKICE supports Claude's published OAuth client identity at `https://claude.ai/oauth/mcp-oauth-client-metadata`, verified against Claude's exact callback address. Other supported clients can register dynamically.
-5. Match the code on the Claude authorization page to the **pending Claude request** under **Settings → Claude connector**, then choose **Connect Claude**. The page must direct you to the **Claude**, not ChatGPT, Settings tab.
+5. Match the code on the Claude authorization page to the **pending Claude request** under **Config → App connections → Claude**, then choose **Connect Claude**. The page must direct you to the matching **Claude** guide.
 6. Return to Claude and ask it to use **BLACKICE Direct Execution** to call `blackice_direct_status` with a fresh nonce. Verify that Claude returns the exact nonce, `available: true`, its own `connectionId` and the live tool count.
 
-A successful OAuth callback confirms authorization, **not** a tool call. Validate the actual tool result before declaring the connection operational. The connector has been tested with all 36 tools advertised on BLACKICE 2.39.28.
+A successful OAuth callback confirms authorization, **not** a tool call. Validate the actual tool result before declaring the connection operational. The historical 2.39.28 check covered that version's 36 advertised tools. Read the current catalog and a fresh status result for the installed build; the historical count is not the current tool count.
 
 ## Authorization and tool access
 

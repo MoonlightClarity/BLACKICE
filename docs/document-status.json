@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "policy": "Classification is for repository main, not proof of the installed binary or publication of a release. History is retained for audit; reference notes require source verification before operational use.",
   "current": [
-    "docs/connections-model-onboarding.md",
     "docs/stopped-task-tab-adoption.md",
     "BROWSER-IMPORT.md",
     "BROWSER-PASSWORDS.md",
@@ -17,12 +16,10 @@
     "docs/CLAUDE-CONNECTOR.md",
     "docs/GEMINI-CONNECTOR.md",
     "docs/GOAL-MODE.md",
-    "docs/PLANNING-TRADEOFFS.md",
     "docs/README.md",
     "docs/local-models.md",
     "docs/visual-reasoning.md",
     "docs/mistral-acp-compatibility.md",
-    "docs/user-profile-boundaries.md",
     "docs/sqlite-receipts.md",
     "docs/persistence-diagnostics.md",
     "docs/instruction-audit.md"
@@ -75,7 +72,8 @@
     "docs/HUMAN-SKILL-EDITOR-20261118.md",
     "docs/minicpm-context-vision-runtime-20261120.md",
     "docs/instruction-clarity.md",
-    "docs/tool-responsibilities.md"
+    "docs/tool-responsibilities.md",
+    "docs/user-profile-boundaries.md"
   ],
   "historical": [
     "APPLICATION-COMPATIBILITY.md",
@@ -118,6 +116,8 @@
     "docs/three-subscription-runtimes-20261031.md",
     "docs/MODULAR-PLANNING-ONTOLOGY.md",
     "docs/swarm-project-lifecycle.md",
-    "WORKPLAN.md"
+    "WORKPLAN.md",
+    "docs/connections-model-onboarding.md",
+    "docs/PLANNING-TRADEOFFS.md"
   ]
 }

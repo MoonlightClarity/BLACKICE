@@ -1,6 +1,6 @@
 # Browser data import
 
-> **Current-session distinction (2.39.27):** BLACKICE's contained Browser, connected external Chromium sessions and BrowserOS Neo have distinct data/session boundaries. An imported Neo or Chrome profile is not proof of a logged-in contained tab. The retired ChatGPT browser model provider is not restored by an import. See [the current README](README.md) and [ChatGPT connector](CHATGPT-CONNECTOR.md).
+> **Session distinction:** BLACKICE's contained Browser, connected external Chromium sessions and BrowserOS Neo have distinct data/session boundaries. An imported Neo or Chrome profile is not proof of a logged-in contained tab. The retired ChatGPT browser model provider is not restored by an import. See [the current README](README.md) and [ChatGPT connector](CHATGPT-CONNECTOR.md).
 
 ## Full selected Chromium profile
 
@@ -14,7 +14,7 @@ Automatic discovery covers ordinary Chrome, Edge, Brave, and Neo installations o
 
 Close the source browser normally before importing. Chromium's user-data directory is shared by profiles in that browser, so another open profile in the same user-data directory can keep it locked. BLACKICE reports a running or locked source explicitly and leaves any previous import available. It never closes or kills the source browser.
 
-Use the browser settings panel to select a discovered profile, import it, and connect the imported copy. The direct tools provide the same operations:
+Use the direct tools or desktop CLI below to select a discovered source profile, import it, and connect the copied profile. The current contained Browser workspace keeps its own session; importing an external browser profile does not replace it. The direct operations are:
 
 | Tool | Purpose |
 | --- | --- |
