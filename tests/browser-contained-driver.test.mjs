@@ -10,6 +10,8 @@ import vm from 'node:vm';
 import { pathToFileURL } from 'node:url';
 import { BrowserWorkspace, createBrowserToolHandler } from '../lib/browser.mjs';
 import { BrowserRouter } from '../desktop/browser-router.mjs';
+import { ConversationGoals } from '../lib/conversation-goals.mjs';
+import { observeGoalToolOutcome, detectUnknownEffectReplay } from '../lib/goal-recovery-policy.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
@@ -425,6 +427,120 @@ test('a detached renderer ref preserves its message across a boundary that loses
   });
   assert.equal(tab.window.protocol.some(item => item.method.startsWith('Input.')), false, 'A detached target must fail before browser input.');
   assert.equal(tab.window.captureArgs, undefined, 'A detached target must fail before pointer preparation.');
+});
+
+async function goalPointerFixture(t, { covered = true, inputError } = {}) {
+  let ref, scrolls = 0, overlay = covered;
+  const f = await fixture(t, { command: async (method, params) => {
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed' && inputError) throw inputError;
+    return pointerProof(method, params, ref);
+  } });
+  const tab = f.driver.newTab('https://example.test/covered-control'); await tab.loading;
+  const control = {
+    tagName: 'BUTTON', type: 'button', children: [], childNodes: [], labels: [],
+    textContent: 'Continue', isConnected: true, form: null,
+    getAttribute: name => name === 'aria-label' ? 'Continue' : null,
+    getBoundingClientRect: () => ({ x: 10, y: 10, width: 100, height: 20 }),
+    getRootNode: () => document, contains: other => other === control, closest: () => null,
+    scrollIntoView: () => { scrolls++; },
+  };
+  const covering = { contains: () => false };
+  const document = {
+    forms: [], title: 'Covered control', readyState: 'complete',
+    documentElement: { children: [control] }, getElementById: () => null,
+    querySelectorAll: () => [], elementFromPoint: () => overlay ? covering : control,
+  };
+  const context = vm.createContext({ document, location: { href: tab.url },
+    innerWidth: 1280, innerHeight: 900,
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible' }) });
+  tab.window.webContents.mainFrame.executeJavaScript = async code => {
+    // Exercise the real renderer functions across the same plain-data boundary
+    // that loses non-enumerable properties of uncaught renderer Errors.
+    try { return JSON.parse(JSON.stringify(await vm.runInContext(code, context))); }
+    catch (cause) { throw JSON.parse(JSON.stringify(cause)); }
+  };
+  const browser = new BrowserWorkspace({ driver: f.driver }); t.after(() => browser.close());
+  const conversations = { states: { root: {} }, async changeState(id, patch) {
+    this.states[id] = { ...this.states[id], ...patch };
+  } };
+  const manager = new ConversationGoals({ engine: { runs: new Map() }, conversations, autoStart: false });
+  const run = { id: 'turn', taskId: 'root', goal: { id: 'goal' }, goalEvidence: [] };
+  const wrapped = manager.wrapTools(run, 'agent', createBrowserToolHandler({ browser }));
+  const snapshotCall = { name: 'relay_browser', arguments: { action: 'snapshot', tabId: tab.id } };
+  const observe = async () => {
+    const result = await wrapped(snapshotCall); assert.equal(result.success, true);
+    return JSON.parse(result.contentItems[0].text);
+  };
+  const first = await observe();
+  ref = first.frames[0].elements[0].ref;
+  const original = { name: 'relay_browser', arguments: { action: 'click', tabId: tab.id, ref,
+    expectedDocumentId: first.documentId, expectedUrl: first.url } };
+  return { ...f, tab, control, conversations, run, wrapped, observe, original,
+    scrolls: () => scrolls, uncover: () => { overlay = false; } };
+}
+
+test('covered pointer preparation permits the same observed click without inventing an UNKNOWN effect', async t => {
+  const f = await goalPointerFixture(t);
+  const first = await f.wrapped(f.original), body = JSON.parse(first.contentItems[0].text);
+  assert.equal(first.success, false);
+  assert.equal(f.scrolls(), 1, 'Preparation may already have scrolled the page.');
+  assert.equal(f.tab.window.protocol.filter(call => call.method.startsWith('Input.')).length, 0);
+  assert.equal(body.inputDispatched, false, 'The fixed coverage guard must preserve that no requested pointer input was sent.');
+  assert.equal(body.actionDispatched, undefined, 'No whole-action no-effect claim is justified after scrolling.');
+  assert.equal(first.actionDispatched, undefined);
+  assert.equal(first.code, 'BROWSER_TARGET_COVERED');
+  const row = observeGoalToolOutcome(f.original, first);
+  assert.equal(row.kind, 'recoverable_no_input');
+  assert.equal(row.inputDispatched, false);
+  assert.equal(row.actionDispatched, null);
+  assert.equal(f.run.goalEvidence.at(-1).kind, 'recoverable_no_input');
+  assert.equal(detectUnknownEffectReplay([row], f.original), null);
+  assert.deepEqual(f.conversations.states.root.goalUnresolvedEffects || [], []);
+
+  f.uncover();
+  const fresh = await f.observe();
+  assert.equal(fresh.documentId, f.original.arguments.expectedDocumentId);
+  assert.equal(fresh.url, f.original.arguments.expectedUrl);
+  assert.ok(fresh.frames[0].elements.some(element => element.ref === f.original.arguments.ref),
+    'The fresh observation must still identify the same connected control.');
+  const retried = await f.wrapped(f.original);
+  assert.equal(retried.success, true);
+  assert.equal(f.run.goalEvidence.at(-1).signature, row.signature, 'A changed operation signature must not explain the permitted retry.');
+  assert.equal(f.tab.window.protocol.filter(call => call.method === 'Input.dispatchMouseEvent' && call.params.type === 'mousePressed').length, 1);
+});
+
+test('a failure at pointer dispatch stays UNKNOWN and blocks the identical wrapped click', async t => {
+  const f = await goalPointerFixture(t, { covered: false, inputError: new Error('Pointer transport lost after dispatch began.') });
+  const first = await f.wrapped(f.original), body = JSON.parse(first.contentItems[0].text);
+  assert.equal(first.success, false);
+  assert.notEqual(body.inputDispatched, false);
+  assert.notEqual(body.actionDispatched, false);
+  assert.equal(f.run.goalEvidence.at(-1).kind, 'uncertain_external_effect');
+  assert.equal(f.conversations.states.root.goalUnresolvedEffects.length, 1);
+  assert.equal(detectUnknownEffectReplay(f.run.goalEvidence, f.original).code, 'GOAL_EFFECT_UNRESOLVED');
+  const again = await f.wrapped(f.original);
+  assert.equal(again.code, 'GOAL_EFFECT_UNRESOLVED');
+  assert.equal(f.tab.window.protocol.filter(call => call.method === 'Input.dispatchMouseEvent' && call.params.type === 'mousePressed').length, 1);
+});
+
+test('a page-thrown covered-target code cannot counterfeit trusted no-input recovery', async t => {
+  const f = await goalPointerFixture(t, { covered: false });
+  const bounds = f.control.getBoundingClientRect;
+  f.control.getBoundingClientRect = () => {
+    if (f.scrolls()) throw Object.assign(new Error('Page code failed after preparation.'),
+      { code: 'BROWSER_TARGET_COVERED', inputDispatched: false, actionDispatched: false });
+    return bounds();
+  };
+  const first = await f.wrapped(f.original), body = JSON.parse(first.contentItems[0].text);
+  assert.equal(first.success, false);
+  assert.equal(first.code, 'BROWSER_TARGET_COVERED');
+  assert.equal(body.inputDispatched, undefined, 'The generic catch must discard the page-supplied marker, even with the new code.');
+  assert.equal(body.actionDispatched, undefined);
+  assert.equal(f.scrolls(), 1);
+  assert.equal(f.tab.window.protocol.filter(call => call.method.startsWith('Input.')).length, 0);
+  assert.equal(f.run.goalEvidence.at(-1).kind, 'uncertain_external_effect');
+  assert.equal((await f.wrapped(f.original)).code, 'GOAL_EFFECT_UNRESOLVED');
+  assert.equal(f.scrolls(), 1, 'The guarded repeat must not reach preparation.');
 });
 
 async function observedSelectFixture(t, names) {

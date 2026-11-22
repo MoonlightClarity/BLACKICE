@@ -317,7 +317,11 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
     const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     let host = el, shadowMatch = false;
     while (host?.getRootNode()?.host) { host = host.getRootNode().host; if (host === top) shadowMatch = true; }
-    if (top && top !== el && !el.contains(top) && !top.contains(el) && !shadowMatch) throw new Error('Another element covers this target. Inspect the page and dismiss or use the covering control.');
+    if (top && top !== el && !el.contains(top) && !top.contains(el) && !shadowMatch) {
+      // This fixed guard runs before pointer dispatch. Scrolling may already
+      // have changed the page, so it cannot claim the whole action had no effects.
+      return { __blackiceElementError: { message: 'Another element covers this target. Inspect the page and dismiss or use the covering control.', code: 'BROWSER_TARGET_COVERED', inputDispatched: false } };
+    }
     return { x: r.x + r.width / 2, y: r.y + r.height / 2, viewportWidth: innerWidth, viewportHeight: innerHeight };
   }
   if (action === 'click') { el.click(); return { clicked: true }; }
@@ -1427,8 +1431,16 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (result?.__blackiceElementError) {
       const { message, code, inputDispatched } = result.__blackiceElementError;
-      // A renderer ref rejection happens before the operation reaches its input path.
-      throw Object.assign(error(message), { code, ...(code === 'BROWSER_REF_STALE' ? { browserReferenceDiagnostic: { ...this.referenceDiagnostic(tab, args.ref, 'control-changed'), ...projectBrowserControlBinding(result.__blackiceElementError, action) } } : {}), ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true } : action === 'select' && inputDispatched === false ? { inputDispatched: false } : {}) });
+      // Only fixed renderer guards return this metadata; the generic catch
+      // strips page-supplied dispatch claims even when its code matches a guard.
+      const inputPrevented = inputDispatched === false
+        && (action === 'select' || action === 'prepare' && code === 'BROWSER_TARGET_COVERED');
+      throw Object.assign(error(message), {
+        code,
+        ...(code === 'BROWSER_REF_STALE' ? { browserReferenceDiagnostic: { ...this.referenceDiagnostic(tab, args.ref, 'control-changed'), ...projectBrowserControlBinding(result.__blackiceElementError, action) } } : {}),
+        ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true }
+          : inputPrevented ? { inputDispatched: false } : {}),
+      });
     }
     if (!this.referenceCurrent(tab, args.ref)) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref) });
     return { frame, result };
