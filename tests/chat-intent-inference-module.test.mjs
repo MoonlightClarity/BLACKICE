@@ -11,7 +11,7 @@ import { projectPlanningModuleReceipts } from '../public/next/chat/model.mjs';
 const id='builtin-intent-inference', artifact='intent-advice';
 const task='apply for jobs until 6 AM EST';
 const plan={status:'proposed',focus:'first',reason:'Find the most useful next step',actions:[{id:'first',objective:'Inspect the current request',dependsOn:[]}]};
-const isIntentPrompt=prompt=>prompt.includes('Shape: {"status":"proposed","interpretation":');
+const isIntentPrompt=prompt=>prompt.includes('Shape: {"artifact":{"status":"proposed","interpretation":');
 const runShape={chatPlanning:'on',id:'turn-1',taskId:'task-1',nodes:{agent:{}}};
 const receipt=(overrides={})=>({type:'planning.module',runId:runShape.id,taskId:runShape.taskId,nodeId:'agent',moduleId:id,artifact,phase:'completed',...overrides});
 
@@ -63,9 +63,9 @@ test('ambiguous fresh deadline gets a tool-free advice pass without committing a
     }
     return {output:'Synthetic final: no external action performed.'};
    }
-   if(!inference)return {output:JSON.stringify(plan)};
-   if(malformed)return {output:JSON.stringify({status:'proposed',interpretation:[]})};
-   return {output:JSON.stringify({status:'proposed',interpretation:'Use the next future 6 AM Eastern as the likely upper bound, not permission to run in the background. Start by checking current postings.',reason:'A fresh forward-looking request did not name a date.'})};
+   if(!inference)return {output:JSON.stringify({artifact:plan})};
+   if(malformed)return {output:JSON.stringify({artifact:{status:'proposed',interpretation:[]}})};
+   return {output:JSON.stringify({artifact:{status:'proposed',interpretation:'Use the next future 6 AM Eastern as the likely upper bound, not permission to run in the background. Start by checking current postings.',reason:'A fresh forward-looking request did not name a date.'}})};
   }
  }
  t.after(async()=>{
@@ -138,11 +138,11 @@ test('fixed incident replay gives prep the actual next occurrence without record
   status(){return {defaultModel:'fixture'};},
   async runAgent({prompt,dynamicTools}){
    seen.push(prompt);assert.deepEqual(dynamicTools,[]);
-   if(!isIntentPrompt(prompt))return {output:JSON.stringify(plan)};
+   if(!isIntentPrompt(prompt))return {output:JSON.stringify({artifact:plan})};
    assert.match(prompt,/2026-11-19T16:44:00(?:\.000)?Z/);
    assert.match(prompt,/2026-11-20T11:00:00(?:\.000)?Z/,'6 AM EST at 11:44 AM EST is the next calendar day');
    assert.equal(directory.read().revision,0,'inference runs independently of outline mutation');
-   return {output:JSON.stringify({status:'proposed',interpretation:'Likely 6 AM EST on November 20.',reason:'Future-facing undated clock time.'})};
+   return {output:JSON.stringify({artifact:{status:'proposed',interpretation:'Likely 6 AM EST on November 20.',reason:'Future-facing undated clock time.'}})};
   }
  };
  const events=[];
@@ -166,11 +166,11 @@ test('an explicitly dated cutoff stays fixed instead of silently becoming the fo
   status(){return {defaultModel:'fixture'};},
   async runAgent({prompt}){
    seen.push(prompt);
-   if(!isIntentPrompt(prompt))return {output:JSON.stringify(plan)};
+   if(!isIntentPrompt(prompt))return {output:JSON.stringify({artifact:plan})};
    assert.ok(prompt.includes(date));
    assert.match(prompt,/2026-11-19T11:00:00(?:\.000)?Z/);
    assert.doesNotMatch(prompt,/2026-11-20T11:00:00(?:\.000)?Z/);
-   return {output:JSON.stringify({status:'proposed',interpretation:'The user specified today, and the cutoff has passed.',reason:'Explicit day is not a rolling clock time.'})};
+   return {output:JSON.stringify({artifact:{status:'proposed',interpretation:'The user specified today, and the cutoff has passed.',reason:'Explicit day is not a rolling clock time.'}})};
   }
  };
  const events=[];
