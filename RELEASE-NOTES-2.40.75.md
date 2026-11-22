@@ -21,6 +21,7 @@ The release bundle records the exact source commit, application fingerprint, ins
 
 ## Still in active development
 
+- **ChatGPT connection and hosted schedules ([#25](https://github.com/MoonlightClarity/BLACKICE/issues/25)).** Custom MCP connection creation is available across personal tiers. BLACKICE-specific endpoint/OAuth setup and tool invocation still need matching end-to-end receipts, as do hosted scheduled tests. A public listing is a separate possible distribution route and is not shipped or approved.
 - **MiniCPM benchmark qualification.** The shared runtime and harness fixes are included. A completed, reproducible benchmark score and a validated comparison of sampler/thinking settings remain pending. The retained benchmark helpers and local receipts are not a portable, qualified public reproducer.
 - **Long-running Chat and Directory recovery.** Current-user continuity and rejected-call recovery have specific regression coverage. End-to-end reliability across long tasks and providers still needs validation.
 

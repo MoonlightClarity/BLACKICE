@@ -34,6 +34,7 @@ The distinction between an implemented tool, a verified integration, and a relia
 
 ## Still in active development
 
+- **ChatGPT connection and hosted schedules ([#25](https://github.com/MoonlightClarity/BLACKICE/issues/25)).** Custom MCP connection creation is available across personal tiers. The remaining checks are BLACKICE-specific endpoint/OAuth setup, owner approval, attached tools and actual status/command receipts. Hosted ChatGPT scheduled runs remain unverified. An approved public plugin listing is a separate, unshipped route.
 - **MiniCPM benchmark qualification.** The runtime and tool-contract fixes are included. A completed, reproducible MiniCPM benchmark score and a validated comparison of sampler and thinking settings are still pending.
 - **Long-running Chat and Directory recovery.** The candidate improves continuity and makes rejected Directory calls easier to recover from. End-to-end reliability across long tasks and providers still needs validation.
 
