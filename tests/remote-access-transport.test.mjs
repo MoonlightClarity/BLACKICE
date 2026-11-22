@@ -144,3 +144,37 @@ test('only explicit supported HTTPS ports are accepted before any CLI request', 
     const fixture = standardFixture({ shared: false }); await assert.rejects(fixture.transport.enable({ target, httpsPort }), { code: 'REMOTE_OWNERSHIP_INVALID' }); assert.deepEqual(fixture.calls, []);
   }
 });
+
+test('dedicated HTTPS 10000 preserves occupied 443 and 8443 routes, with lossless disable', async () => {
+  const fixture = createRemoteTransportFixture();
+  const original = fixture.config, host = fixture.hostname;
+  original.TCP['8443'] = { HTTPS: true };
+  original.Web[`${host}:8443`] = { Handlers: { '/': { Proxy: 'http://127.0.0.1:8766' } } };
+  original.AllowFunnel[`${host}:8443`] = true;
+  fixture.setConfig(original);
+  assert.equal(remotePortClaimed(original, 10000), false);
+  const enabled = await fixture.transport.enable({ target, mode: 'public', httpsPort: 10000 });
+  assert.equal(enabled.origin, `https://${host}:10000`);
+  assert.ok(ownsRemoteRoute(fixture.config, enabled.ownership));
+  assert.deepEqual(unrelatedRemoteConfig(fixture.config, enabled.ownership), original);
+  assert.ok(fixture.calls.some(args => JSON.stringify(args) === JSON.stringify([
+    'funnel', '--bg', '--https=10000', target
+  ])));
+  await fixture.transport.disable(enabled.ownership);
+  assert.deepEqual(fixture.config, original);
+  assert.ok(fixture.calls.some(args => JSON.stringify(args) === JSON.stringify([
+    'funnel', '--https=10000', 'off'
+  ])));
+});
+
+test('10000 fails closed when another route claims it', async () => {
+  const fixture = createRemoteTransportFixture(), original = fixture.config, host = fixture.hostname;
+  original.TCP['10000'] = { HTTPS: true };
+  original.Web[`${host}:10000`] = { Handlers: { '/': { Proxy: 'http://127.0.0.1:55555' } } };
+  fixture.setConfig(original);
+  await assert.rejects(fixture.transport.enable({ target, mode: 'public', httpsPort: 10000 }), {
+    code: 'REMOTE_PORT_IN_USE',
+  });
+  assert.deepEqual(fixture.config, original);
+  assert.ok(fixture.calls.every(args => args.includes('--json')));
+});

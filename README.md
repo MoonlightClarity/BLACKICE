@@ -212,6 +212,8 @@ A running Windows host can expose its authenticated tools over configured HTTPS 
 
 ## Contributors
 
+Thanks to [@jweter (PR #24)](https://github.com/MoonlightClarity/BLACKICE/pull/24) for optional Tailscale Funnel HTTPS port **10000**, with explicit CLI opt-in and preservation of existing routes.
+
 ### Build from source
 
 Requirements: supported **64-bit Windows** and **Node.js 22.23.5 or newer**, matching the minimum in `package.json`.

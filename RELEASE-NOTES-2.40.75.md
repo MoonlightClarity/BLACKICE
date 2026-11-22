@@ -4,6 +4,8 @@ This release completes the browser, conversation-continuity, Directory and local
 
 ## Integrated changes
 
+- **Optional connector HTTPS port:** [@jweter's PR #24](https://github.com/MoonlightClarity/BLACKICE/pull/24) adds explicit local CLI opt-in to Tailscale Funnel HTTPS **10000**, preserving existing routes, the **443** default and saved **8443** addresses. An enabled HTTPS route must be disabled before switching ports.
+
 - **Connector discovery:** an expected OAuth Bearer challenge with the matching protected-resource metadata can pass the public discovery check. Empty, Basic or mismatched challenges still fail. Discovery success remains separate from authorization and a real tool result.
 - **Provider persistence:** unrelated provider/default updates preserve legacy saved local-default representation. Explicit local-model selections and deliberate clears retain their existing meaning across reloads.
 - **Model menus:** internal Codex entries such as `gpt-reserve` and `codex-auto-review` are hidden from ordinary advertised choices. Saved selections remain identifiable instead of silently switching models.
