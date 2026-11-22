@@ -9,6 +9,7 @@ import { HarnessEngine } from '../lib/engine.mjs';
 import { IdentityStore } from '../lib/identity.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
 import { createSkillsCatalog } from '../lib/skills-catalog.mjs';
+import { createRetrievalToolHandler } from '../lib/retrieval-tools.mjs';
 import { chatGPTStartChatTool } from '../lib/chatgpt-start-chat.mjs';
 import { submitChat } from '../public/next/chat/send.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
@@ -159,6 +160,25 @@ async function fixture(t, { responses, files = {} } = {}) {
   return { catalog, invoke, instructions: engine.instructionSettings };
 }
 
+function requireSkillHeader(result, skill) {
+  const section = result.sections.find(row => row.id === 'skill-' + skill.id);
+  assert.ok(section, 'the effective skill has an instruction section');
+  const lines = section.text.split('\n');
+  const identityPrefix = 'Skill: ', readPrefix = 'To read this skill, call relay_skills with ';
+  const identity = JSON.parse(lines.find(line => line.startsWith(identityPrefix)).slice(identityPrefix.length));
+  const read = JSON.parse(lines.find(line => line.startsWith(readPrefix)).slice(readPrefix.length));
+  const revision = skill.source === 'user' ? skill.revision : (skill.provenance?.revision ?? skill.revision);
+  assert.notEqual(revision, undefined, 'the header must expose an existing effective revision');
+  assert.deepEqual(identity, {id:skill.id, revision,
+    source:skill.source === 'user' ? 'owner-edited' : 'bundled'});
+  assert.deepEqual(read, {action:'read', id:skill.id});
+  assert.ok(section.text.endsWith(skill.content + '\n'), 'the full effective body is preserved after the header');
+  assert.ok(result.prompt.includes(JSON.stringify(section.text).slice(1, -1)), 'the complete header and body reach the actual provider');
+  assert.deepEqual(result.receipts.filter(row => row.skillId === skill.id).map(row => row.type), ['skill_context_submitted'],
+    'a visible read route does not fabricate a tool-read receipt');
+  return read;
+}
+
 function requireOperational(result, expectedSource) {
   for (const id of operationalIds) {
     const receipt = result.receipts.find(row => row.skillId === id);
@@ -212,6 +232,8 @@ test('direct and Mission application entry points deliver the same operational s
   requireOperational(direct, 'bundled');
   for (const id of operationalIds) {
     const skill = await f.catalog.detail({ id });
+    requireSkillHeader(mission, skill);
+    requireSkillHeader(direct, skill);
     assert.ok(mission.prompt.includes(JSON.stringify(skill.content).slice(1, -1)), id + ' body reached Mission provider');
     assert.ok(direct.prompt.includes(JSON.stringify(skill.content).slice(1, -1)), id + ' body reached direct provider');
   }
@@ -221,6 +243,19 @@ test('direct and Mission application entry points deliver the same operational s
   );
 });
 
+
+test('injected Modular Development exposes an exact usable read route without claiming a tool read', { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const result = await f.invoke('mission', 'Use Modular Development to review src/index.cjs.');
+  const skill = await f.catalog.detail({id:'library-modular-development'});
+  const args = requireSkillHeader(result, skill);
+  const handler = createRetrievalToolHandler({cwd:process.cwd(), skillsCatalog:f.catalog});
+  const read = await handler({name:'relay_skills', arguments:args});
+  const entry = JSON.parse(read.contentItems[0].text).entry;
+  assert.equal(entry.id, skill.id);
+  assert.equal(entry.content, skill.content, 'the injected ID reads the same full effective body');
+  assert.equal(entry.provenance.revision, skill.provenance.revision);
+});
 
 test('ordinary Find then Apply request continues from real local evidence and withholds the unfinished final', { timeout: 20000 }, async t => {
   const unfinished = 'I found the résumé filename but have not read it, searched for a role, or applied.';
@@ -282,6 +317,7 @@ test('both application entry points deliver current owner core and skill revisio
     assert.doesNotMatch(result.prompt, /An ordinary request delegates the actions and choices needed to complete it/, 'source defaults do not silently override saved owner Instructions');
     for (const [id, content] of contents) {
       const current = await f.catalog.detail({ id });
+      requireSkillHeader(result, current);
       assert.equal(result.receipts.find(row => row.skillId === id).sourceRevision, current.revision);
       assert.ok(result.prompt.includes(JSON.stringify(content).slice(1, -1)), route + ' receives the edited body');
     }

@@ -22,12 +22,16 @@ test('Skills publishes closed search/read contracts and the actual returned-ID f
   assert.equal(read.additionalProperties, false);
   assert.deepEqual(Object.keys(search.properties).sort(), ['action','limit','offset','query']);
   assert.deepEqual(search.required, ['action']);
+  assert.match(search.properties.query.description, /Optional/);
+  assert.match(search.properties.query.description, /named skill or task/);
+  assert.match(search.properties.query.description, /omit or use an empty string to browse/);
   assert.deepEqual(Object.keys(read.properties).sort(), ['action','id']);
   assert.deepEqual(read.required, ['action','id']);
   const pattern = new RegExp(read.properties.id.pattern);
   for (const id of ['builtin-decomposition','library-modular-development','A_b-9']) assert.ok(pattern.test(id));
   for (const id of ['modular development','../secret','saved:legacy','日本語','', 'a'.repeat(101)]) assert.equal(pattern.test(id), false);
   assert.equal(read.properties.id.pattern, spec.inputSchema.properties.id.pattern);
+  assert.match(read.properties.id.description, /search results or an injected skill header/);
   assert.equal(RETRIEVAL_TOOLS.find(tool => tool.name === 'relay_history').inputSchema.properties.id.pattern, undefined);
 });
 
@@ -46,8 +50,23 @@ test('real Skills catalog supports browsing, paging, search and complete Unicode
   const handler = createRetrievalToolHandler({cwd:root, skillsCatalog:catalog});
   const browse = decode(await invoke(handler, {action:'search'}));
   assert.ok(browse.entries.length > 0);
+  assert.match(browse.hint, /Unfiltered catalog page/);
+  assert.doesNotMatch(browse.hint, /Next page:/, 'a final page does not invent a next page');
+  const page = decode(await invoke(handler, {action:'search', limit:2}));
+  const expected = await catalog.list({query:'', offset:0, limit:2});
+  for (const key of ['entries','totalMatches','nextOffset','truncated']) assert.deepEqual(page[key], expected[key], 'browse keeps '+key);
+  assert.equal(page.requestedLimit, 2); assert.equal(page.appliedLimit, 2);
+  assert.ok(page.truncated && page.totalMatches > page.entries.length, 'the hint is exercised on a partial page');
+  assert.match(page.hint, /Use query for a named skill or task/);
+  assert.match(page.hint, /read an exact ID from an injected skill header/);
+  const nextCall = JSON.parse(page.hint.match(/Next page: relay_skills (\{.*\})\.$/)[1]);
+  assert.deepEqual(nextCall, {action:'search', limit:2, offset:page.nextOffset});
+  const nextBrowse = decode(await invoke(handler, nextCall));
+  assert.deepEqual(nextBrowse.entries, (await catalog.list({query:'', offset:page.nextOffset, limit:2})).entries);
+  assert.deepEqual(decode(await invoke(handler, {action:'search', query:'   ', limit:2})), page, 'whitespace query keeps empty-query browse semantics');
   const first = decode(await invoke(handler, {action:'search', query:'contractfixture', limit:2, offset:0}));
   assert.equal(first.entries.length, 2); assert.equal(first.totalMatches, 3); assert.equal(first.nextOffset, 2);
+  assert.equal(Object.hasOwn(first, 'hint'), false, 'named searches retain their result shape');
   assert.ok(first.entries.every(entry => !Object.hasOwn(entry,'content')));
   const next = decode(await invoke(handler, {action:'search', query:'contractfixture', limit:2, offset:first.nextOffset}));
   assert.equal(next.entries.length, 1); assert.equal(next.nextOffset, null);
@@ -57,6 +76,17 @@ test('real Skills catalog supports browsing, paging, search and complete Unicode
   const read = decode(await invoke(handler, {action:'read', id:found.entries[0].id}));
   assert.equal(read.entry.content, body);
   await assert.rejects(invoke(handler, {action:'read', id:'library-contract-absent'}), error => error.status === 404 && error.code === 'SKILL_NOT_FOUND');
+});
+
+test('queryless Skills pages do not invent pagination for missing or invalid adapter offsets', async () => {
+  for (const nextOffset of [undefined, null, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '5']) {
+    const list = async () => ({entries:[], totalMatches:0, truncated:false,
+      ...(nextOffset === undefined ? {} : {nextOffset})});
+    const handler = createRetrievalToolHandler({cwd:process.cwd(), skillsCatalog:{list}});
+    const result = decode(await invoke(handler, {action:'search'}));
+    assert.match(result.hint, /Unfiltered catalog page/);
+    assert.doesNotMatch(result.hint, /Next page:/, 'no next-page command for '+String(nextOffset));
+  }
 });
 
 const invalidCalls = [
