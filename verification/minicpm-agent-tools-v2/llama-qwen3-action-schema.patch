@@ -1,0 +1,576 @@
+diff --git a/common/parsers/qwen3-coder.cpp b/common/parsers/qwen3-coder.cpp
+index f3c0bbf..a2d2d0a 100644
+--- a/common/parsers/qwen3-coder.cpp
++++ b/common/parsers/qwen3-coder.cpp
+@@ -1,5 +1,237 @@
+ #include "parsers.h"
+ 
++#include <algorithm>
++#include <utility>
++
++// Qwen XML has no JSON object wrapper around tool arguments. Compile only a
++// closed, pairwise-disjoint root oneOf into separate XML function alternatives.
++// This is local to this parser: prompts and the supplied schemas remain intact.
++namespace {
++bool qwen3_required(const json & object, const std::string & key) {
++    if (!object.contains("required") || !object.at("required").is_array()) {
++        return false;
++    }
++    for (const auto & value : object.at("required")) {
++        if (value == key) {
++            return true;
++        }
++    }
++    return false;
++}
++
++bool qwen3_string_set(const json & schema, std::vector<json> & values) {
++    values.clear();
++    if (schema.contains("const")) {
++        if (!schema.at("const").is_string()) {
++            return false;
++        }
++        values.push_back(schema.at("const"));
++        if (schema.contains("enum")) {
++            const auto & allowed = schema.at("enum");
++            if (!allowed.is_array() || std::find(allowed.begin(), allowed.end(), values.front()) == allowed.end()) {
++                return false;
++            }
++        }
++        return true;
++    }
++    if (!schema.contains("enum") || !schema.at("enum").is_array() || schema.at("enum").empty()) {
++        return false;
++    }
++    for (const auto & value : schema.at("enum")) {
++        if (!value.is_string()) {
++            return false;
++        }
++        values.push_back(value);
++    }
++    return true;
++}
++
++bool qwen3_intersect_property(const json & root, const json & branch, json & result) {
++    if (!root.is_object() || !branch.is_object()) {
++        return false;
++    }
++    result = root;
++    for (auto it = branch.begin(); it != branch.end(); ++it) {
++        const auto & key = it.key();
++        if (key == "description" || key == "title" || key == "const" || key == "enum") {
++            continue;
++        }
++        if (root.contains(key) && root.at(key) == it.value()) {
++            continue;
++        }
++        const bool lower = key == "minimum" || key == "minItems" || key == "minLength";
++        const bool upper = key == "maximum" || key == "maxItems" || key == "maxLength";
++        if (lower || upper) {
++            if (!it.value().is_number_integer() || (root.contains(key) && !root.at(key).is_number_integer())) {
++                return false;
++            }
++            if (!root.contains(key)) {
++                result[key] = it.value();
++            } else {
++                result[key] = lower ? std::max(root.at(key).get<int64_t>(), it.value().get<int64_t>())
++                                    : std::min(root.at(key).get<int64_t>(), it.value().get<int64_t>());
++            }
++        } else if (key == "type" && !root.contains(key) && it.value().is_string()) {
++            result[key] = it.value();
++        } else {
++            // Nested structures must agree exactly; do not approximate general
++            // schema intersections, references, combinators or different patterns.
++            return false;
++        }
++    }
++
++    const bool root_finite = root.contains("const") || root.contains("enum");
++    const bool branch_finite = branch.contains("const") || branch.contains("enum");
++    if (root_finite || branch_finite) {
++        std::vector<json> left, right, values;
++        if ((root_finite && !qwen3_string_set(root, left)) ||
++            (branch_finite && !qwen3_string_set(branch, right))) {
++            return false;
++        }
++        // A finite raw-string selector is deliberately narrow. Other string
++        // constraints (patterns/lengths) still belong to host validation.
++        for (const auto * schema : { &root, &branch }) {
++            for (auto it = schema->begin(); it != schema->end(); ++it) {
++                const auto & key = it.key();
++                if (key != "type" && key != "const" && key != "enum" && key != "description" && key != "title") {
++                    return false;
++                }
++            }
++            if (schema->contains("type") && schema->at("type") != "string") {
++                return false;
++            }
++        }
++        if (root_finite && branch_finite) {
++            for (const auto & value : left) {
++                if (std::find(right.begin(), right.end(), value) != right.end()) {
++                    values.push_back(value);
++                }
++            }
++        } else {
++            values = root_finite ? left : right;
++        }
++        if (values.empty()) {
++            return false;
++        }
++        result.erase("const");
++        result.erase("enum");
++        result["type"] = "string";
++        if (root.contains("const") || branch.contains("const")) {
++            result["const"] = values.front();
++        } else {
++            result["enum"] = values;
++        }
++    }
++    for (const auto & pair : { std::make_pair("minimum", "maximum"),
++                              std::make_pair("minItems", "maxItems"),
++                              std::make_pair("minLength", "maxLength") }) {
++        if (result.contains(pair.first) && result.contains(pair.second) &&
++            result.at(pair.first).get<int64_t>() > result.at(pair.second).get<int64_t>()) {
++            return false;
++        }
++    }
++    return true;
++}
++
++bool qwen3_properties_disjoint(const json & left, const json & right) {
++    std::vector<json> a, b;
++    if (qwen3_string_set(left, a) && qwen3_string_set(right, b)) {
++        return std::none_of(a.begin(), a.end(), [&](const json & value) {
++            return std::find(b.begin(), b.end(), value) != b.end();
++        });
++    }
++    if (left.contains("type") && left.at("type") == "array" &&
++        right.contains("type") && right.at("type") == "array") {
++        return (left.contains("maxItems") && right.contains("minItems") &&
++                left.at("maxItems").get<int64_t>() < right.at("minItems").get<int64_t>()) ||
++               (right.contains("maxItems") && left.contains("minItems") &&
++                right.at("maxItems").get<int64_t>() < left.at("minItems").get<int64_t>());
++    }
++    return false;
++}
++
++bool qwen3_closed_object(const json & schema, bool root) {
++    if (!schema.is_object() || !schema.contains("type") || schema.at("type") != "object" ||
++        !schema.contains("properties") || !schema.at("properties").is_object() ||
++        !schema.contains("additionalProperties") || schema.at("additionalProperties") != false ||
++        !schema.contains("required") || !schema.at("required").is_array()) {
++        return false;
++    }
++    for (auto it = schema.begin(); it != schema.end(); ++it) {
++        const auto & key = it.key();
++        if (key != "type" && key != "properties" && key != "additionalProperties" &&
++            key != "required" && key != "description" && key != "title" && !(root && key == "oneOf")) {
++            return false;
++        }
++    }
++    for (const auto & key : schema.at("required")) {
++        if (!key.is_string() || !schema.at("properties").contains(key.get<std::string>())) {
++            return false;
++        }
++    }
++    return true;
++}
++
++bool qwen3_closed_action_variants(const json & root, std::vector<json> & variants) {
++    variants.clear();
++    if (!qwen3_closed_object(root, true) || !root.contains("oneOf") ||
++        !root.at("oneOf").is_array() || root.at("oneOf").empty()) {
++        return false;
++    }
++    for (const auto & branch : root.at("oneOf")) {
++        if (!qwen3_closed_object(branch, false) || !qwen3_required(branch, "action")) {
++            return false;
++        }
++        auto merged = root;
++        merged.erase("oneOf");
++        merged["properties"] = json::object();
++        merged["required"] = root.at("required");
++        for (const auto & key : branch.at("required")) {
++            if (!qwen3_required(merged, key.get<std::string>())) {
++                merged["required"].push_back(key);
++            }
++        }
++        for (auto it = branch.at("properties").begin(); it != branch.at("properties").end(); ++it) {
++            json property;
++            if (!root.at("properties").contains(it.key()) ||
++                !qwen3_intersect_property(root.at("properties").at(it.key()), it.value(), property)) {
++                return false;
++            }
++            merged["properties"][it.key()] = std::move(property);
++        }
++        for (const auto & key : merged.at("required")) {
++            if (!merged.at("properties").contains(key.get<std::string>())) {
++                return false;
++            }
++        }
++        const auto & action = merged.at("properties").at("action");
++        if (!action.contains("const") || !action.at("const").is_string()) {
++            return false;
++        }
++        variants.push_back(std::move(merged));
++    }
++    // oneOf requires exactly one branch, not an arbitrary union. The supported
++    // selectors are disjoint string sets or disjoint array-length intervals.
++    for (size_t i = 0; i < variants.size(); ++i) {
++        for (size_t j = i + 1; j < variants.size(); ++j) {
++            bool disjoint = false;
++            for (auto it = variants[i].at("properties").begin(); it != variants[i].at("properties").end(); ++it) {
++                if (variants[j].at("properties").contains(it.key()) &&
++                    (qwen3_required(variants[i], it.key()) || qwen3_required(variants[j], it.key())) &&
++                    qwen3_properties_disjoint(it.value(), variants[j].at("properties").at(it.key()))) {
++                    disjoint = true;
++                    break;
++                }
++            }
++            if (!disjoint) {
++                return false;
++            }
++        }
++    }
++    return true;
++}
++} // namespace
++
+ common_chat_params common_chat_params_init_qwen3_coder(const common_chat_template &          tmpl,
+                                                               const autoparser::generation_params & inputs) {
+     common_chat_params data;
+@@ -106,75 +338,105 @@ common_chat_params common_chat_params_init_qwen3_coder(const common_chat_templat
+                 auto        function = tool.at("function");
+                 std::string name     = function.at("name");
+ 
+-                // XML parameters are enumerated from an object-root schema.
+-                // Keep the complete conditional contract in inputs.tools and the
+-                // rendered prompt, and use only its explicit root object here.
+-                // Do not infer an object for a pure union or alter nested schemas;
+-                // branch-specific constraints remain in the original contract.
+                 auto parameters = common_chat_tool_parameters(function);
+-                if (parameters.is_object() &&
+-                    parameters.contains("type") && parameters.at("type") == "object" &&
+-                    parameters.contains("properties") && parameters.at("properties").is_object() &&
+-                    (parameters.contains("oneOf") || parameters.contains("anyOf"))) {
+-                    parameters.erase("oneOf");
+-                    parameters.erase("anyOf");
+-                    function["parameters"] = std::move(parameters);
++                std::vector<json> variants;
++                if (!qwen3_closed_action_variants(parameters, variants)) {
++                    // Retain QX1's limited structural fallback for unsupported
++                    // unions. Never infer an object for a pure union.
++                    variants.clear();
++                    if (parameters.is_object() &&
++                        parameters.contains("type") && parameters.at("type") == "object" &&
++                        parameters.contains("properties") && parameters.at("properties").is_object() &&
++                        (parameters.contains("oneOf") || parameters.contains("anyOf"))) {
++                        parameters.erase("oneOf");
++                        parameters.erase("anyOf");
++                    }
++                    variants.push_back(std::move(parameters));
+                 }
+ 
+-                std::vector<common_peg_parser> required_args;
+-                std::vector<common_peg_parser> optional_args;
+-
+-                foreach_parameter(function, [&](size_t param_index, const common_chat_schema_property & param, const common_chat_schema_document_ptr & doc) {
+-                    auto rule_name = "tool-" + std::to_string(tool_index) + "-arg-" + std::to_string(param_index);
++                auto variant_choice = p.choice();
++                for (size_t variant_index = 0; variant_index < variants.size(); ++variant_index) {
++                    function["parameters"] = variants[variant_index];
++                    const auto tool_name = "tool-" + std::to_string(tool_index);
++                    const auto variant_name = variants.size() == 1 ? tool_name : tool_name + "-variant-" + std::to_string(variant_index);
++                    std::vector<common_peg_parser> required_args;
++                    std::vector<common_peg_parser> optional_args;
++
++                    foreach_parameter(function, [&](size_t param_index, const common_chat_schema_property & param, const common_chat_schema_document_ptr & doc) {
++                        auto rule_name = variant_name + "-arg-" + std::to_string(param_index);
++
++                        auto arg_open = p.tool_arg_open("<parameter=" + p.tool_arg_name(p.literal(param.name)) + ">\n");
++
++                        auto types = param.schema->value_types();
++
++                        auto arg_value = p.eps();
++                        if (!types.has(common_chat_schema::TYPE_STRING)) {
++                            arg_value = p.tool_arg_json_value(p.schema(p.json(), rule_name + "-schema", doc, *param.schema)) + arg_close;
++                        } else if (types.is_only(common_chat_schema::TYPE_STRING)) {
++                            // XML string values are raw, not JSON quoted. Keep
++                            // literal selectors; arbitrary patterns and lengths
++                            // remain checked by the original host contract.
++                            // Keep the close in each alternative so a shorter
++                            // enum prefix cannot commit before the full value.
++                            std::vector<common_peg_parser> literals;
++                            if (param.schema->kind() == common_chat_schema::KIND_CONST) {
++                                const auto & value = param.schema->as<common_chat_schema_const>().value;
++                                if (value.is_string()) {
++                                    literals.push_back(p.tool_arg_string_value(p.literal(value.get<std::string>())) + arg_close);
++                                }
++                            } else if (param.schema->kind() == common_chat_schema::KIND_ENUM) {
++                                const auto & values = param.schema->as<common_chat_schema_enum>().values;
++                                for (const auto & value : values) {
++                                    if (!value.is_string()) {
++                                        literals.clear();
++                                        break;
++                                    }
++                                    literals.push_back(p.tool_arg_string_value(p.literal(value.get<std::string>())) + arg_close);
++                                }
++                            }
++                            arg_value = literals.empty() ? arg_string :
++                                p.choice(literals);
++                        } else {
++                            // The string alternative accepts any text, so the grammar only keeps the raw string
++                            // rule. The parser still tries the JSON alternatives first to type the value.
++                            auto json_value = p.choice();
++                            if (types.has(common_chat_schema::TYPE_OBJECT)) {
++                                json_value |= p.json_object();
++                            }
++                            if (types.has(common_chat_schema::TYPE_ARRAY)) {
++                                json_value |= p.json_array();
++                            }
++                            if (types.has(common_chat_schema::TYPE_NUMBER) || types.has(common_chat_schema::TYPE_INTEGER)) {
++                                json_value |= p.json_number();
++                            }
++                            if (types.has(common_chat_schema::TYPE_BOOLEAN)) {
++                                json_value |= p.json_bool();
++                            }
++                            if (types.has(common_chat_schema::TYPE_NULL)) {
++                                json_value |= p.json_null();
++                            }
++                            arg_value = p.gbnf(p.atomic(p.tool_arg_json_value(json_value) + arg_close) | arg_string, "xml-arg-string");
++                        }
+ 
+-                    auto arg_open = p.tool_arg_open("<parameter=" + p.tool_arg_name(p.literal(param.name)) + ">\n");
++                        auto arg_rule = p.rule(rule_name, p.tool_arg(arg_open + arg_value));
+ 
+-                    auto types = param.schema->value_types();
++                        (param.required ? required_args : optional_args).push_back(arg_rule);
++                    });
+ 
+-                    auto arg_value = p.eps();
+-                    if (!types.has(common_chat_schema::TYPE_STRING)) {
+-                        arg_value = p.tool_arg_json_value(p.schema(p.json(), rule_name + "-schema", doc, *param.schema)) + arg_close;
+-                    } else if (types.is_only(common_chat_schema::TYPE_STRING)) {
+-                        arg_value = arg_string;
+-                    } else {
+-                        // The string alternative accepts any text, so the grammar only keeps the raw string
+-                        // rule. The parser still tries the JSON alternatives first to type the value.
+-                        auto json_value = p.choice();
+-                        if (types.has(common_chat_schema::TYPE_OBJECT)) {
+-                            json_value |= p.json_object();
+-                        }
+-                        if (types.has(common_chat_schema::TYPE_ARRAY)) {
+-                            json_value |= p.json_array();
+-                        }
+-                        if (types.has(common_chat_schema::TYPE_NUMBER) || types.has(common_chat_schema::TYPE_INTEGER)) {
+-                            json_value |= p.json_number();
+-                        }
+-                        if (types.has(common_chat_schema::TYPE_BOOLEAN)) {
+-                            json_value |= p.json_bool();
+-                        }
+-                        if (types.has(common_chat_schema::TYPE_NULL)) {
+-                            json_value |= p.json_null();
+-                        }
+-                        arg_value = p.gbnf(p.atomic(p.tool_arg_json_value(json_value) + arg_close) | arg_string, "xml-arg-string");
++                    // Required arguments retain Qwen's supported arbitrary order.
++                    auto args = p.permute(variant_name + "-args", required_args);
++                    if (!optional_args.empty()) {
++                        args = args + p.zero_or_more(p.choice(optional_args));
+                     }
+ 
+-                    auto arg_rule = p.rule(rule_name, p.tool_arg(arg_open + arg_value));
+-
+-                    (param.required ? required_args : optional_args).push_back(arg_rule);
+-                });
++                    auto func = p.tool(p.tool_open("<function=" + p.tool_name(p.literal(name)) + ">\n") +
++                                       p.tool_args(args) +
++                                       p.tool_close(p.literal("</function>\n")));
+ 
+-                // Accept required arguments in any order, as Qwen does not always adhere to the
+-                // order provided.
+-                auto args = p.permute("tool-" + std::to_string(tool_index) + "-args", required_args);
+-                if (!optional_args.empty()) {
+-                    args = args + p.zero_or_more(p.choice(optional_args));
++                    variant_choice |= p.rule(variant_name, func);
+                 }
+-
+-                auto func = p.tool(p.tool_open("<function=" + p.tool_name(p.literal(name)) + ">\n") +
+-                                   p.tool_args(args) +
+-                                   p.tool_close(p.literal("</function>\n")));
+-
+-                tool_choice |= p.rule("tool-" + std::to_string(tool_index), func);
++                tool_choice |= variants.size() == 1 ? variant_choice :
++                    p.rule("tool-" + std::to_string(tool_index), variant_choice);
+             });
+ 
+             auto min_calls = inputs.tool_choice == COMMON_CHAT_TOOL_CHOICE_REQUIRED ? 1 : 0;
+diff --git a/tests/test-chat.cpp b/tests/test-chat.cpp
+index 265f3d4..86ddd03 100644
+--- a/tests/test-chat.cpp
++++ b/tests/test-chat.cpp
+@@ -8770,9 +8770,103 @@ static void test_msg_diffs_compute() {
+     }
+ }
+ 
++
++// QX3: exercise the actual attached closed action schemas without a model.
++// String patterns and lengths are still host checks; this gate covers closed
++// variants, required fields, and raw XML string const/enum literals.
++static bool test_qwen3_action_schema_fixture(const std::string & filename) {
++    const auto fixture = json::parse(read_file(filename));
++    if (fixture.at("schema") != "blackice.minicpm.qx3.action-schemas.v1" ||
++        !fixture.at("cases").is_array() || fixture.at("cases").empty()) {
++        throw std::runtime_error("QX3 invalid action-schema fixture");
++    }
++    const auto tmpls = read_templates("models/templates/Qwen3-Coder.jinja");
++    std::vector<common_chat_tool> tools;
++    for (const auto & wire : fixture.at("tools")) {
++        const auto & function = wire.at("function");
++        tools.push_back({function.at("name").get<std::string>(),
++                         function.value("description", std::string()),
++                         function.at("parameters").dump()});
++    }
++    common_chat_templates_inputs inputs;
++    common_chat_msg fixture_user;
++    fixture_user.role = "user";
++    fixture_user.content = "Verify the attached tool contracts.";
++    inputs.messages = {fixture_user};
++    inputs.tools = tools;
++    inputs.add_generation_prompt = true;
++    inputs.tool_choice = COMMON_CHAT_TOOL_CHOICE_AUTO;
++    const auto compiled = common_chat_templates_apply(tmpls.get(), inputs);
++    auto pure_inputs = inputs;
++    pure_inputs.force_pure_content = true;
++    const auto pure = common_chat_templates_apply(tmpls.get(), pure_inputs);
++    size_t number = 0, failures = 0, valid = 0, rejected = 0, parsed = 0;
++    std::cout << "TAP version 13\n";
++    const auto check = [&](bool passed, const std::string & name) {
++        ++number;
++        if (!passed) ++failures;
++        std::cout << (passed ? "ok " : "not ok ") << number << " - " << name << std::endl;
++    };
++    check(compiled.prompt.str() == pure.prompt.str(), "QX3 original rendered tool prompt unchanged");
++    bool untouched = tools.size() == inputs.tools.size();
++    for (size_t i = 0; i < tools.size(); ++i) {
++        untouched = untouched && tools[i].parameters == inputs.tools[i].parameters;
++    }
++    check(untouched, "QX3 original full tool schemas unchanged");
++    for (const auto & test : fixture.at("cases")) {
++        const std::string name = test.at("name"), tool = test.at("tool");
++        const bool expected = test.at("valid").get<bool>();
++        std::string xml = "<tool_call>\n<function=" + tool + ">\n";
++        json args = json::object();
++        for (const auto & field : test.at("fields")) {
++            const std::string key = field.at(0);
++            const auto & value = field.at(1);
++            xml += "<parameter=" + key + ">\n";
++            xml += value.is_string() ? value.get<std::string>() : value.dump();
++            xml += "\n</parameter>\n";
++            args[key] = value;
++        }
++        xml += "</function>\n</tool_call>";
++        bool passed = false;
++        std::string detail;
++        try {
++            auto grammar = build_grammar(compiled.grammar);
++            if (!grammar) throw std::runtime_error("QX3 grammar did not compile");
++            const bool accepted = match_string(xml, grammar.get());
++            passed = accepted == expected;
++            if (accepted != expected) detail = std::string("expected grammar acceptance ") +
++                (expected ? "true" : "false") + ", observed " + (accepted ? "true" : "false");
++            if (expected) {
++                ++valid;
++                common_chat_parser_params params(compiled);
++                const auto message = common_chat_peg_parse(compiled.parser, common_chat_input(xml), false, params);
++                const bool exact = message.tool_calls.size() == 1 &&
++                    message.tool_calls[0].name == tool && json::parse(message.tool_calls[0].arguments) == args;
++                passed = passed && exact;
++                if (exact) ++parsed;
++                else detail += " parsed tool arguments differ from their exact input";
++            } else {
++                ++rejected;
++            }
++        } catch (const std::exception & error) {
++            passed = false;
++            detail = error.what();
++        }
++        check(passed, "QX3 " + name);
++        if (!detail.empty()) std::cerr << "QX3 case " << name << ": " << detail << std::endl;
++    }
++    std::cout << "1.." << number << "\n# tests " << number << "\n# pass " << number - failures
++              << "\n# fail " << failures << "\n";
++    std::cout << "QX3 action-schema regression " << (failures ? "FAIL" : "PASS") << " ("
++              << valid << " valid, " << rejected << " invalid, " << parsed << " exact parses)"
++              << std::endl;
++    return failures == 0;
++}
++
+ int main(int argc, char ** argv) {
+     bool detailed_debug    = false;
+     bool only_run_filtered = false;
++    std::string action_schema_fixture;
+ 
+     // Check for --template and --detailed flags
+     for (int i = 1; i < argc; i++) {
+@@ -8782,6 +8876,10 @@ int main(int argc, char ** argv) {
+             // Only run PEG parser tests with the filter
+             only_run_filtered = true;
+         }
++        if (arg == "--action-schema-fixture" && i + 1 < argc) {
++            action_schema_fixture = argv[++i];
++            only_run_filtered = true;
++        }
+         if (arg == "--detailed") {
+             detailed_debug = true;
+             common_log_set_verbosity_thold(999);
+@@ -8794,6 +8892,13 @@ int main(int argc, char ** argv) {
+ 
+     if (only_run_filtered) {
+         test_template_output_peg_parsers(detailed_debug);
++        if (!action_schema_fixture.empty()) {
++            try { if (!test_qwen3_action_schema_fixture(action_schema_fixture)) return 1; }
++            catch (const std::exception & error) {
++                std::cerr << "QX3 fixture setup failed: " << error.what() << std::endl;
++                return 2;
++            }
++        }
+         std::cout << "\n[chat] All template tests passed!" << '\n';
+         return 0;
+     }
+diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
+index a6059ab..0f3c42d 100644
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -5636,7 +5636,7 @@ server_routes::server_routes(const common_params & params, server_context & ctx_
+ static json get_res_model_info(const server_context_meta & meta) {
+     // note: do NOT use ctx_server here, otherwise it's not possible to use this during sleep
+ 
+-    return {
++    json info = {
+         {"id",       meta.model_name},
+         {"aliases",  meta.model_aliases},
+         {"tags",     meta.model_tags},
+@@ -5659,6 +5659,22 @@ static json get_res_model_info(const server_context_meta & meta) {
+             {"ftype",       meta.model_ftype},
+         }},
+     };
++
++    if (meta.has_cap_chat) {
++        json supported = json::array();
++        const bool pure_jinja = meta.chat_params.use_jinja && meta.chat_params.force_pure_content;
++        if (!pure_jinja) {
++            supported.push_back("response_format");
++            supported.push_back("structured_outputs");
++        }
++        if (meta.chat_params.use_jinja && !pure_jinja &&
++            json_value(meta.chat_template_caps, "supports_tool_calls", false)) {
++            supported.push_back("tools");
++            supported.push_back("tool_choice");
++        }
++        info["supported_parameters"] = std::move(supported);
++    }
++    return info;
+ }
+ 
+ static json get_res_models(const server_context_meta & meta) {

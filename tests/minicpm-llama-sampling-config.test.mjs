@@ -71,3 +71,126 @@ test('revisioned settings retain exact per-model samplers across save and reload
   const reloaded = await new LlamaCppSettingsStore({ dataDir }).init();
   assert.deepEqual(reloaded.snapshot().settings, configured);
 });
+
+test('per-model reasoning modes reach only their own native INI sections', () => {
+  for (const reasoning of ['on', 'off', 'auto']) {
+    const original = { ctxSize: 262144, ...sample, reasoning };
+    const other = { ctxSize: 4096 };
+    const launch = buildLlamaCppLaunch(settings({ original, other }));
+    const before = launch.preset.slice(0, launch.preset.indexOf('[original]\n'));
+    const selected = launch.preset.split('[original]\n')[1].split('[other]\n')[0];
+    const after = launch.preset.split('[other]\n')[1];
+    assert.equal(selected.split('\n').filter(row => row === 'reasoning = ' + reasoning).length, 1);
+    assert.doesNotMatch(before + after, /^reasoning =/m);
+    assert.doesNotMatch(launch.args.join(' '), /reasoning|predict|max-tokens/);
+    assert.match(launch.preset, /^\[\*\]\nfit = on$/m);
+    assert.deepEqual(launch.effective.modelOverrides, { original, other });
+    assert.equal(launch.effective.modelOverrides.original.ctxSize, 262144);
+  }
+});
+
+test('reasoning omission preserves native defaults and rejects global or invalid values', () => {
+  const omitted = buildLlamaCppLaunch(settings({ original: { ...sample } }));
+  assert.doesNotMatch(omitted.preset, /^reasoning =/m);
+  assert.equal(Object.hasOwn(omitted.effective.modelOverrides.original, 'reasoning'), false);
+  for (const reasoning of ['OFF', '', 'none', 0, false, null, {}, ['off']]) {
+    assert.throws(() => settings({ original: { reasoning } }),
+      { code: 'LOCAL_LLAMA_SETTINGS_INVALID' });
+  }
+  assert.throws(() => validateLlamaCppSettings({
+    ...DEFAULT_LLAMA_CPP_SETTINGS, modelsDirectory: 'C:\\Models', reasoning: 'off',
+  }), { code: 'LOCAL_LLAMA_SETTINGS_INVALID' });
+});
+
+test('revisioned settings preserve native reasoning and explicit later edits', async t => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'minicpm-reasoning-settings-'));
+  t.after(() => fs.rm(dataDir, { recursive: true, force: true }));
+  const store = await new LlamaCppSettingsStore({ dataDir }).init();
+  const original = { ...sample, reasoning: 'off', ctxSize: 262144, cacheTypeK: 'q8_0', mmprojOffload: false };
+  const other = { reasoning: 'on', gpuLayers: 0 };
+  const configured = settings({ original, other });
+  await store.update({ expectedRevision: 0, settings: configured });
+  const reloaded = await new LlamaCppSettingsStore({ dataDir }).init();
+  assert.deepEqual(reloaded.snapshot().settings, configured);
+  const edited = structuredClone(configured);
+  edited.modelOverrides.original.reasoning = 'auto';
+  await reloaded.update({ expectedRevision: 1, settings: edited });
+  const final = await new LlamaCppSettingsStore({ dataDir }).init();
+  assert.deepEqual(final.snapshot().settings, edited);
+  assert.deepEqual(final.snapshot().settings.modelOverrides.other, other);
+});
+
+test('explicit repeatPenalty preserves native strengths and conversion endpoints', () => {
+  const minimumNormal = 2 ** -126, maximumFloat = Math.fround(3.4028234663852886e38);
+  // The qualified CLI accepts values that round to the normal endpoints.
+  const values = [0.9, 1, 1.03, 2.5, 1e-20, minimumNormal,
+    minimumNormal * (1 - Number.EPSILON), minimumNormal * (1 - 2 ** -25),
+    maximumFloat, maximumFloat * (1 + Number.EPSILON)];
+  for (const repeatPenalty of values) {
+    const configured = settings({ selected: { repeatPenalty } });
+    const launch = buildLlamaCppLaunch(configured);
+    assert.equal(configured.modelOverrides.selected.repeatPenalty, repeatPenalty);
+    assert.deepEqual(validateLlamaCppSettings(JSON.parse(JSON.stringify(configured))), configured);
+    assert.ok(launch.preset.endsWith('[selected]\nrepeat-penalty = ' + String(repeatPenalty) + '\n'));
+    assert.doesNotMatch(launch.args.join(' '), /repeat-penalty/);
+  }
+});
+
+test('repeatPenalty omission and explicit empty overrides remain unchanged', () => {
+  const omitted = buildLlamaCppLaunch(settings({ selected: {} }));
+  assert.doesNotMatch(omitted.preset, /^repeat-penalty =/m);
+  assert.deepEqual(omitted.effective.modelOverrides, { selected: {} });
+  assert.equal(Object.hasOwn(DEFAULT_LLAMA_CPP_SETTINGS, 'repeatPenalty'), false);
+  assert.equal(Object.hasOwn(omitted.effective, 'repeatPenalty'), false);
+
+  const requested = { empty: {}, other: { temperature: 0.4 }, selected: { ctxSize: 262144, repeatPenalty: 1.03 } };
+  const launch = buildLlamaCppLaunch(settings(requested));
+  assert.deepEqual(launch.effective.modelOverrides, requested);
+  assert.match(launch.preset, /\[empty\]\n\[other\]\ntemp = 0\.4\n\[selected\]\nc = 262144\nrepeat-penalty = 1\.03\n$/);
+  assert.equal(launch.preset.split('\n').filter(line => line.startsWith('repeat-penalty =')).length, 1);
+  assert.doesNotMatch(launch.preset.split('[selected]\n')[0], /^repeat-penalty =/m);
+});
+
+test('repeatPenalty rejects native conversion failures, coercion and global scope', () => {
+  // std::stof rejects subnormal conversion even when its reciprocal is finite.
+  const invalid = [0, -0, -1, NaN, Infinity, -Infinity, Number.MIN_VALUE,
+    1e-50, 1e-39, 3e-39, 1e-38, 5e38, Number.MAX_VALUE,
+    '1.03', null, true, false, {}, []];
+  for (const repeatPenalty of invalid) assert.throws(
+    () => settings({ selected: { repeatPenalty } }), { code: 'LOCAL_LLAMA_SETTINGS_INVALID' });
+  assert.throws(() => validateLlamaCppSettings({
+    ...DEFAULT_LLAMA_CPP_SETTINGS, modelsDirectory: 'C:\\Models', repeatPenalty: 1.03,
+  }), { code: 'LOCAL_LLAMA_SETTINGS_INVALID' });
+  for (const key of ['repeat_penalty', 'repetitionPenalty']) assert.throws(
+    () => settings({ selected: { [key]: 1.03 } }), { code: 'LOCAL_LLAMA_SETTINGS_INVALID' });
+});
+
+test('revisioned settings round-trip repeatPenalty exactly and preserve explicit removal', async t => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'minicpm-repeat-settings-'));
+  t.after(() => fs.rm(dataDir, { recursive: true, force: true }));
+  const store = await new LlamaCppSettingsStore({ dataDir }).init();
+  const configured = settings({ empty: {}, other: { repeatPenalty: 0.9 }, selected: { repeatPenalty: 1.03 } });
+  await store.update({ expectedRevision: 0, settings: configured });
+  const reloaded = await new LlamaCppSettingsStore({ dataDir }).init();
+  assert.deepEqual(reloaded.snapshot().settings, configured);
+  assert.match(buildLlamaCppLaunch(reloaded.snapshot().settings).preset, /repeat-penalty = 1\.03\n/);
+
+  const invalid = structuredClone(configured);
+  invalid.modelOverrides.selected.repeatPenalty = 1e-38;
+  await assert.rejects(reloaded.update({ expectedRevision: 1, settings: invalid }),
+    { code: 'LOCAL_LLAMA_SETTINGS_INVALID' });
+  assert.equal(reloaded.snapshot().revision, 1);
+  assert.deepEqual((await new LlamaCppSettingsStore({ dataDir }).init()).snapshot().settings, configured);
+
+  const edited = structuredClone(configured);
+  edited.modelOverrides.selected.repeatPenalty = 1;
+  await reloaded.update({ expectedRevision: 1, settings: edited });
+  const disabled = await new LlamaCppSettingsStore({ dataDir }).init();
+  assert.deepEqual(disabled.snapshot().settings, edited);
+  delete edited.modelOverrides.selected.repeatPenalty;
+  await disabled.update({ expectedRevision: 2, settings: edited });
+  const final = await new LlamaCppSettingsStore({ dataDir }).init();
+  assert.deepEqual(final.snapshot().settings, edited);
+  assert.deepEqual(final.snapshot().settings.modelOverrides.selected, {});
+  assert.deepEqual(final.snapshot().settings.modelOverrides.other, { repeatPenalty: 0.9 });
+});

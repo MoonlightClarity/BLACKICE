@@ -30,7 +30,7 @@ export function resolvedDefaultModel(status={}) {
 }
 export function chatOptionChoices(status={},raw={}){
   const selected=normalizeChatOptions(raw);
-  const defaultInfo=resolvedDefaultModel(status);
+  const defaultInfo=resolvedDefaultModel(status),localDefault=status.localDefaultModelStatus;
   const isRetired=id=>/^(?:antigravity|qwen_code)::/.test(id||'');
   const models=[{id:'default',label:defaultInfo.label,disabled:defaultInfo.connectionRemoved===true}];
   for(const item of status.models||[]){
@@ -38,7 +38,8 @@ export function chatOptionChoices(status={},raw={}){
     // Catalogs can be cached in a mounted chat even after the runtime has
     // retired its adapters. Do not offer obsolete native CLIs as choices.
     if(typeof id!=='string'||!id||isRetired(id)||missingApiModelConnection(status,id)||models.some(x=>x.id===id))continue;
-    models.push({id,label:item.displayName||id,disabled:item.available===false});
+    const local=localDefault?.eligible===true&&localDefault.model===id;
+    models.push({id,label:(local?'Local · ':'')+(item.displayName||id),disabled:item.available===false,...(local?{shortcut:'local'}:{})});
   }
   if(selected.model!=='default'&&!models.some(item=>item.id===selected.model)){
     const old=isRetired(selected.model),removed=missingApiModelConnection(status,selected.model);

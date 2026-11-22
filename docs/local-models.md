@@ -133,3 +133,25 @@ can still work even if the GPU prerequisite is not met. Neither a catalog entry
 nor GPU enumeration proves inference or GPU offload. Those are marked
 `not_tested`. Use the separate isolated runtime fixture for inference/runtime
 lifecycle tests.
+
+## A separate local default
+
+In **Settings → Models → Local models**, choose an available registered llama.cpp model under **Local default model**, then select **Use as local default**. **Clear local default** removes this preference. This setting uses the managed compatible route at `http://127.0.0.1:8080/v1`; custom inference endpoints and other provider types are not eligible.
+
+Chat displays the selected model as **Local · model name**. Choosing it saves the concrete `provider::model` identifier through the existing model picker. Changing the local preference leaves the app-wide default and models already selected in existing chats intact. The choice still follows normal provider visibility, activation, availability and removal checks.
+
+The preference records a saved registration, not proof that weights exist or a model is loaded. Missing or disabled models remain visibly unavailable; use the existing **Add GGUF** setup to restore a model, choose another, or clear the preference. Saving or clearing the preference does not load a model, download weights, or initialize a MiniCPM calibration profile.
+
+The local-session-only `POST /api/local-models/default` accepts `{ "model": "local_llamacpp::model-id", "expectedLocalDefaultModel": null }`; `model: null` clears the preference. Supply the current nullable preference as `expectedLocalDefaultModel`. A stale value returns `409` without changing it. `GET /api/local-models` includes `localDefaultModelStatus` (`model`, `eligible`, `reason`) and minimal `localDefaultChoices` for registered eligible models. `eligible` describes registration and routing; it is separate from runtime/file availability. The ordinary app status includes the same preference status.
+# MiniCPM setup for Local
+
+When the bundled MiniCPM setup is available, **Set up MiniCPM for Local** opens the existing Local models settings and prepares its pinned model and vision projector. The two original assets total 1,756,723,456 bytes (about 1.64 GiB). Setup verifies existing configured files at their actual locations, including model and projector files stored in different folders. Correct renamed files are reusable because verification checks their size and SHA-256, not their basename. A configured missing or mismatched file is reported; it is never silently replaced or repointed.
+
+Only an asset without a configured path is prepared in the managed models directory. Downloads are explicit and verified before exclusive publication. Opening the app or viewing settings never starts a download or loads a model.
+
+Setup initializes per-model runtime settings only when that model has no override entry. An existing override, including an empty object, is preserved exactly. The result reports when those existing settings prevented the supplied defaults or projector configuration from being applied. Existing global settings, hardware auto-fit, provider policies, and other models remain in place. A genuinely new llama.cpp provider uses the native provider-default output policy, including when its ID requires a suffix.
+
+The separate Local preference is initialized only if it has never been configured. Explicitly selecting or clearing it records that choice, including clearing an already-empty preference. An existing selection or deliberate clear is preserved. Setup does not change the app-wide/cloud default, select a model in the current chat, rewrite old chats, or activate a model. Selecting the concrete Local model later uses the existing activation checks.
+
+Each setup has a saved intent and stage receipt. A failure or cancellation can leave verified files, saved launch settings, or a registered model from an earlier completed stage. The result reports those effects; it does not claim that the settings and provider stores form a single transaction. Retrying an uncertain intent reads or joins that same operation. A confirmed failed or interrupted setup can be retried with refreshed expectations and a new intent; already verified assets are reused. Interrupted work does not resume automatically at startup.
+

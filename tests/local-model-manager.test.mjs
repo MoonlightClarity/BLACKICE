@@ -203,3 +203,88 @@ test('Chat removes the local choice through the served route and refreshes the m
  assert.equal(result.selection,selection);
  assert.deepEqual(result.status.models.map(m=>m.id),[id+'::keep']);
 });
+
+
+async function registrationStore(t, defaultKind = 'explicit') {
+  const { ProviderStore } = await import('../lib/provider-store.mjs');
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'blackice-register-output-default-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  const store = new ProviderStore({ dataDir }); await store.init();
+  if (defaultKind === 'automatic') await store.pinAutomaticDefault('gpt-6-luna');
+  else await store.setDefaultModel('gpt-6-luna');
+  const defaults = { defaultModel: store.defaultModel, automaticDefaultModel: store.automaticDefaultModel };
+  const calls = [];
+  const runtime = {
+    listProviders: () => store.list(),
+    async saveProvider(value, options) {
+      assert.equal(options?.preserveDefault, true, 'registration must preserve the app model choice');
+      calls.push({ value: structuredClone(value), options: structuredClone(options) });
+      return store.save(value, options);
+    },
+  };
+  return {
+    store, runtime, calls, defaults,
+    async reopen() {
+      const reopened = new ProviderStore({ dataDir }); await reopened.init();
+      assert.deepEqual({ defaultModel: reopened.defaultModel, automaticDefaultModel: reopened.automaticDefaultModel }, defaults);
+      return reopened;
+    },
+  };
+}
+
+test('new canonical llama registration persists provider-default while explicit and automatic Luna defaults survive restart', async t => {
+  for (const kind of ['explicit', 'automatic']) {
+    const f = await registrationStore(t, kind);
+    assert.deepEqual(await registerLocalModel(f.runtime, 'llamacpp', 'MiniCPM-public-fixture.gguf'), {
+      providerId: 'local_llamacpp', selection: 'local_llamacpp::MiniCPM-public-fixture.gguf',
+    });
+    const reopened = await f.reopen(), provider = reopened.get('local_llamacpp');
+    assert.equal(provider.outputTokenPolicy, 'provider-default');
+    assert.equal(provider.preset, 'llamacpp');
+    assert.equal(provider.baseUrl, 'http://127.0.0.1:8080/v1');
+    assert.deepEqual(provider.models.map(model => model.id), ['MiniCPM-public-fixture.gguf']);
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.calls[0].value.outputTokenPolicy, 'provider-default');
+    assert.equal(f.calls[0].options.preserveDefault, true);
+  }
+});
+
+test('registering another local model preserves explicit output choices and does not migrate an unmarked connection', async t => {
+  for (const policy of [undefined, 'configured-limit', 'provider-default']) {
+    const f = await registrationStore(t);
+    await f.store.save({
+      id: 'local_llamacpp', preset: 'llamacpp', type: 'compatible',
+      baseUrl: 'http://127.0.0.1:8080/v1', models: ['existing.gguf'], maxTokens: 4096,
+      ...(policy === undefined ? {} : { outputTokenPolicy: policy }),
+    });
+    await registerLocalModel(f.runtime, 'llamacpp', 'MiniCPM-public-fixture.gguf');
+    const provider = (await f.reopen()).get('local_llamacpp');
+    assert.equal(provider.outputTokenPolicy, policy);
+    assert.equal(Object.hasOwn(provider, 'outputTokenPolicy'), policy !== undefined);
+    assert.equal(provider.maxTokens, 4096);
+    assert.deepEqual(provider.models.map(model => model.id), ['existing.gguf', 'MiniCPM-public-fixture.gguf']);
+    assert.equal(Object.hasOwn(f.calls[0].value, 'outputTokenPolicy'), false);
+  }
+});
+
+test('new suffixed llama providers use native output defaults while other local engines and collisions stay unchanged', async t => {
+  const f = await registrationStore(t);
+  await f.store.save({
+    id: 'local_llamacpp', preset: 'compatible', type: 'compatible',
+    baseUrl: 'http://127.0.0.1:45678/v1', models: ['unrelated'], maxTokens: 2048,
+  });
+  assert.deepEqual(await registerLocalModel(f.runtime, 'llamacpp', 'MiniCPM-public-fixture.gguf'), {
+    providerId: 'local_llamacpp_2', selection: 'local_llamacpp_2::MiniCPM-public-fixture.gguf',
+  });
+  assert.equal((await registerLocalModel(f.runtime, 'ollama', 'public-fixture')).providerId, 'local_ollama');
+  assert.equal((await registerLocalModel(f.runtime, 'lmstudio', 'public/fixture')).providerId, 'local_lmstudio');
+  const reopened = await f.reopen();
+  assert.equal(reopened.get('local_llamacpp_2').outputTokenPolicy, 'provider-default');
+  for (const id of ['local_ollama', 'local_lmstudio'])
+    assert.equal(Object.hasOwn(reopened.get(id), 'outputTokenPolicy'), false, id);
+  assert.equal(reopened.get('local_llamacpp').baseUrl, 'http://127.0.0.1:45678/v1');
+  assert.equal(reopened.get('local_llamacpp').maxTokens, 2048);
+  assert.deepEqual(reopened.get('local_llamacpp').models.map(model => model.id), ['unrelated']);
+  assert.equal(f.calls.find(call => call.value.id === 'local_llamacpp_2').value.outputTokenPolicy, 'provider-default');
+  assert.ok(f.calls.filter(call => call.value.id !== 'local_llamacpp_2').every(call => !Object.hasOwn(call.value, 'outputTokenPolicy')));
+});

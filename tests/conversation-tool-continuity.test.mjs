@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { conversationHandoff } from '../lib/engine.mjs';
+import { ACCEPTED_PROVIDER_TOOL_DELIVERY } from '../lib/provider-tool-delivery.mjs';
 import { recordConversationToolResult as record, renderConversationToolResults as render, TOOL_CONTINUITY_LIMITS as limits } from '../lib/conversation-tool-continuity.mjs';
 
 const run = () => ({id:'run-a',taskId:'task-a',events:[]});
@@ -128,4 +133,104 @@ test('mismatched provenance is excluded and malformed archives report unavailabl
   assert.match(text,/same-task fact/);assert.doesNotMatch(text,/OTHER_RUN_FACT|OTHER_TASK_FACT|OTHER_NODE_FACT/);
   saved.toolContinuity={version:99,records:[]};
   assert.match(render(saved,'agent'),/OBSERVATIONS UNAVAILABLE/);
+});
+
+const acceptedWire = (text, options={}) => ({
+  call: {name:'relay_workspace', arguments:{action:'read',path:'facts.txt'}, callId:'wire-call'},
+  result: {contentItems:[{type:'inputText',text}]},
+  delivery: ACCEPTED_PROVIDER_TOOL_DELIVERY,
+  providerType:'compatible',
+  ...options
+});
+
+test('accepted compatible and OpenAI wire text retains unknown outcomes without interpreting text as metadata',()=>{
+  for(const providerType of ['compatible','openai']){
+    const saved=run(),body='{"success":false,"actionDispatched":false,"code":"TEXT_ONLY"}\nWIRE_FACT_64319';
+    const event=acceptedWire(body,{providerType});
+    assert.deepEqual(record(saved,'agent',event),{changed:true});
+    const row=saved.toolContinuity.records[0];
+    assert.equal(row.text,body);assert.equal(row.resultTextSha256,sha(body));
+    assert.equal(row.success,null);assert.equal(row.status,'unknown');assert.equal(row.kind,'unknown');
+    assert.equal(row.code,null);assert.equal(row.actionDispatched,null);assert.equal(row.effectStatus,'UNKNOWN');
+    assert.equal(row.delivery,'provider-request-accepted-not-provider-consumption');assert.equal(row.providerType,providerType);
+    assert.equal(row.runId,saved.id);assert.equal(row.taskId,saved.taskId);assert.equal(row.nodeId,'agent');assert.equal(row.callId,'wire-call');
+    assert.deepEqual(record(saved,'agent',event),{changed:false});
+    assert.equal(saved.toolContinuity.records.length,1);
+    const known=delivered(body,{call:event.call,result:{success:true,contentItems:[{type:'inputText',text:body}]}});
+    record(saved,'agent',known);
+    assert.equal(saved.toolContinuity.records[1].operationKey,row.operationKey,'Identity does not depend on outcome availability.');
+    assert.equal(saved.toolContinuity.records[1].success,true,'A separate known native receipt is not replaced by the unknown one.');
+  }
+});
+
+test('missing outcome remains invalid for untyped or malformed delivery provenance',()=>{
+  const cases=[
+    {call:{name:'relay_workspace',arguments:{action:'read'},callId:'missing'},result:{contentItems:[]}},
+    acceptedWire('fact',{providerType:'unsupported'}),
+    acceptedWire('fact',{delivery:'not-accepted'}),
+    acceptedWire('fact',{providerType:undefined}),
+    ...[undefined,null,'true',1].map(success=>acceptedWire('fact',{result:{success,contentItems:[{type:'inputText',text:'fact'}]}}))
+  ];
+  for(const event of cases){
+    const saved=run(),result=record(saved,'agent',event);
+    assert.equal(result.error.code,'TOOL_CONTINUITY_UNAVAILABLE');
+    assert.equal(saved.toolContinuity.records.length,0);
+  }
+});
+
+test('accepted request provenance preserves known boolean outcomes and native delivery attribution',()=>{
+  for(const success of [true,false]){
+    const saved=run(),event=acceptedWire('ordinary result',{providerType:'anthropic',
+      result:{success,actionDispatched:false,contentItems:[{type:'inputText',text:'ordinary result'}]}});
+    record(saved,'agent',event);
+    const row=saved.toolContinuity.records[0];
+    assert.equal(row.success,success);assert.equal(row.status,success?'completed':'failed');
+    assert.equal(row.actionDispatched,false);
+    assert.equal(row.delivery,'provider-request-accepted-not-provider-consumption');
+  }
+  const saved=run();record(saved,'agent',delivered('native fact'));
+  assert.equal(saved.toolContinuity.records[0].delivery,'local-stream-write-not-provider-consumption');
+  assert.equal(saved.toolContinuity.records[0].providerType,undefined);
+});
+
+test('unknown wire outcomes retain binary and sensitive omission without leaking payloads',()=>{
+  const saved=run(),event=acceptedWire('Visible [REDACTED] data:image/png;base64,QUJD');
+  event.call.arguments={action:'read',url:'https://user:WIRE_SECRET@example.test/facts?token=WIRE_TOKEN'};
+  event.result.contentItems.push({type:'inputImage',imageUrl:'data:image/png;base64,WIRE_BINARY'});
+  record(saved,'agent',event);
+  const row=saved.toolContinuity.records[0];
+  assert.equal(row.success,null);assert.equal(row.binaryItemsOmitted,1);assert.equal(row.binaryUrlsOmitted,true);assert.equal(row.partial,true);
+  assert.match(row.text,/\[Binary data omitted\]/);
+  assert.doesNotMatch(JSON.stringify(saved),/WIRE_SECRET|WIRE_TOKEN|WIRE_BINARY/);
+  const secret=acceptedWire('WIRE_CREDENTIAL_VALUE');
+  secret.call={name:'relay_browser_credentials',arguments:{action:'read'},callId:'wire-secret'};
+  record(saved,'agent',secret);
+  assert.equal(saved.toolContinuity.records.at(-1).sensitiveContentOmitted,true);
+  assert.equal(saved.toolContinuity.records.at(-1).resultTextSha256,null);
+  assert.doesNotMatch(JSON.stringify(saved),/WIRE_CREDENTIAL_VALUE/);
+});
+
+test('accepted wire facts survive reopening and real same-task handoff without entering fresh-task projections',t=>{
+  const profile=fs.mkdtempSync(path.join(os.tmpdir(),'blackice-wire-continuity-'));
+  t.after(()=>fs.rmSync(profile,{recursive:true,force:true}));
+  const marker=path.join(profile,'retained-profile.txt');fs.writeFileSync(marker,'same-profile',{flag:'wx'});
+  const a={id:'wire-run-a',taskId:'wire-task-a',pastChats:'off',input:'Inspect task A.',nodes:{agent:{output:'Task A inspected.'}},events:[]};
+  const b={id:'wire-run-b',taskId:'wire-task-b',pastChats:'off',input:'Fresh task B.',nodes:{agent:{output:'Task B inspected.'}},events:[]};
+  record(a,'agent',acceptedWire('WIRE_TASK_A_ONLY_71843'));
+  record(b,'agent',acceptedWire('WIRE_TASK_B_ONLY_56290'));
+  const file=path.join(profile,'runs.json');fs.writeFileSync(file,JSON.stringify([a,b]),{flag:'wx'});
+  const [reopenedA,reopenedB]=JSON.parse(fs.readFileSync(file,'utf8'));
+  assert.equal(reopenedA.toolContinuity.records[0].success,null);
+  const follow={id:'wire-run-follow',taskId:a.taskId,parentRunId:a.id,pastChats:'off',input:'Continue task A.',nodes:{agent:{output:''}},events:[]};
+  const continued=conversationHandoff([reopenedA,follow],'agent');
+  assert.match(continued,/WIRE_TASK_A_ONLY_71843/);assert.match(continued,/"success":null/);assert.match(continued,/"status":"unknown"/);
+  assert.doesNotMatch(continued,/WIRE_TASK_B_ONLY_56290/);
+  const fresh=conversationHandoff([reopenedB],'agent');
+  assert.match(fresh,/WIRE_TASK_B_ONLY_56290/);assert.doesNotMatch(fresh,/WIRE_TASK_A_ONLY_71843/);
+  // Reject a copied foreign record even when it appears in the fresh run's state.
+  reopenedB.toolContinuity.records.push(reopenedA.toolContinuity.records[0]);
+  assert.doesNotMatch(conversationHandoff([reopenedB],'agent'),/WIRE_TASK_A_ONLY_71843/);
+  assert.doesNotMatch(conversationHandoff([reopenedA],'other-node'),/WIRE_TASK_A_ONLY_71843/);
+  assert.equal(fs.readFileSync(marker,'utf8'),'same-profile');
+  assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).length,2,'Prior tasks remain saved; no profile reset supplies isolation.');
 });

@@ -1,0 +1,4261 @@
+{
+  "schema": "blackice.minicpm.qx3.action-schemas.v1",
+  "provenance": {
+    "wireRequestBytes": 53606,
+    "wireRequestSha256": "fcbe7726f1cc928115bd002a9cee0425e14133866e1b13135762b337865b511b",
+    "skillsSchemaBytes": 2551,
+    "skillsSchemaSha256": "fe3d1fd20830237172dc1ba18520225440d75d915e5a58e45fee3ddbe981457b",
+    "scope": "Built-in tool schemas only; no task prompt or hidden test inputs."
+  },
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "relay_directory_action",
+        "description": "Read and coordinate this task action outline. Plan, focus, note a failed option without closing the action, observe partial progress or a fulfilled action with an explicit outcome, or block the action itself with a blocker classification. Host receipts remain distinct from agent-authored outcome claims. Include the action that delivers the requested result. If discovery is only an intermediate step, add and take the next useful authorized step rather than ending with a progress report. Supply only fields for the selected action. Read takes action alone. A ? marks an optional field: read: action; plan: action, actions, revision?; focus: action, id, revision?; refine: action, id, claim, doneChecks, dropCheckIds?, alternatives?, revision?; refine: action, id, claim, dropCheckIds, alternatives, doneChecks?, revision?; note: action, id, claim, receipts, checkResults?, revision?; observe: action, id, claim, receipts, outcome, candidateRows?, checkResults?, revision?; block: action, id, claim, blocker, receipts, revision?; block: action, id, claim, blocker, receipts?, revision?; block: action, id, claim, blocker, revision?. For refine, adding checks and retiring checks are separate variants; retiring requires alternatives. unresolved-effect uses the ledger receipts, so omit receipts for that blocker.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "read",
+                "plan",
+                "focus",
+                "refine",
+                "note",
+                "observe",
+                "block"
+              ]
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "objective-met",
+                "partial"
+              ],
+              "description": "Required for observe: partial saves evidence without closing the action or unblocking dependencies; objective-met is only for the whole active objective."
+            },
+            "blocker": {
+              "type": "string",
+              "enum": [
+                "prerequisite-unavailable",
+                "search-limit-reached",
+                "no-viable-route",
+                "unresolved-effect"
+              ],
+              "description": "For block only: why the whole step cannot proceed. search-limit-reached means the preplanned finite search scope was read, not elapsed time; configured deadlines are enforced by the host."
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Optional legacy echo. Model edits use the host-delivered snapshot; omit rather than calculating a revision."
+            },
+            "candidateRows": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 16,
+              "description": "For a qualifying contract, give distinct candidates and their source reads. For partial with no candidate checked, omit candidateRows or use []; objective-met needs qualifying rows.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "sourceReceipt",
+                  "checks"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 48,
+                    "pattern": "^[A-Za-z0-9_-]+$",
+                    "description": "Short ID using only letters, digits, underscore or hyphen; for example fully_remote."
+                  },
+                  "sourceReceipt": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "checks": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "status"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 48,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "description": "Short ID using only letters, digits, underscore or hyphen; for example fully_remote."
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "verified",
+                            "unmet",
+                            "unknown"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "checkResults": {
+              "type": "array",
+              "maxItems": 24,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "yes"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{1,48}$"
+                  },
+                  "yes": {
+                    "type": "boolean"
+                  },
+                  "receipt": {
+                    "type": "string",
+                    "maxLength": 80,
+                    "description": "Required for Yes. An exact returned receipt also cited in receipts."
+                  }
+                }
+              }
+            },
+            "doneChecks": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 24,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "check"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{1,48}$"
+                  },
+                  "check": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 320,
+                    "description": "An observable yes/no question about the requested result, not an activity tally."
+                  },
+                  "parentId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{1,48}$",
+                    "description": "Optional existing check whose outcome requires this child."
+                  },
+                  "requestQuote": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 320,
+                    "description": "Verbatim short text from the current request for an explicit user requirement. The agent cannot retire this check."
+                  },
+                  "advisory": {
+                    "type": "boolean",
+                    "description": "True for an optional preference or proposal that must not gate completion. Do not combine with requestQuote."
+                  }
+                }
+              }
+            },
+            "dropCheckIds": {
+              "type": "array",
+              "maxItems": 24,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 48,
+                "pattern": "^[A-Za-z0-9_-]+$",
+                "description": "Short ID using only letters, digits, underscore or hyphen; for example fully_remote."
+              }
+            },
+            "alternatives": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 320
+              }
+            },
+            "actions": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 24,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "objective",
+                  "dependsOn"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "objective": {
+                    "type": "string",
+                    "maxLength": 1200
+                  },
+                  "qualifying": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "minQualifyingCount",
+                      "requiredChecks"
+                    ],
+                    "properties": {
+                      "minQualifyingCount": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "description": "Required lower bound only. Do not use this field for a cap such as up to N."
+                      },
+                      "requiredChecks": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 48,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "description": "Short ID using only letters, digits, underscore or hyphen; for example fully_remote."
+                        }
+                      }
+                    }
+                  },
+                  "searchScope": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 24,
+                    "description": "Only for a finite search: exact planned URLs or absolute file paths. Required to report an exhausted search with an unmet minimum.",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "tool",
+                        "locator"
+                      ],
+                      "properties": {
+                        "tool": {
+                          "type": "string",
+                          "enum": [
+                            "relay_browser",
+                            "relay_workspace"
+                          ]
+                        },
+                        "locator": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        }
+                      }
+                    }
+                  },
+                  "doneChecks": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 24,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "check"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-zA-Z0-9_-]{1,48}$"
+                        },
+                        "check": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 320,
+                          "description": "An observable yes/no question about the requested result, not an activity tally."
+                        },
+                        "parentId": {
+                          "type": "string",
+                          "pattern": "^[a-zA-Z0-9_-]{1,48}$",
+                          "description": "Optional existing check whose outcome requires this child."
+                        },
+                        "requestQuote": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 320,
+                          "description": "Verbatim short text from the current request for an explicit user requirement. The agent cannot retire this check."
+                        },
+                        "advisory": {
+                          "type": "boolean",
+                          "description": "True for an optional preference or proposal that must not gate completion. Do not combine with requestQuote."
+                        }
+                      }
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 1200
+                  },
+                  "sourceRefs": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "dependsOn": {
+                    "type": "array",
+                    "maxItems": 24,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "id": {
+              "type": "string"
+            },
+            "claim": {
+              "type": "string",
+              "maxLength": 1200
+            },
+            "receipts": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "read"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "actions"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "plan"
+                },
+                "actions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 24,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "objective",
+                      "dependsOn"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "objective": {
+                        "type": "string",
+                        "maxLength": 1200
+                      },
+                      "qualifying": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "minQualifyingCount",
+                          "requiredChecks"
+                        ],
+                        "properties": {
+                          "minQualifyingCount": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 16,
+                            "description": "Required lower bound only. Do not use this field for a cap such as up to N."
+                          },
+                          "requiredChecks": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 8,
+                            "uniqueItems": true,
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 48,
+                              "pattern": "^[A-Za-z0-9_-]+$",
+                              "description": "Short ID using only letters, digits, underscore or hyphen; for example fully_remote."
+                            }
+                          }
+                        }
+                      },
+                      "searchScope": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 24,
+                        "description": "Only for a finite search: exact planned URLs or absolute file paths. Required to report an exhausted search with an unmet minimum.",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "tool",
+                            "locator"
+                          ],
+                          "properties": {
+                            "tool": {
+                              "type": "string",
+                              "enum": [
+                                "relay_browser",
+                                "relay_workspace"
+                              ]
+                            },
+                            "locator": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 2048
+                            }
+                          }
+                        }
+                      },
+                      "doneChecks": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 24,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "check"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-zA-Z0-9_-]{1,48}$"
+                            },
+                            "check": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 320,
+                              "description": "An observable yes/no question about the requested result, not an activity tally."
+                            },
+                            "parentId": {
+                              "type": "string",
+                              "pattern": "^[a-zA-Z0-9_-]{1,48}$",
+                              "description": "Optional existing check whose outcome requires this child."
+                            },
+                            "requestQuote": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 320,
+                              "description": "Verbatim short text from the current request for an explicit user requirement. The agent cannot retire this check."
+                            },
+                            "advisory": {
+                              "type": "boolean",
+                              "description": "True for an optional preference or proposal that must not gate completion. Do not combine with requestQuote."
+                            }
+                          }
+                        }
+                      },
+                      "reason": {
+                        "type": "string",
+                        "maxLength": 1200
+                      },
+                      "sourceRefs": {
+                        "type": "array",
+                        "maxItems": 32,
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "dependsOn": {
+                        "type": "array",
+                        "maxItems": 24,
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Optional legacy echo. Model edits use the host-delivered snapshot; omit rather than calculating a revision."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "id"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "focus"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Optional legacy echo. Model edits use the host-delivered snapshot; omit rather than calculating a revision."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "id",
+                "claim",
+                "doneChecks"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "refine"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "claim": {
+                  "type": "string",
+                  "maxLength": 1200
+                },
+                "doneChecks": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 24,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "check"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]{1,48}$"
+                      },
+                      "check": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 320,
+                        "description": "An observable yes/no question about the requested result, not an activity tally."
+                      },
+                      "parentId": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]{1,48}$",
+                        "description": "Optional existing check whose outcome requires this child."
+                      },
+                      "requestQuote": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 320,
+                        "description": "Verbatim short text from the current request for an explicit user requirement. The agent cannot retire this check."
+                      },
+                      "advisory": {
+                        "type": "boolean",
+                        "description": "True for an optional preference or proposal that must not gate completion. Do not combine with requestQuote."
+                      }
+                    }
+                  }
+                },
+                "dropCheckIds": {
+                  "type": "array",
+                  "maxItems": 0,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 48,
+                    "pattern": "^[A-Za-z0-9_-]+$",
+                    "description": "Short ID using only letters, digits, underscore or hyphen; for example fully_remote."
+                  }
+                },
+                "alternatives": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 320
+                  }
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Optional legacy echo. Model edits use the host-delivered snapshot; omit rather than calculating a revision."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "id",
+                "claim",
+                "dropCheckIds",
+                "alternatives"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "refine"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "claim": {
+                  "type": "string",
+                  "maxLength": 1200
+                },
+                "dropCheckIds": {
+                  "type": "array",
+                  "maxItems": 24,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 48,
+                    "pattern": "^[A-Za-z0-9_-]+$",
+                    "description": "Short ID using only letters, digits, underscore or hyphen; for example fully_remote."
+                  },
+                  "minItems": 1
+                },
+                "alternatives": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 320
+                  },
+                  "minItems": 1
+                },
+                "doneChecks": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 24,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "check"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]{1,48}$"
+                      },
+                      "check": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 320,
+                        "description": "An observable yes/no question about the requested result, not an activity tally."
+                      },
+                      "parentId": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]{1,48}$",
+                        "description": "Optional existing check whose outcome requires this child."
+                      },
+                      "requestQuote": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 320,
+                        "description": "Verbatim short text from the current request for an explicit user requirement. The agent cannot retire this check."
+                      },
+                      "advisory": {
+                        "type": "boolean",
+                        "description": "True for an optional preference or proposal that must not gate completion. Do not combine with requestQuote."
+                      }
+                    }
+                  }
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Optional legacy echo. Model edits use the host-delivered snapshot; omit rather than calculating a revision."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "id",
+                "claim",
+                "receipts"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "note"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "claim": {
+                  "type": "string",
+                  "maxLength": 1200
+                },
+                "receipts": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "checkResults": {
+                  "type": "array",
+                  "maxItems": 24,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "yes"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]{1,48}$"
+                      },
+                      "yes": {
+                        "type": "boolean"
+                      },
+                      "receipt": {
+                        "type": "string",
+                        "maxLength": 80,
+                        "description": "Required for Yes. An exact returned receipt also cited in receipts."
+                      }
+                    }
+                  }
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Optional legacy echo. Model edits use the host-delivered snapshot; omit rather than calculating a revision."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "id",
+                "claim",
+                "receipts",
+                "outcome"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "observe"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "claim": {
+                  "type": "string",
+                  "maxLength": 1200
+                },
+                "receipts": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "objective-met",
+                    "partial"
+                  ],
+                  "description": "Required for observe: partial saves evidence without closing the action or unblocking dependencies; objective-met is only for the whole active objective."
+                },
+                "candidateRows": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 16,
+                  "description": "For a qualifying contract, give distinct candidates and their source reads. For partial with no candidate checked, omit candidateRows or use []; objective-met needs qualifying rows.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "sourceReceipt",
+                      "checks"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 48,
+                        "pattern": "^[A-Za-z0-9_-]+$",
+                        "description": "Short ID using only letters, digits, underscore or hyphen; for example fully_remote."
+                      },
+                      "sourceReceipt": {
+                        "type": "string",
+                        "maxLength": 80
+                      },
+                      "checks": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "status"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 48,
+                              "pattern": "^[A-Za-z0-9_-]+$",
+                              "description": "Short ID using only letters, digits, underscore or hyphen; for example fully_remote."
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "verified",
+                                "unmet",
+                                "unknown"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "checkResults": {
+                  "type": "array",
+                  "maxItems": 24,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "yes"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]{1,48}$"
+                      },
+                      "yes": {
+                        "type": "boolean"
+                      },
+                      "receipt": {
+                        "type": "string",
+                        "maxLength": 80,
+                        "description": "Required for Yes. An exact returned receipt also cited in receipts."
+                      }
+                    }
+                  }
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Optional legacy echo. Model edits use the host-delivered snapshot; omit rather than calculating a revision."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "id",
+                "claim",
+                "blocker",
+                "receipts"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "block"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "claim": {
+                  "type": "string",
+                  "maxLength": 1200
+                },
+                "blocker": {
+                  "type": "string",
+                  "enum": [
+                    "prerequisite-unavailable",
+                    "search-limit-reached"
+                  ],
+                  "description": "For block only: why the whole step cannot proceed. search-limit-reached means the preplanned finite search scope was read, not elapsed time; configured deadlines are enforced by the host."
+                },
+                "receipts": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Optional legacy echo. Model edits use the host-delivered snapshot; omit rather than calculating a revision."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "id",
+                "claim",
+                "blocker"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "block"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "claim": {
+                  "type": "string",
+                  "maxLength": 1200
+                },
+                "blocker": {
+                  "type": "string",
+                  "enum": [
+                    "no-viable-route"
+                  ],
+                  "description": "For block only: why the whole step cannot proceed. search-limit-reached means the preplanned finite search scope was read, not elapsed time; configured deadlines are enforced by the host."
+                },
+                "receipts": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Optional legacy echo. Model edits use the host-delivered snapshot; omit rather than calculating a revision."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "id",
+                "claim",
+                "blocker"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "block"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "claim": {
+                  "type": "string",
+                  "maxLength": 1200
+                },
+                "blocker": {
+                  "type": "string",
+                  "enum": [
+                    "unresolved-effect"
+                  ],
+                  "description": "For block only: why the whole step cannot proceed. search-limit-reached means the preplanned finite search scope was read, not elapsed time; configured deadlines are enforced by the host."
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Optional legacy echo. Model edits use the host-delivered snapshot; omit rather than calculating a revision."
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "relay_workspace",
+        "description": "Read and edit this benchmark attempt, and run its fixed public check. read/list cover fixed task files and src; write/patch change only .cjs files below src; run accepts exactly node test-public.cjs. Paths are task-relative with forward slashes. Read the current source before editing, then inspect the saved bytes and actual command result. Supply only the fields for the selected action, including when a value would be empty. A ? marks an optional field: list: action, path?, depth?, limit?; read: action, path, startLine?, lineCount?; write: action, path, text, expectedHash?; patch: action, path, oldText, newText, expectedHash?; run: action, command, timeoutMs?.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "list",
+                "read",
+                "write",
+                "patch",
+                "run"
+              ],
+              "description": "Select one action and supply only its permitted fields."
+            },
+            "path": {
+              "type": "string",
+              "description": "One task-relative file or directory, using forward slashes. Only .cjs files below src are writable."
+            },
+            "text": {
+              "type": "string",
+              "description": "Complete UTF-8 source for write."
+            },
+            "oldText": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Exact nonempty source text that occurs once, for patch."
+            },
+            "newText": {
+              "type": "string",
+              "description": "Replacement text for patch; empty text deletes oldText."
+            },
+            "expectedHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "Optional current-source SHA-256 for write or patch."
+            },
+            "startLine": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200000
+            },
+            "lineCount": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1500
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300
+            },
+            "command": {
+              "type": "string",
+              "enum": [
+                "node test-public.cjs"
+              ]
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 10000
+            }
+          },
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "list"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "One task-relative file or directory, using forward slashes. Only .cjs files below src are writable."
+                },
+                "depth": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 3
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 300
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "path"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "read"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "One task-relative file or directory, using forward slashes. Only .cjs files below src are writable."
+                },
+                "startLine": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 200000
+                },
+                "lineCount": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1500
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "path",
+                "text"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "write"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "One task-relative file or directory, using forward slashes. Only .cjs files below src are writable."
+                },
+                "text": {
+                  "type": "string",
+                  "description": "Complete UTF-8 source for write."
+                },
+                "expectedHash": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$",
+                  "description": "Optional current-source SHA-256 for write or patch."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "path",
+                "oldText",
+                "newText"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "patch"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "One task-relative file or directory, using forward slashes. Only .cjs files below src are writable."
+                },
+                "oldText": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Exact nonempty source text that occurs once, for patch."
+                },
+                "newText": {
+                  "type": "string",
+                  "description": "Replacement text for patch; empty text deletes oldText."
+                },
+                "expectedHash": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$",
+                  "description": "Optional current-source SHA-256 for write or patch."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "command"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "run"
+                },
+                "command": {
+                  "type": "string",
+                  "enum": [
+                    "node test-public.cjs"
+                  ]
+                },
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 10000
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "relay_code",
+        "description": "Save explicit source code and verify its saved bytes, or check a saved file. save requires language, path and code; optional format defaults to raw. No prose or final-answer text is searched for code. check requires language, path and check:syntax or check:public. Saving does not run the source. Readback verification, syntax checking and public-test results are separate evidence; a syntax pass is not task correctness. Paths, writes and checks retain the attached workspace restrictions.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "save",
+                "check"
+              ]
+            },
+            "language": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_+.-]{0,39}$",
+              "description": "Source language, for example javascript, json or python. This does not select an executable."
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "One file path accepted by the attached workspace. No cwd override."
+            },
+            "code": {
+              "type": "string",
+              "description": "Complete source for save, separate from explanatory prose. Maximum 1 MiB of UTF-8 source."
+            },
+            "format": {
+              "type": "string",
+              "enum": [
+                "raw",
+                "fenced"
+              ],
+              "description": "Save only. raw preserves every byte; fenced accepts one whole fenced block, with no surrounding prose."
+            },
+            "check": {
+              "type": "string",
+              "enum": [
+                "syntax",
+                "public"
+              ],
+              "description": "Check only. Uses an attached host checker; never accepts a model-supplied command. An unavailable checker is reported explicitly."
+            },
+            "expectedHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "Expected current-file SHA-256. Save requires a backend with guarded writes. Check rejects a different source."
+            }
+          },
+          "required": [
+            "action",
+            "language",
+            "path"
+          ],
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "const": "save"
+                },
+                "language": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_+.-]{0,39}$",
+                  "description": "Source language, for example javascript, json or python. This does not select an executable."
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "One file path accepted by the attached workspace. No cwd override."
+                },
+                "code": {
+                  "type": "string",
+                  "description": "Complete source for save, separate from explanatory prose. Maximum 1 MiB of UTF-8 source."
+                },
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "raw",
+                    "fenced"
+                  ],
+                  "description": "Save only. raw preserves every byte; fenced accepts one whole fenced block, with no surrounding prose."
+                },
+                "expectedHash": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$",
+                  "description": "Expected current-file SHA-256. Save requires a backend with guarded writes. Check rejects a different source."
+                }
+              },
+              "required": [
+                "action",
+                "language",
+                "path",
+                "code"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "const": "check"
+                },
+                "language": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_+.-]{0,39}$",
+                  "description": "Source language, for example javascript, json or python. This does not select an executable."
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "One file path accepted by the attached workspace. No cwd override."
+                },
+                "check": {
+                  "type": "string",
+                  "enum": [
+                    "syntax",
+                    "public"
+                  ],
+                  "description": "Check only. Uses an attached host checker; never accepts a model-supplied command. An unavailable checker is reported explicitly."
+                },
+                "expectedHash": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$",
+                  "description": "Expected current-file SHA-256. Save requires a backend with guarded writes. Check rejects a different source."
+                }
+              },
+              "required": [
+                "action",
+                "language",
+                "path",
+                "check"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "relay_skills",
+        "description": "Find a skill for the current task. search matches skill names, descriptions and metadata; an empty query browses the catalog. Use nextOffset with the same query for another page. read takes a returned id and loads its full method, including human edits. This tool is read-only; reading a skill does not execute it.",
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "search",
+                "read"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^[A-Za-z0-9_-]{1,100}$",
+              "description": "Exact skill identifier returned by search."
+            },
+            "query": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "Metadata matches per page, defaults to 12."
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 11000,
+              "description": "Search page offset. Use the returned nextOffset with the same query."
+            }
+          },
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "search"
+                },
+                "query": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50,
+                  "description": "Metadata matches per page, defaults to 12."
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 11000,
+                  "description": "Search page offset. Use the returned nextOffset with the same query."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action",
+                "id"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "read"
+                },
+                "id": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "pattern": "^[A-Za-z0-9_-]{1,100}$",
+                  "description": "Exact skill identifier returned by search."
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "Directory read",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "read"
+        ]
+      ]
+    },
+    {
+      "name": "Directory plan nested Unicode",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "plan"
+        ],
+        [
+          "actions",
+          [
+            {
+              "id": "step-1",
+              "objective": "Preserve λ and 🧪",
+              "dependsOn": []
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory focus",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "focus"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "revision",
+          3
+        ]
+      ]
+    },
+    {
+      "name": "Directory refine add",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "refine"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Add a check"
+        ],
+        [
+          "doneChecks",
+          [
+            {
+              "id": "unicode",
+              "check": "Does the saved source preserve λ and 🧪?"
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory refine retire",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "refine"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Replace an optional check"
+        ],
+        [
+          "dropCheckIds",
+          [
+            "retired"
+          ]
+        ],
+        [
+          "alternatives",
+          [
+            "Use the public check"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory note",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "note"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "A public check failed"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory observe partial",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "observe"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Saved bytes match"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ],
+        [
+          "outcome",
+          "partial"
+        ]
+      ]
+    },
+    {
+      "name": "Directory observe objective",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "observe"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "The objective is met"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ],
+        [
+          "outcome",
+          "objective-met"
+        ]
+      ]
+    },
+    {
+      "name": "Directory block prerequisite",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "A prerequisite is absent"
+        ],
+        [
+          "blocker",
+          "prerequisite-unavailable"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory block finite search",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "The planned scope was read"
+        ],
+        [
+          "blocker",
+          "search-limit-reached"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory block no route",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "No viable route"
+        ],
+        [
+          "blocker",
+          "no-viable-route"
+        ]
+      ]
+    },
+    {
+      "name": "Directory block unresolved",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "An effect is unresolved"
+        ],
+        [
+          "blocker",
+          "unresolved-effect"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace list",
+      "tool": "relay_workspace",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "list"
+        ],
+        [
+          "path",
+          "."
+        ],
+        [
+          "depth",
+          1
+        ],
+        [
+          "limit",
+          10
+        ]
+      ]
+    },
+    {
+      "name": "Workspace read",
+      "tool": "relay_workspace",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "read"
+        ],
+        [
+          "path",
+          "METHOD.md"
+        ],
+        [
+          "startLine",
+          1
+        ],
+        [
+          "lineCount",
+          20
+        ]
+      ]
+    },
+    {
+      "name": "Workspace write Unicode",
+      "tool": "relay_workspace",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "write"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "text",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace patch",
+      "tool": "relay_workspace",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "patch"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "oldText",
+          "λ"
+        ],
+        [
+          "newText",
+          "Ω"
+        ],
+        [
+          "expectedHash",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace fixed public run",
+      "tool": "relay_workspace",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "run"
+        ],
+        [
+          "command",
+          "node test-public.cjs"
+        ],
+        [
+          "timeoutMs",
+          1000
+        ]
+      ]
+    },
+    {
+      "name": "Code save Unicode multiline",
+      "tool": "relay_code",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "save"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "code",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ],
+        [
+          "format",
+          "raw"
+        ]
+      ]
+    },
+    {
+      "name": "Code check public",
+      "tool": "relay_code",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "check"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "check",
+          "public"
+        ]
+      ]
+    },
+    {
+      "name": "Code check syntax",
+      "tool": "relay_code",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "check"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "check",
+          "syntax"
+        ]
+      ]
+    },
+    {
+      "name": "Code required order variation",
+      "tool": "relay_code",
+      "valid": true,
+      "fields": [
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "action",
+          "save"
+        ],
+        [
+          "code",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ]
+      ]
+    },
+    {
+      "name": "Directory required order variation",
+      "tool": "relay_directory_action",
+      "valid": true,
+      "fields": [
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "action",
+          "focus"
+        ]
+      ]
+    },
+    {
+      "name": "Skills browse",
+      "tool": "relay_skills",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "search"
+        ]
+      ]
+    },
+    {
+      "name": "Skills search",
+      "tool": "relay_skills",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "search"
+        ],
+        [
+          "query",
+          "modular development"
+        ],
+        [
+          "limit",
+          12
+        ],
+        [
+          "offset",
+          0
+        ]
+      ]
+    },
+    {
+      "name": "Skills read",
+      "tool": "relay_skills",
+      "valid": true,
+      "fields": [
+        [
+          "action",
+          "read"
+        ],
+        [
+          "id",
+          "library-modular-development"
+        ]
+      ]
+    },
+    {
+      "name": "Directory read missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": []
+    },
+    {
+      "name": "Directory plan nested Unicode missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "actions",
+          [
+            {
+              "id": "step-1",
+              "objective": "Preserve λ and 🧪",
+              "dependsOn": []
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory plan nested Unicode missing actions",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "plan"
+        ]
+      ]
+    },
+    {
+      "name": "Directory focus missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "revision",
+          3
+        ]
+      ]
+    },
+    {
+      "name": "Directory focus missing id",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "focus"
+        ],
+        [
+          "revision",
+          3
+        ]
+      ]
+    },
+    {
+      "name": "Directory refine add missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Add a check"
+        ],
+        [
+          "doneChecks",
+          [
+            {
+              "id": "unicode",
+              "check": "Does the saved source preserve λ and 🧪?"
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory refine add missing id",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "refine"
+        ],
+        [
+          "claim",
+          "Add a check"
+        ],
+        [
+          "doneChecks",
+          [
+            {
+              "id": "unicode",
+              "check": "Does the saved source preserve λ and 🧪?"
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory refine add missing claim",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "refine"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "doneChecks",
+          [
+            {
+              "id": "unicode",
+              "check": "Does the saved source preserve λ and 🧪?"
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory refine add missing doneChecks",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "refine"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Add a check"
+        ]
+      ]
+    },
+    {
+      "name": "Directory refine retire missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Replace an optional check"
+        ],
+        [
+          "dropCheckIds",
+          [
+            "retired"
+          ]
+        ],
+        [
+          "alternatives",
+          [
+            "Use the public check"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory refine retire missing id",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "refine"
+        ],
+        [
+          "claim",
+          "Replace an optional check"
+        ],
+        [
+          "dropCheckIds",
+          [
+            "retired"
+          ]
+        ],
+        [
+          "alternatives",
+          [
+            "Use the public check"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory refine retire missing claim",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "refine"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "dropCheckIds",
+          [
+            "retired"
+          ]
+        ],
+        [
+          "alternatives",
+          [
+            "Use the public check"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory refine retire missing dropCheckIds",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "refine"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Replace an optional check"
+        ],
+        [
+          "alternatives",
+          [
+            "Use the public check"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory refine retire missing alternatives",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "refine"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Replace an optional check"
+        ],
+        [
+          "dropCheckIds",
+          [
+            "retired"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory note missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "A public check failed"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory note missing id",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "note"
+        ],
+        [
+          "claim",
+          "A public check failed"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory note missing claim",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "note"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory note missing receipts",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "note"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "A public check failed"
+        ]
+      ]
+    },
+    {
+      "name": "Directory observe partial missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Saved bytes match"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ],
+        [
+          "outcome",
+          "partial"
+        ]
+      ]
+    },
+    {
+      "name": "Directory observe partial missing id",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "observe"
+        ],
+        [
+          "claim",
+          "Saved bytes match"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ],
+        [
+          "outcome",
+          "partial"
+        ]
+      ]
+    },
+    {
+      "name": "Directory observe partial missing claim",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "observe"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ],
+        [
+          "outcome",
+          "partial"
+        ]
+      ]
+    },
+    {
+      "name": "Directory observe partial missing receipts",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "observe"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Saved bytes match"
+        ],
+        [
+          "outcome",
+          "partial"
+        ]
+      ]
+    },
+    {
+      "name": "Directory observe partial missing outcome",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "observe"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Saved bytes match"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory observe objective missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "The objective is met"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ],
+        [
+          "outcome",
+          "objective-met"
+        ]
+      ]
+    },
+    {
+      "name": "Directory observe objective missing id",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "observe"
+        ],
+        [
+          "claim",
+          "The objective is met"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ],
+        [
+          "outcome",
+          "objective-met"
+        ]
+      ]
+    },
+    {
+      "name": "Directory observe objective missing claim",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "observe"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ],
+        [
+          "outcome",
+          "objective-met"
+        ]
+      ]
+    },
+    {
+      "name": "Directory observe objective missing receipts",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "observe"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "The objective is met"
+        ],
+        [
+          "outcome",
+          "objective-met"
+        ]
+      ]
+    },
+    {
+      "name": "Directory observe objective missing outcome",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "observe"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "The objective is met"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory block prerequisite missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "A prerequisite is absent"
+        ],
+        [
+          "blocker",
+          "prerequisite-unavailable"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory block prerequisite missing id",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "claim",
+          "A prerequisite is absent"
+        ],
+        [
+          "blocker",
+          "prerequisite-unavailable"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory block prerequisite missing claim",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "blocker",
+          "prerequisite-unavailable"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory block prerequisite missing blocker",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "A prerequisite is absent"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory block prerequisite missing receipts",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "A prerequisite is absent"
+        ],
+        [
+          "blocker",
+          "prerequisite-unavailable"
+        ]
+      ]
+    },
+    {
+      "name": "Directory block finite search missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "The planned scope was read"
+        ],
+        [
+          "blocker",
+          "search-limit-reached"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory block finite search missing id",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "claim",
+          "The planned scope was read"
+        ],
+        [
+          "blocker",
+          "search-limit-reached"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory block finite search missing claim",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "blocker",
+          "search-limit-reached"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory block finite search missing blocker",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "The planned scope was read"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory block finite search missing receipts",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "The planned scope was read"
+        ],
+        [
+          "blocker",
+          "search-limit-reached"
+        ]
+      ]
+    },
+    {
+      "name": "Directory block no route missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "No viable route"
+        ],
+        [
+          "blocker",
+          "no-viable-route"
+        ]
+      ]
+    },
+    {
+      "name": "Directory block no route missing id",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "claim",
+          "No viable route"
+        ],
+        [
+          "blocker",
+          "no-viable-route"
+        ]
+      ]
+    },
+    {
+      "name": "Directory block no route missing claim",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "blocker",
+          "no-viable-route"
+        ]
+      ]
+    },
+    {
+      "name": "Directory block no route missing blocker",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "No viable route"
+        ]
+      ]
+    },
+    {
+      "name": "Directory block unresolved missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "An effect is unresolved"
+        ],
+        [
+          "blocker",
+          "unresolved-effect"
+        ]
+      ]
+    },
+    {
+      "name": "Directory block unresolved missing id",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "claim",
+          "An effect is unresolved"
+        ],
+        [
+          "blocker",
+          "unresolved-effect"
+        ]
+      ]
+    },
+    {
+      "name": "Directory block unresolved missing claim",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "blocker",
+          "unresolved-effect"
+        ]
+      ]
+    },
+    {
+      "name": "Directory block unresolved missing blocker",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "An effect is unresolved"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace list missing action",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "path",
+          "."
+        ],
+        [
+          "depth",
+          1
+        ],
+        [
+          "limit",
+          10
+        ]
+      ]
+    },
+    {
+      "name": "Workspace read missing action",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "path",
+          "METHOD.md"
+        ],
+        [
+          "startLine",
+          1
+        ],
+        [
+          "lineCount",
+          20
+        ]
+      ]
+    },
+    {
+      "name": "Workspace read missing path",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "read"
+        ],
+        [
+          "startLine",
+          1
+        ],
+        [
+          "lineCount",
+          20
+        ]
+      ]
+    },
+    {
+      "name": "Workspace write Unicode missing action",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "text",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace write Unicode missing path",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "write"
+        ],
+        [
+          "text",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace write Unicode missing text",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "write"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace patch missing action",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "oldText",
+          "λ"
+        ],
+        [
+          "newText",
+          "Ω"
+        ],
+        [
+          "expectedHash",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace patch missing path",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "patch"
+        ],
+        [
+          "oldText",
+          "λ"
+        ],
+        [
+          "newText",
+          "Ω"
+        ],
+        [
+          "expectedHash",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace patch missing oldText",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "patch"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "newText",
+          "Ω"
+        ],
+        [
+          "expectedHash",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace patch missing newText",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "patch"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "oldText",
+          "λ"
+        ],
+        [
+          "expectedHash",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace fixed public run missing action",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "command",
+          "node test-public.cjs"
+        ],
+        [
+          "timeoutMs",
+          1000
+        ]
+      ]
+    },
+    {
+      "name": "Workspace fixed public run missing command",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "run"
+        ],
+        [
+          "timeoutMs",
+          1000
+        ]
+      ]
+    },
+    {
+      "name": "Code save Unicode multiline missing action",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "code",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ],
+        [
+          "format",
+          "raw"
+        ]
+      ]
+    },
+    {
+      "name": "Code save Unicode multiline missing language",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "save"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "code",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ],
+        [
+          "format",
+          "raw"
+        ]
+      ]
+    },
+    {
+      "name": "Code save Unicode multiline missing path",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "save"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "code",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ],
+        [
+          "format",
+          "raw"
+        ]
+      ]
+    },
+    {
+      "name": "Code save Unicode multiline missing code",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "save"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "format",
+          "raw"
+        ]
+      ]
+    },
+    {
+      "name": "Code check public missing action",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "check",
+          "public"
+        ]
+      ]
+    },
+    {
+      "name": "Code check public missing language",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "check"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "check",
+          "public"
+        ]
+      ]
+    },
+    {
+      "name": "Code check public missing path",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "check"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "check",
+          "public"
+        ]
+      ]
+    },
+    {
+      "name": "Code check public missing check",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "check"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ]
+      ]
+    },
+    {
+      "name": "Code check syntax missing action",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "check",
+          "syntax"
+        ]
+      ]
+    },
+    {
+      "name": "Code check syntax missing language",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "check"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "check",
+          "syntax"
+        ]
+      ]
+    },
+    {
+      "name": "Code check syntax missing path",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "check"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "check",
+          "syntax"
+        ]
+      ]
+    },
+    {
+      "name": "Code check syntax missing check",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "check"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "src/café.js"
+        ]
+      ]
+    },
+    {
+      "name": "Code required order variation missing action",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "code",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ]
+      ]
+    },
+    {
+      "name": "Code required order variation missing language",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "action",
+          "save"
+        ],
+        [
+          "code",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ]
+      ]
+    },
+    {
+      "name": "Code required order variation missing path",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "action",
+          "save"
+        ],
+        [
+          "code",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ]
+      ]
+    },
+    {
+      "name": "Code required order variation missing code",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "path",
+          "src/café.js"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "action",
+          "save"
+        ]
+      ]
+    },
+    {
+      "name": "Directory required order variation missing action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "id",
+          "step-1"
+        ]
+      ]
+    },
+    {
+      "name": "Directory required order variation missing id",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "focus"
+        ]
+      ]
+    },
+    {
+      "name": "Skills browse missing action",
+      "tool": "relay_skills",
+      "valid": false,
+      "fields": []
+    },
+    {
+      "name": "Skills search missing action",
+      "tool": "relay_skills",
+      "valid": false,
+      "fields": [
+        [
+          "query",
+          "modular development"
+        ],
+        [
+          "limit",
+          12
+        ],
+        [
+          "offset",
+          0
+        ]
+      ]
+    },
+    {
+      "name": "Skills read missing action",
+      "tool": "relay_skills",
+      "valid": false,
+      "fields": [
+        [
+          "id",
+          "library-modular-development"
+        ]
+      ]
+    },
+    {
+      "name": "Skills read missing id",
+      "tool": "relay_skills",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "read"
+        ]
+      ]
+    },
+    {
+      "name": "Directory focus rejects claim",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "focus"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "unrelated"
+        ]
+      ]
+    },
+    {
+      "name": "Directory focus rejects doneChecks",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "focus"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "doneChecks",
+          [
+            {
+              "id": "x",
+              "check": "An unrelated check"
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory focus rejects outcome",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "focus"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "outcome",
+          "partial"
+        ]
+      ]
+    },
+    {
+      "name": "Directory focus rejects receipts",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "focus"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory read rejects id",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "read"
+        ],
+        [
+          "id",
+          "step-1"
+        ]
+      ]
+    },
+    {
+      "name": "Directory unresolved rejects receipts",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Pending effect"
+        ],
+        [
+          "blocker",
+          "unresolved-effect"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Directory rejects unknown outcome",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "observe"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Done"
+        ],
+        [
+          "receipts",
+          [
+            "r1"
+          ]
+        ],
+        [
+          "outcome",
+          "complete"
+        ]
+      ]
+    },
+    {
+      "name": "Directory rejects unknown blocker",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "block"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Blocked"
+        ],
+        [
+          "blocker",
+          "unknown"
+        ]
+      ]
+    },
+    {
+      "name": "Directory rejects empty note receipts",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "note"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Note"
+        ],
+        [
+          "receipts",
+          []
+        ]
+      ]
+    },
+    {
+      "name": "Directory retire requires alternatives",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "refine"
+        ],
+        [
+          "id",
+          "step-1"
+        ],
+        [
+          "claim",
+          "Retire"
+        ],
+        [
+          "dropCheckIds",
+          [
+            "retired"
+          ]
+        ],
+        [
+          "doneChecks",
+          [
+            {
+              "id": "new",
+              "check": "New check"
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "name": "Code save rejects check",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "save"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "answer.js"
+        ],
+        [
+          "code",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ],
+        [
+          "check",
+          "public"
+        ]
+      ]
+    },
+    {
+      "name": "Code check rejects code",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "check"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "answer.js"
+        ],
+        [
+          "check",
+          "public"
+        ],
+        [
+          "code",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ]
+      ]
+    },
+    {
+      "name": "Code check rejects format",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "check"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "answer.js"
+        ],
+        [
+          "check",
+          "public"
+        ],
+        [
+          "format",
+          "raw"
+        ]
+      ]
+    },
+    {
+      "name": "Code rejects wrong check selector",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "check"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "answer.js"
+        ],
+        [
+          "check",
+          "lint"
+        ]
+      ]
+    },
+    {
+      "name": "Code rejects wrong format",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "save"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "answer.js"
+        ],
+        [
+          "code",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ],
+        [
+          "format",
+          "json"
+        ]
+      ]
+    },
+    {
+      "name": "Code wrong action cannot use save fields",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "check"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "answer.js"
+        ],
+        [
+          "code",
+          "const café = 'λ 🧪';\nmodule.exports = café;\n"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace read rejects text",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "read"
+        ],
+        [
+          "path",
+          "METHOD.md"
+        ],
+        [
+          "text",
+          "unrelated"
+        ]
+      ]
+    },
+    {
+      "name": "Workspace run rejects path",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "run"
+        ],
+        [
+          "command",
+          "node test-public.cjs"
+        ],
+        [
+          "path",
+          "answer.js"
+        ]
+      ]
+    },
+    {
+      "name": "relay_directory_action rejects unknown action",
+      "tool": "relay_directory_action",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "invented"
+        ]
+      ]
+    },
+    {
+      "name": "relay_workspace rejects unknown action",
+      "tool": "relay_workspace",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "invented"
+        ]
+      ]
+    },
+    {
+      "name": "relay_code rejects unknown action",
+      "tool": "relay_code",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "invented"
+        ],
+        [
+          "language",
+          "javascript"
+        ],
+        [
+          "path",
+          "answer.js"
+        ]
+      ]
+    },
+    {
+      "name": "Skills search rejects id",
+      "tool": "relay_skills",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "search"
+        ],
+        [
+          "query",
+          "modular development"
+        ],
+        [
+          "id",
+          "modular development"
+        ]
+      ]
+    },
+    {
+      "name": "Skills read rejects query",
+      "tool": "relay_skills",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "read"
+        ],
+        [
+          "id",
+          "library-modular-development"
+        ],
+        [
+          "query",
+          "unrelated"
+        ]
+      ]
+    },
+    {
+      "name": "Skills read rejects limit",
+      "tool": "relay_skills",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "read"
+        ],
+        [
+          "id",
+          "library-modular-development"
+        ],
+        [
+          "limit",
+          12
+        ]
+      ]
+    },
+    {
+      "name": "Skills read rejects offset",
+      "tool": "relay_skills",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "read"
+        ],
+        [
+          "id",
+          "library-modular-development"
+        ],
+        [
+          "offset",
+          0
+        ]
+      ]
+    },
+    {
+      "name": "Skills rejects unknown action",
+      "tool": "relay_skills",
+      "valid": false,
+      "fields": [
+        [
+          "action",
+          "invented"
+        ]
+      ]
+    }
+  ],
+  "limits": {
+    "stringPatternAndLength": "Host validation remains authoritative; XML string const/enum and action structures are the added grammar scope."
+  }
+}

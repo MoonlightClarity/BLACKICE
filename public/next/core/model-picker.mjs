@@ -3,7 +3,7 @@ import { readyDisabledProvider } from '../../provider-availability.mjs';
 
 const PAGE=80;
 const idOf=model=>model?.value??model?.id??model?.model;
-const nameOf=model=>model?.displayName||model?.name||model?.label||model?.id;
+const nameOf=model=>{const name=model?.displayName||model?.name||model?.label||model?.id;return model?.shortcut==='local'&&!String(name).startsWith('Local · ')?'Local · '+name:name;};
 const unavailableReason=model=>[model?.availabilityReason,model?.error].find(value=>typeof value==='string'&&value.trim())||'This model is unavailable.';
 const noop=()=>({update(){},close(){},destroy(){}});
 
@@ -27,12 +27,15 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
   const localReason=model=>unavailable[model?.id==='default'?status.defaultModel:model?.id];
   const available=model=>Boolean(model)&&!localReason(model)&&model.disabled!==true&&model.available!==false;
   const canEnable=model=>!localReason(model)&&!model?.historical&&typeof onEnableProvider==='function'&&Boolean(readyDisabledProvider(status,model?.id));
-  const setupProviders=()=>typeof onSetupProvider==='function'?(status.subscriptionProviders||[]).filter(provider=>provider?.id==='mistral-vibe'&&provider.type==='subscription-cli'&&!hiddenProviders().includes(provider.id)&&(provider.authenticated!==true||provider.available!==true||!provider.models?.length)):[];
+  const setupProviders=()=>typeof onSetupProvider==='function'?[
+    ...(status.subscriptionProviders||[]).filter(provider=>provider?.id==='mistral-vibe'&&provider.type==='subscription-cli'&&!hiddenProviders().includes(provider.id)&&(provider.authenticated!==true||provider.available!==true||!provider.models?.length)),
+    ...(status.localModelProfile?.available&&status.localModelProfile.offerSetup&&!hiddenProviders().includes(status.localModelProfile.providerId||'local_llamacpp')?[{id:'local',name:'MiniCPM for Local',localSetup:true}]:[]),
+  ]:[];
   async function setupProvider(id){
     if(activating||!opened||destroyed||select.disabled||!setupProviders().some(provider=>provider.id===id))return;
     const revision=openRevision;activating='setup:'+id;activationError='';render();
     try{await onSetupProvider(id);if(opened&&revision===openRevision)close({restoreFocus:false});}
-    catch(error){if(!destroyed&&opened&&revision===openRevision)activationError=error?.message||'Native account settings could not open.';}
+    catch(error){if(!destroyed&&opened&&revision===openRevision)activationError=error?.message||(id==='local'?'Local model settings could not open.':'Native account settings could not open.');}
     finally{activating=null;if(!destroyed&&opened)render();}
   }
   function setChildren(node,...children){while(node.children.length)node.children[0].remove();node.textContent='';node.append(...children);}
@@ -125,16 +128,20 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
     // Preserve the exact historical selection in the trigger, but never list
     // a retired native CLI as a new model choice, even with a stale catalog.
     const selectable=models.filter(model=>!model.historical&&!/^(?:antigravity|qwen_code)::/.test(model.id));
-    setChildren(results);const filter=options(),entries=browseModels(selectable.filter(model=>!model.alias),filter),groups=groupModels(entries,{...providerOptions(),mode:'connection'});
+    setChildren(results);const filter=options(),entries=browseModels(selectable.filter(model=>!model.alias),filter),allGroups=groupModels(entries,{...providerOptions(),mode:'connection'});
+    // A Local shortcut keeps its concrete provider identity and all ordinary
+    // visibility, availability, activation and removal checks.
+    const local=entries.filter(model=>model.shortcut==='local'),groups=allGroups.map(group=>({...group,models:group.models.filter(model=>model.shortcut!=='local')})).filter(group=>group.models.length);
     const aliases=models.filter(model=>model.alias&&(model.id!=='codex'||!hiddenProviders().includes('codex'))&&(!search.value.trim()||`${model.label} ${model.id}`.toLowerCase().includes(search.value.trim().toLowerCase())));
-    if(aliases.length){const defaults=create('div','next-model-picker-aliases');defaults.setAttribute('aria-label','Default model choices');for(const model of aliases)defaults.append(modelRow(model));results.append(defaults);}
+    const shortcuts=[...aliases,...local];
+    if(shortcuts.length){const defaults=create('div','next-model-picker-aliases');defaults.setAttribute('aria-label','Default model choices');for(const model of shortcuts)defaults.append(modelRow(model));results.append(defaults);}
     const query=search.value.trim().toLowerCase().split(/\s+/).filter(Boolean),connections=setupProviders().filter(provider=>query.every(word=>(provider.name+' '+provider.id).toLowerCase().includes(word)));
     if(connections.length){
-      const section=create('div','next-model-picker-aliases');section.setAttribute('aria-label','Native account connections');
+      const section=create('div','next-model-picker-aliases');section.setAttribute('aria-label',connections.some(provider=>provider.localSetup)?'Model setup':'Native account connections');
       for(const provider of connections){
         const row=button('next-model-picker-option'),body=create('span','next-model-picker-option-body');row.dataset.modelSetupProvider=provider.id;row.disabled=Boolean(activating);
-        body.append(create('strong','',`Set up ${provider.name}`),create('small','','Native account connection'));row.append(body);
-        row.setAttribute('aria-description','Open native account settings without changing the selected model.');
+        body.append(create('strong','',`Set up ${provider.name}`),create('small','',provider.localSetup?'Verified model setup':'Native account connection'));row.append(body);
+        row.setAttribute('aria-description',provider.localSetup?'Open local model settings without changing the selected model.':'Open native account settings without changing the selected model.');
         row.addEventListener('click',event=>{event.preventDefault();return setupProvider(provider.id);});section.append(row);
       }
       results.append(section);
@@ -148,7 +155,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
       };
       details.open=expanded.has(group.id)?expanded.get(group.id):Boolean(search.value.trim());details.addEventListener('toggle',event=>{if(event.target!==details)return;expanded.set(group.id,details.open);populate();position();});results.append(details);populate();
     }
-    summary.textContent=activationError||(activating?(activating.startsWith('remove:')?'Removing local model.':'Preparing the selected model.'):entries.length?`${entries.length} model${entries.length===1?'':'s'} in ${groups.length} provider${groups.length===1?'':'s'}.`:connections.length?'Set up a native account connection to load its model catalog.':'No matching models. Try another search.');
+    summary.textContent=activationError||(activating?(activating.startsWith('remove:')?'Removing local model.':activating.startsWith('setup:')?'Opening model settings.':'Preparing the selected model.'):entries.length?`${entries.length} model${entries.length===1?'':'s'} in ${allGroups.length} provider${allGroups.length===1?'':'s'}.`:connections.length?'Set up a native account connection to load its model catalog.':'No matching models. Try another search.');
     if(restore){const target=focusValue?Array.from(results.querySelectorAll('[data-model-value]')).find(node=>node.dataset.modelValue===focusValue):focusProvider?Array.from(results.querySelectorAll('summary')).find(node=>node.dataset.modelProvider===focusProvider):focusSetup?Array.from(results.querySelectorAll('[data-model-setup-provider]')).find(node=>node.dataset.modelSetupProvider===focusSetup):focusRemove?Array.from(results.querySelectorAll('[data-model-remove]')).find(node=>node.dataset.modelRemove===focusRemove):null;(target||search).focus({preventScroll:true});}
     position();
   }
@@ -183,7 +190,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
       const catalog=new Map();for(const model of status.models||[]){if(model.id)catalog.set(model.id,model);if(model.model)catalog.set(model.model,model);}
       const seen=new Set();models=[];for(const choice of choices){const id=idOf(choice);if(!id||seen.has(id))continue;seen.add(id);const metadata=catalog.get(id)||{},alias=id==='default'||id==='codex';models.push({...metadata,...choice,id,alias,label:choice.label||metadata.displayName||id,available:choice.disabled===true?false:choice.available??metadata.available??(alias||catalog.has(id))});}
       if(selected&&!seen.has(selected))models.push({id:selected,label:selected,available:false,disabled:true,alias:selected==='default'||selected==='codex'});
-      refreshTrigger();const next=JSON.stringify([models,status.providers||[],status.subscriptionProviders||[],hiddenProviders(),selected]);if(next!==signature){signature=next;if(opened)render();}
+      refreshTrigger();const next=JSON.stringify([models,status.providers||[],status.subscriptionProviders||[],status.localModelProfile||null,hiddenProviders(),selected]);if(next!==signature){signature=next;if(opened)render();}
     },close,
     destroy(){if(destroyed)return;close({restoreFocus:false});destroyed=true;select.hidden=wasHidden;wrapper.remove();panel.remove();select.removeEventListener('change',onSelect);doc.removeEventListener('pointerdown',onOutside,true);doc.removeEventListener('focusin',onOutside,true);viewport?.removeEventListener?.('resize',position);},
   };

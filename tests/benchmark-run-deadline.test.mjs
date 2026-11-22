@@ -79,3 +79,21 @@ test('host requests without a client ID retain an explicit null deadline identit
   run.metadata.clientRequestId='later-id';
   assert.throws(()=>inspectBenchmarkDeadline(run,at(1)),{code:'BENCHMARK_DEADLINE_IDENTITY'});
 });
+
+test('agent-tools v2 keeps the admission deadline through Planning and execution',()=>{
+  const run=fixture({benchmark:{profile:'minicpm-agent-tools-v2'},runtimePhase:'chat-planning'});
+  const deadline=structuredClone(run.benchmarkDeadline);
+  assert.equal(inspectBenchmarkDeadline(run,at(40000)).remainingMs,260000);
+  run.runtimePhase='main';
+  assert.deepEqual(createBenchmarkDeadline(run),deadline);
+  const restored=JSON.parse(JSON.stringify(run));
+  assert.equal(inspectBenchmarkDeadline(restored,at(299999)).remainingMs,1);
+  assert.equal(inspectBenchmarkDeadline(restored,at(300000)).action,'cancel');
+  restored.benchmarkBudget.wallMs++;
+  assert.throws(()=>inspectBenchmarkDeadline(restored,at(300000)),{code:'BENCHMARK_DEADLINE_IDENTITY'});
+});
+test('only the two explicit benchmark profiles gain a deadline',()=>{
+  for(const profile of ['minicpm-code-v2','minicpm-agent-tools-v1','other','',undefined])
+    assert.throws(()=>fixture({benchmark:{profile}}),{code:'BENCHMARK_DEADLINE_SCOPE'});
+  assert.throws(()=>fixture({benchmark:'minicpm-agent-tools-v2'}),{code:'BENCHMARK_DEADLINE_SCOPE'});
+});

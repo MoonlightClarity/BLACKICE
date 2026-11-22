@@ -67,24 +67,138 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
   const importRow = node('div', '', 'next-row'); importRow.append(importButton);
   importDetails.append(summary, importHelp, label('Model file or directory', sourcePath), label('Local Ollama model name', alias), importRow);
   const feedback = node('p', '', 'next-help'); feedback.id = 'next-local-feedback'; feedback.setAttribute('role', 'status'); feedback.setAttribute('aria-live', 'polite');
+  const localDefaultRow = node('div', '', 'next-row');
+  const localDefaultChoice = node('select', '', 'next-field'); localDefaultChoice.id = 'next-local-default-choice';
+  const useLocalDefault = button('Use as local default'); useLocalDefault.id = 'next-local-default-set';
+  const clearLocalDefault = button('Clear local default'); clearLocalDefault.id = 'next-local-default-clear';
+  localDefaultRow.append(label('Local default model', localDefaultChoice), useLocalDefault, clearLocalDefault);
+  const localDefaultFeedback = node('p', '', 'next-help'); localDefaultFeedback.id = 'next-local-default-status'; localDefaultFeedback.setAttribute('role', 'status');
+  const profileCard = node('section', '', 'next-stack'); profileCard.id = 'next-local-profile'; profileCard.hidden = true;
+  const profileHelp = node('p', '', 'next-help'); profileHelp.id = 'next-local-profile-help';
+  const profileSetup = button('Set up MiniCPM for Local'); profileSetup.id = 'next-local-profile-setup'; profileSetup.className = 'next-primary';
+  const profileFeedback = node('p', '', 'next-help'); profileFeedback.id = 'next-local-profile-status'; profileFeedback.setAttribute('role', 'status');
+  profileCard.append(node('h3', 'MiniCPM for Local'), profileHelp, profileSetup, profileFeedback);
   const launchMount = node('div');launchMount.hidden = true;
   const advancedControls = node('details', '', 'next-provider-advanced');
   const llamaAdvanced = node('div'); llamaAdvanced.hidden = true;
   advancedControls.id = 'next-local-advanced';
   advancedControls.append(node('summary', 'More options'), row, unload, contextLabel, contextHelp, importDetails, llamaAdvanced, setup);
-  card.append(runtimeStatus, choiceRow, launchMount, feedback, advancedControls);
+  card.append(profileCard, runtimeStatus, choiceRow, launchMount, localDefaultRow, localDefaultFeedback, feedback, advancedControls);
   mount.append(card);
   const launchSettings = createLlamaCppLaunchSettings({mount:launchMount,advancedMount:llamaAdvanced,api,onChanged:async result=>{await onChanged();await refreshCatalog({preferredEngine:'llamacpp',preferredModel:result.model});},
     onDiscovered:async result=>{
       generation++;
       const item={id:'llamacpp',name:'llama.cpp',available:true,mode:result.mode,models:result.models};
-      snapshot={engines:[...snapshot.engines.filter(entry=>entry.id!=='llamacpp'),item]};
+      snapshot={...snapshot,engines:[...snapshot.engines.filter(entry=>entry.id!=='llamacpp'),item]};
       updateChoices();
     }});
   let alive = true, active = false, busy = false, generation = 0, snapshot = { engines: [] };
   let downloadGeneration = 0, discovering = false, downloadAssets = [];
+  let localDefaultKnown = false, localDefaultStatus = {model:null, eligible:false, reason:null}, localDefaultOptions = [];
+  let pendingProfileIntent = null, profileFeedbackIntent = null;
   const selected = () => snapshot.engines?.find(item => item.id === engine.value) || { available: false, models: [] };
   const info = (message, isError = false) => { feedback.textContent = message; feedback.dataset.error = String(isError); };
+  function profileResult(receipt) {
+    const completed = [];
+    const status = receipt.status === 'interrupted' || receipt.outcomeUncertain
+      ? 'Setup was interrupted. The last stage may have completed; review the confirmed stages before starting a new setup.'
+      : receipt.status === 'running' ? 'Setup is still running. Retry this setup to check the same saved intent.' : '';
+    const verified = new Set([...(receipt.assets || []), ...(receipt.assetPreparation?.assets || [])]
+      .filter(item => ['verified', 'reused', 'published'].includes(item.status)).map(item => item.id));
+    if (verified.size === 2) completed.push('Model and projector verified.');
+    else if (verified.size) completed.push('One model asset is verified on disk and can be reused.');
+    if (receipt.settings) completed.push(receipt.settings.profileApplied ? 'Local runtime defaults configured.' : 'Existing per-model settings preserved.');
+    if (receipt.registration) completed.push('MiniCPM registered in the model picker.');
+    if (receipt.localDefault) completed.push(receipt.localDefault.status === 'initialized' ? 'MiniCPM is the Local default.' : 'Your Local preference was preserved.');
+    return [...(status ? [status] : []), ...completed, ...(receipt.limitations || []), ...(receipt.error?.message ? [receipt.error.message] : []),
+      ...(receipt.persistenceError ? [receipt.persistenceError] : [])].join(' ') || 'Setup has no confirmed completed stages.';
+  }
+  function updateProfile() {
+    const profile = snapshot.localModelProfile;
+    profileCard.hidden = profile?.available !== true;
+    profileSetup.disabled = busy || profile?.available !== true;
+    if (profile?.available) {
+      const bytes = profile.downloadBytes;
+      profileHelp.textContent = 'MiniCPM-V 4.7 1B heretic · Q4_K_S. Downloads up to ' + (bytes / 1073741824).toFixed(2) +
+        ' GiB (' + Number(bytes).toLocaleString('en-US') + ' bytes). Existing model and projector files are reused after verification. Setup does not load the model or change your current chat.';
+      if (!busy && profile.receipt && (!profileFeedbackIntent || profile.receipt.intentId === profileFeedbackIntent)) profileFeedback.textContent = profileResult(profile.receipt);
+    }
+  }
+  async function setupProfile() {
+    const profile = snapshot.localModelProfile;
+    if (busy || profile?.available !== true) return;
+    const request = pendingProfileIntent || {
+      intentId:globalThis.crypto.randomUUID(), profileId:profile.profileId, expectedRevision:profile.expectedRevision,
+      expectedLocalDefaultModel:profile.expectedLocalDefaultModel, expectedLocalDefaultInitialized:profile.expectedLocalDefaultInitialized,
+    };
+    pendingProfileIntent = request;
+    profileFeedbackIntent = request.intentId;
+    busy = true; updateChoices(); profileFeedback.textContent = 'Verifying existing files and preparing MiniCPM for Local…';
+    try {
+      const result = await api('/api/local-models/profile', 'POST', request);
+      if (result?.receipt?.intentId !== request.intentId || result.receipt.status !== 'complete') throw Error('The setup result could not be confirmed. Refresh its saved status.');
+      pendingProfileIntent = null;
+      await onChanged(); await refreshCatalog({preferredEngine:'llamacpp'});
+      if (alive) { profileFeedback.textContent = profileResult(result.receipt); profileFeedback.dataset.error = 'false'; }
+    } catch (cause) {
+      await refreshCatalog();
+      const saved = snapshot.localModelProfile?.receipt;
+      if (saved?.intentId === request.intentId && ['complete', 'failed', 'cancelled', 'interrupted'].includes(saved.status)) {
+        pendingProfileIntent = null;
+        if (alive) { profileFeedback.textContent = profileResult(saved); profileFeedback.dataset.error = String(saved.status !== 'complete'); }
+      } else if (alive) {
+        profileFeedback.textContent = (cause.message || 'Local setup could not be confirmed.') + ' Retry this setup to check the same saved intent.';
+        profileFeedback.dataset.error = 'true';
+      }
+    } finally { busy = false; if (alive) updateChoices(); }
+  }
+  function updateLocalDefaultChoices() {
+    const saved = snapshot.localDefaultModelStatus;
+    localDefaultKnown = Boolean(saved && (saved.model === null || typeof saved.model === 'string') && typeof saved.eligible === 'boolean');
+    localDefaultStatus = localDefaultKnown ? saved : {model:null, eligible:false, reason:null};
+    const listed = new Set((snapshot.engines?.find(item => item.id === 'llamacpp')?.models || []).map(item => item.id));
+    const choices = Array.isArray(snapshot.localDefaultChoices) ? snapshot.localDefaultChoices : [];
+    localDefaultOptions = choices.filter(item => typeof item.id === 'string' && item.id.includes('::')).map(item => ({
+      ...item, disabled:!listed.has(item.id.slice(item.id.indexOf('::')+2)),
+    }));
+    if (saved?.model && !localDefaultOptions.some(item => item.id === saved.model))
+      localDefaultOptions.push({id:saved.model, displayName:saved.model, disabled:true});
+    const previous = localDefaultChoice.value;
+    localDefaultChoice.replaceChildren();
+    for (const item of localDefaultOptions) {
+      const option = node('option', (item.displayName || item.id) + (item.disabled ? ' · unavailable' : ''));
+      option.setAttribute('value', item.id); option.disabled = item.disabled; localDefaultChoice.append(option);
+    }
+    if (!localDefaultOptions.length) { const option = node('option', 'Add a registered llama.cpp model'); option.setAttribute('value', ''); localDefaultChoice.append(option); }
+    const preferred = localDefaultOptions.some(item => item.id === previous) ? previous : saved?.model;
+    if (preferred && localDefaultOptions.some(item => item.id === preferred)) localDefaultChoice.value = preferred;
+    const target = localDefaultOptions.find(item => item.id === localDefaultChoice.value);
+    localDefaultChoice.disabled = busy || !localDefaultKnown || !localDefaultOptions.length;
+    useLocalDefault.disabled = busy || !localDefaultKnown || !target || target.disabled || target.id === saved?.model;
+    clearLocalDefault.disabled = busy || !localDefaultKnown || !saved?.model;
+    const current = localDefaultOptions.find(item => item.id === saved?.model),name = current?.displayName || saved?.model;
+    localDefaultFeedback.textContent = !localDefaultKnown ? 'Local default settings are unavailable. Refresh to read the saved preference.'
+      : !saved.model ? 'No local default selected. Choose a registered model, or use llama.cpp’s Add GGUF setup.'
+      : !saved.eligible ? 'Local default unavailable: ' + (saved.reason || name) + ' Restore its setup, choose another model, or clear this preference.'
+      : current?.disabled ? 'Local default is not in the local catalog: ' + name + '. Restore its GGUF setup or choose another model.'
+      : 'Local default: ' + name + '. Chat’s Local choice uses this exact model; availability is checked when selected.';
+  }
+  async function changeLocalDefault(clear = false) {
+    if (busy || !localDefaultKnown || (clear ? clearLocalDefault.disabled : useLocalDefault.disabled)) return;
+    const model = clear ? null : localDefaultChoice.value, expectedLocalDefaultModel = localDefaultStatus.model;
+    busy = true; updateChoices(); info(clear ? 'Clearing the local default…' : 'Saving the local default…');
+    try {
+      const result = await api('/api/local-models/default', 'POST', {model, expectedLocalDefaultModel});
+      if (!result?.localDefaultModelStatus || result.localDefaultModelStatus.model !== model) throw Error('The local preference response could not be verified. Refresh its saved status.');
+      snapshot = {...snapshot, localDefaultModelStatus:result.localDefaultModelStatus};
+      await onChanged();
+      await refreshCatalog();
+      info(clear ? 'Local default cleared.' : 'Local default saved. Select Local in Chat to use it.');
+    } catch (e) {
+      info(e.message || 'The local default could not be changed.', true);
+      await refreshCatalog();
+    } finally { busy = false; if (alive) updateChoices(); }
+  }
   function updateChoices() {
     const value = selected();
     const isLlama = engine.value === 'llamacpp';
@@ -119,6 +233,8 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
     sourcePath.disabled = busy;
     alias.disabled = busy;
     context.disabled = busy || isLlama;
+    updateLocalDefaultChoices();
+    updateProfile();
   }
   async function refreshCatalog({ preferredModel, preferredEngine } = {}) {
     const token = ++generation;
@@ -212,6 +328,10 @@ export function createLocalModelSettings({ mount, api, onChanged = () => {}, sto
   refresh.addEventListener('click', () => { if (!busy) {void refreshCatalog();if(engine.value==='llamacpp')void launchSettings.refresh();} });
   engine.addEventListener('change', () => { selectionChosen=true;try{storage?.setItem(selectionKey,engine.value);}catch{} updateChoices(); if(active && engine.value==='llamacpp') launchSettings.enter(); else launchSettings.leave(); });
   models.addEventListener('change', updateChoices);
+  localDefaultChoice.addEventListener('change', updateChoices);
+  useLocalDefault.addEventListener('click', () => changeLocalDefault());
+  clearLocalDefault.addEventListener('click', () => changeLocalDefault(true));
+  profileSetup.addEventListener('click', () => setupProfile());
   load.addEventListener('click', () => void operation('load'));
   unload.addEventListener('click', () => void operation('unload'));
   importButton.addEventListener('click', () => void operation('import'));
