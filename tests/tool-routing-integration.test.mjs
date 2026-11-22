@@ -113,7 +113,7 @@ test('the legacy relay history setting preserves native continuation and contain
   const browserDefinition=(await wire()).find(record=>record.method==='thread/start').params.dynamicTools.find(tool=>tool.name==='relay_browser');
   assert.match(firstReceipt.instructions,/relay_browser:.*stopped-task-recovery/);
   assert.match(browserDefinition.description, /BLACKICE's contained browser/);
-  assert.match(browserDefinition.description, /expectedUrl and expectedDocumentId/);
+  assert.match(browserDefinition.description, /expectedUrl, expectedDocumentId and x\/y in CSS pixels/);
   assert.match(browserDefinition.description, /tabs lists this task's visible pages; an empty list does not mean the profile is signed out/);
   assert.match(browserDefinition.description, /foreign ownershipCandidates are not readable/);
   assert.doesNotMatch(browserDefinition.description, /relevant job boards|educated inference|First decompose/);

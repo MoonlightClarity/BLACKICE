@@ -1,8 +1,12 @@
-# Bundled local runtime (candidate, not installed)
+# Bundled Windows local runtime
 
-The next Windows x64 installer includes llama.cpp. The user chooses an existing GGUF model; no runtime install, release selection, server URL, or API key is required. Model weights are not bundled or downloaded automatically. Custom executable paths and external servers remain supported and existing settings/model files are preserved.
+The Windows x64 installer includes llama.cpp. The user chooses an existing GGUF model; no runtime install, release selection, server URL, or API key is required. Model weights are not bundled or downloaded automatically. Custom executable paths and external servers remain supported and existing settings/model files are preserved.
 
-## Runtime provenance
+## 2.40.74 runtime provenance
+
+The installer combines the checksum-pinned upstream distribution with the QX4 repair for native Qwen3-style tool schemas. The runtime manifest, source patches, executable hashes, and packaged file tree are checked during packaging. Set `BLACKICE_LLAMA_REPAIR_BUNDLE` to the verified input directory before running `npm run package:public`. That directory contains the pinned `manifest.json` and its listed binary files. See the [build and release guide](../SIGNING-AND-RELEASE.md).
+
+## Upstream archives and earlier runtime evidence
 
 - Stable upstream: https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0
 - Stable release points to binary build b12359, source b1b770d90. Its executable reports `1.0.0-dev (build 12359, commit b1b770d90)`; this is the upstream stable release's linked binary, not a claim that the binary prints a non-dev version.

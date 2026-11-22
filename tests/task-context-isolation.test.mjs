@@ -89,7 +89,7 @@ async function fixture(t,transport){
    options.onEvent?.({type:'thread',model:options.model,threadId,turnId,codexHistory:options.codexHistory,resumed:false});
    if(options.responseOnly){
     assert.equal(options.dynamicTools?.length??0,0);
-    return{output:JSON.stringify(plan(options.prompt)),threadId,turnId,codexHistory:options.codexHistory};
+    return{output:JSON.stringify({artifact:plan(options.prompt)}),threadId,turnId,codexHistory:options.codexHistory};
    }
    assert.equal(options.hostOnlyTools,true);inspectCatalog(options.dynamicTools);
    const context=options.context??{};
@@ -118,7 +118,7 @@ async function fixture(t,transport){
    const preparation=text.includes('This is one bounded planning phase');
    capture(preparation?'planning':'main',body);
    let message;
-   if(preparation){assert.equal(body.tools?.length??0,0);message={role:'assistant',content:JSON.stringify(plan(body.messages.map(message=>typeof message.content==='string'?message.content:'').join('\n')))};}
+   if(preparation){assert.equal(body.tools?.length??0,0);message={role:'assistant',content:JSON.stringify({artifact:plan(body.messages.map(message=>typeof message.content==='string'?message.content:'').join('\n'))})};}
    else{
     inspectCatalog(body.tools.map(item=>({name:item.function.name,inputSchema:item.function.parameters})));
     const item=next();

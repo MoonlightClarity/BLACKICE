@@ -54,8 +54,8 @@ async function setup(t,{profile=BENCHMARK_AGENT_TOOLS_PROFILE,steps,ownerMethod=
    if(preparation){
     assert.equal(profile,BENCHMARK_AGENT_TOOLS_PROFILE);assert.ok(!body.tools?.length);
     if(noOutline){respond({role:'assistant',content:'Synthetic preparation returned no structured outline.'});return;}
-    respond({role:'assistant',content:JSON.stringify({status:'proposed',focus:'implement',reason:'Verify the requested saved code with the fixed public check.',
-     actions:[{id:'implement',objective:'Save the implementation under src, read back the saved bytes, and pass both fixed public cases.',dependsOn:[]}]})});return;
+    respond({role:'assistant',content:JSON.stringify({artifact:{status:'proposed',focus:'implement',reason:'Verify the requested saved code with the fixed public check.',
+     actions:[{id:'implement',objective:'Save the implementation under src, read back the saved bytes, and pass both fixed public cases.',dependsOn:[]}]}})});return;
    }
    if(summary){
     assert.ok(!body.tools?.length);
@@ -304,10 +304,10 @@ async function nativeFixture(t,profile,{deliveryEvidence=false}={}){
    options.onPromptAccepted?.(options.prompt);
    if(options.responseOnly){
     assert.equal(options.dynamicTools?.length??0,0);
-    return {threadId:'native-preparation-fixture',output:JSON.stringify({
+    return {threadId:'native-preparation-fixture',output:JSON.stringify({artifact:{
      status:'proposed',focus:'verify',reason:'Verify the existing implementation through the fixed public check.',
      actions:[{id:'verify',objective:'Read the source and verify both fixed public cases.',dependsOn:[]}],
-    })};
+    }})};
    }
    assert.equal(options.hostOnlyTools,true);
    assert.equal(this.supportsHostOnlyToolDispatch({model:options.model,cwd:options.cwd}),true);
