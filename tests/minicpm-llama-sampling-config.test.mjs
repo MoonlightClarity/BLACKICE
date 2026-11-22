@@ -71,3 +71,51 @@ test('revisioned settings retain exact per-model samplers across save and reload
   const reloaded = await new LlamaCppSettingsStore({ dataDir }).init();
   assert.deepEqual(reloaded.snapshot().settings, configured);
 });
+
+test('per-model reasoning modes reach only their own native INI sections', () => {
+  for (const reasoning of ['on', 'off', 'auto']) {
+    const original = { ctxSize: 262144, ...sample, reasoning };
+    const other = { ctxSize: 4096 };
+    const launch = buildLlamaCppLaunch(settings({ original, other }));
+    const before = launch.preset.slice(0, launch.preset.indexOf('[original]\n'));
+    const selected = launch.preset.split('[original]\n')[1].split('[other]\n')[0];
+    const after = launch.preset.split('[other]\n')[1];
+    assert.equal(selected.split('\n').filter(row => row === 'reasoning = ' + reasoning).length, 1);
+    assert.doesNotMatch(before + after, /^reasoning =/m);
+    assert.doesNotMatch(launch.args.join(' '), /reasoning|predict|max-tokens/);
+    assert.match(launch.preset, /^\[\*\]\nfit = on$/m);
+    assert.deepEqual(launch.effective.modelOverrides, { original, other });
+    assert.equal(launch.effective.modelOverrides.original.ctxSize, 262144);
+  }
+});
+
+test('reasoning omission preserves native defaults and rejects global or invalid values', () => {
+  const omitted = buildLlamaCppLaunch(settings({ original: { ...sample } }));
+  assert.doesNotMatch(omitted.preset, /^reasoning =/m);
+  assert.equal(Object.hasOwn(omitted.effective.modelOverrides.original, 'reasoning'), false);
+  for (const reasoning of ['OFF', '', 'none', 0, false, null, {}, ['off']]) {
+    assert.throws(() => settings({ original: { reasoning } }),
+      { code: 'LOCAL_LLAMA_SETTINGS_INVALID' });
+  }
+  assert.throws(() => validateLlamaCppSettings({
+    ...DEFAULT_LLAMA_CPP_SETTINGS, modelsDirectory: 'C:\\Models', reasoning: 'off',
+  }), { code: 'LOCAL_LLAMA_SETTINGS_INVALID' });
+});
+
+test('revisioned settings preserve native reasoning and explicit later edits', async t => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'minicpm-reasoning-settings-'));
+  t.after(() => fs.rm(dataDir, { recursive: true, force: true }));
+  const store = await new LlamaCppSettingsStore({ dataDir }).init();
+  const original = { ...sample, reasoning: 'off', ctxSize: 262144, cacheTypeK: 'q8_0', mmprojOffload: false };
+  const other = { reasoning: 'on', gpuLayers: 0 };
+  const configured = settings({ original, other });
+  await store.update({ expectedRevision: 0, settings: configured });
+  const reloaded = await new LlamaCppSettingsStore({ dataDir }).init();
+  assert.deepEqual(reloaded.snapshot().settings, configured);
+  const edited = structuredClone(configured);
+  edited.modelOverrides.original.reasoning = 'auto';
+  await reloaded.update({ expectedRevision: 1, settings: edited });
+  const final = await new LlamaCppSettingsStore({ dataDir }).init();
+  assert.deepEqual(final.snapshot().settings, edited);
+  assert.deepEqual(final.snapshot().settings.modelOverrides.other, other);
+});

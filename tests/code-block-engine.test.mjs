@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import {EventEmitter} from 'node:events';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {ProviderRuntime} from '../lib/providers.mjs';
 import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
@@ -27,9 +27,9 @@ class NoExternalModel extends EventEmitter {
 }
 
 // The server supplies deterministic answers; real adapters still validate and execute tools.
-async function setup(t,{profile=BENCHMARK_AGENT_TOOLS_PROFILE,steps,ownerMethod=false}={}){
+async function setup(t,{profile=BENCHMARK_AGENT_TOOLS_PROFILE,steps,ownerMethod=false,ordinary=false,noOutline=false}={}){
  const cleanup=[],f=benchmarkFixture({after:fn=>cleanup.push(fn)});
- const requests=[],executed=new Map(),delivered=new Map(),openings=[],denied=[],deadlineSnapshots=[];
+ const requests=[],executed=new Map(),delivered=new Map(),openings=[],denied=[],deadlineSnapshots=[],reviews=[];
  const immutableBefore=readHashes(f),canaryBefore=fs.readFileSync(f.canary);
  const names=profile===BENCHMARK_AGENT_TOOLS_PROFILE
   ?['relay_directory_action','relay_workspace','relay_code','relay_skills']
@@ -53,6 +53,7 @@ async function setup(t,{profile=BENCHMARK_AGENT_TOOLS_PROFILE,steps,ownerMethod=
     usage:{prompt_tokens:100,completion_tokens:10,total_tokens:110}}));
    if(preparation){
     assert.equal(profile,BENCHMARK_AGENT_TOOLS_PROFILE);assert.ok(!body.tools?.length);
+    if(noOutline){respond({role:'assistant',content:'Synthetic preparation returned no structured outline.'});return;}
     respond({role:'assistant',content:JSON.stringify({status:'proposed',focus:'implement',reason:'Verify the requested saved code with the fixed public check.',
      actions:[{id:'implement',objective:'Save the implementation under src, read back the saved bytes, and pass both fixed public cases.',dependsOn:[]}]})});return;
    }
@@ -60,7 +61,8 @@ async function setup(t,{profile=BENCHMARK_AGENT_TOOLS_PROFILE,steps,ownerMethod=
     assert.ok(!body.tools?.length);
     respond({role:'assistant',content:'The admitted task is to implement directorySmoke in src/index.cjs and verify both fixed public cases. Keep the task scope and tests unchanged. Use the current Directory ledger and current source files for authoritative state; do not replay a prior write or check merely because history was summarized.'});return;
    }
-   assert.deepEqual(body.tools.map(item=>item.function.name),names);
+   if(ordinary)for(const required of ['relay_directory_action','relay_workspace','relay_code'])assert.ok(body.tools.some(item=>item.function.name===required));
+   else assert.deepEqual(body.tools.map(item=>item.function.name),names);
    assert.ok(stage<script.length,'Unexpected extra main-provider request at step '+stage);
    const next=script[stage++]();
    respond(typeof next==='string'?{role:'assistant',content:next}:{role:'assistant',content:null,tool_calls:[next]});
@@ -94,7 +96,7 @@ async function setup(t,{profile=BENCHMARK_AGENT_TOOLS_PROFILE,steps,ownerMethod=
  runtime.runAgent=async options=>{
   openings.push({responseOnly:options.responseOnly===true,prompt:options.prompt,tools:structuredClone(options.dynamicTools),
    hostOnlyTools:options.hostOnlyTools,context:structuredClone(options.context)});
-  if(options.responseOnly!==true&&profile===BENCHMARK_AGENT_TOOLS_PROFILE){
+  if(!ordinary&&options.responseOnly!==true&&profile===BENCHMARK_AGENT_TOOLS_PROFILE){
    for(const call of [
     {name:'relay_skills',arguments:{action:'save',id:'library-modular-development',content:'forged'},callId:'route-skill-mutation'},
     {name:'relay_workspace',namespace:'external',arguments:{action:'write',path:f.canary,text:'forged'},callId:'route-external-workspace'},
@@ -107,7 +109,13 @@ async function setup(t,{profile=BENCHMARK_AGENT_TOOLS_PROFILE,steps,ownerMethod=
   }
   return runAgent({...options,onToolResultDelivered:event=>{
    delivered.set(event.call.callId,structuredClone(event.result));return options.onToolResultDelivered?.(event);
-  }});
+  },...(options.onBeforeFinal?{onBeforeFinal:async candidate=>{
+   const result=await options.onBeforeFinal(candidate);
+   const snapshot=(await engine.actionDirectories.get(runId,'Fixture')).read();
+   reviews.push({threadId:candidate.threadId,output:candidate.output,result:structuredClone(result),
+    focus:snapshot.focus,actions:snapshot.actions.map(({id,state})=>({id,state}))});
+   return result;
+  }}:{})});
  };
  engine=await new HarnessEngine({runtime,dataDir:path.join(f.root,'engine'),defaultCwd:f.workspace}).init();
  if(ownerMethod){
@@ -122,9 +130,9 @@ async function setup(t,{profile=BENCHMARK_AGENT_TOOLS_PROFILE,steps,ownerMethod=
  workflow.settings={...workflow.settings,planningMode:'off'};
  const agent=workflow.nodes.find(item=>item.type==='agent');agent.model='fixture::fixture';
  const started=engine.startRun({workflow,requestId:'code-block-'+randomUUID(),input:{
-  task:'Implement directorySmoke in src/index.cjs. Read METHOD.md and TASK.md, use Modular Development, save the source, and pass node test-public.cjs.',
+  task:ordinary?'Implement JavaScript in src/index.cjs and verify syntax only. Use Modular Development and record exactly that limited check.':'Implement directorySmoke in src/index.cjs. Read METHOD.md and TASK.md, use Modular Development, save the source, and pass node test-public.cjs.',
   cwd:f.workspace,planningMode:'off',directoryMode:'off',directoryActions:'on',chatPlanning:profile===BENCHMARK_AGENT_TOOLS_PROFILE?'on':'off',
-  pastChats:'off',directoryDiagnostics:'maximal',benchmark:{...f.request,profile},benchmarkBudget:{wallMs:30000},
+  pastChats:'off',directoryDiagnostics:'maximal',...(ordinary?{}:{benchmark:{...f.request,profile},benchmarkBudget:{wallMs:30000}}),
  }});
  runId=started.id;
  const admittedDeadline=structuredClone(engine.getRun(runId).benchmarkDeadline);
@@ -132,7 +140,7 @@ async function setup(t,{profile=BENCHMARK_AGENT_TOOLS_PROFILE,steps,ownerMethod=
  assert.equal(protocolError,null,protocolError?.stack);
  const run=engine.getRun(runId);
  assert.equal(run.status,'completed',run.error);assert.equal(run.settled,true);
- assert.equal(run.nodes.agent.benchmarkEvidenceMode,'compatible-provider-trace');
+ if(!ordinary)assert.equal(run.nodes.agent.benchmarkEvidenceMode,'compatible-provider-trace');
  assert.deepEqual(providerBudget(),budgetBefore,'The harness must not mutate provider context or token settings');
  assert.equal(stage,script.length);
  assert.equal(delivered.size,executed.size,'Every executed call must reach accepted provider delivery');
@@ -159,11 +167,11 @@ async function setup(t,{profile=BENCHMARK_AGENT_TOOLS_PROFILE,steps,ownerMethod=
  assert.deepEqual(readHashes(f),immutableBefore);
  assert.deepEqual(fs.readFileSync(f.canary),canaryBefore);
  assert.deepEqual(run.benchmarkDeadline,admittedDeadline);
- assert.equal(Date.parse(admittedDeadline.deadlineAt)-Date.parse(run.createdAt),30000);
+ if(!ordinary)assert.equal(Date.parse(admittedDeadline.deadlineAt)-Date.parse(run.createdAt),30000);
  for(const row of deadlineSnapshots)assert.deepEqual(row.value,admittedDeadline,'Planning or execution must not restart the admitted wall clock');
  if(skillFileBefore)assert.deepEqual(fs.readFileSync(path.join(engine.dataDir,'skill-edits','skills.json')),skillFileBefore);
  const ledger=(await engine.actionDirectories.get(runId,'Fixture')).read();
- return{f,run,runtime,engine,requests,executed,delivered,openings,denied,deadlineSnapshots,ledger,method,get,value,names};
+ return{f,run,runtime,engine,requests,executed,delivered,openings,denied,deadlineSnapshots,reviews,ledger,method,get,value,names};
 }
 
 test('v2 Planning and effective skills compose with exact code save, honest checks, guarded repair and Directory receipts',{timeout:40000},async t=>{
@@ -273,9 +281,10 @@ test('v1 retains its exact two-tool catalog and Planning-off execution',{timeout
 
 
 // This exercises the native adapter boundary with a fake backend, not cloud inference.
-async function nativeFixture(t,profile){
+async function nativeFixture(t,profile,{deliveryEvidence=false}={}){
  const cleanup=[],f=benchmarkFixture({after:fn=>cleanup.push(fn)}),immutable=readHashes(f);
- const canary=fs.readFileSync(f.canary),calls=[],delegations=[],preflights=[],verified=new Set();
+ const canary=fs.readFileSync(f.canary),calls=[],delegations=[],preflights=[],verified=new Set(),events=[];
+ const unicodeSource=deliveryEvidence?'// caf\u00e9 e\u0301 \u{1f680} '+ 'x'.repeat(13000)+'\n'+validSource:validSource;
  const capabilities={model:'native-fixture',contextWindowTokens:131072,maxOutputTokens:16384};
  let engine,runtime;
  const key=({model,cwd}={})=>typeof model==='string'&&typeof cwd==='string'?model+'\0'+path.resolve(cwd):null;
@@ -314,6 +323,7 @@ async function nativeFixture(t,profile){
     const result=await options.onToolCall(call,{signal:options.signal});
     assert.equal(result.success,true,id+': '+JSON.stringify(result.contentItems));
     calls.push({call,result:structuredClone(result)});
+    assert.ok(!events.some(event=>event.data?.type==='tool.result.delivered'&&event.data.callId===id),'No witness before actual local delivery');
     options.onToolResultDelivered?.({call,result:structuredClone(result)});
     return result;
    };
@@ -323,11 +333,34 @@ async function nativeFixture(t,profile){
    await invoke('relay_directory_action','native-directory',{action:'read'});
    await invoke('relay_directory_action','native-focus',{action:'focus',id:'verify'});
    await invoke('relay_skills','native-skill',{action:'read',id:'library-modular-development'});
+   let checkedHash=toolJSON(source).sha256;
+   if(deliveryEvidence){
+    const saved=await invoke('relay_code','native-unicode-save',{action:'save',language:'javascript',path:'src/index.cjs',code:unicodeSource,expectedHash:checkedHash});
+    checkedHash=toolJSON(saved).sourceSha256;
+    await invoke('relay_workspace','native-unicode-read',{action:'read',path:'src/index.cjs'});
+   }
    const check=await invoke('relay_code','native-public',{action:'check',language:'javascript',path:'src/index.cjs',
-    check:'public',expectedHash:toolJSON(source).sha256});
+    check:'public',expectedHash:checkedHash});
    const result=toolJSON(check);
    assert.equal(result.check.performed,true);assert.equal(result.check.passed,true);assert.equal(result.exitCode,0);
    assert.equal(JSON.parse(result.stdout).passedCases,2);
+   if(deliveryEvidence){
+    const missingCall={name:'relay_workspace',callId:'native-undelivered',arguments:{action:'read',path:'METHOD.md'}};
+    const missing=await options.onToolCall(missingCall,{signal:options.signal});
+    assert.equal(missing.success,true);
+    calls.push({call:missingCall,result:structuredClone(missing),undelivered:true});
+    for(const call of [
+     {name:'relay_skills',callId:'native-failed-delivery',arguments:{action:'save',id:'library-modular-development',content:'forbidden'}},
+     {name:'relay_password_fixture',callId:'native-sensitive-delivery',arguments:{action:'read'}},
+    ]){
+     const failure=await options.onToolCall(call,{signal:options.signal});
+     assert.equal(failure.success,false);
+     calls.push({call,result:structuredClone(failure)});
+     options.onToolResultDelivered?.({call,result:structuredClone(failure)});
+    }
+    // Exercise the real bounded retention contract, not model progress or extra checks.
+    for(let i=0;i<27;i++)await invoke('relay_workspace','native-retention-'+i,{action:'read',path:'METHOD.md'});
+   }
    await invoke('relay_directory_action','native-observe',{action:'observe',id:'verify',outcome:'objective-met',
     claim:'The current source was read and passed both fixed public cases.',receipts:[receipt(source),receipt(check)]});
    const output='The saved source passed both fixed public cases.';
@@ -341,6 +374,7 @@ async function nativeFixture(t,profile){
   fetchImpl:async()=>{throw Error('No HTTP request is permitted in this native fixture.');},
   modelLimitResolver:{enrich:async(_config,models)=>models}}).init();
  engine=await new HarnessEngine({runtime,dataDir:path.join(f.root,'native-engine'),defaultCwd:f.workspace}).init();
+ engine.on('event',event=>events.push(structuredClone(event)));
  const workflow=structuredClone(fixtureWorkflow);workflow.id='native-code-block-'+randomUUID();
  workflow.nodes.find(item=>item.type==='agent').model='native-fixture';
  const started=engine.startRun({workflow,requestId:'native-code-block-'+randomUUID(),input:{
@@ -356,9 +390,9 @@ async function nativeFixture(t,profile){
  assert.deepEqual(run.benchmarkDeadline,deadline);
  assert.deepEqual(native.status().models,budgetBefore,'Native model capabilities must remain unchanged');
  assert.deepEqual(readHashes(f),immutable);assert.deepEqual(fs.readFileSync(f.canary),canary);
- assert.deepEqual(fs.readFileSync(path.join(f.workspace,'src','index.cjs')),Buffer.from(validSource));
+ assert.deepEqual(fs.readFileSync(path.join(f.workspace,'src','index.cjs')),Buffer.from(unicodeSource));
  assert.equal(fs.existsSync(path.join(f.root,'provider-traces')),false,'Native receipts must not masquerade as compatible transport traces');
- return{f,run,engine,delegations,preflights,calls};
+ return{f,run,engine,delegations,preflights,calls,events};
 }
 
 test('v2 native Codex delegates through real ProviderRuntime with native defaults and scoped receipt evidence',{timeout:40000},async t=>{
@@ -382,4 +416,105 @@ test('v1 native Codex still rejects compatible benchmark tracing before backend 
  assert.match(f.run.error,/Native providers do not support benchmark transport tracing/);
  assert.equal(f.run.nodes.agent.benchmarkEvidenceMode,'compatible-provider-trace');
  assert.equal(f.delegations.length,0);assert.equal(f.calls.length,0);
+});
+
+
+test('real compatible public verification repairs the second final after a no-actions correction without host completion',{timeout:40000},async t=>{
+ const saved='// verified-source progression\n'+validSource;
+ const f=await setup(t,{noOutline:true,steps:({get,value})=>[
+  ()=>workspace('repair-initial',{action:'read',path:'src/index.cjs'}),
+  ()=>'The implementation remains to be saved and checked.',
+  ()=>directory('repair-plan',{action:'plan',actions:[{id:'implement',objective:'Save the implementation and verify the fixed public cases.',dependsOn:[]}]}),
+  ()=>directory('repair-focus',{action:'focus',id:'implement'}),
+  ()=>code('repair-save',{action:'save',code:saved,expectedHash:value('repair-initial').sha256}),
+  ()=>code('repair-check',{action:'check',check:'public',expectedHash:value('repair-save').sourceSha256}),
+  ()=>'The source was saved and the public check passed.',
+  ()=>directory('repair-observe',{action:'observe',id:'implement',outcome:'objective-met',
+   claim:'The saved source passed both fixed public cases; this observation is limited to that public contract.',
+   receipts:[receipt(get('repair-check'))]}),
+  ()=>'Saved the source and verified both fixed public cases.',
+ ]});
+ assert.equal(f.reviews.length,3);
+ assert.match(f.reviews[0].result.prompt,/Directory has no actions/);
+ assert.match(f.reviews[1].result.prompt,/source-bound public test check returned successfully/);
+ assert.match(f.reviews[1].result.prompt,/not hidden-test success or full-objective completion/);
+ assert.match(f.reviews[1].result.prompt,/Do not repeat the save or check merely to create a new receipt/);
+ assert.equal(f.reviews[1].focus,'implement');assert.deepEqual(f.reviews[1].actions,[{id:'implement',state:'active'}]);
+ assert.ok(!f.reviews[2].result);
+ assert.equal(f.ledger.actions[0].state,'observed');
+ assert.equal(f.openings.filter(row=>!row.responseOnly).length,1,'The correction stays in the existing provider execution');
+ const ids=f.reviews.map(row=>row.threadId).filter(Boolean);
+ assert.equal(new Set(ids).size,1);assert.equal(ids[0],f.run.nodes.agent.threadId);
+ assert.equal(f.run.events.filter(event=>event.data?.phase==='continue-after-source-check').length,1);
+ assert.ok(!f.run.events.some(event=>event.data?.type==='tool.result.delivered'),'Compatible delivery does not emit a native witness');
+});
+
+test('ordinary coding syntax verification receives scoped reconciliation through real tools and provider',{timeout:40000},async t=>{
+ const saved='throw new Error("SYNTAX_ONLY_NOT_EXECUTED");\nmodule.exports = { value: 1 };\n';
+ const f=await setup(t,{ordinary:true,noOutline:true,steps:({get,value})=>[
+  ()=>'The JavaScript still needs to be saved and checked.',
+  ()=>directory('syntax-plan',{action:'plan',actions:[{id:'implement',objective:'Save the JavaScript and check syntax only.',dependsOn:[]}]}),
+  ()=>directory('syntax-focus',{action:'focus',id:'implement'}),
+  ()=>code('syntax-save',{action:'save',code:saved}),
+  ()=>code('syntax-check',{action:'check',check:'syntax',expectedHash:value('syntax-save').sourceSha256}),
+  ()=>'The file was saved and its syntax check passed.',
+  ()=>directory('syntax-observe',{action:'observe',id:'implement',outcome:'objective-met',
+   claim:'The file was saved and Node syntax checking succeeded. Runtime behavior and semantic correctness were not checked.',
+   receipts:[receipt(get('syntax-check'))]}),
+  ()=>'Saved the JavaScript and verified syntax only.',
+ ]});
+ assert.ok(!f.run.benchmark);
+ assert.equal(f.value('syntax-check').check.passed,true);
+ assert.equal(f.value('syntax-check').exitCode,0);
+ assert.equal(f.value('syntax-check').source.unchanged,true);
+ assert.equal(f.value('syntax-check').check.receipt.sourceAtomic,false);
+ assert.equal(f.reviews.length,3);
+ assert.match(f.reviews[1].result.prompt,/source-bound syntax\/JSON parsing check returned successfully/);
+ assert.match(f.reviews[1].result.prompt,/syntax\/parsing only, not semantic correctness or task completion/);
+ assert.deepEqual(f.reviews[1].actions,[{id:'implement',state:'active'}]);
+ assert.equal(f.ledger.actions[0].state,'observed');
+ assert.equal(f.openings.filter(row=>!row.responseOnly).length,1);
+ assert.deepEqual(fs.readFileSync(path.join(f.f.workspace,'src/index.cjs')),Buffer.from(saved));
+ assert.ok(!f.run.events.some(event=>event.data?.type==='tool.result.delivered'));
+});
+
+test('native post-write witnesses retain exact text identity after bounded continuity eviction',{timeout:40000},async t=>{
+ const f=await nativeFixture(t,BENCHMARK_AGENT_TOOLS_PROFILE,{deliveryEvidence:true});
+ assert.equal(f.run.status,'completed',f.run.error);
+ const proofs=f.events.filter(event=>event.data?.type==='tool.result.delivered');
+ assert.ok(proofs.length>24);
+ const allowed=['type','schema','runId','taskId','nodeId','callId','tool','resultTextSha256','sourceChars',
+  'delivery','textProjection','sensitiveContentOmitted','binaryItemsOmitted'].sort();
+ for(const event of proofs){
+  assert.deepEqual(Object.keys(event.data).sort(),allowed);
+  const value=event.data;
+  assert.equal(value.schema,'blackice.native-tool-delivery.v1');
+  assert.equal(event.runId,f.run.id);assert.equal(value.runId,f.run.id);
+  assert.equal(value.taskId,f.run.taskId||f.run.id);assert.equal(value.nodeId,'agent');
+  assert.equal(value.delivery,'local-stream-write-not-provider-consumption');
+  assert.equal(value.textProjection,'inputText-joined-with-newline');
+  const row=f.calls.find(row=>row.call.callId===value.callId);assert.ok(row);
+  assert.equal(value.tool,row.call.name);
+  if(value.sensitiveContentOmitted){
+   assert.equal(value.resultTextSha256,null);assert.equal(value.sourceChars,null);
+  }else{
+   const text=row.result.contentItems.filter(item=>item?.type==='inputText'&&typeof item.text==='string').map(item=>item.text).join('\n');
+   assert.equal(value.resultTextSha256,createHash('sha256').update(text).digest('hex'));
+   assert.equal(value.sourceChars,text.length);
+  }
+  assert.equal(value.binaryItemsOmitted,0);
+ }
+ const unicode=proofs.find(event=>event.data.callId==='native-unicode-read');
+ assert.ok(unicode.data.sourceChars>12000,'Hash must cover text beyond the retained excerpt');
+ const raw=f.calls.find(row=>row.call.callId==='native-unicode-read').result.contentItems.map(item=>item.text).join('\n');
+ assert.ok(Buffer.byteLength(raw)>raw.length,'Fixture must distinguish UTF-8 bytes from JS sourceChars');
+ assert.ok(!proofs.some(event=>event.data.callId==='native-undelivered'));
+ assert.ok(proofs.some(event=>event.data.callId==='native-failed-delivery'),'Failed tool outcomes can still be locally delivered');
+ assert.ok(proofs.some(event=>event.data.callId==='native-sensitive-delivery'&&event.data.sensitiveContentOmitted===true));
+ assert.ok(!f.run.toolContinuity.records.some(row=>row.callId==='native-public'),'The original public delivery was evicted');
+ const publicProof=proofs.find(event=>event.data.callId==='native-public');assert.ok(publicProof);
+ const returned=f.events.findIndex(event=>event.data?.type==='directory.effect'&&event.data.phase==='returned'&&event.data.callId==='native-public');
+ const written=f.events.indexOf(publicProof);
+ assert.ok(returned>=0&&written>returned,'Proof follows the actual protected Directory return');
+ assert.equal(f.run.toolContinuity.records.length,24);
 });

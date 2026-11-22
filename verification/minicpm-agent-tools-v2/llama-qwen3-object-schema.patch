@@ -1,0 +1,182 @@
+diff --git a/common/parsers/qwen3-coder.cpp b/common/parsers/qwen3-coder.cpp
+index b8dc022..f3c0bbf 100644
+--- a/common/parsers/qwen3-coder.cpp
++++ b/common/parsers/qwen3-coder.cpp
+@@ -103,8 +103,23 @@ common_chat_params common_chat_params_init_qwen3_coder(const common_chat_templat
+ 
+             auto tool_choice = p.choice();
+             foreach_function(inputs.tools, [&](size_t tool_index, const json & tool) {
+-                const auto & function = tool.at("function");
+-                std::string  name     = function.at("name");
++                auto        function = tool.at("function");
++                std::string name     = function.at("name");
++
++                // XML parameters are enumerated from an object-root schema.
++                // Keep the complete conditional contract in inputs.tools and the
++                // rendered prompt, and use only its explicit root object here.
++                // Do not infer an object for a pure union or alter nested schemas;
++                // branch-specific constraints remain in the original contract.
++                auto parameters = common_chat_tool_parameters(function);
++                if (parameters.is_object() &&
++                    parameters.contains("type") && parameters.at("type") == "object" &&
++                    parameters.contains("properties") && parameters.at("properties").is_object() &&
++                    (parameters.contains("oneOf") || parameters.contains("anyOf"))) {
++                    parameters.erase("oneOf");
++                    parameters.erase("anyOf");
++                    function["parameters"] = std::move(parameters);
++                }
+ 
+                 std::vector<common_peg_parser> required_args;
+                 std::vector<common_peg_parser> optional_args;
+diff --git a/tests/test-chat.cpp b/tests/test-chat.cpp
+index 7752015..265f3d4 100644
+--- a/tests/test-chat.cpp
++++ b/tests/test-chat.cpp
+@@ -3723,6 +3723,147 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
+         // Qwen3-Coder (tool calling with XML-style format)
+         auto tst = peg_tester("models/templates/Qwen3-Coder.jinja", detailed_debug);
+ 
++        // QX1: the XML parser must enumerate the root object even when the tool
++        // contract also has conditional branches. The full contract stays in the prompt.
++        std::string qx1_filter = g_template_filter;
++        std::transform(qx1_filter.begin(), qx1_filter.end(), qx1_filter.begin(), ::tolower);
++        if (qx1_filter.empty() || std::string("models/templates/qwen3-coder.jinja").find(qx1_filter) != std::string::npos) {
++            LOG_INF("QX1 root-object-union regression BEGIN\n");
++            const json qx1_base_schemas = json::parse(R"qx1({
++                "relay_workspace": {
++                    "type":"object","additionalProperties":false,"required":["action"],
++                    "properties":{"action":{"type":"string","enum":["read","write"]},"path":{"type":"string"},"text":{"type":"string"},"timeoutMs":{"type":"integer","minimum":1}},
++                    "oneOf":[
++                        {"type":"object","properties":{"action":{"const":"read"},"path":{"type":"string"}},"required":["action","path"]},
++                        {"type":"object","properties":{"action":{"const":"write"},"path":{"type":"string"},"text":{"type":"string"}},"required":["action","path","text"]}
++                    ]
++                },
++                "relay_code": {
++                    "type":"object","additionalProperties":false,"required":["action","language","path"],
++                    "properties":{"action":{"type":"string","enum":["save","check"]},"language":{"type":"string"},"path":{"type":"string"},"code":{"type":"string"},"check":{"type":"string","enum":["syntax","public"]}},
++                    "oneOf":[
++                        {"type":"object","properties":{"action":{"const":"save"},"language":{"type":"string"},"path":{"type":"string"},"code":{"type":"string"}},"required":["action","language","path","code"]},
++                        {"type":"object","properties":{"action":{"const":"check"},"language":{"type":"string"},"path":{"type":"string"},"check":{"type":"string"}},"required":["action","language","path","check"]}
++                    ]
++                },
++                "relay_directory_action": {
++                    "type":"object","additionalProperties":false,"required":["action"],
++                    "properties":{
++                        "action":{"type":"string","enum":["plan","note"]},
++                        "revision":{"type":"integer","minimum":0},
++                        "actions":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{"id":{"type":"string"},"objective":{"type":"string"},"dependsOn":{"type":"array","items":{"type":"string"}}},"required":["id","objective","dependsOn"]}},
++                        "receipts":{"type":"array","items":{"type":"string"}}
++                    },
++                    "oneOf":[
++                        {"type":"object","properties":{"action":{"const":"plan"},"actions":{"type":"array"}},"required":["action","actions"]},
++                        {"type":"object","properties":{"action":{"const":"note"},"receipts":{"type":"array"}},"required":["action","receipts"]}
++                    ]
++                }
++            })qx1");
++            const auto qx1_tmpls = read_templates("models/templates/Qwen3-Coder.jinja");
++            using qx1_fields = std::vector<std::pair<std::string, json>>;
++            const auto qx1_xml = [](const std::string & name, const qx1_fields & fields) {
++                std::string xml = "<tool_call>\n<function=" + name + ">\n";
++                for (const auto & field : fields) {
++                    xml += "<parameter=" + field.first + ">\n";
++                    xml += field.second.is_string() ? field.second.get<std::string>() : field.second.dump();
++                    xml += "\n</parameter>\n";
++                }
++                return xml + "</function>\n</tool_call>";
++            };
++            const std::string qx1_code = "const café = 'λ 🧪';\nmodule.exports = café;\n";
++            const std::vector<std::pair<std::string, qx1_fields>> qx1_cases = {
++                {"relay_workspace", {{"action", "read"}, {"path", "METHOD.md"}}},
++                {"relay_code", {{"action", "save"}, {"language", "javascript"}, {"path", "src/café.js"}, {"code", qx1_code}}},
++                {"relay_directory_action", {
++                    {"action", "plan"},
++                    {"actions", json::parse(R"([{"id":"step-1","objective":"Preserve λ and 🧪","dependsOn":[]}])")},
++                    {"revision", 3}
++                }}
++            };
++            for (const std::string union_key : {"oneOf", "anyOf"}) {
++                json schemas = qx1_base_schemas;
++                std::vector<common_chat_tool> tools;
++                for (const auto & item : qx1_base_schemas.items()) {
++                    auto schema = item.value();
++                    if (union_key == "anyOf") {
++                        schema["anyOf"] = schema.at("oneOf");
++                        schema.erase("oneOf");
++                    }
++                    schemas[item.key()] = schema;
++                    tools.push_back({item.key(), "QX1 public structural regression", schema.dump()});
++                }
++                common_chat_templates_inputs inputs;
++                inputs.messages = {message_user};
++                inputs.tools = tools;
++                inputs.add_generation_prompt = true;
++                inputs.tool_choice = COMMON_CHAT_TOOL_CHOICE_AUTO;
++                const auto compiled = common_chat_templates_apply(qx1_tmpls.get(), inputs);
++                const auto prompt = compiled.prompt.str();
++                // The template-only route is an independent prompt reference:
++                // it never enters the specialized tool-parameter construction.
++                auto prompt_inputs = inputs;
++                prompt_inputs.force_pure_content = true;
++                const auto prompt_reference = common_chat_templates_apply(qx1_tmpls.get(), prompt_inputs);
++                assert_equals(prompt_reference.prompt.str(), prompt);
++                assert_contains(prompt, "<" + union_key + ">");
++                for (size_t i = 0; i < tools.size(); ++i) {
++                    assert_equals(tools[i].parameters, inputs.tools[i].parameters);
++                }
++                for (const auto & test : qx1_cases) {
++                    const auto xml = qx1_xml(test.first, test.second);
++                    auto grammar = build_grammar(compiled.grammar);
++                    if (!grammar || !match_string(xml, grammar.get())) {
++                        // Flush the exact failing check even when the platform's
++                        // uncaught-exception handler terminates without diagnostics.
++                        std::cerr << "QX1 valid XML rejected: " << union_key << "/" << test.first << std::endl;
++                        throw std::runtime_error("QX1 valid XML rejected: " + union_key + "/" + test.first);
++                    }
++                    json expected = json::object();
++                    for (const auto & field : test.second) {
++                        expected[field.first] = field.second;
++                    }
++                    tst.test(xml).tools(tools).expect_tool_calls({{test.first, expected.dump(), {}}}).run();
++                    grammar = build_grammar(compiled.grammar);
++                    assert_equals(false, match_string(qx1_xml(test.first, {}), grammar.get()));
++                    for (const auto & required : schemas.at(test.first).at("required")) {
++                        qx1_fields missing;
++                        for (const auto & field : test.second) {
++                            if (field.first != required.get<std::string>()) {
++                                missing.push_back(field);
++                            }
++                        }
++                        grammar = build_grammar(compiled.grammar);
++                        assert_equals(false, match_string(qx1_xml(test.first, missing), grammar.get()));
++                    }
++                }
++            }
++            LOG_INF("QX1 root-object-union regression PASS (6 valid calls, 16 required-field rejections)\n");
++
++            // This repair deliberately does not invent an object structure for a
++            // pure union, or infer the explicit object type when it is absent.
++            LOG_INF("QX1 limited-scope regression BEGIN\n");
++            for (int shape = 0; shape < 3; ++shape) {
++                json pure = {{"oneOf", qx1_base_schemas.at("relay_workspace").at("oneOf")}};
++                if (shape == 1) {
++                    pure["type"] = "object";
++                } else if (shape == 2) {
++                    pure["properties"] = qx1_base_schemas.at("relay_workspace").at("properties");
++                }
++                common_chat_templates_inputs inputs;
++                inputs.messages = {message_user};
++                inputs.tools = {{"qx1_pure_union", "Unsupported pure union remains unchanged", pure.dump()}};
++                inputs.add_generation_prompt = true;
++                const auto untouched = common_chat_templates_apply(qx1_tmpls.get(), inputs);
++                assert_contains(untouched.prompt.str(), "<oneOf>");
++                assert_equals(pure.dump(), inputs.tools[0].parameters);
++                inputs.tools[0].parameters = R"({"type":"object","properties":{}})";
++                const auto empty_object = common_chat_templates_apply(qx1_tmpls.get(), inputs);
++                assert_equals(empty_object.grammar, untouched.grammar);
++            }
++            LOG_INF("QX1 limited-scope regression PASS (3 unchanged unsupported shapes)\n");
++        }
++
+         tst.test("Hello, world!\nWhat's up?").expect(message_assist).expect_reconstruction().run();
+ 
+         tst.test(
