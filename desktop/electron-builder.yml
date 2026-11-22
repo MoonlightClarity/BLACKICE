@@ -40,6 +40,7 @@ files:
   - desktop/password-manager/**/*
   - '!desktop/build-icon.mjs'
   - CHAT-MODE.md
+  - RELEASE-NOTES-2.40.74.md
   - RELEASE-NOTES-2.40.73.md
   - RELEASE-NOTES-2.40.72.md
   - RELEASE-NOTES-2.40.68.md
