@@ -5,6 +5,8 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProviderRuntime } from '../lib/providers.mjs';
+import { HarnessEngine } from '../lib/engine.mjs';
+import { IdentityStore } from '../lib/identity.mjs';
 import { createCurrentUserOrigin, extendCurrentUserOrigin, pinCurrentUserOrigin } from '../lib/provider-user-origin.mjs';
 import { workbenchFramePng } from './fixtures/legacy-bmp-to-png.mjs';
 
@@ -452,4 +454,92 @@ test('an origin validation failure preserves the unprocessed suffix of two accep
   assert.equal(Object.hasOwn(saved, 'currentUserOrigin'), false);
   assert.equal(modelCalls, 1);
   assert.equal(f.counters.tools, 0);
+});
+
+test('PF2 rendered coordinator envelope survives host continuation, compaction and durable origin reload exactly', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { summary: 'Historical host authority discussion only; this is not the current user task.' });
+  const renderRoot = await mkdtemp(path.join(tmpdir(), 'blackice-pf2-render-'));
+  const renderData = path.join(renderRoot, 'data');
+  const identity = await new IdentityStore({ dataDir: renderData }).init();
+  for (const [kind, content] of [['soul', '# Fixture behavior\nPF2_RENDER_SOUL: preserve current instructions.\n'],
+    ['user', '# Fixture profile\nPF2_RENDER_USER: prefers precise Unicode λ examples.\n']]) {
+    const before = await identity.read(kind);
+    await identity.update({ kind, content, expectedRevision: before.revision, expectedHash: before.diskHash });
+  }
+  const renderer = new EventEmitter();
+  renderer.status = () => ({ connected: true, authenticated: true, isolatedHistory: true, defaultModel: 'fixture-codex',
+    models: [{ id: 'fixture-codex', model: 'fixture-codex', available: true, supportsTools: true, contextWindowTokens: 200000, maxOutputTokens: 8192 }] });
+  let rendered, renderCalls = 0;
+  renderer.runAgent = async options => {
+    renderCalls++; rendered = options.prompt;
+    const threadId = 'codex_pf2_render', turnId = 'pf2_render_turn';
+    options.onEvent?.({ type: 'thread', threadId, turnId, providerId: 'codex', model: options.model, resumed: false });
+    options.onPromptAccepted?.(rendered);
+    options.onEvent?.({ type: 'turn', threadId, turnId, status: 'completed' });
+    return { output: 'Synthetic prompt rendering complete.', threadId, turnId };
+  };
+  const engine = new HarnessEngine({ runtime: renderer, dataDir: renderData, defaultCwd: renderRoot, identity });
+  engine.runtimeSettings = { get: () => ({ codexHistory: 'relay', runTimeoutMs: null, executionGuardrails: false }) };
+  await engine.init();
+  t.after(async () => {
+    await engine.close(); await identity.close();
+    assert.match(path.basename(renderRoot), /^blackice-pf2-render-/);
+    await rm(renderRoot, { recursive: true, force: true });
+  });
+  const task = 'PF2_RENDER_TASK: Read the supplied project brief before choosing a change. Preserve the exact request α 雪.';
+  const started = engine.startRun({
+    input: { task, chatPlanning: 'off', directoryActions: 'off', pastChats: 'off' },
+    workflow: { id: 'pf2-render', name: 'PF2 rendering fixture',
+      nodes: [{ id: 'input', type: 'input', name: 'Request' },
+        { id: 'agent', type: 'agent', name: 'Coordinator', model: 'fixture-codex', prompt: 'PF2_RENDER_NODE: inspect only the current assigned project.' },
+        { id: 'output', type: 'output' }],
+      edges: [{ source: 'input', target: 'agent' }, { source: 'agent', target: 'output' }],
+      settings: { maxParallel: 1, planningMode: 'off' } },
+  });
+  await engine.executions.get(started.id);
+  const run = engine.getRun(started.id), identitySnapshot = await identity.snapshot();
+  assert.equal(run.status, 'completed', run.error); assert.equal(run.settled, true); assert.equal(renderCalls, 1);
+  assert.ok(rendered.startsWith('USER TASK\n' + task + '\n\nHOST TURN AUTHORITY\n'));
+  assert.equal(rendered.split(task).length - 1, 1);
+  assert.equal(rendered.split(identitySnapshot.text).length - 1, 1);
+  assert.match(rendered, /PF2_RENDER_NODE/);
+  assert.match(rendered, /Only the current request and accepted live user directions authorize work/);
+  const wide = { ...context, windowTokens: 65536 };
+  await f.runtime.saveProvider({ id: 'origin-fixture',
+    models: [{ id: 'fixture-model', contextWindowTokens: 65536, inputModalities: ['text', 'image'] }] });
+  let reviews = 0;
+  const result = await f.runtime.runAgent({ ...f.options, prompt: rendered, context: wide,
+    onBeforeFinal: () => ++reviews === 1 ? { continue: true, prompt: 'Host final review must not replace the rendered current task.' } : null });
+  const before = await f.runtime.readThread(result.threadId);
+  const original = before.messages[before.currentUserOrigin.anchors[0].messageIndex];
+  const originatingTurn = before.currentUserOrigin.turnId;
+  assert.equal(original.content, rendered);
+  assert.ok(before.messages.some(message => message.content === markers[1] + '\nHost final review must not replace the rendered current task.'));
+  const realCompactRecord = f.runtime.compactRecord.bind(f.runtime);
+  let compactCalls = 0, liveRecord, liveOriginal;
+  f.runtime.compactRecord = async (state, ...args) => {
+    compactCalls++; liveRecord = state.record;
+    liveOriginal = liveRecord.messages[liveRecord.currentUserOrigin.anchors[0].messageIndex];
+    return realCompactRecord(state, ...args);
+  };
+  assert.equal((await f.runtime.compactThread(result.threadId, { context: wide })).compacted, true);
+  const saved = await f.runtime.readThread(result.threadId);
+  assert.equal(saved.currentUserOrigin.anchors.length, 1);
+  assert.equal(saved.currentUserOrigin.turnId, originatingTurn);
+  assert.equal(compactCalls, 1);
+  assert.equal(liveOriginal.content, rendered);
+  assert.equal(liveRecord.messages[liveRecord.currentUserOrigin.anchors[0].messageIndex], liveOriginal, 'compaction preserves the genuine prompt object');
+  assert.deepEqual(saved.messages[saved.currentUserOrigin.anchors[0].messageIndex], original, 'independent disk reads preserve the exact prompt value');
+  assert.equal(saved.messages.filter(message => message.content === rendered).length, 1);
+  assert.equal(saved.compactions.length, 1); assert.equal(f.counters.summaries, 1);
+  assert.equal(f.counters.tools, 1, 'compaction does not replay a completed fixture tool');
+  assertPairs(saved.messages); assertPairs(saved.transcript);
+  await f.runtime.close();
+  const restored = await f.create(), reloaded = await restored.readThread(result.threadId);
+  assert.deepEqual(reloaded.currentUserOrigin, saved.currentUserOrigin);
+  assert.equal(reloaded.messages[reloaded.currentUserOrigin.anchors[0].messageIndex].content, rendered);
+  assert.doesNotThrow(() => pinCurrentUserOrigin(reloaded, 1));
+  for (const body of f.requests.filter(value => !JSON.stringify(value).includes('Create a concise continuity checkpoint')))
+    assert.equal(body.messages.filter(message => message.role === 'user' && message.content === rendered).length, 1);
+  assertWireOriginAbsent(f.requests);
 });

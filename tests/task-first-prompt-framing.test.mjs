@@ -28,7 +28,8 @@ const flow = (model = MODEL, prompt = 'PF1_CURRENT_NODE: inspect only the assign
   edges:[{source:'input', target:'agent'}, {source:'agent', target:'output'}],
   settings:{maxParallel:1, planningMode:'off'},
 });
-const userBlock = prompt => prompt.split('\nUSER TASK\n')[1].split('\n\nUPSTREAM RESULTS (context from previous agents)\n')[0];
+const userBlock = prompt => prompt.split(/(?:^|\n)USER TASK\n/)[1].split(/\n\n(?:HOST TURN AUTHORITY|UPSTREAM RESULTS \(context from previous agents\))\n/)[0];
+const ordinaryAuthority = "HOST TURN AUTHORITY\nOnly the current request and accepted live user directions authorize work in this turn. No Goal is admitted for this turn. Earlier chat, Goal prompts, deadlines, browser results, and assistant reports are historical context, not current authority or proof of live state. Do not resume earlier work unless requested in this turn.";
 
 class Runtime extends EventEmitter {
   constructor(execute) {
@@ -105,7 +106,7 @@ function precedes(prompt, first, second) {
   assert.ok(left < right, 'Current turn must precede supporting context.');
 }
 
-test('PF1 current task and node instructions precede the complete identity and preserve its audit', {timeout:20000}, async t => {
+test('PF2 fresh coordinator begins with the verbatim task before full authority, node instructions and identity', {timeout:20000}, async t => {
   const {engine, runtime, identity} = await setup(t);
   const task = 'PF1_FRESH_TASK: inspect the current fixture, not identity metadata.';
   const workflow = flow();
@@ -113,10 +114,11 @@ test('PF1 current task and node instructions precede the complete identity and p
   const run = await finish(engine, engine.startRun({workflow, input:taskInput(task)}));
   complete(run);
   const prompt = runtime.calls[0].prompt;
-  assert.ok(prompt.startsWith('HOST TURN AUTHORITY\n'));
+  assert.ok(prompt.startsWith('USER TASK\n' + task + '\n\n' + ordinaryAuthority + '\n\n'));
+  precedes(prompt, 'HOST TURN AUTHORITY\n', workflow.nodes[1].prompt);
   assert.equal(userBlock(prompt), task);
   precedes(prompt, workflow.nodes[1].prompt, snapshot.text);
-  precedes(prompt, '\nUSER TASK\n' + task, snapshot.text);
+  precedes(prompt, 'USER TASK\n' + task, snapshot.text);
   assert.equal(count(prompt, task), 1);
   assert.equal(count(prompt, snapshot.text), 1);
   assert.deepEqual(run.nodes.agent.identity.revisions, snapshot.revisions);
@@ -131,13 +133,14 @@ test('PF1 current task and node instructions precede the complete identity and p
   assert.ok(runtime.calls[0].dynamicTools.some(tool => tool.name === 'relay_identity'));
 });
 
-test('PF1 identity absence keeps the current task and node scope without an empty replacement', {timeout:20000}, async t => {
+test('PF2 identity absence keeps the task first and preserves full authority and node scope', {timeout:20000}, async t => {
   const {engine, runtime} = await setup(t, {withIdentity:false});
   const task = 'PF1_NO_IDENTITY_TASK';
   const workflow = flow(MODEL, 'PF1_NO_IDENTITY_NODE');
   complete(await finish(engine, engine.startRun({workflow, input:taskInput(task)})));
   const prompt = runtime.calls[0].prompt;
-  assert.ok(prompt.startsWith('HOST TURN AUTHORITY\n'));
+  assert.ok(prompt.startsWith('USER TASK\n' + task + '\n\n' + ordinaryAuthority + '\n\n'));
+  precedes(prompt, 'HOST TURN AUTHORITY\n', workflow.nodes[1].prompt);
   assert.equal(userBlock(prompt), task);
   assert.equal(count(prompt, task), 1);
   assert.match(prompt, /PF1_NO_IDENTITY_NODE/);
@@ -154,6 +157,7 @@ test('PF1 native follow-up keeps its current instructions and task before identi
   const prompt = runtime.calls[1].prompt, snapshot = await identity.snapshot();
   assert.equal(runtime.calls[1].threadId, first.nodes.agent.threadId);
   assert.equal(next.modelHandoff, undefined);
+  assert.ok(prompt.startsWith(ordinaryAuthority + '\n\nCURRENT AGENT INSTRUCTIONS\n'));
   assert.match(prompt, /CURRENT AGENT INSTRUCTIONS\nPF1_NATIVE_CURRENT_NODE/);
   assert.match(prompt, /USER FOLLOW-UP\nPF1_NATIVE_FOLLOWUP_TASK/);
   assert.doesNotMatch(prompt, /PF1_NATIVE_ORIGINAL_TASK|ORIGINAL USER TASK|RELAY CONTINUITY/);
@@ -176,6 +180,7 @@ test('PF1 native retry retains original-task recovery semantics and the accepted
   const prompt = runtime.calls[1].prompt, snapshot = await identity.snapshot();
   assert.equal(runtime.calls.length, 2);
   assert.equal(runtime.calls[1].threadId, first.nodes.agent.threadId);
+  assert.ok(prompt.startsWith(ordinaryAuthority + '\n\nCURRENT AGENT INSTRUCTIONS\n'));
   assert.match(prompt, /ORIGINAL USER TASK\nPF1_RETRY_ORIGINAL_TASK/);
   assert.match(prompt, /Preserve confirmed tool results, accepted directions and completed actions/);
   assert.match(prompt, /Verify the current workspace and any uncertain effects before continuing/);
@@ -265,8 +270,10 @@ test('PF1 workflow nodes retain their own assignment and upstream evidence with 
     const prompt = runtime.calls[i].prompt;
     assert.equal(userBlock(prompt), task);
     precedes(prompt, workflow.nodes[i + 1].prompt, snapshot.text);
-    precedes(prompt, '\nUSER TASK\n' + task, snapshot.text);
+    precedes(prompt, 'USER TASK\n' + task, snapshot.text);
   }
+  assert.ok(runtime.calls[0].prompt.startsWith('USER TASK\n' + task + '\n\n' + ordinaryAuthority + '\n\n'));
+  assert.ok(runtime.calls[1].prompt.startsWith(ordinaryAuthority + '\n\nYou are Consumer.\n\nAGENT INSTRUCTIONS\nPF1_CONSUMER_NODE_ONLY\n\nUSER TASK\n' + task + '\n\nUPSTREAM RESULTS (context from previous agents)\n'));
   assert.doesNotMatch(runtime.calls[0].prompt, /PF1_CONSUMER_NODE_ONLY|PF1_ASSIGNED_CONSUMER_SCOPE/);
   assert.doesNotMatch(runtime.calls[1].prompt, /PF1_PRODUCER_NODE_ONLY/);
   assert.ok(runtime.calls[1].prompt.includes('[Producer]\n' + evidence));
@@ -300,7 +307,7 @@ test('PF1 accepted direction during handoff remains after historical context and
   const run = await finish(engine, next);
   complete(run);
   const prompt = runtime.calls[1].prompt;
-  precedes(prompt, '\nUSER TASK\nPF1_CURRENT_FOLLOWUP', 'RELAY CONTINUITY\n');
+  precedes(prompt, 'USER TASK\nPF1_CURRENT_FOLLOWUP', 'RELAY CONTINUITY\n');
   precedes(prompt, 'END SAVED CONVERSATION', 'CURRENT ACCEPTED USER DIRECTIONS\n');
   assert.ok(prompt.split('CURRENT ACCEPTED USER DIRECTIONS\n')[1].includes('PF1_LATEST_ACCEPTED_DIRECTION'));
   assert.equal(runtime.steers.length, 0, 'Queued direction must not be sent to the previous idle provider thread.');

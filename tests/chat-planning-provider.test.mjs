@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { createSkillsCatalog } from '../lib/skills-catalog.mjs';
 import { strictProviderSchema, compatibleWireOutputSchema, compatibleOutputSchemaProfile } from '../lib/provider-output-schema.mjs';
 import { createChatPlanningProviderInvoker, chatPlanningArtifactSchema } from '../lib/chat-planning-provider.mjs';
 import { CHAT_PLANNING_MODULES, createChatPlanningPass } from '../lib/chat-planning-pass.mjs';
@@ -21,6 +22,7 @@ test('selected model gets one bounded isolated response-only phase with no tools
   assert.ok(compatibleWireOutputSchema(options.outputSchema));
   assert.equal(options.model,'api1::model1');
   assert.equal(options.effort,'low');
+  assert.ok(options.prompt.startsWith(module.brief + '\n'), 'an absent non-intent decision adds no invented request');
   assert.equal(options.hostOnlyTools,true);
   assert.equal(options.responseOnly,true);
   assert.equal(options.codexHistory,'relay');
@@ -215,4 +217,71 @@ test('reported inference survives cancellation after return without mutating the
   assert.equal(events.at(-1).usage.samples,1);
   assert.equal(events.at(-1).providerDiagnostics.parseOutcome,'parsed');
   assert.equal(reason.planningMetadata,undefined);
+});
+
+test('PF2 planning puts the current request first once and preserves every artifact support and boundary', async () => {
+  const decision = 'PF2_PREREQUISITE: Read design/requirements.txt before choosing implementation work. Preserve λ and 雪.';
+  const soul = { content: 'PF2_SOUL: use observed evidence; do not assume project setup.', revision: 9,
+    hash: createHash('sha256').update('PF2_SOUL: use observed evidence; do not assume project setup.').digest('hex'), truncated: false };
+  const current = { ...snapshot, objective: 'Full current Directory data remains available.',
+    actions: [{ id: 'inspect', objective: 'Inspect the supplied requirements.', state: 'pending', dependsOn: [] }] };
+  const hostReference = { goal: null, authority: 'Current request only.', preserved: 'PF2_HOST_REFERENCE' };
+  const catalog = createSkillsCatalog();
+  try {
+    for (const selected of CHAT_PLANNING_MODULES) {
+      const method = await catalog.detail({ id: selected.skillId || selected.id });
+      const artifact = selected.artifact === 'intent-advice'
+        ? { status: 'proposed', interpretation: 'Inspect the named prerequisites first.', reason: 'The current request names them.' }
+        : { status: 'needs-evidence', reason: 'The prerequisites have not been inspected.', sourceRefs: [], focus: null,
+          ...(selected.artifact === 'pending-actions' ? { actions: [] } : selected.artifact === 'revised-choice' ? { alternatives: [] } : {}) };
+      const audits = [];
+      let options, admissions = 0;
+      const invoke = createChatPlanningProviderInvoker({
+        runtime: { runAgent: async value => {
+          options = value; value.onPromptAccepted(value.prompt);
+          return { output: JSON.stringify({ artifact }) };
+        } },
+        ...scope, cwd: 'test-workspace', model: 'api1::model1', effort: 'low', serviceTier: 'priority', timeoutMs: 45000,
+        assertAdmission: () => { admissions++; }, identity: { documents: { soul } },
+        onInstructionAudit: value => audits.push(value),
+      });
+      const before = structuredClone(current);
+      const response = await invoke({ module: selected, ...scope, snapshot: current, decision, intentContext: hostReference });
+      const prefix = 'CURRENT REQUEST (data): ' + JSON.stringify(decision) + '\n\n';
+      assert.ok(options.prompt.startsWith(prefix + selected.brief + '\n'), selected.id);
+      assert.equal([...options.prompt.matchAll(/^CURRENT REQUEST \(data\): /gm)].length, 1);
+      assert.equal(options.prompt.split(JSON.stringify(decision)).length - 1, 1);
+      assert.doesNotMatch(options.prompt, /Host decision scope:/);
+      assert.match(options.prompt, /Shape examples are format placeholders, not task content or evidence/);
+      assert.match(options.prompt, /When proposing new actions, propose inspecting explicitly requested prerequisite sources/);
+      assert.match(options.prompt, /this response-only phase does not perform reads/);
+      const soulWire = 'SOUL_DOCUMENT=' + JSON.stringify(soul);
+      assert.equal(options.prompt.split(soulWire).length - 1, 1);
+      assert.equal(options.prompt.split('\n\nSELECTED PLANNING METHOD\n' + method.content).length - 1, 1);
+      assert.ok(options.prompt.indexOf(prefix) < options.prompt.indexOf(soulWire));
+      assert.ok(options.prompt.indexOf(soulWire) < options.prompt.indexOf('SELECTED PLANNING METHOD\n'));
+      if (selected.artifact === 'intent-advice') {
+        assert.ok(options.prompt.endsWith('\nHOST REFERENCE FOR THE CURRENT REQUEST (data): ' + JSON.stringify(hostReference)));
+        assert.doesNotMatch(options.prompt, /CURRENT DIRECTORY PROJECTION/);
+      } else assert.ok(options.prompt.endsWith('\nCURRENT DIRECTORY PROJECTION (data):\n' + JSON.stringify(current)));
+      assert.deepEqual(current, before);
+      assert.deepEqual(response.output, artifact, 'framing does not manufacture execution or success');
+      assert.equal(admissions, 1);
+      assert.equal(options.model, 'api1::model1'); assert.equal(options.effort, 'low');
+      assert.equal(options.serviceTier, 'priority'); assert.equal(options.timeoutMs, 45000);
+      assert.equal(options.responseOnly, true); assert.equal(options.hostOnlyTools, true);
+      assert.equal(options.sandbox, 'read-only'); assert.equal(options.codexHistory, 'relay');
+      assert.deepEqual(options.dynamicTools, []);
+      assert.deepEqual(options.outputSchema, chatPlanningArtifactSchema(selected, current));
+      for (const key of ['max_tokens', 'max_completion_tokens', 'maxOutputTokens', 'contextWindowTokens', 'context', 'temperature', 'topP', 'minP', 'outputTokenPolicy'])
+        assert.equal(Object.hasOwn(options, key), false, key + ' is not overridden');
+      const audit = audits.at(-1).audit;
+      assert.equal(audit.delivery, 'accepted');
+      const protocol = audit.sections.find(row => row.id === 'planning-artifact').text;
+      assert.ok(options.prompt.startsWith(prefix + protocol));
+      assert.equal(audit.sections.find(row => row.id === 'soul').text, soul.content);
+      assert.equal(audit.sections.find(row => row.id === 'skill-' + method.id).text, method.content);
+      assert.doesNotMatch(JSON.stringify(audit), /PF2_PREREQUISITE/);
+    }
+  } finally { await catalog.close(); }
 });
