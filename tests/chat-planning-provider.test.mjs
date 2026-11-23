@@ -85,7 +85,7 @@ test('closed artifact alternatives retain discriminators and cardinality after i
       assert.deepEqual(missing.properties.focus,{type:'null'});
       assert.equal(proposed.properties.focus.type,'string');
       if(module.artifact==='pending-actions') {
-        assert.equal(proposed.properties.actions.minItems,1);assert.equal(proposed.properties.actions.maxItems,8);
+        assert.equal(proposed.properties.actions.minItems,1);assert.equal(proposed.properties.actions.maxItems,undefined);
         assert.equal(missing.properties.actions.maxItems,0);
         assert.deepEqual(proposed.properties.actions.items.required,['id','objective','dependsOn']);
         assert.equal(proposed.properties.actions.items.additionalProperties,false);

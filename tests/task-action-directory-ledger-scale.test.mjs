@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {TaskActionDirectory,ACTION_DIRECTORY_MAX_RECEIPTS} from '../lib/task-action-directory.mjs';
+import {TaskActionDirectory} from '../lib/task-action-directory.mjs';
 
 const makeSnapshot=(count=300)=>{
  const taskId='ledger-task';
@@ -17,7 +17,6 @@ const makeSnapshot=(count=300)=>{
 };
 
 test('host retains over 256 exact receipts and preserves oldest unresolved effects across reload',async()=>{
- assert(ACTION_DIRECTORY_MAX_RECEIPTS>=300);
  const directory=new TaskActionDirectory({taskId:'ledger-task',objective:'Repair one file',snapshot:makeSnapshot()});
  const complete=directory.read();
  assert.equal(complete.receipts.length,300);
@@ -44,8 +43,8 @@ test('host retains over 256 exact receipts and preserves oldest unresolved effec
  assert.equal(externalWriteCalled,false,'An old unresolved effect still blocks unverified replay.');
 });
 
-test('corrupt oversized snapshots remain rejected instead of silently shedding receipts',()=>{
- const tooLarge=makeSnapshot(ACTION_DIRECTORY_MAX_RECEIPTS+1);
- assert.throws(()=>new TaskActionDirectory({taskId:'ledger-task',objective:'Repair one file',snapshot:tooLarge}),
-  error=>error.code==='DIRECTORY_CORRUPT');
+test('valid snapshots above the old ceiling reopen instead of silently shedding receipts',()=>{
+ const tooLarge=makeSnapshot(8193);
+ assert.doesNotThrow(()=>new TaskActionDirectory({taskId:'ledger-task',objective:'Repair one file',snapshot:tooLarge}),
+  'The old receipt ceiling is not a format validity constraint.');
 });

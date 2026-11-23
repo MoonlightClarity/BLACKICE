@@ -12,6 +12,11 @@ const candidateRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'.
 const baselineRoot=process.env.BLACKICE_BENCH_CONTROL_ROOT||path.join(path.dirname(candidateRoot),'BLACKICE-context-control-20261123');
 const providerDir=process.env.BLACKICE_BENCH_PROVIDER_DIR||path.join(process.env.APPDATA||path.join(homedir(),'AppData','Roaming'),'Relay','data');
 const variant=process.argv.find(x=>x.startsWith('--variant='))?.slice(10)||'candidate';
+const arm=process.argv.find(x=>x.startsWith('--arm='))?.slice(6)||'directory-only';
+const arms=new Set(['planning-directory','planning-only','directory-only','neither']);
+if(!arms.has(arm))throw Error('Choose planning-directory, planning-only, directory-only or neither.');
+const usePlanning=arm==='planning-directory'||arm==='planning-only';
+const useDirectory=arm==='planning-directory'||arm==='directory-only';
 const model=process.argv.find(x=>x.startsWith('--model='))?.slice(8)||'kilo_free::cohere/north-mini-code:free';
 const testId=process.argv.find(x=>x.startsWith('--case='))?.slice(7)||'async-cache';
 const reportRoot=process.env.BLACKICE_BENCH_REPORT_DIR||path.join(path.dirname(candidateRoot),'BLACKICE-context-benchmark-results-20261123');
@@ -22,11 +27,11 @@ if(!nativeModel&&(!model.startsWith('kilo_free::')||!model.endsWith(':free')))th
 const moduleImport=async file=>import(pathToFileURL(path.join(sourceRoot,'lib',file)).href);
 const [{HarnessEngine},{ProviderRuntime},{ProviderStore},{CodexRuntime}]=await Promise.all([
  moduleImport('engine.mjs'),moduleImport('providers.mjs'),moduleImport('provider-store.mjs'),moduleImport('codex.mjs')]);
-const results={variant,testId,model,sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
+const results={variant,arm,usePlanning,useDirectory,testId,model,sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
   harnessEngineSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','engine.mjs'))).digest('hex'),
   workspaceToolSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','workspace-tools.mjs'))).digest('hex'),
   benchmarkFixtureSha256:testId==='event-replay'?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-event-replay.mjs'))).digest('hex'):null,
-  contextPolicy:variant==='candidate'?'source-continuation-v3':'unmodified-2.40.75',
+  contextPolicy:variant==='candidate'?'directory-adaptive-preserved-evidence':'unmodified-2.40.75',
   contextImplementationSha256:variant==='candidate'?
     createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','task-external-context.mjs'))).digest('hex'):null};
 const root=await mkdtemp(path.join(tmpdir(),'blackice-context-live-'+variant+'-'));
@@ -212,11 +217,11 @@ try{
     const codex=new EventEmitter();
     codex.status=()=>({connected:false,authenticated:false,models:[]});
     codex.runAgent=async()=>{throw Error('Native Codex cannot be used for an API-model trial');};
-    runtime=new ProviderRuntime({codex,dataDir:path.join(root,'provider'),modelLimitResolver:{enrich:async (_config,m)=>m},runTimeoutMs:360000,maxSteps:90,requestTimeoutMs:60000});
+    runtime=new ProviderRuntime({codex,dataDir:path.join(root,'provider'),modelLimitResolver:{enrich:async (_config,m)=>m},runTimeoutMs:360000,requestTimeoutMs:60000});
     runtime.store=installed; // read-only provider settings; provider sessions stored in isolated root
   }
   const actual=runtime.runAgent.bind(runtime);
-  runtime.runAgent=options=>actual({...options,onToolCall:async(call,ctx)=>{
+  runtime.runAgent=options=>options.onToolCall?actual({...options,onToolCall:async(call,ctx)=>{
     const supplied=typeof call.arguments==='string'?JSON.parse(call.arguments):call.arguments;
     const entry={name:call.name,action:supplied?.action,argumentsPreview:JSON.stringify(supplied).slice(0,900),at:Date.now()};
     results.toolCalls.push(entry);
@@ -225,11 +230,11 @@ try{
       entry.resultPreview=typeof first==='string'?first.slice(0,180):null;
       return value;
     }catch(error){entry.threw=String(error.code||error.message||error).slice(0,180);throw error;}
-  }});
+  }}):actual(options);
   engine=await new HarnessEngine({runtime,dataDir:path.join(root,'engine'),defaultCwd:taskRoot}).init();
-  const graph={name:'Benchmark coding',nodes:[{id:'i',type:'input'},{id:'a',type:'agent',name:'Coding agent',model,prompt:'You are the coding agent. Fix the described software bugs. Inspect files and tests with your tools. Use only this isolated workspace. Verify the changes by running the test suite. Use current tool schemas.'},{id:'o',type:'output'}],edges:[{source:'i',target:'a'},{source:'a',target:'o'}],settings:{maxParallel:1,planningMode:'off',context:{outputReserveTokens:16384,headroomTokens:2048}}};
+  const graph={name:'Benchmark coding',nodes:[{id:'i',type:'input'},{id:'a',type:'agent',name:'Coding agent',model,prompt:'You are the coding agent. Fix the described software bugs. Inspect files and tests with your tools. Use only this isolated workspace. Verify the changes by running the test suite. Use current tool schemas.'},{id:'o',type:'output'}],edges:[{source:'i',target:'a'},{source:'a',target:'o'}],settings:{maxParallel:1,planningMode:'off'}};
   const task='In this isolated coding project ('+taskRoot+'), read README.md, incident.log and source files, fix the implementation until node --test passes. Preserve the public API, test files and user instructions. Be careful with false or stale outputs. Run tests to confirm. You may use the given workspace tools. This is a real coding benchmark; do not merely describe a fix.';
-  const started=engine.startRun({workflow:graph,input:{task,directoryActions:'on',directoryDiagnostics:'off'}});
+  const started=engine.startRun({workflow:graph,input:{task,directoryActions:useDirectory?'on':'off',chatPlanning:usePlanning?'on':'off',directoryDiagnostics:'off'}});
   results.runId=started.id;
   await engine.executions.get(started.id);
   const run=engine.getRun(started.id); results.runStatus=run.status;results.runError=run.error||null;results.agentOutput=String(run.nodes?.a?.output||'').slice(0,1500);
@@ -238,6 +243,10 @@ try{
   results.directoryFinal={focus:directorySnapshot.focus,revision:directorySnapshot.revision,receiptCount:directorySnapshot.receipts.length,ready:directorySnapshot.ready};
   const state=engine.runs.get(started.id)?.nodes?.a||{};
   results.nodeDiagnostics={directoryOutcome:state.directoryOutcome||null,runtimePhase:state.runtimePhase||null,toolNames:state.toolNames||[],usage:state.usage||state.tokenUsage||null};
+  results.planningModuleReceipts=run.planningModuleReceipts||[];
+  results.planningStages=results.planningModuleReceipts.filter(event=>event?.phase==='completed').map(event=>event.moduleId);
+  results.directoryObserved=directorySnapshot.actions.filter(row=>row.state==='observed').length;
+  results.directoryIncomplete=useDirectory&&(directorySnapshot.actions.some(row=>row.state==='pending'||row.state==='active')||Boolean(directorySnapshot.focus));
   results.completedAt=new Date().toISOString();
   await writeFile(path.join(taskRoot,'test','hidden-acceptance.test.mjs'),grader);
   const hidden=spawnSync(process.execPath,['--test'],{cwd:taskRoot,encoding:'utf8',timeout:30000});
@@ -253,13 +262,13 @@ finally{
   await engine?.close().catch(()=>{});
   await runtime?.close?.().catch(()=>{});
   await mkdir(reportRoot,{recursive:true});
-  const solutionDir=path.join(reportRoot,'solutions',testId+'-'+variant+'-'+randomUUID().slice(0,8));
+  const solutionDir=path.join(reportRoot,'solutions',testId+'-'+variant+'-'+arm+'-'+randomUUID().slice(0,8));
   await mkdir(solutionDir,{recursive:true});
   await cp(path.join(taskRoot,'src'),path.join(solutionDir,'src'),{recursive:true}).catch(()=>{});
   results.solutionDir=solutionDir;
   results.finishedAt=new Date().toISOString();
-  const reportPath=path.join(reportRoot,testId+'-'+variant+'-'+randomUUID().slice(0,8)+'.json');
+  const reportPath=path.join(reportRoot,testId+'-'+variant+'-'+arm+'-'+randomUUID().slice(0,8)+'.json');
   await writeFile(reportPath,JSON.stringify(results,null,2));
-  console.log(JSON.stringify({reportPath,variant,testId,model,contextPolicy:results.contextPolicy,runStatus:results.runStatus,trialValid:results.trialValid,codingCorrect:results.codingCorrect,workflowCompleted:results.workflowCompleted,codingSuccess:results.codingSuccess,toolCalls:results.toolCalls.length,externalArtifactCount:results.externalArtifactCount,infraError:results.infraError,runError:results.runError}));
+  console.log(JSON.stringify({reportPath,variant,arm,testId,model,contextPolicy:results.contextPolicy,runStatus:results.runStatus,trialValid:results.trialValid,codingCorrect:results.codingCorrect,workflowCompleted:results.workflowCompleted,codingSuccess:results.codingSuccess,toolCalls:results.toolCalls.length,externalArtifactCount:results.externalArtifactCount,infraError:results.infraError,runError:results.runError}));
   await rm(root,{recursive:true,force:true}).catch(()=>{});
 }
