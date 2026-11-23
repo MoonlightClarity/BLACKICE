@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import {makeEventReplayTask,applyEventReplayGold} from './benchmark-fixture-event-replay.mjs';
+import {makeLongEvidence} from './benchmark-fixture-long-evidence.mjs';
 
 const candidateRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const baselineRoot=process.env.BLACKICE_BENCH_CONTROL_ROOT||path.join(path.dirname(candidateRoot),'BLACKICE-context-control-20261123');
@@ -14,6 +15,7 @@ const providerDir=process.env.BLACKICE_BENCH_PROVIDER_DIR||path.join(process.env
 const variant=process.argv.find(x=>x.startsWith('--variant='))?.slice(10)||'candidate';
 const model=process.argv.find(x=>x.startsWith('--model='))?.slice(8)||'kilo_free::cohere/north-mini-code:free';
 const testId=process.argv.find(x=>x.startsWith('--case='))?.slice(7)||'async-cache';
+const longEvidenceCase=testId==='event-replay-long';
 const directoryMode=process.argv.find(x=>x.startsWith('--directory='))?.slice(12)||'on';
 const pagingMode=process.argv.find(x=>x.startsWith('--paging='))?.slice(9)||'adaptive';
 if(!['on','off','eager','adaptive'].includes(pagingMode))throw Error('Use --paging=adaptive, eager, on (eager alias), or off.');
@@ -21,7 +23,7 @@ const reportSuffix=(directoryMode==='off'?'-no-dir':'')+(pagingMode==='off'?'-no
 if(!['on','off'].includes(directoryMode))throw Error('Use --directory=on or --directory=off.');
 const reportRoot=process.env.BLACKICE_BENCH_REPORT_DIR||path.join(path.dirname(candidateRoot),'BLACKICE-context-benchmark-results-20261123');
 const sourceRoot=variant==='control'?baselineRoot:candidateRoot;
-if(!['control','candidate'].includes(variant)||!['async-cache','stream-scheduler','event-replay'].includes(testId))throw Error('Unsupported variant/case');
+if(!['control','candidate'].includes(variant)||!['async-cache','stream-scheduler','event-replay','event-replay-long'].includes(testId))throw Error('Unsupported variant/case');
 const nativeModel=/^gpt-[a-z0-9.-]{2,80}$/.test(model);
 if(!nativeModel&&(!model.startsWith('kilo_free::')||!model.endsWith(':free')))throw Error('Use a native ChatGPT-subscription model or a configured free Kilo model; paid API providers are not permitted.');
 const moduleImport=async file=>import(pathToFileURL(path.join(sourceRoot,'lib',file)).href);
@@ -30,7 +32,8 @@ const [{HarnessEngine},{ProviderRuntime},{ProviderStore},{CodexRuntime}]=await P
 const results={variant,testId,model,directoryMode,pagingMode,effectivePaging:variant==='candidate'&&pagingMode!=='off',sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
   harnessEngineSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','engine.mjs'))).digest('hex'),
   workspaceToolSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','workspace-tools.mjs'))).digest('hex'),
-  benchmarkFixtureSha256:testId==='event-replay'?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-event-replay.mjs'))).digest('hex'):null,
+  benchmarkFixtureSha256:testId.startsWith('event-replay')?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-event-replay.mjs'))).digest('hex'):null,
+  longEvidenceFixtureSha256:longEvidenceCase?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-long-evidence.mjs'))).digest('hex'):null,
   contextPolicy:variant==='candidate'?(pagingMode==='adaptive'?'adaptive-visible-96kb':pagingMode==='off'?'ablation-no-paging':'eager-context-v3'):'unmodified-2.40.75',
   contextImplementationSha256:variant==='candidate'?
     createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','task-external-context.mjs'))).digest('hex'):null};
@@ -124,7 +127,8 @@ let eventReplayGrader=null;
 if(testId==='async-cache')await makeCacheTask();
 else if(testId==='stream-scheduler')await makeSchedulerTask();
 else eventReplayGrader=await makeEventReplayTask(write,taskRoot);
-if(testId!=='event-replay'){
+if(longEvidenceCase)results.evidenceManifest=await makeLongEvidence(write,taskRoot);
+if(!testId.startsWith('event-replay')){
 const incident=['2026-11-22T12:00:00Z INCIDENT TRACE '+testId];
 for(let i=0;i<240;i++)incident.push('2026-11-22T12:00:'+String(i%60).padStart(2,'0')+'Z trace request='+i+' key='+(['alpha','beta','gamma'][i%3])+' pending='+((i*7)%13)+' note=scheduled-repeat-observation');
 incident.push(testId==='async-cache'?'2026-11-22T12:59:59Z defect: a fulfilled promise was replaced by a stale value after invalidation; duplicate loader race confirmed.':'2026-11-22T12:59:59Z defect: root dependency checks skip every root and an all-of dependency was implemented as any-of.');
@@ -148,9 +152,9 @@ const acceptanceScheduler=[
  "test('all prerequisites are satisfied before a node runs',async()=>{let release;const slow=new Promise(r=>release=r);const task=runGraph([{id:'a',run:async()=>1},{id:'b',run:async()=>{await slow;return 2;}},{id:'c',dependsOn:['a','b'],run:async(x)=>x.join(',')}]);await new Promise(r=>setTimeout(r,20));release();assert.equal((await task).values.c,'1,2');});",
  "test('maxParallel=1 prevents overlap',async()=>{let active=0,peak=0;await runGraph(Array.from({length:6},(_,i)=>({id:'n'+i,run:async()=>{peak=Math.max(peak,++active);await new Promise(r=>setTimeout(r,5));active--;return i;}})),{maxParallel:1});assert.equal(peak,1);});",
 ];
-const grader=testId==='event-replay'?eventReplayGrader:(testId==='async-cache'?acceptanceCache:acceptanceScheduler).join('\n')+'\n';
+const grader=testId.startsWith('event-replay')?eventReplayGrader:(testId==='async-cache'?acceptanceCache:acceptanceScheduler).join('\n')+'\n';
 if (process.argv.includes('--verify-gold')) {
-  if (testId === 'event-replay') await applyEventReplayGold(write);
+  if (testId.startsWith('event-replay')) await applyEventReplayGold(write);
   else if (testId === 'async-cache') {
     await write('src/cache.mjs', [
       'export class AsyncCache {',
@@ -226,14 +230,28 @@ try{
     const entry={name:call.name,action:supplied?.action,argumentsPreview:JSON.stringify(supplied).slice(0,900),at:Date.now()};
     results.toolCalls.push(entry);
     try{const value=await options.onToolCall(call,ctx);entry.success=value?.success;entry.code=value?.code||null;
-      const first=value?.contentItems?.find(item=>item?.type==='inputText'&&typeof item.text==='string')?.text;
-      entry.resultPreview=typeof first==='string'?first.slice(0,180):null;
+      const texts=(value?.contentItems||[]).filter(item=>item?.type==='inputText'&&typeof item.text==='string').map(item=>item.text);
+      entry.resultBytes=texts.reduce((sum,text)=>sum+Buffer.byteLength(text,'utf8'),0);
+      entry.archivedOriginalBytes=0;entry.archivedReferences=[];entry.resultOriginalEstimate=0;
+      for(const text of texts){
+       let parsed;try{parsed=JSON.parse(text);}catch{}
+       if(parsed?.externalContext===true&&typeof parsed.reference==='string'&&Number.isInteger(parsed.bytes)){
+        entry.archivedReferences.push(parsed.reference);
+        entry.archivedOriginalBytes+=parsed.bytes;
+        entry.resultOriginalEstimate+=parsed.bytes;
+       }else entry.resultOriginalEstimate+=Buffer.byteLength(text,'utf8');
+      }
+      const evidencePath=String(supplied?.path||supplied?.query||supplied?.command||'');
+      entry.traceShards=[...new Set([...evidencePath.matchAll(/trace-(0[1-8])\.log/gi)].map(match=>match[1]))];
+      entry.resultPreview=texts[0]?.slice(0,180)||null;
       return value;
     }catch(error){entry.threw=String(error.code||error.message||error).slice(0,180);throw error;}
   }});
   engine=await new HarnessEngine({runtime,dataDir:path.join(root,'engine'),defaultCwd:taskRoot,contextPagingEnabled:pagingMode!=='off',contextPagingPolicy:pagingMode==='adaptive'?'adaptive':'eager'}).init();
   const graph={name:'Benchmark coding',nodes:[{id:'i',type:'input'},{id:'a',type:'agent',name:'Coding agent',model,prompt:'You are the coding agent. Fix the described software bugs. Inspect files and tests with your tools. Use only this isolated workspace. Verify the changes by running the test suite. Use current tool schemas.'},{id:'o',type:'output'}],edges:[{source:'i',target:'a'},{source:'a',target:'o'}],settings:{maxParallel:1,planningMode:'off',context:{outputReserveTokens:16384,headroomTokens:2048}}};
-  const task='In this isolated coding project ('+taskRoot+'), read README.md, incident.log and source files, fix the implementation until node --test passes. Preserve the public API, test files and user instructions. Be careful with false or stale outputs. Run tests to confirm. You may use the given workspace tools. This is a real coding benchmark; do not merely describe a fix.';
+  const task=longEvidenceCase
+    ? 'In this isolated coding project ('+taskRoot+'), repair the event-replay implementation. Read README.md and diagnostics/INDEX.md first, then audit all eight distinct diagnostics/trace-*.log evidence shards. Each contains a different relevant failure class and conflicting early hypotheses. Use any efficient read/search/programmatic strategy; do not skip the evidence audit or assume a first-page fragment contains the final conclusion. Implement and test both modules, including invalid inputs and failed-apply side effects. Preserve the public API and the provided tests. Run node --test on your final source and report what was actually verified. You have authorized workspace read/write tools. Avoid unnecessary repeated work and do not request routine approval.'
+    : 'In this isolated coding project ('+taskRoot+'), read README.md, incident.log and source files, fix the implementation until node --test passes. Preserve the public API, test files and user instructions. Be careful with false or stale outputs. Run tests to confirm. You may use the given workspace tools. This is a real coding benchmark; do not merely describe a fix.';
   const started=engine.startRun({workflow:graph,input:{task,directoryActions:directoryMode,directoryDiagnostics:'off'}});
   results.runId=started.id;
   await engine.executions.get(started.id);
@@ -246,6 +264,23 @@ try{
   const state=engine.runs.get(started.id)?.nodes?.a||{};
   results.nodeDiagnostics={directoryOutcome:state.directoryOutcome||null,runtimePhase:state.runtimePhase||null,toolNames:state.toolNames||[],usage:state.usage||state.tokenUsage||null};
   results.completedAt=new Date().toISOString();
+  const eligibleToolOutput=results.toolCalls.filter(row=>row.success===true&&(
+   row.name==='relay_workspace'&&['read','find','search','list'].includes(row.action)||
+   row.name==='relay_find_files'||row.name==='relay_history'&&['read','search'].includes(row.action)
+  ));
+  const distinctTraceShards=[...new Set(results.toolCalls.filter(row=>row.success===true).flatMap(row=>row.traceShards||[]))].sort();
+  results.contextPressure={
+   originalEligibleReadBytes:eligibleToolOutput.reduce((sum,row)=>sum+(row.resultOriginalEstimate||0),0),
+   modelVisibleEligibleReadBytes:eligibleToolOutput.reduce((sum,row)=>sum+(row.resultBytes||0),0),
+   allModelFacingToolBytes:results.toolCalls.reduce((sum,row)=>sum+(row.resultBytes||0),0),
+   originalAllToolBytesEstimate:results.toolCalls.reduce((sum,row)=>sum+(row.resultOriginalEstimate||0),0),
+   archivedToolResults:results.toolCalls.filter(row=>(row.archivedReferences||[]).length>0).length,
+   archivedOriginalBytes:results.toolCalls.reduce((sum,row)=>sum+(row.archivedOriginalBytes||0),0),
+   retrievalCalls:results.toolCalls.filter(row=>row.name==='relay_context_page').length,
+   traceShardsReferenced:distinctTraceShards,
+   traceShardReadCalls:results.toolCalls.filter(row=>row.success===true&&row.name==='relay_workspace'&&row.action==='read'&&(row.traceShards||[]).length>0).length,
+   reachedAdaptiveOutputThreshold:eligibleToolOutput.reduce((sum,row)=>sum+(row.resultOriginalEstimate||0),0)>96*1024,
+  };
   await writeFile(path.join(taskRoot,'test','hidden-acceptance.test.mjs'),grader);
   const hidden=spawnSync(process.execPath,['--test'],{cwd:taskRoot,encoding:'utf8',timeout:30000});
   results.hiddenGrade={exitCode:hidden.status,output:(hidden.stdout||'').slice(-5000),errors:(hidden.stderr||'').slice(-1500)};
