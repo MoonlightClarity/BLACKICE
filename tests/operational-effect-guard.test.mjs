@@ -259,3 +259,13 @@ test('browser stale-reference preflight settles Directory without replaying; a f
  const next=await ledger.execute(fresh,handle,scope);
  assert.equal(next.result.success,true);assert.equal(f.counts().dispatched,1);
 });
+test('pre-pointer capture diagnostic preserves operationally unknown effect',async t=>{
+  const f=await fixture(t);
+  const body={code:'BROWSER_CAPTURE_TIMEOUT',pointerStage:'pre-pointer-capture'};
+  const guard=f.guard('pre-pointer');
+  const result=await f.submit(descriptor('capture-unknown',jobA),guard,{...receipt(body),success:false,code:body.code});
+  assert.equal(result.success,false);
+  assert.equal(JSON.parse(result.contentItems[0].text).pointerStage,'pre-pointer-capture');
+  assert.equal(f.events.at(-1).state,'unknown');
+  assert.equal((await guard.records()).at(-1).state,'unknown');
+});

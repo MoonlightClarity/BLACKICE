@@ -3248,3 +3248,23 @@ test('a native popup is attributed during click and inspection is a separate too
  assert.deepEqual(events.filter(x=>x.event.phase==='inspection-returned'),[{callId:'inspect-call',
   event:{type:'browser.destination',action:'snapshot',phase:'inspection-returned',tabId:child.id}}]);
 });
+test('capture timeout tags pre-pointer capture, but not screenshot or a timed out pointer reply', async t => {
+  const { driver, windows } = await fixture(t), tab=driver.newTab('https://careers.example.test/application');
+  await tab.loading;
+  const timeout=()=>Object.assign(new Error('Test capture deadline'), {code:'BROWSER_CAPTURE_TIMEOUT'});
+  const guard={action:'click',tabId:tab.id,expectedUrl:tab.url,expectedDocumentId:tab.id+':'+tab.revision};
+  rememberFixtureRef(driver,tab,'submit');
+  driver.element=async()=>({frame:{},result:{x:20,y:20}});
+  driver.browserPoint=async()=>({x:20,y:20});
+  const contents=windows[0].webContents, original=contents.capturePage;
+  contents.capturePage=async()=>{throw timeout();};
+  let dispatched=0;
+  driver.pointerInput=async()=>{dispatched++;throw timeout();};
+  await assert.rejects(driver.perform({...guard,ref:'submit'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage==='pre-pointer-capture'&&e.inputDispatched===undefined&&e.actionDispatched===undefined);
+  await assert.rejects(driver.perform({...guard,x:20,y:20}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage==='pre-pointer-capture'&&e.inputDispatched===undefined&&e.actionDispatched===undefined);
+  await assert.rejects(driver.perform({...guard,action:'screenshot'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage===undefined&&e.inputDispatched===undefined);
+  assert.equal(dispatched,0);
+  contents.capturePage=original;
+  await assert.rejects(driver.perform({...guard,ref:'submit'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage===undefined&&e.inputDispatched===undefined);
+  assert.equal(dispatched,1);
+});

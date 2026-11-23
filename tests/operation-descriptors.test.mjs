@@ -906,3 +906,10 @@ test('filename callable has the same observed operation identity as legacy works
  assert.equal(narrow.effect,'observe');assert.equal(narrow.operationKey,legacy.operationKey);
  assert.deepEqual(narrow.resources,legacy.resources);
 });
+test('pre-pointer capture stage does not prove a native effect absent', async () => {
+  const body={code:'BROWSER_CAPTURE_TIMEOUT',pointerStage:'pre-pointer-capture'};
+  const observation=await normalizeHostOperationResult(result(body,false),{call:browserCall()});
+  assert.equal(observation.effectState,'unknown');
+  assert.equal(observation.actionDispatched,undefined);
+  assert.equal(observation.inputDispatched,undefined);
+});
