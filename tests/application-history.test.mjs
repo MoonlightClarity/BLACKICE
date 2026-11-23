@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawn } from 'node:child_process';
+import { promises as filesystem } from 'node:fs';
 import { mkdtemp, mkdir, writeFile, rm, symlink, truncate } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -173,5 +174,55 @@ test('custom application history bounds related output and prioritizes the obser
  assert.equal(result.related[0].relationship,'same-observed-origin-and-path');
  assert.equal(result.related[0].reported.role.length,256);
  assert.deepEqual(result.related[0].reportedFieldsTruncated,['role']);
+ assert.deepEqual(result.matches,[]);
+});
+
+test('claimed history is complete for a genuinely absent registry or claims document',async t=>{
+ const f=await fixture(t), target=applicationTarget(url);
+ const absent=await inspectApplicationHistory(f.cwd,target);
+ assert.equal(absent.scanComplete,true);
+ await mkdir(path.join(f.cwd,'.application-registry'));
+ const emptyRegistry=await inspectApplicationHistory(f.cwd,target);
+ assert.equal(emptyRegistry.scanComplete,true);
+ assert.deepEqual(emptyRegistry.errors,[]);
+ assert.deepEqual(emptyRegistry.matches,[]);
+});
+
+test('a linked or unreadable legacy registry is incomplete without inspecting its claims file',async t=>{
+ const f=await fixture(t), target=applicationTarget(url);
+ const lstat=filesystem.lstat, realpath=filesystem.realpath;
+ const actualWorkspace=await realpath(f.cwd), registry=path.join(actualWorkspace,'.application-registry');
+ await mkdir(registry);
+ await f.write('.application-registry/claims.json',JSON.stringify({[target.key]:{url,status:'claimed'}}));
+ let mode='link', attemptedFileStat=false;
+ t.mock.method(filesystem,'lstat',async (file,...rest)=>{
+  if (file===registry && mode==='link') return {isDirectory:()=>false,isSymbolicLink:()=>true};
+  if (file===registry && mode==='access') throw Object.assign(new Error('fixture access error'),{code:'EACCES'});
+  if (file===path.join(registry,'claims.json')) attemptedFileStat=true;
+  return lstat(file,...rest);
+ });
+ for (mode of ['link','access']) {
+  const result=await inspectApplicationHistory(f.cwd,target);
+  assert.equal(result.scanComplete,false);
+  assert.deepEqual(result.errors,['.application-registry/claims.json']);
+  assert.deepEqual(result.matches,[]);
+  assert.equal(attemptedFileStat,false);
+ }
+ mode='direct';
+ const direct=await inspectApplicationHistory(f.cwd,target);
+ assert.equal(direct.scanComplete,true);
+ assert.equal(attemptedFileStat,true);
+ assert.deepEqual(direct.matches,[{source:'.application-registry/claims.json',reason:'existing-claim-or-outcome'}]);
+});
+
+test('history rejects a real filesystem link for the legacy registry when links are supported',async t=>{
+ const f=await fixture(t), target=applicationTarget(url);
+ const outside=path.resolve(f.cwd,'..','outside');await mkdir(outside);
+ await writeFile(path.join(outside,'claims.json'),JSON.stringify({[target.key]:{url,status:'claimed'}}));
+ try { await symlink(outside,path.join(f.cwd,'.application-registry'),process.platform==='win32'?'junction':'dir'); }
+ catch (error) { if (!['EPERM','EACCES','ENOSYS'].includes(error.code)) throw error; return t.skip('Directory links unavailable on this executor'); }
+ const result=await inspectApplicationHistory(f.cwd,target);
+ assert.equal(result.scanComplete,false);
+ assert.deepEqual(result.errors,['.application-registry/claims.json']);
  assert.deepEqual(result.matches,[]);
 });
