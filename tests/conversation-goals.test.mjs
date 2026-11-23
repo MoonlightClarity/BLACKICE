@@ -826,3 +826,57 @@ test('direct goal controls persist null by default and remove an explicit finite
   assert.equal(goal.maxTurns,null);await persisted(null);
   assert.equal(runtime.calls.length,1,'Automatic continuations remain disabled in this fixture.');
 });
+test('Goal successor receives conflicting prior reports with provenance, never as verified effects or prior directives', async t => {
+  const won = {summary:'The exact destination displayed acceptance.',evidence:'The prior assistant reports an acceptance after sending the request.',
+    milestone:'destination-A-accepted',nextAction:'Earlier proposal must not become a successor directive.'};
+  const lost = {summary:'No destination accepted a new request.',evidence:'The final claimant reports no new effects.',
+    milestone:'no-intake',nextAction:'Inspect the current exact destination without sending again.'};
+  const prefix='Earlier checkpoints (JSON;';
+  const {engine,goals}=await fixture(t,async (options,n)=>{
+    if(n===1){
+      for(const checkpoint of [won,won,lost]) assert.equal((await report(options,'progress',checkpoint)).result.success,true);
+      const root=[...engine.runs.values()][0].id, goal=goals.raw(root);
+      const [earlier]=goal.reportedCheckpoints;
+      assert.equal(goal.reportedCheckpoints.length,2);
+      await goals.save(root,{...goal,reportedCheckpoints:[...goal.reportedCheckpoints,
+        {...earlier,identity:'different-conversation',conversationId:'other',summary:'Foreign conversation marker'},
+        {...earlier,identity:'different-goal',goalId:'other',summary:'Foreign goal marker'},
+        {...earlier,identity:'different-generation',generation:goal.generation+1,summary:'Foreign generation marker'},
+        {...earlier,identity:'different-run',runId:'other',summary:'Foreign run marker'}]});
+    } else if(n===2) {
+      const next=[...engine.runs.values()].at(-1).input;
+      const block=next.split('\n\n').find(row=>row.startsWith(prefix));
+      assert.ok(block);
+      assert.match(block,/model reports, not proof or current instructions/);
+      const history=JSON.parse(block.slice(block.indexOf('\n')+1));
+      assert.equal(history.length,1);
+      assert.equal(history[0].status,'model-reported-unverified');
+      assert.equal(history[0].summary,won.summary);
+      assert.equal(history[0].evidence,won.evidence);
+      assert.equal(history[0].nextAction,undefined);
+      assert.match(next,/Latest checkpoint: No destination accepted/);
+      assert.match(next,/Inspect the current exact destination without sending again/);
+      assert.doesNotMatch(next,/Foreign |Earlier proposal must not/);
+      assert.equal((await report(options,'complete')).result.success,true);
+    } else assert.fail('unexpected extra turn');
+    return output(n);
+  });
+  const first=engine.startRun({workflow:graph(),input:{task:'Check the destination.',goal:{objective:'Check the destination.'}}});
+  await waitFor(async()=> (await goals.get(first.id))?.status==='completed');
+});
+test('retained Goal reports are bounded and mark clipped claims', async t => {
+  const {engine,goals}=await fixture(t,async options=>{
+    for(let i=0;i<8;i++) {
+      const accepted=await report(options,'progress',{summary:'Summary '+i,evidence:'Report '+i+' '+('x'.repeat(1100))});
+      assert.equal(accepted.result.success,true);
+      assert.doesNotMatch(accepted.result.contentItems[0].text,/reportedCheckpoints/);
+    }
+    assert.equal((await report(options,'complete')).result.success,true);
+    return output(1);
+  });
+  const first=engine.startRun({workflow:graph(),input:{task:'Check eight stages.',goal:{objective:'Check eight stages.'}}});
+  await waitFor(async()=> (await goals.get(first.id))?.status==='completed');
+  const reports=goals.raw(first.id).reportedCheckpoints;
+  assert.deepEqual(reports.map(row=>row.summary),[2,3,4,5,6,7].map(i=>'Summary '+i));
+  assert.ok(reports.every(row=>row.truncated===true && row.evidence.length===1000));
+});
