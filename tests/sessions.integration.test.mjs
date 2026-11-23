@@ -154,14 +154,14 @@ test('attached tools retain read-only release skills and scoped history without 
   const attached=new Map(options.dynamicTools.map(spec=>[spec.name,spec]));
   for(const name of ['relay_history','relay_skills','relay_workspace'])assert.ok(attached.has(name));
   assert.equal(attached.has('relay_memory'),false);assert.equal(attached.has('relay_learn'),false);
-  assert.deepEqual(attached.get('relay_skills').inputSchema.properties.action.enum,['search','read']);
+  assert.deepEqual(attached.get('relay_skills').inputSchema.properties.action.enum,['search','read','save']);
   assert.doesNotMatch(options.prompt,/LOCAL_LEGACY_SECRET|OTHER_LEGACY_SECRET/);
   const skills=decode(await options.onToolCall(tool('relay_skills',{action:'search'})));
   assert.ok(Array.isArray(skills.entries));assert.ok(!JSON.stringify(skills).includes('legacy-skill-secret'));
   const history=decode(await options.onToolCall(tool('relay_history',{action:'search'})));
   assert.equal(history.results.length,0,'active run excluded');
   await assert.rejects(options.onToolCall(tool('relay_memory',{action:'remember',title:'No',content:'No'})),/Unknown knowledge tool/);
-  await assert.rejects(options.onToolCall(tool('relay_skills',{action:'save'})),/Unknown knowledge action/);
+  await assert.rejects(options.onToolCall(tool('relay_skills',{action:'save'})),/Skill save action requires id, content and expectedRevision/);
   return{output:'Read-only catalog inspected',threadId:'knowledge-thread'};
  });
  const{api,app,dataDir,settled}=await application(t,{runtime});

@@ -15,12 +15,12 @@ const SOURCE_PINS = Object.freeze({
   'verification/minicpm-agent-tools-v2/capture-events.cjs': '7eac9bf2ece62d33f22dea2d935987f5348b6c45925f8890462cb8a80338ff67',
   'lib/provider-tool-delivery.mjs': '2b80ce2894418b8c04b92630f784e4174b60b9887dbc4ad818aac35c8234ea7a',
   'lib/provider-exchange-trace.mjs': 'dd52ea2dd66958b5e4abc58850a6017297830bcb8e62b381b2c59f49d5f409a9',
-  'lib/code-block-tool.mjs': '2699720c588889e922b167aef4d358c70175d2d5ce8805118e87f811db7c1dc0',
+  'lib/code-block-tool.mjs': '7157216a414ec895b24f5c78f6ff68e31368aef7ae312edc690136847200b5c4',
   'lib/code-check-adapters.mjs': '42fef5ab43340df47bf4fec450322c14ef87bc61073a0dc7f6c39f2f1586ba25',
   'lib/benchmark-workspace.mjs': '39bf63a5e88def1dfb1a5fe04c23b29da9677d1825fd21611384a415bb5147fd',
   'lib/conversation-tool-continuity.mjs': '3e6508d918570338500597debfe9725c4b1f5b7030e788e6a25f0f4416c57450',
   'lib/directory-control-telemetry.mjs': '92183223f779ddb1f7d34cf20c381ba85617942b9b64085dd5879458d1fb4dab',
-  'lib/task-action-directory.mjs': '6b14f89fa666f72ee086345b13f8c0dced1dec356e6dafda293f16f78c71b5c0',
+  'lib/task-action-directory.mjs': '12dbf8db6ab3183e35bc54775d6f242ff07851c823451f993e1afb79c9e8abea',
 });
 const sha = value => createHash('sha256').update(value).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);

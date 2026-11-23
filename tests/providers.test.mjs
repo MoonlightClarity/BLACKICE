@@ -1500,6 +1500,10 @@ test('ordinary Chat checks each evidence state once without repeating finite fil
             assert.ok(!records.some(record=>record.action==='write'));
             assert.deepEqual(snapshot.scope.pendingEffects,[]);
           }
+        }else if(label==='budget'){
+          decision='continue';
+          summary='The requested file is not yet created; the bounded worker has no remaining effect-dispatch steps.';
+          remaining=['Create the requested result file.'];
         }else{
           assert.ok(['answer-only','quoted','saved'].includes(label));
           assert.ok(!records.some(record=>record.action==='write'));
@@ -1507,7 +1511,7 @@ test('ordinary Chat checks each evidence state once without repeating finite fil
             label==='quoted'?'The candidate assesses the quoted instruction without treating it as authority to act.':
             'The candidate supplies the requested greeting.';
         }
-        const result={decision,summary,remaining,nextAction:nextAction||'',evidenceRefs,blockers};
+        const result={decision,summary,remaining,nextAction:nextAction||(label==='budget'?'Create the requested result file.':''),evidenceRefs,blockers};
         assessments.push({review,result});
         return providerOutcomeResponse(response,result);
       }
@@ -1553,13 +1557,14 @@ test('ordinary Chat checks each evidence state once without repeating finite fil
         await engine.executions.get(run.id);
       }
       const finished=engine.getRun(run.id);
-      assert.equal(finished.status,label==='cancelled'?'cancelled':stalled?'failed':'completed',finished.error);
+      assert.equal(finished.status,label==='cancelled'?'cancelled':(stalled||label==='budget')?'failed':'completed',finished.error);
       if(stalled){
         assert.equal(finished.errorCode,'CHAT_OUTCOME_STALLED');
         assert.match(finished.error,/outcome-directed recovery produced no new observed work/);
-      }else if(label!=='cancelled')assert.equal(finished.nodes.agent.output,expected);
+      }else if(label==='budget'){assert.equal(finished.errorCode,'CHAT_OUTCOME_STEP_BUDGET');assert.match(finished.error,/provider tool-step budget is exhausted/);}
+      else if(label!=='cancelled')assert.equal(finished.nodes.agent.output,expected);
       assert.equal(workerRequests.length,messages.length);
-      assert.equal(reviewRequests.length,label==='saved'?1:stalled?2:verdict?1:0);
+      assert.equal(reviewRequests.length,label==='saved'?1:stalled?2:(verdict||label==='budget')?1:0);
       assert.equal(requests.length,workerRequests.length+reviewRequests.length);
       assert.equal(codex.calls.length,0,'compatible fixtures must never invoke a live native model');
       // Each evidence state receives one initial check. One outcome-directed recovery

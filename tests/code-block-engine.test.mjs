@@ -221,7 +221,7 @@ test('v2 Planning and effective skills compose with exact code save, honest chec
  assert.equal(f.value('skill-read').entry.content,f.method.content);
  assert.ok(f.value('skill-search').entries.some(row=>row.id===f.method.id));
  const skillTool=f.openings.find(row=>!row.responseOnly).tools.find(row=>row.name==='relay_skills');
- assert.deepEqual(skillTool.inputSchema.properties.action.enum,['search','read']);
+ assert.deepEqual(skillTool.inputSchema.properties.action.enum,['search','read','save']);
  for(const id of ['skill-mutation','fixture-write','outside-write','absolute-write','stale-repair'])assert.equal(f.get(id).success,false,id+' must be rejected');
  assert.equal(f.denied.length,3);
  for(const [id,source] of [['save-wrong',wrong],['save-correct',correct]]){
