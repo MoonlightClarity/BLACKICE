@@ -2,6 +2,7 @@ import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp,mkdir,rm,readFile,writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -278,12 +279,34 @@ test('journal byte pressure preserves every legacy receipt and exact replay whil
  const reopened=createOperationalEffectGuard({store:await f.createStore(),cwd:f.cwd,...f.owner});
  assert.deepEqual(await reopened.wrap(f.raw)(submit),original);
  assert.equal(f.driver.dispatches,1);
- assert.deepEqual((await reopened.records()).find(row=>row.operationId==='opaque:0').result,legacy.records[1].result);
+ assert.equal((await reopened.records()).find(row=>row.operationId==='opaque:0').state,'unknown');
+ const child=String.raw`
+  import {createOperationalEffectGuard} from './lib/operational-effect-guard.mjs';
+  const [journal,cwd,owner,args]=process.argv.slice(1);
+  const guard=createOperationalEffectGuard({store:{file:()=>journal.slice(0,-8),enqueue:()=>{throw Error('Replay must not reserve or dispatch');}},cwd,...JSON.parse(owner)});
+  const raw=()=>{throw Error('Replay must not dispatch');};
+  raw.describeOperation=()=>{throw Error('Replay must not reach the adapter');};
+  try{console.log(JSON.stringify({result:await guard.wrap(raw)(JSON.parse(args))}));}
+  catch(error){console.log(JSON.stringify({code:error.code||null}));}
+ `;
+ const replayFresh=()=>JSON.parse(execFileSync(process.execPath,['--input-type=module','-e',child,journal,f.cwd,JSON.stringify(f.owner),JSON.stringify(submit)],{encoding:'utf8'}));
+ assert.deepEqual(replayFresh(),{result:original});
+ const readRow=operationId=>reopened.handle({name:'relay_effects',arguments:{action:'read',operationId}});
+ const list=()=>reopened.handle({name:'relay_effects',arguments:{action:'list'}});
+ const unrelated=migrated.records.find(row=>row.operationId==='opaque:0');
+ unrelated.packedResult.sha256='0'.repeat(64);
+ await writeFile(journal,JSON.stringify(migrated));
+ assert.equal((await reopened.records()).find(row=>row.operationId===unrelated.operationId).state,'unknown');
+ assert.deepEqual(parse(await readRow(legacyRow.operationId)).result,original);
+ assert.equal((await list()).success,true);
  const compressed=migrated.records.find(row=>row.operationId===legacyRow.operationId);
  assert.ok(compressed.packedResult);
  compressed.packedResult.sha256='0'.repeat(64);
  await writeFile(journal,JSON.stringify(migrated));
  await assert.rejects(reopened.wrap(f.raw)(submit),{code:'OPERATIONAL_RESULT_UNAVAILABLE'});
+ assert.deepEqual(replayFresh(),{code:'OPERATIONAL_RESULT_UNAVAILABLE'});
+ assert.equal(code(await readRow(legacyRow.operationId)),'OPERATIONAL_RESULT_UNAVAILABLE');
+ assert.equal((await list()).success,true);
  assert.equal(f.driver.dispatches,1);
 });
 
