@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {recursionBenchmarkProvenanceMismatches} from '../lib/directory-recursion-benchmark-provenance.mjs';
 
 const candidateRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const baselineRoot=process.env.BLACKICE_BENCH_CONTROL_ROOT||
@@ -38,14 +39,8 @@ for(const filename of filenames){
  const r=JSON.parse(await readFile(path.join(resultsRoot,filename),'utf8'));
  if(r.model!==model||r.directoryMode!=='on'||r.workflowKind!=='ordinary-chat'||
   r.testId!=='event-replay-long'||r.pagingMode!=='adaptive'||!['candidate','control'].includes(r.variant))continue;
- const source=sources[r.variant],matches=r.sourceRoot===source.root&&
-  r.directoryImplementationSha256===source.digests.directory&&
-  r.harnessEngineSha256===source.digests.engine&&
-  r.workspaceToolSha256===source.digests.workspace&&
-  r.benchmarkDriverSha256===expected.driver&&
-  r.benchmarkWorkflowSha256===expected.workflow&&
-  r.benchmarkFixtureSha256===expected.codeFixture&&
-  r.longEvidenceFixtureSha256===expected.longEvidence;
+ const source=sources[r.variant],provenanceMismatches=recursionBenchmarkProvenanceMismatches(r,source,expected),
+  matches=provenanceMismatches.length===0;
  const modelReviewer=r.graphIdentity?.recognizedAsOrdinaryChat===true&&Array.isArray(r.finalReviewCalls)&&r.finalReviewCalls.length>0;
  const grade=String(r.hiddenGrade?.output||''),cases=Number(/# tests (\d+)/.exec(grade)?.[1]||0),
   passes=Number(/# pass (\d+)/.exec(grade)?.[1]||0);
@@ -59,7 +54,7 @@ for(const filename of filenames){
  const recursion=r.recursivePlanning||{};
  rows.push({
   filename,variant:r.variant,valid,
-  invalidReason:valid?null:(!matches?'Nonmatching benchmark, fixture or exact source revision':!modelReviewer?'Ordinary-Chat outcome reviewer was not observed':error||'Invalid evidence or grading'),
+  invalidReason:valid?null:(!matches?'Nonmatching benchmark, fixture or exact source revision: '+provenanceMismatches.join(', '):!modelReviewer?'Ordinary-Chat outcome reviewer was not observed':error||'Invalid evidence or grading'),
   startedAt:r.startedAt,runStatus:r.runStatus,runError:r.runError||null,
   codeChecksPassed:passed,expectedChecks:21,observedTestCases:cases,
   workflowCompleted:valid&&r.runStatus==='completed',
