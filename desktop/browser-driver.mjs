@@ -1918,7 +1918,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       // In click/hover preparation, the pointer routine has not been invoked.
       // Scroll/layout may already have changed; do not claim actionDispatched:false.
       if (beforeInput && reason?.code === 'BROWSER_CAPTURE_TIMEOUT')
-        throw Object.assign(error(reason.message), {code: reason.code, inputDispatched: false});
+        throw Object.assign(error(reason.message), {code: reason.code, pointerStage: 'pre-pointer-capture'});
       throw reason;
     });
   }

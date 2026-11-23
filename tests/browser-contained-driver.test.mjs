@@ -3260,11 +3260,11 @@ test('capture timeout tags pre-pointer capture, but not screenshot or a timed ou
   contents.capturePage=async()=>{throw timeout();};
   let dispatched=0;
   driver.pointerInput=async()=>{dispatched++;throw timeout();};
-  await assert.rejects(driver.perform({...guard,ref:'submit'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.inputDispatched===false&&e.actionDispatched===undefined);
-  await assert.rejects(driver.perform({...guard,x:20,y:20}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.inputDispatched===false&&e.actionDispatched===undefined);
-  await assert.rejects(driver.perform({...guard,action:'screenshot'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.inputDispatched===undefined);
+  await assert.rejects(driver.perform({...guard,ref:'submit'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage==='pre-pointer-capture'&&e.inputDispatched===undefined&&e.actionDispatched===undefined);
+  await assert.rejects(driver.perform({...guard,x:20,y:20}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage==='pre-pointer-capture'&&e.inputDispatched===undefined&&e.actionDispatched===undefined);
+  await assert.rejects(driver.perform({...guard,action:'screenshot'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage===undefined&&e.inputDispatched===undefined);
   assert.equal(dispatched,0);
   contents.capturePage=original;
-  await assert.rejects(driver.perform({...guard,ref:'submit'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.inputDispatched===undefined);
+  await assert.rejects(driver.perform({...guard,ref:'submit'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage===undefined&&e.inputDispatched===undefined);
   assert.equal(dispatched,1);
 });
