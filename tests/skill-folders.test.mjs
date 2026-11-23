@@ -6,6 +6,8 @@ test('skill folder nesting, assignments and revision checks survive reopening wi
  s=await store.mutate({action:'create',id:'child',name:'Browser',parentId:'parent',expectedRevision:s.revision});
  s=await store.mutate({action:'assign',skillId:'builtin-decomposition',folderId:'child',expectedRevision:s.revision});
  assert.deepEqual(await new SkillFolderStore({dataDir}).read(),s);assert.deepEqual(readReleaseSkill('builtin-decomposition'),content);
+ s=await store.mutate({action:'assign',skillId:'builtin-decomposition',folderId:'category:Documents',expectedRevision:s.revision});
+ assert.equal((await new SkillFolderStore({dataDir}).read()).assignments['builtin-decomposition'],'category:Documents');
  const before=await readFile(store.file,'utf8');
  for(const value of [{action:'update',id:'parent',parentId:'child'},{action:'remove',id:'parent'},{action:'assign',skillId:'made-up',folderId:'child'},{action:'create',id:'other',name:'Browser',parentId:'parent'},{action:'create',id:'bad',name:'',parentId:null}])await assert.rejects(store.mutate({...value,expectedRevision:s.revision}));
  await assert.rejects(store.mutate({action:'update',id:'child',name:'Stale',expectedRevision:0}),e=>e.status===409);

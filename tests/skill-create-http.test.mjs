@@ -46,7 +46,7 @@ test('new human skill is authenticated, searchable, readable, editable and persi
  const catalog=await (await request('GET',null,'/api/skills?source=user&query=Zymurgy')).json();
  assert.deepEqual(catalog.entries.map(row=>row.id),[created.id]);
  const relay=RETRIEVAL_TOOLS.find(row=>row.name==='relay_skills');
- assert.deepEqual(relay.inputSchema.properties.action.enum,['search','read']);
+ assert.deepEqual(relay.inputSchema.properties.action.enum,['search','read','save']);
  const modelTool=createRetrievalToolHandler({cwd:root,dataDir:root});
  const read=await modelTool({name:'relay_skills',arguments:{action:'read',id:created.id}});
  assert.match(JSON.stringify(read),/Unique test procedure/);

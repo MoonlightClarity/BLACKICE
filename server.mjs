@@ -2,6 +2,7 @@ import {handleTaskActionDirectoryHttp} from './lib/task-action-directory-http.mj
 import {handleTurnReceiptsHttp} from './lib/turn-receipts-http.mjs';
 import {BLACKICE_CLIENT_INFO} from './lib/harness-identity.mjs';
 import { InstructionStore } from './lib/instruction-store.mjs';
+import {readDeveloperLayer,saveDeveloperLayer} from './lib/developer-layer.mjs';
 import { handleInstructionSettingsHttp } from './lib/instruction-settings-http.mjs';
 import { stoppedBrowserOwnerStatus, activeBrowserOwnerStatus, readStoppedTabEffects } from './lib/browser-stopped-adoption.mjs';
 import {VisualArtifacts,visualTool,nativeVisualTools,handleVisualHttp} from './lib/visual-artifacts.mjs';
@@ -1394,6 +1395,11 @@ export async function createHarnessServer(options = {}) {
         attempt(()=>browser.cancel());
         const results=await Promise.allSettled(pending),failures=results.filter(result=>result.status==='rejected').map(result=>String(result.reason?.message||result.reason));
         return json(res,failures.length?500:200,{cancelled,...(restartCancellationRequested?{restartCancellationRequested:true}:{}),...(failures.length?{error:'Some stop actions need attention.',details:failures}:{})});
+      }
+      if(pathname==='/api/instructions/developer-layer'){
+        if(req.method==='GET')return json(res,200,await readDeveloperLayer(dataDir));
+        if(req.method==='PUT'){const value=await body(req);if(!value||!(value.content===null||typeof value.content==='string'))return json(res,400,{error:'Supply developer instruction text or null to restore automatic composition.'});return json(res,200,await mutateStorage(()=>saveDeveloperLayer(dataDir,value.content)));}
+        return json(res,405,{error:'Use GET or PUT.'});
       }
       if(await handleInstructionSettingsHttp({req,res,pathname,store:instructionSettings,body,json,mutate:mutateStorage,onChange:data=>sendEvent({type:'instructions.updated',data,at:new Date().toISOString()})}))return;
       if(pathname==='/api/instructions'&&req.method==='GET'){

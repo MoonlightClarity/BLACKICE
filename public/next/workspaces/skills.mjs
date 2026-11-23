@@ -62,16 +62,16 @@ export function createSkillsWorkspace({mount,api}) {
   if(index>0)moveFolder(id,siblings[index-1].id);else el('status').textContent='No preceding folder to indent under.';
  }
  function drag(node,kind,id){
-  node.draggable=!blocked();
+  node.draggable=true;
   node.addEventListener('dragstart',event=>{if(blocked()||rename||creation){event.preventDefault();return;}dragging={kind,id,revision:organization.revision};event.dataTransfer?.setData('application/x-blackice-skills',id);if(event.dataTransfer)event.dataTransfer.effectAllowed='move';});
   node.addEventListener('dragend',()=>{dragging=null;});
  }
- function drop(node,target){
-  node.addEventListener('dragover',event=>{if(dragging&&!blocked()){node.classList.add('skills-drop-target');event.preventDefault();if(event.dataTransfer)event.dataTransfer.dropEffect='move';}});
+ function drop(node,target,category=false){
+  node.addEventListener('dragover',event=>{if(dragging&&(!category||dragging.kind==='skill')&&!blocked()){node.classList.add('skills-drop-target');event.preventDefault();if(event.dataTransfer)event.dataTransfer.dropEffect='move';}});
   node.addEventListener('dragleave',()=>node.classList.remove('skills-drop-target'));
-  node.addEventListener('drop',event=>{node.classList.remove('skills-drop-target');event.preventDefault();event.stopPropagation();const from=dragging;dragging=null;if(!from||blocked())return;
+  node.addEventListener('drop',event=>{node.classList.remove('skills-drop-target');event.preventDefault();event.stopPropagation();const from=dragging;dragging=null;if(!from||blocked()||(category&&from.kind!=='skill'))return;
    if(from.kind==='folder')moveFolder(from.id,target,from.revision);
-   else void mutate({action:'assign',skillId:from.id,folderId:target},{expectedRevision:from.revision,onSaved:()=>{if(target)openFolder(target);}});
+   else void mutate({action:'assign',skillId:from.id,folderId:target},{expectedRevision:from.revision,onSaved:()=>{if(category)closedCategories.delete(target.slice(9));else if(target)openFolder(target);}});
   });
  }
  function startRename(id){
@@ -114,11 +114,9 @@ export function createSkillsWorkspace({mount,api}) {
  }
  function renderFolderIcon(line){const folderIcon=add(line,'span');folderIcon.className='skills-folder-icon';folderIcon.setAttribute('aria-hidden','true');folderIcon.innerHTML=svg('folder');}
  function renderCategory(name,documents,parent){
-  // Catalog groups are projected folders, not saved owner folders. Do not
-  // add folder write controls or drop targets that imply they can be moved.
   const id='category:'+name.toLowerCase().replace(/[^a-z0-9]+/g,'-'),expanded=!closedCategories.has(name);
   const branch=add(parent,'li');branch.className='skills-folder-branch skills-category-branch';
-  const row=add(branch,'div');row.className='skills-folder-row';row.dataset.skillCategory=name;
+  const row=add(branch,'div');row.className='skills-folder-row';row.dataset.skillCategory=name;drop(row,'category:'+name,true);
   const activate=renderDisclosure(row,id,name,expanded,()=>{expanded?closedCategories.add(name):closedCategories.delete(name);});
   renderFolderIcon(row);
   const label=add(row,'button',name);label.type='button';label.className='skills-folder-name';label.dataset.categoryToggle=id;label.setAttribute('aria-expanded',String(expanded));label.addEventListener('click',activate);
@@ -132,11 +130,13 @@ export function createSkillsWorkspace({mount,api}) {
   const rows=searching?allRows.filter(row=>matchingFolders.has(row.id)):allRows;
   function renderChildren(parentId,parent){
    if(creation?.parentId===parentId){const line=add(parent,'li');line.className='skills-folder-create-line';line.append(el('folder-form'));}
-   const documents=items.filter(item=>(organization?.assignments[item.id]??null)===parentId);
+   const placement=item=>organization?.assignments[item.id]??null;
+   const documents=items.filter(item=>(placement(item)?.startsWith('category:')?null:placement(item))===parentId);
    const grouped=parentId===null&&!searching;
    if(!searching)documents.sort(compareSkills);
    const groups=new Map();
-   if(grouped)for(const item of documents){const name=groupOf(item);if(!groups.has(name))groups.set(name,[]);groups.get(name).push(item);}
+   if(grouped)for(const item of items)groups.set(groupOf(item),[]);
+   if(grouped)for(const item of documents){const name=placement(item)?.startsWith('category:')?placement(item).slice(9):groupOf(item);if(!groups.has(name))groups.set(name,[]);groups.get(name).push(item);}
    const children=[...rows.filter(row=>row.parentId===parentId).map(row=>({row})),...(grouped?[...groups.keys()].sort(compareGroups).map(category=>({category})):documents.map(item=>({item})))];
    for(const child of pageRows(children,parentId,parent)){
     if(child.item){renderDocument(child.item,parent);continue;}

@@ -73,7 +73,7 @@ export function instructionAuditText(record, seen = new Set()) {
 }
 
 /** DOM text nodes keep instruction text inert, including HTML and Markdown. */
-export function renderInstructionAudit(container, audit, seen = new Set()) {
+export function renderInstructionAudit(container, audit, seen = new Set(), editDeveloper) {
   const doc = container.ownerDocument;
   container.replaceChildren();
   if (!validAudit(audit)) { container.append(make(doc, 'p', noSnapshot, 'next-help')); return; }
@@ -95,6 +95,11 @@ export function renderInstructionAudit(container, audit, seen = new Set()) {
     if (!groups.has(role)) {
       const group = make(doc, 'section', '', 'next-instruction-layer');
       group.append(make(doc, 'h3', roleName(role)));
+      if(editDeveloper && section.layer==='developer'){
+        const button=make(doc,'button','Edit developer / system layer');button.type='button';
+        button.addEventListener('click',()=>editDeveloper(sectionsOf(audit).filter(item=>item.layer==='developer').map(item=>item.text).join('')));
+        group.append(button);
+      }
       if (role === 'tool-definition') group.append(make(doc, 'p', 'Descriptions and parameter guidance advertised to the model for this execution.', 'next-help'));
       container.append(group); groups.set(role, group);
     }
@@ -133,7 +138,7 @@ export function renderInstructionAudit(container, audit, seen = new Set()) {
     detail.append(make(doc,'summary',childLabel+' · '+(string(child.label)||string(child.id)||'Execution')));
     detail.append(make(doc,'p','Separate instruction snapshot · '+(string(child.nodeId)||string(child.id)),'next-help'));
     const body=make(doc,'div');detail.append(body);container.append(detail);
-    if(validAudit(child.audit))renderInstructionAudit(body,child.audit,seen);
+    if(validAudit(child.audit))renderInstructionAudit(body,child.audit,seen,editDeveloper);
     else body.append(make(doc,'p',missing,'next-help'));
   }
 

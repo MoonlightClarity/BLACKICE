@@ -12,10 +12,10 @@ const decode = result => JSON.parse(result.contentItems[0].text);
 const invoke = (handler, args) => handler({name:'relay_skills', arguments:args});
 
 test('Skills publishes closed search/read contracts and the actual returned-ID format', () => {
-  assert.deepEqual(spec.inputSchema.properties.action.enum, ['search', 'read']);
+  assert.deepEqual(spec.inputSchema.properties.action.enum, ['search', 'read', 'save']);
   assert.equal(spec.inputSchema.additionalProperties, false);
   const branches = spec.inputSchema.oneOf;
-  assert.equal(branches.length, 2);
+  assert.equal(branches.length, 3);
   const search = branches.find(branch => branch.properties.action.const === 'search');
   const read = branches.find(branch => branch.properties.action.const === 'read');
   assert.equal(search.additionalProperties, false);
@@ -75,6 +75,10 @@ test('real Skills catalog supports browsing, paging, search and complete Unicode
   assert.equal(found.entries[0].id, 'library-contract-alpha');
   const read = decode(await invoke(handler, {action:'read', id:found.entries[0].id}));
   assert.equal(read.entry.content, body);
+  const save={action:'save',id:read.entry.id,expectedRevision:read.entry.revision,content:'# Revised method'};
+  await invoke(handler,save);
+  assert.equal(decode(await invoke(handler,{action:'read',id:save.id})).entry.content,save.content);
+  await assert.rejects(invoke(handler,save),{status:409});
   await assert.rejects(invoke(handler, {action:'read', id:'library-contract-absent'}), error => error.status === 404 && error.code === 'SKILL_NOT_FOUND');
 });
 
@@ -105,7 +109,7 @@ const invalidCalls = [
   ['search with an out-of-range limit', {action:'search', limit:51}, /Limit must be/],
   ['search with a negative page', {action:'search', offset:-1}, /offset/],
   ['search with a fractional page', {action:'search', offset:1.5}, /offset/],
-  ['unknown action', {action:'save', id:'builtin-decomposition'}, /Unknown knowledge action/],
+  ['unknown action', {action:'publish', id:'builtin-decomposition'}, /Unknown knowledge action/],
 ];
 for (const [name, args, expected] of invalidCalls) test('Skills rejects '+name+' before catalog dispatch', async () => {
   let calls = 0;

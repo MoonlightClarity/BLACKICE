@@ -16,9 +16,9 @@ test('skill IDs are exact identifiers, not paths',()=>{
  assert.equal(skillIdFromRequestPath('/api/skills/builtin-decomposition'),'builtin-decomposition');
  for(const value of ['saved%3Aa','native%3Aabc','builtin-..%2Fsecret','builtin-decomposition/extra','%XX'])assert.equal(skillIdFromRequestPath('/api/skills/'+value),null);
 });
-test('model sees discovery/read only, no memory, no ambient instructions or persistent selection',async()=>{
+test('model sees discovery, read and save, no memory, no ambient instructions or persistent selection',async()=>{
  assert.ok(!RETRIEVAL_TOOLS.some(t=>t.name==='relay_memory'));
- const schema=RETRIEVAL_TOOLS.find(t=>t.name==='relay_skills').inputSchema;assert.deepEqual(schema.properties.action.enum,['search','read']);assert.ok(!schema.properties.content&&!schema.properties.scope);
+ const schema=RETRIEVAL_TOOLS.find(t=>t.name==='relay_skills').inputSchema;assert.deepEqual(schema.properties.action.enum,['search','read','save']);assert.ok(schema.properties.content&&!schema.properties.scope);
  const handler=createRetrievalToolHandler({cwd:path.resolve('.'),store:new Proxy({},{get(){throw Error('legacy store read');}})});
  const invoke=arguments_=>handler({name:'relay_skills',arguments:arguments_});
  const all=JSON.parse((await invoke({action:'search'})).contentItems[0].text);assert.equal(all.entries.length,12);assert.equal(all.truncated,true);

@@ -84,3 +84,23 @@ test('Failed creation keeps the draft and cancel restores the editor',async t=>{
  await until(()=>f.$('#skills-heading').textContent!=='New skill'&&!f.$('#skills-editor').hidden);
  assert.equal(f.$('#skills-edit-content').value,(await f.catalog.detail({id:'builtin-decomposition'})).content);
 });
+
+test('a skill stays draggable after moving between a category and an owner folder',async t=>{
+ const id='builtin-decomposition',state={revision:0,folders:[{id:'custom',name:'Custom',parentId:null}],assignments:{}};
+ const f=await fixture(t,(route,method,body)=>{
+  if(route!=='/api/skills/folders')return;
+  if(method==='POST'){
+   assert.equal(body.expectedRevision,state.revision);
+   state.assignments[body.skillId]=body.folderId;
+   state.revision++;
+  }
+  return structuredClone(state);
+ });
+ for(const [selector,target] of [['[data-skill-category="Documents"]','category:Documents'],['[data-folder-id="custom"]','custom'],['#skills-root',null]]){
+  const skill=f.$('[data-skill-id="builtin-decomposition"]');
+  assert.equal(skill.draggable,true);
+  await skill.dispatch('dragstart');
+  await f.$(selector).dispatch('drop');
+  await until(()=>state.assignments[id]===target&&!f.$('#skills-refresh').disabled);
+ }
+});
