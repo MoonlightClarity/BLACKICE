@@ -1,8 +1,7 @@
-﻿{
+{
     "format":  1,
     "version":  "2.40.76",
     "publish":  true,
     "appFingerprint":  "0f81fe2ffa3dfa2d77c935cce97c333940168691f6034411896533fb69a4b6a2",
     "sourceTestReceipt":  "verification/integration-source-publication-2.40.76.json"
 }
-
