@@ -19,9 +19,11 @@ for(const file of files){
 }
 const groups=new Map();
 for(const row of trials){
-  const hash=[row.variant,row.testId,row.model,row.harnessEngineSha256,row.workspaceToolSha256,row.benchmarkFixtureSha256].join('|');
+  const sourceIdentity=row.sourceManifestSha256||[row.sourceRoot,row.harnessEngineSha256,row.workspaceToolSha256,row.contextImplementationSha256||null,row.benchmarkFixtureSha256].join(':');
+  const hash=[row.variant,row.testId,row.model,sourceIdentity].join('|');
   if(!groups.has(hash))groups.set(hash,{source:{variant:row.variant,case:row.testId,model:row.model,
-    engineSha256:row.harnessEngineSha256,workspaceSha256:row.workspaceToolSha256,fixtureSha256:row.benchmarkFixtureSha256},rows:[]});
+    engineSha256:row.harnessEngineSha256,workspaceSha256:row.workspaceToolSha256,fixtureSha256:row.benchmarkFixtureSha256,
+    sourceManifestSha256:row.sourceManifestSha256||null,sourceRoot:row.sourceRoot},rows:[]});
   groups.get(hash).rows.push(row);
 }
 const summaries=[];

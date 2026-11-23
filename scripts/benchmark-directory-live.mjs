@@ -27,7 +27,20 @@ if(!nativeModel&&(!model.startsWith('kilo_free::')||!model.endsWith(':free')))th
 const moduleImport=async file=>import(pathToFileURL(path.join(sourceRoot,'lib',file)).href);
 const [{HarnessEngine},{ProviderRuntime},{ProviderStore},{CodexRuntime}]=await Promise.all([
  moduleImport('engine.mjs'),moduleImport('providers.mjs'),moduleImport('provider-store.mjs'),moduleImport('codex.mjs')]);
-const results={variant,arm,usePlanning,useDirectory,testId,model,sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
+const sourceFiles=['lib/engine.mjs','lib/providers.mjs','lib/workspace-tools.mjs',
+  'lib/task-action-directory.mjs','lib/task-action-directory-tool-contract.mjs',
+  'lib/task-action-directory-store.mjs','lib/task-external-context.mjs',
+  'lib/directory-done-checklist.mjs','lib/chat-planning-engine.mjs',
+  'lib/chat-planning-pass.mjs','lib/chat-planning-provider.mjs','lib/modular-completion.mjs'];
+const sourceHash=createHash('sha256');
+for(const relative of sourceFiles){
+  sourceHash.update(relative).update('\0').update(await readFile(path.join(sourceRoot,relative))).update('\0');
+}
+sourceHash.update('benchmark-runner').update('\0').update(await readFile(path.join(candidateRoot,'scripts','benchmark-directory-live.mjs')));
+sourceHash.update('event-replay-fixture').update('\0').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-event-replay.mjs')));
+const sourceManifestSha256=sourceHash.digest('hex');
+const results={variant,arm,usePlanning,useDirectory,testId,model,sourceRoot,sourceManifestSha256,
+  startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
   harnessEngineSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','engine.mjs'))).digest('hex'),
   workspaceToolSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','workspace-tools.mjs'))).digest('hex'),
   benchmarkFixtureSha256:testId==='event-replay'?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-event-replay.mjs'))).digest('hex'):null,
