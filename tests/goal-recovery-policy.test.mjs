@@ -250,28 +250,33 @@ test('local action changes actual state and independent readback, without equati
   assert.equal(readReceipt.kind,'observation');
   assert.equal(observed.checked,true);
 });
-test('an observed new form generation clears prior undispatched document errors for the bound fresh field only', async () => {
+for (const scenario of ['old snapshot', 'intervening read', 'first snapshot', 'same binding', 'missing binding']) test('form document recovery: ' + scenario, async () => {
   const manager=new ConversationGoals({engine:{runs:new Map()},conversations:{states:{fixture:{}}},autoStart:false});
   manager.raw=()=>({lastToolEvidence:[]});
   const run={taskId:'fixture',goal:{id:'goal'},goalEvidence:[]};
   const url='https://example.test/form';
   const form = (generation, args = {}) => call('relay_browser',{action:'fill',tabId:'form',expectedUrl:url,expectedDocumentId:'form:'+generation,text:'inert',ref:'field-a',...args});
   const snapshot = call('relay_browser',{action:'snapshot',tabId:'form'});
-  let generation=1, adapterCalls=0;
+  let generation=1, adapterCalls=0, stale=true;
   const guarded=manager.wrapTools(run,'agent',async ({arguments:args}) => {
-    if(args.action==='snapshot') return result(true,null,{tabId:'form',url,documentId:'form:'+generation,frames:[{elements:[{ref:'field-a'},{ref:'field-b'}]}]});
+    if(['snapshot','read'].includes(args.action)) return result(true,null,{tabId:'form',url,documentId:'form:'+generation,frames:[{elements:[{ref:'field-a'},{ref:'field-b'}]}]});
     adapterCalls++;
-    if(args.expectedDocumentId!=='form:'+generation) return {...result(false,'BROWSER_INPUT_DOCUMENT_CHANGED'),actionDispatched:false};
+    if(stale) return {...result(false,'BROWSER_INPUT_DOCUMENT_CHANGED'),actionDispatched:false};
     return result(true,null,{receipt:{filled:true}});
   });
-  await guarded(snapshot);
-  generation=2;
-  for(let i=0;i<3;i++) assert.equal((await guarded(form(1,{requestId:'attempt-'+i}))).code,'BROWSER_INPUT_DOCUMENT_CHANGED');
+  if(scenario!=='first snapshot') await guarded(snapshot);
+  if(scenario!=='same binding') generation=2;
+  for(let i=0;i<3;i++) assert.equal((await guarded(form(1,{requestId:'attempt-'+i,...(scenario==='missing binding'&&{expectedDocumentId:undefined})}))).code,'BROWSER_INPUT_DOCUMENT_CHANGED');
+  if(scenario==='intervening read') await guarded(call('relay_browser',{action:'read',tabId:'form'}));
   assert.equal((await guarded(form(2))).code,'GOAL_REPLAN_REQUIRED','unobserved caller claim cannot reset the refusal');
   await new Promise(resolve=>setTimeout(resolve,5));
   await guarded(snapshot);
   assert.equal((await guarded(form(1))).code,'GOAL_REPLAN_REQUIRED','obsolete generation still blocked');
   assert.equal((await guarded(form(2,{ref:'guessed-field'}))).code,'GOAL_REPLAN_REQUIRED','unobserved ref still blocked');
-  assert.equal((await guarded(form(2,{ref:'field-b'}))).success,true,'fresh bound field must reach adapter');
-  assert.equal(adapterCalls,4);
+  stale=false;
+  const allowed = scenario!=='same binding' && scenario!=='missing binding';
+  const fresh = await guarded(form(generation,{ref:'field-b'}));
+  assert.equal(fresh.success,allowed,'only a positively replaced failed binding reaches the adapter');
+  if(!allowed) assert.equal(fresh.code,'GOAL_REPLAN_REQUIRED');
+  assert.equal(adapterCalls,allowed?4:3);
 });
