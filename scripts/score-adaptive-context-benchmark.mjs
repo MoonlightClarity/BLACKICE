@@ -29,13 +29,19 @@ for(const filename of (await readdir(resultRoot)).filter(x=>/^event-replay-candi
  const tests=Number(/# tests (\d+)/.exec(grade)?.[1]||0);
  const passed=Number(/# pass (\d+)/.exec(grade)?.[1]||0);
  const reason=String(raw.infraError||raw.runError||'');
+ // A model-authored source syntax error may prevent Node from loading the
+ // entire suite, yielding only file-level failures. The independently passing
+ // grader is not broken; this is a valid zero-pass coding outcome.
+ const sourceLoadFailure=tests>0&&tests<21&&raw.hiddenGrade?.exitCode!==0
+  &&/SyntaxError:|ERR_MODULE_NOT_FOUND|Cannot find module/i.test(grade)
+  &&/[\\/]challenge[\\/]src[\\/]/i.test(grade);
  const valid=matched&&!raw.infraError&&!invalidInfrastructure.test(reason)
-  &&['completed','failed'].includes(raw.runStatus)&&tests===21
+  &&['completed','failed'].includes(raw.runStatus)&&(tests===21||sourceLoadFailure)
   &&Number.isInteger(raw.hiddenGrade?.exitCode)&&Array.isArray(raw.toolCalls)&&raw.toolCalls.length>0;
  reports.push({
   filename,mode,valid,reason:valid?null:(!matched?'Different source revision':reason||'Missing complete grading/tool evidence'),
   runStatus:raw.runStatus,startedAt:raw.startedAt,
-  passed,tests,completeTask:valid&&raw.runStatus==='completed'&&passed===21&&raw.hiddenGrade.exitCode===0,
+  passed,tests:21,observedTestCases:tests,sourceLoadFailure,completeTask:valid&&raw.runStatus==='completed'&&passed===21&&raw.hiddenGrade.exitCode===0,
   calls:raw.toolCalls?.length||0,retrievalCalls:raw.toolCalls?.filter(x=>x.name==='relay_context_page').length||0,
   seconds:Math.round((Date.parse(raw.finishedAt)-Date.parse(raw.startedAt))/100)/10,
   archivedArtifacts:raw.externalArtifactCount||0,
