@@ -28,6 +28,18 @@ A live native engine coding probe used `local_llamacpp::MiniCPM-V-4.7-1B-heretic
 - `verification/minicpm-engine-coding-smoke.mjs`: real MiniCPM model, actual engine and workspace tools. The model was able to issue tools and save source but **did not pass** the 3-test source acceptance. No coding success is claimed.
 - Earlier same-branch tests and source audits are recorded in `docs/MINICPM-POST-24075-PRESERVATION.md` and `docs/MINICPM-POST-24075-REVIEW-AND-JOURNAL-20261123.md`.
 
+## Vision-path live qualification checkpoint
+
+The source branch retains the synthetic fixed fixture `tests/fixtures/minicpm-vision-transport-q7m2.png`
+(SHA-256 `b8cb9666f45c829d98f61bf6f5ebe3a5c976c6922f73a4f846010d316ecba0ca`):
+four-character `Q7M2` over a green left rectangle and blue right rectangle.
+
+Two real local inference paths returned the exact correct content:
+- Direct llama.cpp `/v1/chat/completions` with data-URI image: `Q7M2; green; blue` (115 input / 9 output tokens).
+- BLACKICE `ProviderRuntime.runAgent` with `inputImages`, explicit `local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S`, and no alternative model: `Q7M2; green; blue` (121 input / 9 output tokens). The reproducible script is `verification/minicpm-provider-vision-smoke.mjs`; it uses a temporary provider store, the existing local server and a content-hashed fixture. No installed app was restarted or modified.
+
+This establishes **one successful elementary OCR/color recognition and image transport case**. It does not establish broad vision benchmark quality, multimodal robustness, or coding proficiency.
+
 ## Position and integration policy
 
 MiniCPM 1B can execute tool calls and structured outcome JSON, but current live evidence does **not** support treating it as a reliable autonomous coder. Do not improve its benchmark score by weakening acceptance, rewriting its attempted source on the host, or inferring success from a completed response. The corrected host guard is a reliability improvement independent of the model's coding ability.
