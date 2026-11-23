@@ -31,12 +31,13 @@ test('normal Windows launch discovers the registered Codex desktop CLI without a
  const result=resolveCodexCommand({platform:'win32',arch:'x64',env,exists:value=>value===binary,
   execFile:(command,args,options)=>{calls.push({command,args,options});return packageRoot+'\r\n';}});
  assert.equal(result,binary);
- assert.equal(calls.length,1);
- assert.equal(calls[0].command,'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
- assert.match(calls[0].args.at(-1),/Get-AppxPackage -Name OpenAI\.Codex/);
- assert.match(calls[0].args.at(-1),/Sort-Object Version -Descending/);
- assert.equal(calls[0].options.windowsHide,true);
- assert.equal(calls[0].options.timeout,4000);
+ assert.equal(calls.length,2);
+ assert.match(calls[0].command,/reg\.exe$/i);
+ assert.equal(calls[1].command,'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+ assert.match(calls[1].args.at(-1),/Get-AppxPackage -Name OpenAI\.Codex/);
+ assert.match(calls[1].args.at(-1),/Sort-Object Version -Descending/);
+ assert.equal(calls[1].options.windowsHide,true);
+ assert.equal(calls[1].options.timeout,4000);
  assert.deepEqual(env,before);
 });
 
@@ -53,4 +54,20 @@ test('desktop discovery validates an existing native CLI and safely falls back o
   assert.equal(resolveCodexCommand({...base,execFile}),'codex');
  const packageRoot='D:\\Apps\\Codex ARM64',binary=path.win32.join(packageRoot,'app','resources','codex.exe');
  assert.equal(resolveCodexCommand({...base,arch:'arm64',exists:value=>value===binary,execFile:()=>packageRoot}),binary);
+});
+
+test('current-user package registration resolves Codex without the stalled AppX deployment service',()=>{
+ const env={SystemRoot:'C:\\Windows',LOCALAPPDATA:'C:\\Local'};
+ const prefix='HKEY_CURRENT_USER\\Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppModel\\Repository\\Packages\\';
+ const older='OpenAI.Codex_26.100.0.0_x64__2p2nqsd0c76g0',newer='OpenAI.Codex_26.1117.4957.0_x64__2p2nqsd0c76g0';
+ const wrong='OpenAI.Codex_99.0.0.0_x64__otherpublisher',arm='OpenAI.Codex_99.0.0.0_arm64__2p2nqsd0c76g0';
+ const root=path.win32.join('C:\\Program Files\\WindowsApps',newer),binary=path.win32.join(root,'app','resources','codex.exe');
+ const calls=[];
+ const result=resolveCodexCommand({env,platform:'win32',arch:'x64',exists:p=>p===binary,execFile:(exe,args)=>{
+  calls.push({exe,args});assert.match(exe,/reg\.exe$/i);
+  if(args.includes('/f'))return [older,wrong,arm,newer].map(name=>prefix+name).join('\r\n');
+  assert.equal(args[1],prefix+newer);
+  return '    PackageRootFolder    REG_SZ    '+root+'\r\n';
+ }});
+ assert.equal(result,binary);assert.equal(calls.length,2);
 });
