@@ -113,3 +113,89 @@ test('a concurrent outline change while the reviewer is active requires reassess
  feedback(await f.review.beforeFinal(candidate));assert.equal(f.calls(),2);
  assert.equal(await f.review.beforeFinal(candidate),null);
 });
+
+
+function cue(next){
+ assert.equal(next.continue,true);
+ const [prefix,request]=next.prompt.split('\n\nCURRENT USER REQUEST (unchanged JSON string):\n');
+ assert.equal(JSON.parse(request),input);
+ assert.doesNotMatch(prefix,/Readback matches requested value|REVIEWER_MISTAKE|Correct the report now/);
+ const id=prefix.match(/"feedbackId":"([a-f0-9]{64})"/)?.[1];
+ assert.ok(id,'neutral continuation supplies an exact feedback retrieval ID');
+ return id;
+}
+function feedbackCall(id,callId='review-read-1'){
+ return {callId,name:'relay_outcome_feedback',arguments:{action:'read',feedbackId:id}};
+}
+test('tool feedback uses a neutral continuation and binds exact delivery without operational progress',async()=>{
+ const events=[],f=fixture(()=>assessment,{feedbackTransport:'tool-result',onFeedback:e=>events.push(e)});
+ f.review.beforeFinal(candidate);
+ const id=cue(await f.review.beforeFinal(candidate)),call=feedbackCall(id),before=f.review.evidenceSnapshot();
+ const result=f.review.readOutcomeFeedback(call);
+ assert.equal(result.success,true);
+ const data=JSON.parse(result.contentItems[0].text);
+ assert.equal(data.source,'independent-outcome-review');
+ assert.equal(data.automated,true);assert.equal(data.authority,'none');assert.equal(data.verified,false);
+ assert.equal(data.summary,assessment.summary);
+ assert.equal(data.admittedEvidence[0].directoryReceiptId,'receipt-1');
+ assert.equal(data.feedbackId,id);
+ assert.equal(data.reviewedCandidateSha256.length,64);
+ assert.deepEqual(events.map(e=>e.status),['available','returned']);
+ // A nonmatching delivery must not count.
+ f.review.delivered({call,result:{contentItems:[{type:'inputText',text:'not the returned assessment'}]}});
+ assert.equal(events.length,2);
+ f.review.delivered({call,result:{contentItems:result.contentItems},delivery:'accepted-provider-request'});
+ assert.equal(events.at(-1).status,'delivered');assert.equal(events.at(-1).delivery,'accepted-provider-request');
+ f.review.delivered({call,result});
+ assert.equal(events.length,3);
+ assert.deepEqual(f.review.evidenceSnapshot(),before);
+ assert.equal(await f.review.beforeFinal(candidate),null);
+ assert.equal(f.calls(),1);
+});
+test('both explicit modes receive a mistaken review through the tool and re-assess the original report',async()=>{
+ for(const feedbackMode of ['gate-only','gate-and-steer']){
+  const f=fixture((req,n)=>n===1?{...assessment,decision:'continue',summary:'REVIEWER_MISTAKE',remaining:['Correct the report now'],nextAction:'Correct the report now'}:assessment,{feedbackMode,feedbackTransport:'tool-result'});
+  f.review.beforeFinal(candidate);
+  const id=cue(await f.review.beforeFinal(candidate)),call=feedbackCall(id);
+  const result=f.review.readOutcomeFeedback(call);
+  assert.equal(result.success,true);
+  const data=JSON.parse(result.contentItems[0].text);
+  assert.equal(data.summary,'REVIEWER_MISTAKE');assert.equal(data.automated,true);
+  assert.equal(Boolean(data.verificationMethod),feedbackMode==='gate-and-steer');
+  f.review.delivered({call,result});
+  const next=await f.review.beforeFinal(candidate);
+  if(feedbackMode==='gate-and-steer'){
+   const c=feedbackCall(cue(next),'read-accepted-review');
+   const r=f.review.readOutcomeFeedback(c);assert.equal(r.success,true);
+   assert.equal(JSON.parse(r.contentItems[0].text).decision,'respond');
+   f.review.delivered({call:c,result:r});
+   assert.equal(await f.review.beforeFinal(candidate),null);
+  }else assert.equal(next,null);
+  assert.equal(f.calls(),2);assert.equal(f.review.evidenceSnapshot().evidence.records.length,1);
+ }
+});
+test('feedback retrieval is scoped to the exact current assessment, evidence and outline',async()=>{
+ let revision=1,admitted=true;
+ const f=fixture(()=>assessment,{feedbackTransport:'tool-result',getReviewScope:()=>({taskId:'task',revision}),canContinue:()=>admitted});
+ f.review.beforeFinal(candidate);const id=cue(await f.review.beforeFinal(candidate));
+ assert.equal(f.review.readOutcomeFeedback(feedbackCall('a'.repeat(64))).code,'OUTCOME_FEEDBACK_UNAVAILABLE');
+ assert.equal(f.review.readOutcomeFeedback({...feedbackCall(id),namespace:'other'}).code,'OUTCOME_FEEDBACK_ARGUMENTS');
+ assert.equal(f.review.readOutcomeFeedback({...feedbackCall(id),arguments:{action:'read',feedbackId:id,extra:true}}).code,'OUTCOME_FEEDBACK_ARGUMENTS');
+ revision++;
+ assert.equal(f.review.readOutcomeFeedback(feedbackCall(id)).code,'OUTCOME_FEEDBACK_STALE');
+ revision--;
+ addRead(f.review,'new-evidence','Changed source');
+ assert.equal(f.review.readOutcomeFeedback(feedbackCall(id)).code,'OUTCOME_FEEDBACK_STALE');
+ admitted=false;
+ assert.equal(f.review.readOutcomeFeedback(feedbackCall(id)).code,'OUTCOME_FEEDBACK_STALE');
+});
+test('tool result access does not approve a changed report or weaken unavailable review failure',async()=>{
+ const f=fixture((req,n)=>n===1?assessment:{...assessment,decision:'continue',summary:'REVIEWER_MISTAKE',nextAction:'Correct the report now'},{feedbackTransport:'tool-result'});
+ f.review.beforeFinal(candidate);
+ const id=cue(await f.review.beforeFinal(candidate)),call=feedbackCall(id),result=f.review.readOutcomeFeedback(call);f.review.delivered({call,result});
+ cue(await f.review.beforeFinal({output:'The result was uploaded.'}));assert.equal(f.calls(),2);
+ const g=fixture(()=>({decision:'unreviewed',reason:'MODULAR_REVIEW_EVIDENCE'}),{feedbackTransport:'tool-result'});
+ g.review.beforeFinal(candidate);const c=feedbackCall(cue(await g.review.beforeFinal(candidate))),r=g.review.readOutcomeFeedback(c);
+ assert.equal(JSON.parse(r.contentItems[0].text).decision,'unreviewed');g.review.delivered({call:c,result:r});
+ await assert.rejects(g.review.beforeFinal(candidate),{code:'CHAT_OUTCOME_UNREVIEWED'});
+});

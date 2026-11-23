@@ -57,7 +57,7 @@ test('a decision-only review has a scoped reusable review receipt before the eff
     assert.ok(receipt);assert.match(JSON.stringify(receipt.result),/APPROVED v2/);
     assert.equal(snapshot.evidence.records.some(r=>r.tool===DECISION_REVIEW_TOOL.name),false);
     await assert.rejects(readFile(target,'utf8'),{code:'ENOENT'});
-    return{output:JSON.stringify(outcome([receipt.citationRef],{verificationMethod:{methods:['chronological-waterfall'],reason:'The exact approved version must precede commit.',triggers:['before-dependent-action']}}))};
+    return{output:JSON.stringify({verdict:'supported',summary:'Current approved version supports the proposed commit.',prerequisiteGaps:[],nextCheck:'',evidenceRefs:[receipt.citationRef],blockers:[],verificationMethod:{methods:['chronological-waterfall'],reason:'The exact approved version must precede commit.',triggers:['before-dependent-action']}})};
    }
    if(o.prompt.includes('BLACKICE ORDINARY TASK OUTCOME REVIEW')){
     finalReviews++;
@@ -157,4 +157,33 @@ test('current outline replaces repetitive control snapshots without losing opera
  assert.equal((await review.beforeFinal(candidate)).continue,true);
  assert.equal(await review.beforeFinal(candidate),null);
  assert.deepEqual(seen.evidence,before.evidence);
+});
+
+test('material decision review distinguishes unresolved prerequisites from unexecuted future work',async()=>{
+ const {modularOutcomeSchema,modularOutcomeRequiredSchema,assessRecordedOutcome}=await import('../lib/modular-completion.mjs');
+ const snapshot={request:'Confirm current approval and destination before commit.',scope:{kind:'ordinary-chat',decisionBoundary:{trigger:'before-dependent-action',actionId:'commit',proposal:'Commit approved v2.'}},evidence:{records:[{id:'approval',result:{version:'v2',approved:true}},{id:'destination',result:{version:'v2',status:'accepted'}}]}};
+ const wire=modularOutcomeSchema(snapshot);
+ assert.deepEqual(wire.properties.verdict.enum,['supported','needs-check','blocked']);
+ assert.equal(wire.properties.decision,undefined);assert.equal(wire.properties.remaining,undefined);assert.equal(wire.properties.nextAction,undefined);
+ assert.ok(modularOutcomeRequiredSchema(snapshot).required.includes('prerequisiteGaps'));
+ const supported={verdict:'supported',summary:'Current evidence supports the commit; the commit itself is future work.',prerequisiteGaps:[],nextCheck:'',evidenceRefs:['evidence-0001','evidence-0002'],blockers:[]};
+ const rejected=[
+  {decision:'continue',summary:'Commit is supported.',remaining:['Perform commit.'],nextAction:'Perform commit.',evidenceRefs:['evidence-0001'],blockers:[]},
+  {...supported,prerequisiteGaps:['Approval has not been checked.'],nextCheck:'Inspect current approval.'},
+  {...supported,nextCheck:{bad:true}},
+  {...supported,verdict:'needs-check',prerequisiteGaps:{some:1},nextCheck:'Read the missing source.'},
+  {...supported,evidenceRefs:['invented']}
+ ];
+ for(const invalid of rejected){
+  const updates=[];let attempts=0;
+  const result=await assessRecordedOutcome({snapshot,candidate:{output:'Commit approved v2.'},review:async({repair})=>{attempts++;if(attempts===1)return invalid;assert.ok(repair);return supported;},onUpdate:row=>updates.push(row)});
+  assert.equal(attempts,2);
+  assert.equal(result.record.decision,'respond');
+  assert.deepEqual(result.record.evidenceRefs,['approval','destination']);
+  assert.ok(updates.some(x=>x.status==='rejected-repairing'));
+ }
+ const missing=await assessRecordedOutcome({snapshot,candidate:{output:'Commit approved v2.'},review:async()=>({...supported,verdict:'needs-check',prerequisiteGaps:['Current destination not established.'],nextCheck:'Inspect exact destination.',evidenceRefs:['evidence-0001']})});
+ assert.equal(missing.record.decision,'continue');assert.deepEqual(missing.record.remaining,['Current destination not established.']);
+ const final=modularOutcomeSchema({...snapshot,scope:{kind:'ordinary-chat'}});
+ assert.ok(final.properties.decision.enum.includes('respond'));assert.equal(final.properties.verdict,undefined);
 });
