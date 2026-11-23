@@ -880,3 +880,35 @@ test('retained Goal reports are bounded and mark clipped claims', async t => {
   assert.deepEqual(reports.map(row=>row.summary),[2,3,4,5,6,7].map(i=>'Summary '+i));
   assert.ok(reports.every(row=>row.truncated===true && row.evidence.length===1000));
 });
+for(const scenario of [{length:46032,expectHistory:true},{length:48300,expectHistory:false}]) test('long valid Goal successor preserves mandatory message: '+scenario.length, async t=>{
+  const heading='Earlier checkpoints (JSON;';
+  const objective='O'.repeat(scenario.length);
+  const {engine,goals}=await fixture(t,async (options,n)=>{
+    if(n===1){
+      for(let i=0;i<7;i++){
+        const evidence=('Report '+i+' '+('"෴\\'.repeat(500))).slice(0,1000);
+        assert.equal((await report(options,'progress',{summary:'Long report '+i,evidence})).result.success,true);
+      }
+    } else if(n===2) {
+      const next=[...engine.runs.values()].at(-1).input;
+      assert.ok(next.length<=50000);
+      assert.ok(next.includes(objective));
+      assert.match(next,/Latest checkpoint: Long report 6/);
+      assert.match(next,/Recorded evidence: Report 6/);
+      const section=next.split('\n\n').find(row=>row.startsWith(heading));
+      assert.equal(!!section,scenario.expectHistory);
+      if(section){
+        const reports=JSON.parse(section.slice(section.indexOf('\n')+1));
+        const summary=reports.map(row=>row.summary);
+        assert.ok(summary.length>0&&summary.length<6);
+        assert.equal(summary.at(-1),'Long report 5');
+        assert.deepEqual(summary,[...summary].sort());
+        assert.ok(reports.every(row=>row.evidence.length===1000));
+      }
+      assert.equal((await report(options,'complete')).result.success,true);
+    } else assert.fail('unexpected extra turn');
+    return output(n);
+  });
+  const first=engine.startRun({workflow:graph(),input:{task:'Retain a large objective.',goal:{objective}}});
+  await waitFor(async()=> (await goals.get(first.id))?.status==='completed');
+});
