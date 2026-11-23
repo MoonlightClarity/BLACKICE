@@ -30,9 +30,11 @@ if(!['control','candidate'].includes(variant)||!['async-cache','stream-scheduler
 const nativeModel=/^gpt-[a-z0-9.-]{2,80}$/.test(model);
 if(!nativeModel&&(!model.startsWith('kilo_free::')||!model.endsWith(':free')))throw Error('Use a native ChatGPT-subscription model or a configured free Kilo model; paid API providers are not permitted.');
 const moduleImport=async file=>import(pathToFileURL(path.join(sourceRoot,'lib',file)).href);
-const [{HarnessEngine},{ProviderRuntime},{ProviderStore},{CodexRuntime}]=await Promise.all([
- moduleImport('engine.mjs'),moduleImport('providers.mjs'),moduleImport('provider-store.mjs'),moduleImport('codex.mjs')]);
+const [{HarnessEngine},{ProviderRuntime},{ProviderStore},{CodexRuntime},{ACTION_DIRECTORY_TOOL}]=await Promise.all([
+ moduleImport('engine.mjs'),moduleImport('providers.mjs'),moduleImport('provider-store.mjs'),moduleImport('codex.mjs'),moduleImport('task-action-directory.mjs')]);
 const results={variant,testId,model,directoryMode,pagingMode,workflowKind,effectivePaging:variant==='candidate'&&pagingMode!=='off',sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
+  directoryRecursionAdvertised:ACTION_DIRECTORY_TOOL.inputSchema.properties.action.enum.includes('decompose'),
+  directoryImplementationSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','task-action-directory.mjs'))).digest('hex'),
   harnessEngineSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','engine.mjs'))).digest('hex'),
   workspaceToolSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','workspace-tools.mjs'))).digest('hex'),
   benchmarkFixtureSha256:testId.startsWith('event-replay')?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-event-replay.mjs'))).digest('hex'):null,
@@ -40,7 +42,7 @@ const results={variant,testId,model,directoryMode,pagingMode,workflowKind,effect
   benchmarkDriverSha256:createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-directory-live.mjs'))).digest('hex'),
   benchmarkWorkflowSha256:createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-chat-workflow.mjs'))).digest('hex'),
   finalReviewCalls:[],
-  contextPolicy:variant==='candidate'?(pagingMode==='adaptive'?'adaptive-visible-96kb':pagingMode==='off'?'ablation-no-paging':'eager-context-v3'):'unmodified-2.40.75',
+  contextPolicy:variant==='candidate'?(pagingMode==='adaptive'?'adaptive-visible-96kb':pagingMode==='off'?'ablation-no-paging':'eager-context-v3'):'unchanged-control-source',
   contextImplementationSha256:variant==='candidate'?
     createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','task-external-context.mjs'))).digest('hex'):null};
 const root=await mkdtemp(path.join(tmpdir(),'blackice-context-live-'+variant+'-'));
@@ -274,7 +276,7 @@ try{
   if(workflowKind==='ordinary-chat'&&!recognizedAsChat(graph))throw Error('The benchmark graph did not activate BLACKICE ordinary Chat Mode.');
   results.graphIdentity={id:graph.id||null,description:graph.description||null,recognizedAsOrdinaryChat:recognizedAsChat(graph)};
   const task=longEvidenceCase
-    ? 'In this isolated coding project ('+taskRoot+'), repair the event-replay implementation. Read README.md and diagnostics/INDEX.md first, then audit all eight distinct diagnostics/trace-*.log evidence shards. Each contains a different relevant failure class and conflicting early hypotheses. Use any efficient read/search/programmatic strategy; do not skip the evidence audit or assume a first-page fragment contains the final conclusion. Implement and test both modules, including invalid inputs and failed-apply side effects. Preserve the public API and the provided tests. Run node --test on your final source and report what was actually verified. You have authorized workspace read/write tools. Avoid unnecessary repeated work and do not request routine approval.'
+    ? 'In this isolated coding project ('+taskRoot+'), repair the event-replay implementation. Read README.md and diagnostics/INDEX.md first, then audit all eight distinct diagnostics/trace-*.log evidence shards. Each contains a different relevant failure class and conflicting early hypotheses. Use the available planning tools to organize investigation, implementation and verification into executable workstreams; if a workstream remains complex, subdivide it further using the planning facilities actually available, then synthesize the evidence before concluding. Use any efficient read/search/programmatic strategy; do not skip the evidence audit or assume a first-page fragment contains the final conclusion. Implement and test both modules, including invalid inputs and failed-apply side effects. Preserve the public API and the provided tests. Run node --test on your final source and report what was actually verified. You have authorized workspace read/write tools. Avoid unnecessary repeated work and do not request routine approval.'
     : 'In this isolated coding project ('+taskRoot+'), read README.md, incident.log and source files, fix the implementation until node --test passes. Preserve the public API, test files and user instructions. Be careful with false or stale outputs. Run tests to confirm. You may use the given workspace tools. This is a real coding benchmark; do not merely describe a fix.';
   const started=engine.startRun({workflow:graph,input:{task,directoryActions:directoryMode,directoryDiagnostics:'off'}});
   results.runId=started.id;
@@ -282,12 +284,23 @@ try{
   const run=engine.getRun(started.id); results.runStatus=run.status;results.runError=run.error||null;results.agentOutput=String(run.nodes?.a?.output||'').slice(0,1500);
   if(directoryMode==='on'){
     const directorySnapshot=(await engine.actionDirectories.get(started.id,task)).read();
-    results.directoryRecords=directorySnapshot.actions.map(a=>({id:a.id,state:a.state,objective:a.objective,notes:a.notes?.length||0,observation:a.observation?.claim||null}));
+    results.directoryRecords=directorySnapshot.actions.map(a=>({id:a.id,state:a.state,parentId:a.parentId||null,replaces:a.replaces||[],decompositions:a.decompositions?.length||0,objective:a.objective,notes:a.notes?.length||0,observation:a.observation?.claim||null}));
     results.directoryFinal={focus:directorySnapshot.focus,revision:directorySnapshot.revision,receiptCount:directorySnapshot.receipts.length,ready:directorySnapshot.ready};
   }else{results.directoryRecords=[];results.directoryFinal=null;}
   const state=engine.runs.get(started.id)?.nodes?.a||{};
   results.nodeDiagnostics={directoryOutcome:state.directoryOutcome||null,runtimePhase:state.runtimePhase||null,toolNames:state.toolNames||[],usage:state.usage||state.tokenUsage||null,
    outcomeAssessment:state.outcomeAssessment||null,outcomeReviewUsage:state.outcomeReviewUsage||null};
+  const parentsById=new Map(results.directoryRecords.map(row=>[row.id,row.parentId]));
+  const depth=id=>{let count=0,seen=new Set([id]);while(parentsById.get(id)){id=parentsById.get(id);if(seen.has(id))break;seen.add(id);count++;}return count;};
+  results.recursivePlanning={
+    advertised:results.directoryRecursionAdvertised,
+    attempted:results.toolCalls.filter(row=>row.name==='relay_directory_action'&&row.action==='decompose').length,
+    accepted:results.toolCalls.filter(row=>row.name==='relay_directory_action'&&row.action==='decompose'&&row.success===true).length,
+    parents:results.directoryRecords.filter(row=>row.decompositions>0).length,
+    deepestAction:Math.max(0,...results.directoryRecords.map(row=>depth(row.id))),
+    activeParents:results.directoryRecords.filter(row=>row.state==='decomposed').map(row=>row.id),
+    completedParents:results.directoryRecords.filter(row=>row.decompositions>0&&row.state==='observed').map(row=>row.id),
+  };
   results.ordinaryReviewObserved=results.finalReviewCalls.some(review=>review.continued===true);
   results.completedAt=new Date().toISOString();
   const eligibleToolOutput=results.toolCalls.filter(row=>row.success===true&&(
