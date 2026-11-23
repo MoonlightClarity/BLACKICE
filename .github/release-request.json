@@ -1,7 +1,8 @@
-{
-  "format": 1,
-  "version": "2.40.75",
-  "publish": true,
-  "appFingerprint": "fe17a0d305e390e7f328cd69525dfa0ac67f8d0759054432116b0f7993d0e2e8",
-  "sourceTestReceipt": "verification/integration-source-publication-2.40.75.json"
+﻿{
+    "format":  1,
+    "version":  "2.40.76",
+    "publish":  true,
+    "appFingerprint":  "0f81fe2ffa3dfa2d77c935cce97c333940168691f6034411896533fb69a4b6a2",
+    "sourceTestReceipt":  "verification/integration-source-publication-2.40.76.json"
 }
+
