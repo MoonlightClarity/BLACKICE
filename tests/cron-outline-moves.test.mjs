@@ -14,7 +14,7 @@ async function fixture(t,{compact=false}={}){
  render();
  const folder=id=>list.querySelector('[data-schedule-folder="'+id+'"]').querySelector('summary'),job=()=>list.querySelector('[data-schedule-id="job"]').querySelector('summary');
  async function drag(from,to){const dataTransfer={setData(){}};await from.dispatch('dragstart',{dataTransfer});await to.dispatch('drop',{dataTransfer});await settle();}
- return{mount:dom.mount,manager,refresh:render,advance(){organization={...organization,revision:organization.revision+1};render();},removeExternally(id){organization={...organization,revision:organization.revision+1,folders:organization.folders.filter(row=>row.id!==id)};render();},component,calls,folder,job,drag,state:()=>organization,fail(){fail=true;},list};
+ return{mount:dom.mount,manager,refresh:render,advance(){organization={...organization,revision:organization.revision+1};render();},removeExternally(id){organization={...organization,revision:organization.revision+1,folders:organization.folders.filter(row=>row.id!==id)};render();},replace(value){organization=structuredClone(value);render();},component,calls,folder,job,drag,state:()=>organization,fail(){fail=true;},list};
 }
 test('outline moves schedules and nested folders through CAS without changing jobs',async t=>{
  const f=await fixture(t);await f.drag(f.job(),f.folder('b'));assert.equal(f.state().assignments.job,'b');assert.equal(document.activeElement,f.job());assert.equal(f.calls[0].body.expectedRevision,1);
@@ -102,4 +102,106 @@ test('externally removed create destination preserves draft without silently ret
  assert.equal(input.value,'Keep destination');assert.equal(form.getAttribute('aria-label'),'New folder in Alpha');assert.equal(form.querySelector('button').disabled,true);
  await form.dispatch('submit',{});await settle();assert.equal(f.calls.length,0);assert.match(f.manager.textContent,/destination folder no longer exists/);
  await input.dispatch('keydown',{key:'Escape'});await f.manager.querySelector('.next-schedule-new-folder').dispatch('click',{});input.value='Root after cancellation';await form.dispatch('submit',{});await settle();assert.equal(f.calls[0].body.parentId,null);assert.equal(f.calls[0].body.expectedRevision,2);
+});
+
+
+test('Move SVG opens a searchable, alphabetized full-path picker without expanding folders',async t=>{
+ const f=await fixture(t,{compact:true});
+ f.replace({revision:4,folders:[
+  {id:'z',name:'Zebra',parentId:null},
+  {id:'d',name:'Delta',parentId:'z'},
+  {id:'a',name:'Alpha',parentId:null},
+  {id:'b',name:'Bravo',parentId:'a'},
+ ],assignments:{job:'a'}});
+ f.folder('z').parentElement.open=false;
+ const trigger=f.job().querySelector('[data-move-schedule="job"]');
+ assert.ok(trigger.querySelector('svg'));assert.equal(trigger.getAttribute('aria-label'),'Move cronjob Saved job');
+ assert.ok(f.folder('a').querySelector('[data-move-folder="a"] svg'));
+ await trigger.dispatch('click',{});
+ const dialog=f.manager.querySelector('#next-schedule-move-dialog'),query=f.manager.querySelector('#next-schedule-move-query');
+ assert.equal(dialog.open,true);assert.equal(document.activeElement,query);
+ const folderChoices=f.manager.querySelectorAll('.next-schedule-move-choice').filter(node=>['a','b','z','d'].includes(node.dataset.moveDestination));
+ assert.deepEqual(folderChoices.map(node=>node.textContent),['Alpha (current)','Alpha / Bravo','Zebra','Zebra / Delta']);
+ assert.equal(f.manager.querySelector('[data-move-destination="a"]').disabled,true);
+ query.value='DELTA';await query.dispatch('input',{});
+ assert.deepEqual(f.manager.querySelectorAll('.next-schedule-move-choice').map(node=>node.textContent),['Zebra / Delta']);
+ await f.manager.querySelector('[data-move-destination="d"]').dispatch('click',{});
+ await settle();
+ assert.equal(f.state().assignments.job,'d');
+ assert.deepEqual(f.calls[0].body,{action:'assign',deploymentId:'job',folderId:'d',expectedRevision:4});
+ assert.equal(dialog.open,false);
+ assert.equal(document.activeElement,f.job().querySelector('[data-move-schedule="job"]'));
+});
+
+test('Folder Move excludes its entire subtree, supports nested destinations, and changes organization only',async t=>{
+ const f=await fixture(t,{compact:true});
+ f.replace({revision:9,folders:[
+  {id:'root',name:'Zebra',parentId:null},
+  {id:'child',name:'Delta',parentId:'root'},
+  {id:'a',name:'Alpha',parentId:null},
+  {id:'b',name:'Bravo',parentId:'a'},
+ ],assignments:{job:'child'}});
+ const action=f.folder('root').querySelector('[data-move-folder="root"]');
+ await action.dispatch('click',{});
+ assert.equal(f.manager.querySelector('[data-move-destination="root"]'),null);
+ assert.equal(f.manager.querySelector('[data-move-destination="child"]'),null);
+ assert.equal(f.manager.querySelector('[data-move-destination=""]').disabled,true);
+ await f.manager.querySelector('#next-schedule-move-cancel').dispatch('click',{});
+ assert.equal(document.activeElement,action);
+ assert.equal(f.calls.length,0);
+ await action.dispatch('click',{});
+ await f.manager.querySelector('[data-move-destination="b"]').dispatch('click',{});
+ await settle();
+ assert.equal(f.state().folders.find(node=>node.id==='root').parentId,'b');
+ assert.equal(f.state().folders.find(node=>node.id==='child').parentId,'root');
+ assert.equal(f.state().assignments.job,'child');
+ assert.deepEqual(f.calls.map(call=>call.body),[{action:'update',id:'root',name:'Zebra',parentId:'b',expectedRevision:9}]);
+});
+
+test('Large folder catalogs remain searchable without a pagination or open-tree prerequisite',async t=>{
+ const f=await fixture(t,{compact:true});
+ const folders=Array.from({length:87},(_,i)=>({id:'folder-'+i,name:'Folder '+String(i).padStart(3,'0'),parentId:null}));
+ folders.push({id:'deep',name:'Exact target',parentId:'folder-80'});
+ f.replace({revision:7,folders,assignments:{job:'folder-0'}});
+ await f.job().querySelector('[data-move-schedule="job"]').dispatch('click',{});
+ assert.equal(f.manager.querySelectorAll('.next-schedule-move-choice').length,89);
+ const search=f.manager.querySelector('#next-schedule-move-query');
+ search.value='exact';await search.dispatch('input',{});
+ assert.deepEqual(f.manager.querySelectorAll('.next-schedule-move-choice').map(node=>node.textContent),['Folder 080 / Exact target']);
+ await f.manager.querySelector('#next-schedule-move-cancel').dispatch('click',{});
+ assert.equal(f.calls.length,0);
+});
+
+test('Move retains its opening revision, never replays a conflict, and closes on leave',async t=>{
+ const f=await fixture(t,{compact:true});
+ await f.job().querySelector('[data-move-schedule="job"]').dispatch('click',{});
+ f.advance(); // organization changed externally while the dialog was open
+ await f.manager.querySelector('[data-move-destination="b"]').dispatch('click',{});
+ await settle();
+ assert.equal(f.calls.length,1);
+ assert.equal(f.calls[0].body.expectedRevision,1);
+ assert.equal(f.state().assignments.job,'a');
+ assert.equal(f.manager.querySelector('#next-schedule-move-dialog').open,false);
+ await f.job().querySelector('[data-move-schedule="job"]').dispatch('click',{});
+ f.component.leave();
+ assert.equal(f.manager.querySelector('#next-schedule-move-dialog').open,false);
+ assert.equal(f.calls.length,1);
+});
+
+test('Open creation and rename drafts block Move without losing either draft',async t=>{
+ const f=await fixture(t,{compact:true});
+ await f.folder('a').querySelector('.next-schedule-folder-add').dispatch('click',{});
+ const form=f.mount.querySelector('form'),name=form.querySelector('input');
+ name.value='Keep this draft';
+ await f.job().querySelector('[data-move-schedule="job"]').dispatch('click',{});
+ assert.equal(f.manager.querySelector('#next-schedule-move-dialog').open,false);
+ assert.match(f.manager.textContent,/Finish or cancel folder creation or rename/);
+ assert.equal(name.value,'Keep this draft');
+ await name.dispatch('keydown',{key:'Escape'});
+ await f.folder('a').querySelector('.next-schedule-folder-name').dispatch('click',{});
+ const rename=f.folder('a').querySelector('input');rename.value='Uncommitted name';await rename.dispatch('input',{});
+ await f.folder('b').querySelector('[data-move-folder="b"]').dispatch('click',{});
+ assert.equal(f.manager.querySelector('#next-schedule-move-dialog').open,false);
+ assert.equal(rename.value,'Uncommitted name');
+ assert.equal(f.calls.length,0);
 });

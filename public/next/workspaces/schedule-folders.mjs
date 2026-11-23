@@ -5,11 +5,11 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   let organization = { revision: 0, folders: [], assignments: {} }, pending = false, lastRevision = -1;
   const closed = new Set(), unfiledKey=Symbol('Unfiled');
   const renameDrafts = new Map();
-  let fileSelects = [], folderButtons = [], activeDrag = null;
+  let fileSelects = [], folderButtons = [], activeDrag = null, moveTarget = null;
   let knownDeployments = new Set(), outlineContainer = null;
   const add = (parent, tag, value, cls) => text(parent, value, tag, cls);
 
-  const icons={folder:'M3 7h6l2-3h10v16H3z M15 10v6 M12 13h6',check:'M5 12l4 4L19 6',close:'M6 6l12 12 M18 6L6 18'};
+  const icons={folder:'M3 7h6l2-3h10v16H3z M15 10v6 M12 13h6',check:'M5 12l4 4L19 6',close:'M6 6l12 12 M18 6L6 18',move:'M3 8V6h6l2 2h10v11H3z M9 13h8 m-3-3 3 3-3 3'};
   function icon(button,kind,label){button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="'+icons[kind]+'" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';button.setAttribute('aria-label',label);button.title=label;button.classList.add('next-folder-icon-action');}
   const manager = add(mount, compact?'div':'details', '', compact?'next-schedule-folder-create':'next-card next-schedule-folder-manager');
   const managerTitle=add(manager, compact?'button':'summary', compact?'New folder':'Manage folders');if(compact){managerTitle.type='button';managerTitle.className='next-schedule-new-folder';manager.open=false;icon(managerTitle,'folder','New top-level folder');}
@@ -28,6 +28,18 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   const save = add(actions, 'button', 'Create folder'); save.type = 'submit';if(compact)icon(save,'check','Create folder');
   const remove = add(actions, 'button', '\u00d7', 'next-schedule-folder-remove'); remove.type = 'button'; remove.hidden = true; remove.title = 'Remove selected folder only; keep every cronjob'; remove.setAttribute('aria-label','Remove selected folder only');
   const notice = add(manager, 'p', '', 'next-help'); notice.setAttribute('role', 'status');
+   // Independent destination list; collapsed folders are still immediately accessible.
+   const moveDialog=add(mount,'dialog','','next-schedule-move-dialog');
+   moveDialog.id='next-schedule-move-dialog';moveDialog.setAttribute('aria-labelledby','next-schedule-move-heading');
+   const moveHeading=add(moveDialog,'h2','Move');moveHeading.id='next-schedule-move-heading';
+   add(moveDialog,'p','Choose a destination without expanding the folder tree.','next-help');
+   const searchLabel=add(moveDialog,'label','Find destination','next-label');
+   const moveSearch=add(searchLabel,'input','','next-field');moveSearch.id='next-schedule-move-query';
+   moveSearch.type='search';moveSearch.maxLength=256;
+   const moveChoices=add(moveDialog,'div','','next-schedule-move-choices');
+   moveChoices.id='next-schedule-move-choices';moveChoices.setAttribute('role','group');moveChoices.setAttribute('aria-label','Destination folders');
+   const moveStatus=add(moveDialog,'p','','next-help');moveStatus.setAttribute('role','status');
+   const moveCancel=add(moveDialog,'button','Cancel');moveCancel.type='button';moveCancel.id='next-schedule-move-cancel';
   function path(id, seen = new Set()) {
     const folder = organization.folders.find(item => item.id === id);
     if (!folder || seen.has(id)) return '';
@@ -89,11 +101,74 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
     for(let ancestor=row?.parentElement;ancestor;ancestor=ancestor.parentElement){if(ancestor.tagName==='DETAILS'){ancestor.open=true;if(ancestor.dataset.scheduleFolder)closed.delete(ancestor.dataset.scheduleFolder);else if(ancestor.dataset.scheduleUnfiled)closed.delete(unfiledKey);}}
     row?.querySelector('summary')?.focus();
   }
-  async function move(item,parentId){
+  const folderOrder=new Intl.Collator('en',{sensitivity:'base',numeric:true});
+  function moveControl(item){
+    const key=item.kind==='folder'?'moveFolder':'moveSchedule';
+    return [...(outlineContainer?.querySelectorAll('[data-move-folder],[data-move-schedule]')||[])].find(node=>node.dataset[key]===item.id);
+  }
+  function closeMove(restoreFocus=true){
+    const item=moveTarget?.item;moveTarget=null;
+    if(moveDialog.open)moveDialog.close();
+    if(restoreFocus&&item)moveControl(item)?.focus?.();
+  }
+  function excludedFolderIds(id){
+    const found=new Set([id]);
+    for(let changed=true;changed;){
+      changed=false;
+      for(const folder of organization.folders){
+        if(found.has(folder.parentId)&&!found.has(folder.id)){found.add(folder.id);changed=true;}
+      }
+    }
+    return found;
+  }
+  function paintMoveOptions(){
+    if(!moveTarget)return;
+    moveChoices.replaceChildren();
+    const search=moveSearch.value.trim().toLocaleLowerCase();
+    const current=currentParent(moveTarget.item);
+    const excluded=moveTarget.item.kind==='folder'?excludedFolderIds(moveTarget.item.id):new Set();
+    const choices=[
+      {id:null,name:moveTarget.item.kind==='folder'?'Top-level folders':'Unfiled',group:'Top level'},
+      ...organization.folders.filter(folder=>!excluded.has(folder.id))
+        .map(folder=>({id:folder.id,name:path(folder.id),group:'Folders'}))
+        .sort((a,b)=>folderOrder.compare(a.name,b.name)||folderOrder.compare(a.id,b.id)),
+    ].filter(row=>row.name.toLocaleLowerCase().includes(search));
+    let group='';
+    for(const row of choices){
+      if(group!==row.group){group=row.group;add(moveChoices,'h3',group,'next-schedule-move-group');}
+      const button=add(moveChoices,'button',row.name+(current===row.id?' (current)':''),'next-schedule-move-choice');
+      button.type='button';button.dataset.moveDestination=row.id??'';
+      if(current===row.id){button.disabled=true;button.setAttribute('aria-current','location');}
+      button.addEventListener('click',()=>void commitMove(row.id));
+    }
+    moveStatus.textContent=choices.length?choices.length+' matching destinations.':'No matching destinations.';
+  }
+  function beginMove(item,label){
+    if(pending||!item)return;
+    if(manager.open||renameDrafts.size){notice.textContent='Finish or cancel folder creation or rename before moving.';return;}
+    if(item.kind==='schedule'&&!knownDeployments.has(item.id))return;
+    if(item.kind==='folder'&&!organization.folders.some(folder=>folder.id===item.id))return;
+    moveTarget={item,revision:organization.revision};
+    moveHeading.textContent='Move '+(item.kind==='folder'?'folder':'cronjob')+': '+label;
+    moveSearch.value='';paintMoveOptions();
+    if(!moveDialog.open)moveDialog.showModal();
+    moveSearch.focus();
+  }
+  async function commitMove(folderId){
+    const current=moveTarget;
+    if(!current||pending)return;
+    closeMove(false);
+    const ok=await move(current.item,folderId,current.revision);
+    if(ok)moveControl(current.item)?.focus?.();
+  }
+  moveSearch.addEventListener('input',paintMoveOptions);
+  moveCancel.addEventListener('click',()=>closeMove());
+  moveDialog.addEventListener('cancel',event=>{event.preventDefault();closeMove();});
+  async function move(item,parentId,expectedRevision=organization.revision){
     if(pending||!item)return;
     if(item.kind==='schedule'){
       if(!knownDeployments.has(item.id)||currentParent(item)===(parentId||null))return;
-      const result=await mutate({action:'assign',deploymentId:item.id,folderId:parentId||null});focusItem(item);return result;
+      const result=await mutate({action:'assign',deploymentId:item.id,folderId:parentId||null},expectedRevision);focusItem(item);return result;
     }
     const folder=organization.folders.find(folder=>folder.id===item.id);
     if(!folder||folder.parentId===(parentId||null))return;
@@ -102,7 +177,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
       if(visited.has(cursor)||cursor===folder.id){notice.textContent='A folder cannot be moved inside itself.';return;}
       visited.add(cursor);
     }
-    const result=await mutate({action:'update',id:folder.id,name:folder.name,parentId:parentId||null});focusItem(item);return result;
+    const result=await mutate({action:'update',id:folder.id,name:folder.name,parentId:parentId||null},expectedRevision);focusItem(item);return result;
   }
   function outlineNavigation(event,element,canRename=false){
     if(!compact||event.ctrlKey||event.metaKey||event.altKey)return false;
@@ -123,7 +198,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   function draggable(element,item){
     element.draggable=true;
     element.addEventListener('dragstart',event=>{
-      if(pending||event.target?.tagName==='INPUT'){event.preventDefault();return;}
+      if(pending||event.target?.closest?.('button,input,select,textarea')){event.preventDefault();return;}
       event.stopPropagation();activeDrag=item;
       event.dataTransfer?.setData('application/x-blackice-schedule',JSON.stringify(item));
       if(event.dataTransfer)event.dataTransfer.effectAllowed='move';
@@ -159,7 +234,7 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
   function paintSelection(){if(!compact)return;for(const row of outlineContainer?.querySelectorAll('[data-schedule-folder]')||[])row.classList.toggle('next-folder-selected',row.dataset.scheduleFolder===selectedParent);}
   function placeDraft(){if(!compact||!outlineContainer)return;const row=[...outlineContainer.querySelectorAll('[data-schedule-folder]')].find(row=>row.dataset.scheduleFolder===parent.value);const missing=!!parent.value&&!row;const host=row?.querySelector('.next-schedule-folder-children')||outlineContainer;save.disabled=pending||missing;if(missing){notice.textContent='The destination folder no longer exists. Your draft is preserved. Cancel it to choose another destination.';}if(row){row.open=true;closed.delete(parent.value);}host.insertBefore(form,host.firstChild);form.hidden=!manager.open;}
   return {
-    leave(){manager.open=false;form.hidden=true;activeDrag=null;},
+    leave(){closeMove(false);manager.open=false;form.hidden=true;activeDrag=null;},
     group(container, deployments, value) {
       outlineContainer=container;
       organization = value || { revision: 0, folders: [], assignments: {} };
@@ -201,13 +276,18 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
             if(ok){renameDrafts.delete(folder.id);await refresh();focusItem({kind:'folder',id:folder.id});}
           });
           draggable(summary,{kind:'folder',id:folder.id});dropTarget(summary,folder.id);
-          summary.title='Drag to move. Ctrl+Enter indents; Ctrl+Shift+Enter moves out one level.';
+          summary.title='Use Move to choose any folder, or drag. Ctrl+Enter indents; Ctrl+Shift+Enter moves out one level.';
           const direct = deployments.filter(item => organization.assignments?.[item.id] === folder.id).length;
           const descendants = new Set([folder.id]);
           for (let changed = true; changed;) { changed = false; for (const item of folders) if (descendants.has(item.parentId) && !descendants.has(item.id)) { descendants.add(item.id); changed = true; } }
           const count = deployments.filter(item => descendants.has(organization.assignments?.[item.id])).length;
           if(!compact){const badge = add(summary, 'span', String(count), 'next-status-pill'); badge.title = 'Cronjobs in this folder and subfolders';}
           if(compact){const child=add(summary,'button','','next-schedule-folder-add');child.type='button';icon(child,'folder','New subfolder in '+path(folder.id));child.disabled=pending;folderButtons.push(child);child.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();beginCreate(folder.id);});}
+           const folderMove=add(summary,'button','','next-schedule-folder-move');
+           folderMove.type='button';folderMove.dataset.moveFolder=folder.id;
+           icon(folderMove,'move','Move folder '+path(folder.id));
+           folderMove.disabled=pending||manager.open||!!renameDrafts.size;folderButtons.push(folderMove);
+           folderMove.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();beginMove({kind:'folder',id:folder.id},path(folder.id));});
           const deleteButton=add(summary,'button','\u00d7','next-schedule-folder-remove');deleteButton.type='button';if(compact)icon(deleteButton,'close','Remove folder '+path(folder.id));deleteButton.disabled=pending;folderButtons.push(deleteButton);deleteButton.title='Remove folder only; keep every cronjob';deleteButton.setAttribute('aria-label','Remove folder '+path(folder.id));deleteButton.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();void removeFolder(folder.id);});
           details.addEventListener('toggle', () => details.open ? closed.delete(folder.id) : closed.add(folder.id));
           const children = add(details, 'div', '', 'next-schedule-folder-children');
@@ -233,7 +313,13 @@ export function createScheduleFolders({ mount, api, notify, refresh, compact = f
         outlineControl(row,task){
           const handle=row.querySelector('summary');
           draggable(handle,{kind:'schedule',id:task.id});
-          handle.title='Drag to a folder. Ctrl+Enter indents; Ctrl+Shift+Enter moves out one level.';
+          handle.title='Use Move to choose any folder, or drag. Ctrl+Enter indents; Ctrl+Shift+Enter moves out one level.';
+           const moveButton=add(handle,'button','','next-cronjob-move');
+           moveButton.type='button';moveButton.dataset.moveSchedule=task.id;
+           icon(moveButton,'move','Move cronjob '+(task.name||'Scheduled task'));
+           moveButton.disabled=pending||manager.open||!!renameDrafts.size;
+           folderButtons.push(moveButton);
+           moveButton.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();beginMove({kind:'schedule',id:task.id},task.name||'Scheduled task');});
         },
         fileControl(card, task) {
           const label = add(card, 'label', 'File in folder', 'next-label next-schedule-file-control');

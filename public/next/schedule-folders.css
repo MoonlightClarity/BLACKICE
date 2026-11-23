@@ -90,3 +90,31 @@
 
 /* A quiet list hint, not the shared empty-state card. */
 .next-cronjobs-workspace .next-cronjobs-empty{margin:4px 0 8px;padding:4px 8px;font-size:12px;line-height:1.5;color:var(--muted);text-align:left;border:0;background:none;min-height:0}
+
+
+/* Searchable Move actions for large Cronjobs outlines. The original drag gestures remain. */
+.next-schedule-folder-move{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;vertical-align:middle;margin-left:5px;background:transparent;border:1px solid transparent;border-radius:4px;color:var(--muted)}
+.next-schedule-folder-move:hover:not(:disabled),.next-cronjob-move:hover:not(:disabled){background:var(--next-button-hover-background);color:var(--text)}
+.next-schedule-folder-move:focus-visible,.next-cronjob-move:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.next-schedule-folder-move:disabled,.next-cronjob-move:disabled{opacity:.45}
+.next-cronjob-summary{position:relative;padding-right:42px!important}
+.next-cronjob-move{position:absolute;right:4px;top:3px;display:inline-flex;justify-content:center;align-items:center;box-sizing:border-box;width:28px;height:28px;min-width:28px;padding:4px;background:transparent;border:1px solid transparent;border-radius:4px;color:var(--muted)}
+.next-cronjob-move svg,.next-schedule-folder-move svg{width:18px;height:18px;pointer-events:none}
+.next-cronjobs-workspace .next-schedule-folder-branch>summary{padding-right:106px}
+.next-cronjobs-workspace .next-schedule-folder-branch>summary .next-schedule-folder-add{right:68px}
+.next-cronjobs-workspace .next-schedule-folder-branch>summary .next-schedule-folder-move{position:absolute;right:36px;top:3px;box-sizing:border-box;width:28px;height:28px;margin:0;padding:4px;border:1px solid transparent}
+.next-cronjobs-workspace .next-schedule-folder-branch>summary .next-schedule-folder-name{max-width:calc(100% - 106px)}
+.next-schedule-folder-branch>summary:has(.next-schedule-rename-actions:not([hidden]))>.next-schedule-folder-move{visibility:hidden}
+.next-schedule-move-dialog{box-sizing:border-box;position:fixed;inset:0;margin:auto;width:min(540px,calc(100vw - 32px));max-height:min(85dvh,760px);overflow:auto;padding:20px;border:1px solid var(--line);border-radius:10px;background:var(--next-workspace-background);color:var(--text);box-shadow:0 18px 45px #0005}
+.next-schedule-move-dialog::backdrop{background:#0009}
+.next-schedule-move-dialog h2{font-size:17px;margin:0 0 8px}
+.next-schedule-move-dialog .next-label{display:grid;gap:5px;margin:10px 0}
+.next-schedule-move-dialog .next-field{width:100%;box-sizing:border-box}
+.next-schedule-move-choices{max-height:45dvh;overflow:auto;overscroll-behavior:contain;display:grid;gap:3px;padding:6px;border:1px solid var(--line);border-radius:6px}
+.next-schedule-move-group{font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;margin:10px 7px 4px}
+.next-schedule-move-group:first-child{margin-top:4px}
+.next-schedule-move-choice{text-align:left;border:1px solid transparent;border-radius:5px;background:transparent;color:inherit;padding:8px 10px;overflow-wrap:anywhere}
+.next-schedule-move-choice:hover:not(:disabled),.next-schedule-move-choice:focus-visible{background:var(--next-selection-background);border-color:var(--accent)}
+.next-schedule-move-choice:disabled{opacity:.55}
+.next-schedule-move-dialog .next-help{margin:8px 0}
+#next-schedule-move-cancel{margin-left:auto}

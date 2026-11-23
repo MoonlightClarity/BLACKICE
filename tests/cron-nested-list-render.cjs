@@ -19,9 +19,30 @@ const until=async s=>{for(let i=0;i<100;i++){if(await run(s))return;await sleep(
  assert.deepEqual(await run('[...document.querySelector("[data-schedule-folder=work]>.next-schedule-folder-children>.next-grid").children].map(e=>e.dataset.scheduleId)'),['earlier','later']);
  assert.equal(await run('document.querySelector("[data-schedule-folder=research]").closest("[data-schedule-folder=work]")!==null'),true);
  assert.equal(await run('[...document.querySelectorAll(".next-cronjob-row")].every(e=>!e.open)'),true);
- const controls=await run('Array.from(document.querySelectorAll(".next-schedule-folder-branch>summary .next-schedule-folder-add,.next-schedule-folder-branch>summary .next-schedule-folder-remove"),e=>({label:e.getAttribute("aria-label"),width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height,fontSize:getComputedStyle(e).fontSize,border:getComputedStyle(e).borderTopWidth,background:getComputedStyle(e).backgroundImage,type:e.type}))');
- assert.equal(controls.length,4);for(const c of controls){assert.ok(c.label);assert.equal(c.type,'button');assert.equal(c.width,28);assert.equal(c.height,28);}
- win.webContents.debugger.attach('1.3');await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
+ const controls=await run('Array.from(document.querySelectorAll(".next-schedule-folder-branch>summary .next-schedule-folder-add,.next-schedule-folder-branch>summary .next-schedule-folder-move,.next-schedule-folder-branch>summary .next-schedule-folder-remove"),e=>({label:e.getAttribute("aria-label"),width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height,fontSize:getComputedStyle(e).fontSize,border:getComputedStyle(e).borderTopWidth,background:getComputedStyle(e).backgroundImage,type:e.type}))');
+ assert.equal(controls.length,6);for(const c of controls){assert.ok(c.label);assert.equal(c.type,'button');assert.equal(c.width,28);assert.equal(c.height,28);}
+ // The new picker is a real native dialog and does not mutate until a destination is chosen.
+  await run('document.querySelector("[data-schedule-id=later] .next-cronjob-move").click()');
+  await until('document.querySelector("#next-schedule-move-dialog").open');
+  assert.equal(await run('document.activeElement.id'),'next-schedule-move-query');
+  await run('(()=>{const input=document.querySelector("#next-schedule-move-query");input.value="research";input.dispatchEvent(new Event("input",{bubbles:true}));})()');
+  assert.deepEqual(await run('[...document.querySelectorAll(".next-schedule-move-choice")].map(el=>el.textContent)'),['Work / Research']);
+  assert.equal(organization.assignments.later,'work','Search is read-only');
+  await run('document.querySelector(".next-schedule-move-choice").click()');
+  await until('document.querySelector("[data-schedule-id=later]").closest("[data-schedule-folder]").dataset.scheduleFolder==="research"');
+  assert.equal(organization.assignments.later,'research');
+  await run('document.querySelector("[data-schedule-id=later] .next-cronjob-move").click()');
+  await until('document.querySelector("#next-schedule-move-dialog").open');
+  await run('document.querySelector("[data-move-destination=work]").click()');
+  await until('document.querySelector("[data-schedule-id=later]").closest("[data-schedule-folder]").dataset.scheduleFolder==="work"');
+  assert.equal(organization.assignments.later,'work');
+  await run('document.querySelector("[data-schedule-folder=work] .next-schedule-folder-move").click()');
+  await until('document.querySelector("#next-schedule-move-dialog").open');
+  assert.equal(await run('document.querySelector("[data-move-destination=work]")===null&&document.querySelector("[data-move-destination=research]")===null'),true);
+  await run('document.querySelector("#next-schedule-move-cancel").click()');
+  assert.equal(await run('document.querySelector("#next-schedule-move-dialog").open'),false);
+  assert.equal(fixture.state.scheduledWrites.length,0,'Organizational moves must not run cronjobs');
+  win.webContents.debugger.attach('1.3');await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
  await run('document.querySelector(".next-schedule-folder-name").focus()');win.webContents.sendInputEvent({type:'keyDown',keyCode:'Tab'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Tab'});await sleep(100);assert.equal(await run('document.activeElement.classList.contains("next-schedule-folder-add")'),true);assert.equal(await run('getComputedStyle(document.activeElement).outlineStyle'),'solid');win.webContents.debugger.detach();
  for(const width of [1200,640,390]){win.setSize(width,900);await sleep(200);assert.equal(await run('document.documentElement.scrollWidth<=innerWidth'),true);fs.writeFileSync(path.join(out,'cron-list-'+width+'.png'),(await win.webContents.capturePage()).toPNG());}
  await run('document.querySelector("[data-schedule-id=earlier]>summary").click()');
@@ -77,7 +98,7 @@ const until=async s=>{for(let i=0;i<100;i++){if(await run(s))return;await sleep(
  await run('(()=>{const form=document.querySelector(".next-schedule-inline-create");form.querySelector("input").value="Nested test";form.requestSubmit();})()');
  await until('[...document.querySelectorAll(".next-schedule-folder-name")].some(x=>x.textContent==="Nested test")');
  assert.ok(organization.folders.some(folder=>folder.name==='Nested test'&&folder.parentId==='research'));
- await run('document.querySelector("[data-schedule-folder=work]>summary").focus();document.activeElement.dispatchEvent(new KeyboardEvent("keydown",{key:"End",bubbles:true,cancelable:true}))');
+ await run('document.querySelector(".next-schedule-unfiled").open=true;document.querySelector("[data-schedule-folder=work]>summary").focus();document.activeElement.dispatchEvent(new KeyboardEvent("keydown",{key:"End",bubbles:true,cancelable:true}))');
  assert.equal(await run('document.activeElement===document.querySelector("[data-schedule-id=loose]>summary")'),true,await run('JSON.stringify({active:document.activeElement.outerHTML,rows:[...document.querySelectorAll("#next-tasks-deployments summary")].map(x=>({name:x.textContent,kind:x.parentElement.dataset}))})'));
  assert.equal(fixture.state.deployments.length,4);
  assert.equal(fixture.state.scheduledWrites.length,0);
@@ -85,5 +106,5 @@ const until=async s=>{for(let i=0;i<100;i++){if(await run(s))return;await sleep(
  await run('document.querySelector("[data-schedule-result-run=sample-run-0]").click()');
  await until('location.hash==="#chat"');
  await until('localStorage.getItem("blackice.next.selected")==="sample-run-0"');
- fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:true,checks:['Inline SVG root and explicit child creation; no separate manager or parent selector','Accessible button labels retained','Real keyboard Tab reaches child creation with visible focus','Nested folders retained','Chronological jobs within folder','Collapsed compact rows','Expansion retained after refresh','Existing enable/disable action','Only selected schedule conversation links','Exact saved conversation navigation','No global results/history or preview viewer','No schedule created','Persisted schedule and folder drag moves','Persisted CtrlEnter indent and CtrlShiftEnter outdent','No filing dropdown','1200, 640 and390 no horizontal overflow','Direct inline subfolder creation persisted across full renderer reload','Keyboard End reaches last visible row']},null,2));
+ fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:true,checks:['Inline SVG root and explicit child creation; no separate manager or parent selector','Accessible button labels retained','Real keyboard Tab reaches child creation with visible focus','Nested folders retained','Chronological jobs within folder','Collapsed compact rows','Expansion retained after refresh','Existing enable/disable action','Only selected schedule conversation links','Exact saved conversation navigation','No global results/history or preview viewer','No schedule created','Persisted schedule and folder drag moves','Persisted CtrlEnter indent and CtrlShiftEnter outdent','No filing dropdown','Searchable SVG Move actions for cronjobs and folders preserve organization and scheduling boundaries','1200, 640 and390 no horizontal overflow','Direct inline subfolder creation persisted across full renderer reload','Keyboard End reaches last visible row']},null,2));
 })().catch(e=>{fs.writeFileSync(path.join(out,'error.txt'),e.stack);process.exitCode=1}).finally(async()=>{win?.destroy();if(fixture){fixture.server.closeAllConnections();await new Promise(r=>fixture.server.close(r));await fixture.close();}app.exit(process.exitCode||0)});setTimeout(()=>app.exit(2),40000).unref();
