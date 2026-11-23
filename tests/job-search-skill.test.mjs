@@ -24,8 +24,8 @@ const id='library-job-search';
 const example='Find three current U.S. remote intelligence roles posted within the last week. Do not apply.';
 const application='Find one suitable job using my existing résumé and preferences. Apply through the employer’s site and verify that the application was received.';
 const historyContract=[
- "Before choosing an application target, discover and read available application history, trackers, and submission receipts",
- "Do this even when the current request does not mention earlier applications",
+ "Reuse application history and submission receipts already available",
+ "If necessary, load the relevant index once for a candidate batch",
  "A missing or stale index is not evidence that no application was made",
  "Reconcile each candidate by employer and exact requisition/posting ID",
  "using the authoritative URL and receipt evidence to resolve aliases",
@@ -86,7 +86,7 @@ const jobConfirmationContract=[
 ];
 const assertJobConfirmationMethod=content=>{for(const expected of jobConfirmationContract)assert.ok(content.includes(expected),expected);};
 const heading='JOB SEARCH (advisory execution method; not permission)';
-const accepted={type:'skill_context_submitted',skillId:id,title:'Job Search',source:'bundled',sourceRevision:'clarity-20261121'};
+const accepted={type:'skill_context_submitted',skillId:id,title:'Job Search',source:'bundled',sourceRevision:'employer-first-w2-20261123'};
 
 test('current actionable job requests select only the job skill, not the general intent skill',()=>{
  for(const input of [example,'Apply for jobs until 6 AM EST.','Apply for the Circana Senior Product Manager, AI Evaluation & Quality position.','Apply to this job opening.','Job search for me. Stop at 3 jobs.','Can you shortlist remote open roles?','Please load the Job Search skill.','Search job boards for research roles.']){
@@ -127,7 +127,7 @@ test('explicit operational workflow commands select Job Search without selecting
  ]) assert.equal(wantsJobSearchExecutionSkill(input),false,input);
 });
 
-test('the discoverable packaged skill checks recency and live requisition separately',async()=>{
+test('the discoverable packaged skill prioritizes employer sources, W-2 fit and live requisitions',async()=>{
  const catalog=createSkillsCatalog();
  const {entries}=await catalog.list({query:'job search'});
  assert.equal(entries[0].id,id);
@@ -141,27 +141,29 @@ test('the discoverable packaged skill checks recency and live requisition separa
   /reopened or new requisition[\s\S]*opening event and date/,
   /Check age and whether applications are accepted separately/,
   /older or unknown-age roles outside a verified recent count/,
-  /multiple relevant job boards and company career sites in parallel/,
-  /direct and adjacent searches from the first pass/,
-  /rank primary matches first without waiting to exhaust them/i,
-  /venture firm's portfolio jobs page/,
-  /funding date or announcement does not establish/,
-  /do not assume all contracts are gig work/,
+  /Start with actual vacancies on relevant employers.*careers pages and public ATS boards/,
+  /Search by outputs and duties as well as titles/,
+  /Check promising exact vacancies rather than exhausting broad searches first/i,
+  /portfolio.s hiring companies/,
+  /funding announcement or indexed snippet does not establish/,
+  /A W-2 contract or a posting that offers a W-2 option is not the same as a 1099 gig/,
   /exact requisition\/posting ID/,
   /same vacancy accepts applications/,
   /Retire closed or expired postings/,
   /archived mirror[\s\S]*alone is insufficient/,
   /genuine role gates/,
+  /explicit 1099, freelance, independent-contractor, or per-task paid work is a mismatch/,
+  /Indeed and aggregate job boards as supplementary discovery routes/,
   /findings for a search[\s\S]*user asked to apply/,
   /before retrying/,
   /“Up to N” is a cap, not a completion minimum/,
-  /each promising exact vacancy as it appears/,
+  /Check promising exact vacancies rather than exhausting broad searches first/,
   /honest shortfall/,
   /Count only a confirmed submission/,
  ])assert.match(content,expected);
 });
 
-test('new applications discover history before selecting targets and reconcile exact requisitions before submission',async()=>{
+test('new applications reuse history by batch and reconcile exact requisitions before submission',async()=>{
  const {content}=await createSkillsCatalog().detail({id});
  assertHistoryMethod(content);
  assert.ok(content.indexOf('## Reconcile application history')<content.indexOf('## Search current openings'),'history discovery precedes target selection');
@@ -186,7 +188,7 @@ test('application confirmations remain pending until observed and failed candida
 
 test('fit ignores listed years even for director roles and credits work under adjacent titles',async()=>{
  const {content,provenance}=await createSkillsCatalog().detail({id});
- assert.equal(provenance.revision,'clarity-20261121');
+ assert.equal(provenance.revision,'employer-first-w2-20261123');
  for(const expected of [
   /Ignore every numerical years-of-experience requirement when evaluating fit/,
   /Do not use it to filter, rank, downlevel, or decide not to apply/,
@@ -225,14 +227,14 @@ test('discovery recovery uses current source contracts instead of copied API sch
   /Search by outputs and duties as well as titles/,
   /blank page or broken browser reference/,
   /change to another relevant source before declaring a shortfall/,
-  /site:job-boards.greenhouse.io/,
+  /employers.*careers pages and public ATS boards/,
   /current documented read interface/,
   /Distinguish first publication from updates or republication/,
   /Do not copy endpoint schemas from an old source file/,
   /fresh republish timestamp does not erase an older dated copy/,
   /remote geography, travel, compensation basis/,
   /direct competitors/,
-  /first seen, not first posted/,
+  /Distinguish first publication from updates or republication/,
   /when checked/,
   /career-manager\/blob\/main\/job-search\/SKILL.md/,
  ])assert.match(content,expected);
