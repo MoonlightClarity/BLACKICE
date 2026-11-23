@@ -97,6 +97,24 @@ test('current actionable job requests select only the job skill, not the general
    'The user wrote: "Find three market analyst jobs."','> '+example,
    '`\x60\x60text\n'+example+'\n`\x60\x60','\u201c'+example+'\u201d'])assert.equal(wantsJobSearchSkill(input),false,input);
 });
+test('explicit operational workflow commands select Job Search without selecting diagnostic examples',()=>{
+ for(const input of [
+  'Restart the real BLACKICE job-search/application workflow as a diagnostic endurance test in Chat Mode.',
+  'Run my job search workflow and only shortlist roles.',
+  'Resume the job application workflow.',
+ ]) assert.equal(wantsJobSearchSkill(input),true,input);
+ for(const input of [
+  'Diagnose why we failed to restart the real BLACKICE job-search/application workflow.',
+  'Explain how to resume the job search workflow.',
+  'Run the job search workflow as a dry run without searching.',
+  'Use this example: "Restart the real BLACKICE job-search/application workflow."',
+  '> Restart the real BLACKICE job-search/application workflow.',
+  'Restart the BLACKICE job runtime scheduler.',
+  'Run the job-search skill tests.',
+  'Run the job-search workflow tests.',
+  'Run the job-search workflow as a simulation.',
+ ]) assert.equal(wantsJobSearchSkill(input),false,input);
+});
 
 test('the discoverable packaged skill checks recency and live requisition separately',async()=>{
  const catalog=createSkillsCatalog();

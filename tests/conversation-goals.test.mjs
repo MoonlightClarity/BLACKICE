@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {ConversationArchive} from '../lib/conversations.mjs';
 import {ConversationGoals, validateGoalInput} from '../lib/conversation-goals.mjs';
+import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 
 const deferred = () => { let resolve; const promise = new Promise(done => {resolve = done;}); return {promise, resolve}; };
 const waitFor = async (fn, message = 'condition') => {
@@ -38,6 +39,62 @@ async function report(options, action, fields = {}) {
   return {goal,result};
 }
 const output = n => ({output:'Fixture progress '+n,threadId:'goal-test-thread'});
+
+for(const isolatedHistory of [false,true])test('an explicitly restarted job-search Goal delivers the effective skill to initial and exactly bound successor providers only (isolated history '+isolatedHistory+')',async t=>{
+  const objective='Restart the real BLACKICE job-search/application workflow as a diagnostic endurance test in Chat Mode. Shortlist suitable roles only.';
+  const heading='JOB SEARCH (advisory execution method; not permission)';
+  const skillId='library-job-search';
+  const {engine,goals,conversations,dataDir,runtime}=await fixture(t,async(options,n)=>{
+    const run=[...engine.runs.values()].at(-1);
+    if(n===3){
+      assert.doesNotMatch(options.prompt,/JOB SEARCH \(advisory execution method/);
+      assert.equal(goals.skillObjectiveForDispatch(run),null);
+      options.onPromptAccepted(options.prompt);
+      assert.ok(!run.skillLoadReceipts?.some(row=>row.skillId===skillId));
+      return output(n);
+    }
+    assert.ok(options.prompt.includes(heading));
+    assert.match(options.prompt,/Check the last completed week on multiple independent sources/);
+    assert.doesNotMatch(options.prompt,/rolling last seven days/,'the owner skill replaces bundled content');
+    assert.ok(!run.skillLoadReceipts?.some(row=>row.skillId===skillId),'prepared is not accepted');
+    options.onPromptAccepted(options.prompt);
+    assert.deepEqual(run.skillLoadReceipts.filter(row=>row.skillId===skillId),[
+      {type:'skill_context_submitted',skillId,title:'Job Search',source:'user',sourceRevision:2},
+    ]);
+    assert.equal(run.nodes.agent.instructionAudit.sections.find(row=>row.id==='skill-'+skillId)?.status,'accepted');
+    if(n===2){
+      assert.equal(goals.skillObjectiveForDispatch(run),objective);
+      const bound=run.goalDispatch;
+      try{
+        for(const change of [{conversationId:'foreign-root'},{goalId:'foreign-goal'},{generation:bound.generation+1},{epoch:bound.epoch+1}]){
+          run.goalDispatch={...bound,...change};
+          assert.equal(goals.skillObjectiveForDispatch(run),null);
+        }
+      }finally{run.goalDispatch=bound;}
+    }
+    assert.equal((await report(options,n===1?'progress':'complete')).result.success,true);
+    return output(n);
+  });
+  const status=runtime.status.bind(runtime);
+  runtime.status=()=>({...status(),isolatedHistory});
+  const skills=createSkillsCatalog({dataDir});
+  try{await skills.save({id:skillId,value:{expectedRevision:1,content:'# Job Search\nCheck the last completed week on multiple independent sources.'}});}
+  finally{await skills.close();}
+  const workflow={...graph(),id:'mission_chat_bound_job_skill',description:'A focused task started from Mission.'};
+  const first=engine.startRun({workflow,input:{task:objective,goal:{objective}}});
+  await waitFor(async()=>(await goals.get(first.id))?.status==='completed');
+  const family=await conversations.family(first.id);
+  const successor=family.runs.at(-1);
+  assert.equal(successor.goalDispatch.conversationId,first.id);
+  assert.equal(successor.goalDispatch.generation,1);
+  assert.equal(successor.modelHandoff?.reason,isolatedHistory?'relay-history':undefined);
+  assert.match(successor.input,/^Resume autonomous execution for the saved conversation goal:/);
+  const unrelated=engine.continueRun(successor.id,{nodeId:'agent',message:'Explain the difference between diagnostic benchmarking and normal execution.'},{historyRuns:family.runs});
+  await waitFor(()=>engine.getRun(unrelated.id).settled);
+  assert.equal(engine.getRun(unrelated.id).status,'completed');
+  assert.equal(engine.getRun(unrelated.id).goal,undefined);
+  assert.ok(!engine.getRun(unrelated.id).skillLoadReceipts?.some(row=>row.skillId===skillId));
+});
 
 test('goals have no implicit budget and reject invalid authored limits', () => {
   assert.deepEqual(validateGoalInput({objective:'Finish the work'}),{objective:'Finish the work',maxTurns:null,maxMinutes:null});
