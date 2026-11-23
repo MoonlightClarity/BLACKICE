@@ -1,10 +1,10 @@
 # BLACKICE
 
-**An open-source Windows workspace that gives AI assistants the tools, context, and continuity to carry out useful work.**
+**An open-source, autonomy-first Windows workspace for AI agents that do real work—and can show what actually happened.**
 
-BLACKICE connects an assistant to a browser it can operate, files it can read and change, commands it can run, saved task history, and scheduled workflows. You can use an assistant inside BLACKICE or connect an external assistant to its tools.
+BLACKICE connects AI models to a contained browser, local files and commands, persistent task records, and scheduled workflows. Run a supported model inside BLACKICE, or let an external assistant use the same tools through an authenticated MCP connection. Direct tool calls execute on the Windows host without silently launching a second model.
 
-The goal is to reduce the work of managing the agent: copying instructions between apps, repeating background information, keeping track of unfinished steps, and checking whether a claimed result actually happened. You define the outcome and relevant constraints; BLACKICE gives the assistant a place to execute, keeps the work inspectable, and lets you intervene when needed.
+BLACKICE is being developed as an **agent execution and continuity system**, not merely a chat interface. The user owns the objective and constraints; the agent should be able to plan, act, make proportionate decisions under uncertainty, recover from interruptions, and continue without repeatedly transferring routine work back to the user. The system should preserve enough evidence to distinguish a proposed action from one actually completed.
 
 **[Download for Windows](https://github.com/MoonlightClarity/BLACKICE/releases)** · **[Source](https://github.com/MoonlightClarity/BLACKICE)** · **[Issues](https://github.com/MoonlightClarity/BLACKICE/issues)** · **[Apache-2.0 license](LICENSE)**
 
@@ -16,7 +16,21 @@ Published Windows installers, build manifests, and tagged source archives are li
 
 > **Evidence boundary:** This README describes the current source. Version-specific release notes and verification records establish what was packaged, installed, and tested. Source tests, renderer checks, and synthetic trials do not establish that every external integration works or that complex tasks reliably complete unattended. Check the exact installer’s manifest and verification records for its build identity, hashes, and signing status.
 
-**Guide:** [Getting started](#getting-started) · [Capabilities](#what-you-can-delegate) · [Models](#models-and-providers) · [Planning and Activity](#planning-and-activity) · [Goals and continuing work](#goal-mode-and-continuing-work) · [Troubleshooting](#configuration-and-troubleshooting) · [Contributors](#contributors)
+**Guide:** [Direction](#where-blackice-is-going) · [Getting started](#getting-started) · [Capabilities](#what-you-can-delegate) · [Models](#models-and-providers) · [Planning and Activity](#planning-and-activity) · [Goals and continuing work](#goal-mode-and-continuing-work) · [Troubleshooting](#configuration-and-troubleshooting) · [Contributors](#contributors)
+
+## Where BLACKICE is going
+
+The central challenge is **reliable long-horizon delegation**: not just producing plausible plans, but acting on them, recovering from interruptions, and checking outcomes without making the human manage every step. BLACKICE is intended to provide the environment and durable execution state around whichever supported model is doing the reasoning.
+
+**User-directed agency.** The agent should follow the user's objective and binding constraints, infer reasonable next steps, and treat ordinary uncertainty as a problem to work through—not an automatic request for approval or a reason to abandon the task. Website text, model suggestions, and third-party preferences are evidence to evaluate, not instructions that override the user. Actual tool, access, and other applicable limits still matter. This is a design goal, not a guarantee of autonomous success.
+
+**Planning + Action Directory.** Planning represents what needs doing and how work depends on other work. Action Directory focuses on what was attempted, what inputs and observations support it, which effects are confirmed or unresolved, and what can happen next. The current system has separate Planning and Action Directory controls; the ongoing architectural work is to make their records support recovery across model-context boundaries, failed calls, interrupted tasks, and changing plans. User instructions and observed facts must remain distinguishable from agent assumptions. The goal is useful task-state continuity, not arbitrary step counts or token caps masquerading as progress; real model context and resource constraints still apply.
+
+**Coordination as project management.** Independent agents can be useful, but multiplying workers is not itself the objective. A proposed **Swarm project-management** layer would give users and workers a shared view of scopes, owners, dependencies, blockers, integration status, and evidence. This is distinct from the **retired automatic Swarm execution system** and is **not a shipped workspace** in 2.40.75.
+
+**Interoperability without lock-in.** Codex is the primary native integration, with a two-way relationship: BLACKICE can use Codex for inference, while supported external assistants can use BLACKICE's tools directly. Optional API and local models widen the choice, but model support, tool use, context capacity, and cost are specific to each route. A saved conversation should retain the model identity and work record it actually used.
+
+**Measure real recovery, not just prompt quality.** Current evaluation work emphasizes difficult, reproducible tasks that compare a plain baseline with Planning-only, Directory-only, and combined Planning + Directory execution. Interruption, stale browser state, failed tool effects, context loss, prompt-injection attempts, and destination verification matter more than a model merely saying it completed the task. This benchmark direction is under development; it is not a published reliability score.
 
 ## Current capability and evidence boundaries
 
@@ -34,11 +48,13 @@ The distinction between an implemented tool, a verified integration, and a relia
 
 ## Still in active development
 
-- **ChatGPT connection and hosted schedules ([#25](https://github.com/MoonlightClarity/BLACKICE/issues/25)).** The direct MCP route is implemented, and custom MCP connection creation is available across personal tiers. Each account/endpoint route still needs matching OAuth, owner-approval, attached-tool and actual status/command receipts; endpoint discovery alone does not establish those results. Hosted ChatGPT scheduled runs remain unverified. An approved public plugin listing is a separate, unshipped route.
-- **MiniCPM benchmark qualification.** The runtime and tool-contract fixes are included. A completed, reproducible MiniCPM benchmark score and a validated comparison of sampler and thinking settings are still pending.
-- **Long-running Chat and Directory recovery.** Version 2.40.75 implements continuity and rejected-Directory-call recovery, along with absolute Goal deadline guards. The shipped deadline code has regression coverage, but the installed-release smoke tests did not exercise a real deadline overrun. End-to-end reliability across long tasks and providers still needs validation.
+- **Planning + Action Directory recovery.** Preserve action-linked inputs, decisions, observed results, failed attempts, user authority, and next steps across context changes and interrupted runs. The 2.40.75 continuity improvements have focused regression coverage, but long-run recovery across real providers and workflows is not yet qualified.
+- **Autonomy that keeps making progress.** Improve browser control recovery, tool-effect reconciliation, task deadlines, efficient search, and proportionate decisions under uncertainty. A failed page interaction or imperfect intermediate result should not needlessly stop unrelated work. Real multi-site workflows, including job-search diagnostics, expose gaps; they are not evidence of reliable unattended submission.
+- **Shared project coordination.** Explore Swarm as user-and-agent project management with inspectable ownership, dependencies, blockers, evidence, and integration—not as a return of the removed automatic Swarm orchestration engine. No new Swarm management UI is claimed as released.
+- **Evaluations and local models.** Build harder Planning/Directory comparison and cascade-recovery tests with independent controls, realistic interruptions, and inspectable scoring. MiniCPM runtime/tool-contract fixes are present; a reproducible completed MiniCPM score and validated sampler/thinking comparison are still pending.
+- **ChatGPT connection and hosted schedules ([#25](https://github.com/MoonlightClarity/BLACKICE/issues/25)).** The direct MCP route is implemented, and custom MCP connection creation is available across personal tiers. Each account/endpoint route still needs matching OAuth, owner authorization, attached-tool and actual status/command receipts; endpoint discovery alone does not establish those results. Hosted ChatGPT scheduled runs remain unverified. A public plugin listing is a separate, unshipped route.
 
-The closed-source context-management proposal and weight-modification experiments are deferred research.
+The closed-source context-management proposal and weight-modification experiments remain deferred research. None of these priorities implies a shipped capability, a completed benchmark, or a verified end-to-end success rate.
 
 ## Why BLACKICE exists
 
@@ -154,7 +170,9 @@ An ordinary chat can use available tools for the current request and then stop. 
 
 The composer shows **Autonomy: Off** until enabled. Its calibration editor saves the objective and optional limits; **Turn on autonomy** continues the same conversation through the Goal engine. Turning it off pauses further continuation and requests cancellation of the active turn. See the [Goal mode guide](docs/GOAL-MODE.md) for completion, deadline, wait and recovery semantics. This does not restore the former Swarm coordinator or automatic model-selection system.
 
-A saved uncertain action receipt is not proof of success or failure. Check the destination before retrying a consequential action; preventing some duplicate in-flight work does not guarantee exactly-once delivery to an external website.
+The design intent is **best-effort execution under the user's authority**: make routine, reasonable choices without repeated approval loops; isolate a real blocker to the affected action; and continue other useful work when possible. Respect explicit Goal boundaries, deadlines, tool capabilities, and the user's corrections. These principles describe the behavior being pursued, not proof that every current model follows them.
+
+A saved uncertain action receipt is not proof of success or failure. Inspect the destination and the likely consequences before repeating a consequential action; preventing some duplicate in-flight work does not guarantee exactly-once delivery to an external website. Uncertainty about one action does not automatically invalidate the entire goal.
 
 ## Recurring work with Cronjobs
 
