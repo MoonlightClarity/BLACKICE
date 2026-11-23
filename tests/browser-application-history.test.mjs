@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createBrowserToolHandler } from '../lib/browser.mjs';
@@ -30,7 +30,7 @@ function syntheticOutcomeAssessment(request,expectedInput,workerRequest){
 const first='11111111-1111-4111-8111-111111111111',second='22222222-2222-4222-8222-222222222222';
 const url='https://jobs.ashbyhq.com/exampleco/'+first,other='https://jobs.ashbyhq.com/exampleco/'+second;
 const task='Find one suitable job using my existing résumé and preferences. Apply through the employer’s site and verify that the application was received.';
-const coverage='supported-top-level-workspace-history-and-legacy-claims-only';
+const coverage='selected-workspace-supported-ledgers-direct-application-history-and-legacy-claims-only';
 
 async function temporary(){
  const root=await realpath(tmpdir()),directory=await mkdtemp(path.join(root,'blackice-browser-history-')),cwd=path.join(directory,'workspace');
@@ -287,4 +287,80 @@ test('ordinary engine Chat delivers custom application history through the actua
  assert.doesNotMatch(JSON.stringify(facts),/private-query|private-fragment/);
  assert.ok(allRequests.every(request=>JSON.stringify(request.messages).includes(task)),'the ordinary task bytes stay unchanged');
  assert.equal(await readFile(path.join(f.cwd,source.name),'utf8'),source.content);
+});
+
+test('observed ATS target reads one conventional history child of only the pinned workspace',async t=>{
+ const f=await temporary();t.after(()=>f.cleanup());
+ const child=path.join(f.cwd,'Application History');
+ const deeper=path.join(child,'Application History');
+ const sibling=path.join(f.directory,'Application History');
+ await mkdir(deeper,{recursive:true});await mkdir(sibling);
+ const name='ExampleCo-'+first+'.json';
+ await Promise.all([
+  writeFile(path.join(child,name),JSON.stringify([
+   {applicationUrl:url,status:'confirmed',evidence:'PRIVATE BODY'},
+   {applicationUrl:url,status:'unknown'},
+   {applicationUrl:url.replace('/exampleco/','/differentco/'),status:'confirmed',employer:'ExampleCo',role:'Research Specialist'},
+   {employer:'ExampleCo',role:'Research Specialist',status:'confirmed'},
+  ])),
+  writeFile(path.join(deeper,'applications_deep.json'),JSON.stringify({applicationUrl:url,status:'submitted'})),
+  writeFile(path.join(sibling,'applications_sibling.json'),JSON.stringify({applicationUrl:url,status:'submitted'})),
+  writeFile(path.join(f.cwd,name),JSON.stringify({applicationUrl:url,status:'submitted'})),
+ ]);
+ for (const selected of [f.cwd,child]) {
+  const browser=browserFixture(), handler=createBrowserToolHandler({browser,cwd:selected});
+  const result=await handler(call('observe-exact',{action:'open',url}));
+  assert.equal(result.success,true);
+  const facts=body(result).applicationHistory;
+  const source=(selected===child?'':'Application History/')+name;
+  assert.equal(facts.workspace,selected);
+  assert.deepEqual(facts.sources,[source]);
+  assert.deepEqual(facts.matches,[
+   {source,record:1,reason:'reported-prior-requisition',reportedStatus:'confirmed'},
+   {source,record:2,reason:'reported-prior-requisition',reportedStatus:'unknown'},
+  ]);
+  assert.equal(facts.scanComplete,true);
+  assert.equal(facts.scope.applicationHistoryFolder,selected===child?'selected-workspace':'listed-direct-child');
+  assert.equal(facts.matchesTruncated,false);
+  assert.doesNotMatch(JSON.stringify(facts),/PRIVATE BODY/);
+  assert.equal(browser.calls.length,1);
+ }
+});
+
+test('history lookup does not follow a linked child or report refused scope as complete',async t=>{
+ const f=await temporary();t.after(()=>f.cleanup());
+ const sibling=path.join(f.directory,'elsewhere');await mkdir(sibling);
+ await writeFile(path.join(sibling,'applications_linked.json'),JSON.stringify({applicationUrl:url,status:'submitted'}));
+ const linked=path.join(f.cwd,'Application History');
+ try { await symlink(sibling,linked,process.platform==='win32'?'junction':'dir'); }
+ catch (error) { if (!['EPERM','EACCES','ENOSYS'].includes(error.code)) throw error; return t.skip('Directory links unavailable on this executor'); }
+ const handler=createBrowserToolHandler({browser:browserFixture(),cwd:f.cwd});
+ const result=await handler(call('observe-incomplete',{action:'open',url}));
+ const facts=body(result).applicationHistory;
+ assert.equal(result.success,true);
+ assert.equal(facts.scanComplete,false);
+ assert.equal(facts.scope.applicationHistoryFolder,'skipped');
+ assert.ok(facts.errors.includes('application-history-folder-not-one-direct-directory'));
+ assert.deepEqual(facts.sources,[]);
+ assert.deepEqual(facts.matches,[]);
+});
+
+test('history collection distinguishes an incomplete scope from truncated matches',async t=>{
+ const f=await temporary();t.after(()=>f.cleanup());
+ const child=path.join(f.cwd,'Application History');await mkdir(child);
+ const handler=createBrowserToolHandler({browser:browserFixture(),cwd:f.cwd});
+ const malformed=path.join(child,'applications_bad.json');
+ await writeFile(malformed,'{');
+ let facts=body(await handler(call('bad-input',{action:'open',url}))).applicationHistory;
+ assert.equal(facts.scope.applicationHistoryFolder,'listed-direct-child');
+ assert.deepEqual(facts.errors,['Application History/applications_bad.json']);
+ assert.equal(facts.scanComplete,false);
+ assert.equal(facts.matchesTruncated,false);
+ assert.deepEqual(facts.matches,[]);
+ await writeFile(malformed,JSON.stringify(Array.from({length:41},()=>({applicationUrl:url,status:'submitted'}))));
+ facts=body(await handler(call('bounded-lookup',{action:'open',url}))).applicationHistory;
+ assert.equal(facts.scanComplete,true);
+ assert.equal(facts.matchesTruncated,true);
+ assert.equal(facts.matches.length,40);
+ assert.deepEqual(facts.errors,[]);
 });
