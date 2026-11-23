@@ -4,7 +4,8 @@ import {mkdtemp, readFile, writeFile, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {observeGoalToolOutcome, repeatedUnproductiveOperations, assessGoalProgress, detectNoProgressDispatchLoop, detectUnknownEffectReplay, inFlightEffectSignature} from '../lib/goal-recovery-policy.mjs';
-import {ConversationGoals} from '../lib/conversation-goals.mjs';
+import {ConversationGoals, GOAL_TOOL} from '../lib/conversation-goals.mjs';
+import {createProviderExecutionContract} from '../lib/provider-execution-contract.mjs';
 
 const call = (name, args) => ({name, arguments: args});
 const result = (success, code = null, data = null) => ({
@@ -280,10 +281,17 @@ test('model effects view supplies exact reconcile identity without suggesting an
   const run={taskId:'fixture'};
   const projected=await manager.handle(run,'agent',call('relay_goal',{action:'effects'}));
   assert.equal(projected.success,true);
-  const {receipts}=JSON.parse(projected.contentItems[0].text);
+  const {receipts,guidance}=JSON.parse(projected.contentItems[0].text);
+  assert.match(guidance,/copy its reconcileIdentity fields/);
+  assert.match(guidance,/does not prove an outcome/);
   assert.deepEqual(receipts[0].reconcileIdentity,{receiptId:'one',signature,observedAt:at,expectedResolutionCount:1});
   assert.deepEqual(receipts[1].reconcileIdentity,{receiptId:null,signature,observedAt:at,expectedResolutionCount:0});
   assert.equal(receipts[2].reconcileIdentity,undefined);
   assert.equal(receipts[3].reconcileIdentity,undefined);
   assert.equal(originals[0].reconcileIdentity,undefined);
+});
+
+test('the Goal effect projection preserves the .75 Goal tool catalog fingerprint', () => {
+  const {catalogHash}=createProviderExecutionContract({dynamicTools:[GOAL_TOOL],planningContractVersion:1});
+  assert.equal(catalogHash,'22d3ee1da8210555bf0c2f946626d2a02badac6a87a40b4d270703cbeb57418f');
 });
