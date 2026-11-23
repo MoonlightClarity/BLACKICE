@@ -3268,3 +3268,27 @@ test('capture timeout tags pre-pointer capture, but not screenshot or a timed ou
   await assert.rejects(driver.perform({...guard,ref:'submit'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage===undefined&&e.inputDispatched===undefined);
   assert.equal(dispatched,1);
 });
+test('input binding diagnostics distinguish bad shape, URL, obsolete document and same-document missing ref without dispatch', async t => {
+  const {driver,windows}=await fixture(t),tab=driver.newTab('https://careers.example.test/application');
+  await tab.loading;
+  const before=tab.revision, observed={action:'fill',tabId:tab.id,expectedUrl:tab.url,expectedDocumentId:tab.id+':'+before,ref:'known',text:'inert'};
+  rememberFixtureRef(driver,tab,'known');
+  let elementCalls=0;
+  driver.element=async()=>{elementCalls++;assert.fail('must not touch the page');};
+  const check=async (args,reason,requestedRevision,currentRevision)=>{
+    await assert.rejects(driver.perform(args), cause=>{
+      assert.equal(cause.code,'BROWSER_INPUT_DOCUMENT_CHANGED');
+      assert.equal(cause.actionDispatched,false);
+      assert.deepEqual(cause.browserReferenceDiagnostic,{reason,requestedRevision,currentRevision});
+      return true;
+    });
+  };
+  await check({...observed,expectedUrl:undefined},'input-identity-invalid',before,before);
+  await check({...observed,expectedUrl:'https://other.example.test/application'},'input-url-mismatch',before,before);
+  await check({...observed,ref:'not-in-the-current-snapshot'},'input-reference-mismatch',before,before);
+  driver.navigationChanged(tab,true);
+  await check(observed,'input-document-mismatch',before,tab.revision);
+  assert.ok(tab.revision>before);
+  assert.equal(elementCalls,0);
+  assert.equal(windows[0].protocol.filter(call=>call.method.startsWith('Input.')).length,0);
+});

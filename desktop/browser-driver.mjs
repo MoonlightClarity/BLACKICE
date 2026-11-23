@@ -1716,7 +1716,20 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   assertInputDocument(tab, expected) {
     if (expected?.expectedDocumentId === undefined && expected?.expectedUrl === undefined) return;
-    if (typeof expected.expectedDocumentId !== 'string' || typeof expected.expectedUrl !== 'string' || expected.expectedUrl !== tab.window.webContents.getURL() || expected.expectedDocumentId !== inputDocumentId(tab) && !this.scopedInputCurrent(tab, expected) || expected.ref && ['click', 'hover', 'fill', 'select', 'upload', 'press'].includes(expected.action) && !this.referenceCurrent(tab, expected.ref)) throw Object.assign(error('The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+    let reason;
+    if (typeof expected.expectedDocumentId !== 'string' || typeof expected.expectedUrl !== 'string') reason = 'input-identity-invalid';
+    else if (expected.expectedUrl !== tab.window.webContents.getURL()) reason = 'input-url-mismatch';
+    else if (expected.expectedDocumentId !== inputDocumentId(tab) && !this.scopedInputCurrent(tab, expected)) reason = 'input-document-mismatch';
+    else if (expected.ref && ['click', 'hover', 'fill', 'select', 'upload', 'press'].includes(expected.action) && !this.referenceCurrent(tab, expected.ref)) reason = 'input-reference-mismatch';
+    if (!reason) return;
+    // Report the first actual failed check, preserving the existing ordering and dispatch guard.
+    const browserReferenceDiagnostic = { reason, currentRevision: tab.revision };
+    const prefix = tab.id + ':';
+    const suffix = typeof expected.expectedDocumentId === 'string' && expected.expectedDocumentId.startsWith(prefix)
+      ? expected.expectedDocumentId.slice(prefix.length) : '';
+    if (/^\d{1,16}$/.test(suffix) && Number.isSafeInteger(Number(suffix)))
+      browserReferenceDiagnostic.requestedRevision = Number(suffix);
+    throw Object.assign(error('The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', browserReferenceDiagnostic });
   }
   async cdp(tab, method, params = {}, signal, expected, sessionId) {
     let dispatched = false;

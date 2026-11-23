@@ -31,3 +31,15 @@ test('maximal browser binding event carries only recognized cause, phase and mis
  log.browserReference(call,{code:'BROWSER_REF_STALE',browserReferenceDiagnostic:{reason:'control-changed',controlBindingCause:'identity-changed',controlBindingPhase:'fill-ready',controlNameChanged:true,controlTagChanged:'PRIVATE_TAG',controlRoleChanged:false,name:'PRIVATE_NAME',value:'PRIVATE_VALUE'}});
  assert.deepEqual(events,[{type:'browser.reference',phase:'rejected',tool:'relay_browser',action:'fill',code:'BROWSER_REF_STALE',bindingReason:'control-changed',controlBindingCause:'identity-changed',controlBindingPhase:'fill-ready',controlNameChanged:true,sequence:1}]);
 });
+test('Maximal projects input binding check and bounded revision only',()=>{
+ const events=[],log=createDirectoryTelemetry({level:'maximal',emit:e=>events.push(e)});
+ const call={name:'relay_browser',arguments:{action:'fill',ref:'PRIVATE_REF',expectedUrl:'PRIVATE_URL'}};
+ for(const reason of ['input-identity-invalid','input-url-mismatch','input-document-mismatch','input-reference-mismatch']){
+   log.browserReference(call,{code:'BROWSER_INPUT_DOCUMENT_CHANGED',actionDispatched:false,
+     browserReferenceDiagnostic:{reason,requestedRevision:4,currentRevision:6,url:'PRIVATE_URL',ref:'PRIVATE_REF',documentId:'PRIVATE_DOC'}});
+ }
+ assert.equal(events.length,4);
+ assert.deepEqual(events.map(e=>e.bindingReason),['input-identity-invalid','input-url-mismatch','input-document-mismatch','input-reference-mismatch']);
+ assert.ok(events.every(e=>e.requestedRevision===4&&e.currentRevision===6&&e.actionDispatched===false));
+ assert.doesNotMatch(JSON.stringify(events),/PRIVATE/);
+});
