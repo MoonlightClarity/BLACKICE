@@ -71,11 +71,12 @@ test('salary band crossing minimum is verification, not a false definitive rejec
  assert(r.reasons.includes('base_band_crosses_floor'));
 });
 
-test('history errors prevent confident new-app clearance while retaining known uncertain effects',async t=>{
+test('unrelated history parse errors are advisory while exact uncertain effects remain distinct',async t=>{
  const dir=await fixture(t);await writeFile(path.join(dir,'broken-application.json'),'bad');
  const index=await loadJobSearchHistory(dir);assert.equal(index.coverageComplete,false);
  const rows=triageJobSearchCandidates(index,[base(newUrl),base(uncertainUrl)]).candidates;
- assert.equal(rows.find(x=>x.position===0).disposition,'review_history_coverage');
+ assert.equal(rows.find(x=>x.position===0).disposition,'candidate');
+ assert(rows.find(x=>x.position===0).reasons.includes('history_source_errors'));
  assert.equal(rows.find(x=>x.position===1).disposition,'hold_reconcile');
 });
 
@@ -103,12 +104,13 @@ test('actual employer ATS application-count refusal stays held instead of inviti
  assert(row.reasons.includes('previous_site_application_limit'));
 });
 
-test('an unsubmitted draft without an application-count block is reviewable, not falsely confirmed',async t=>{
+test('an unsubmitted draft is advisory and does not block a candidate',async t=>{
  const dir=await fixture(t);
  await writeFile(path.join(dir,'draft.json'),JSON.stringify({applicationUrl:newUrl,status:'not_submitted'}));
  const idx=await loadJobSearchHistory(dir);
  const [row]=triageJobSearchCandidates(idx,[base(newUrl)]).candidates;
- assert.equal(row.disposition,'review_prior_history');
+ assert.equal(row.disposition,'candidate');
+ assert(row.reasons.includes('prior_draft_not_submitted'));
  assert(row.prior.some(p=>p.state==='not_sent'));
 });
 
