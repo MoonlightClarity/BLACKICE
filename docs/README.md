@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: 2.40.75 source index.** Package version is **2.40.75**. See [2.40.75 source notes](../RELEASE-NOTES-2.40.75.md) and [published releases](https://github.com/MoonlightClarity/BLACKICE/releases).
+> **Status: published 2.40.75 documentation.** Package version is **2.40.75**. See the [published v2.40.75 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75) and [versioned notes](../RELEASE-NOTES-2.40.75.md). Post-release documentation fixes do not change the tagged installer.
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
@@ -15,11 +15,11 @@ Start with the [project README](../README.md). A named document's date, original
 | Remote access and connection scope | [Remote access](../REMOTE-ACCESS.md) |
 | Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md), [stopped-task tab adoption](stopped-task-tab-adoption.md) |
 | Keep work moving within a conversation | [Goal mode](GOAL-MODE.md) |
-| Current architecture and verification limits | [2.40.75 candidate scope](../RELEASE-NOTES-2.40.75.md) |
+| Current architecture and verification limits | [2.40.75 release scope](../RELEASE-NOTES-2.40.75.md) |
 | Organize work | Conversation folders, nested Skills and Browser folders, Cronjobs and [Goal mode](GOAL-MODE.md). No automatic Swarm dispatch. |
 | Build or publish a Windows release | [Signing and release](../SIGNING-AND-RELEASE.md), [release qualification tooling](../SIGNING-AND-RELEASE.md#release-qualification-and-the-availability-responder), and [third-party notices](../THIRD-PARTY-NOTICES.md) |
 
-**Current candidate:** Chat has optional Action Directory for the current task. The old module controls, automatic learning and old Autonomy/Swarm execution are retired. Skills have bundled originals plus human-edited persistent overrides, with user-organized folders. Model skill tools are read-only; unrestricted shell access is not an OS-level immutability guarantee. The separate To-do and My workflows spaces have been removed; Cronjobs retain their current saved-workflow editor. Historical documents below do not reactivate those features.
+**Published 2.40.75 implementation:** Chat has optional Action Directory for the current task. The old module controls, automatic learning and old Autonomy/Swarm execution are retired. Skills have bundled originals plus human-edited persistent overrides, with user-organized folders. Model skill tools are read-only; unrestricted shell access is not an OS-level immutability guarantee. The separate To-do and My workflows spaces have been removed; Cronjobs retain their current saved-workflow editor. Historical documents below do not reactivate those features.
 
 **Workspace navigation:** Chat, Cronjobs, Browser, Skills and Config. Within Config, use Models for Accounts / Local models / Add API, Behavior & profile for Instructions, and App connections for the incoming ChatGPT / Gemini / Claude / Other MCP apps guides. The retained Planning deep link exposes Goal and Activity plus explicit saved graph plans.
 
