@@ -20,7 +20,11 @@ const config=publicBuilderConfiguration(signing,{source,output:buildRoot,require
 let previousMoved=false,promoted=false;
 await fs.mkdir(path.dirname(configFile),{recursive:true});await fs.mkdir(outputs,{recursive:true});
 try{
-  const preparedRuntime = await prepareLlamaRuntime({destination:path.join(source,'.build/llama.cpp'),cache:path.join(source,'.build/llama-cache'),repairBundle:process.env.BLACKICE_LLAMA_REPAIR_BUNDLE});
+  // A local-only candidate may reuse an existing, byte-for-byte pinned runtime; public packaging still requires the repair input bundle.
+  const runtimePath=path.join(source,'.build/llama.cpp');
+  const preparedRuntime=process.argv.includes('--local-candidate')&&!process.env.BLACKICE_LLAMA_REPAIR_BUNDLE
+    ? {runtime:await verifyLlamaBundle({root:runtimePath})}
+    : await prepareLlamaRuntime({destination:runtimePath,cache:path.join(source,'.build/llama-cache'),repairBundle:process.env.BLACKICE_LLAMA_REPAIR_BUNDLE});
   // This file contains public certificate selectors only. Passwords/PFX values
   // remain in the inherited signing environment and never enter build inputs.
   await fs.writeFile(configFile,JSON.stringify(config,null,2),{flag:'wx',mode:0o600});
