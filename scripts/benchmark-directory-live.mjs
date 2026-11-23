@@ -15,9 +15,9 @@ const variant=process.argv.find(x=>x.startsWith('--variant='))?.slice(10)||'cand
 const model=process.argv.find(x=>x.startsWith('--model='))?.slice(8)||'kilo_free::cohere/north-mini-code:free';
 const testId=process.argv.find(x=>x.startsWith('--case='))?.slice(7)||'async-cache';
 const directoryMode=process.argv.find(x=>x.startsWith('--directory='))?.slice(12)||'on';
-const pagingMode=process.argv.find(x=>x.startsWith('--paging='))?.slice(9)||'on';
-if(!['on','off'].includes(pagingMode))throw Error('Use --paging=on or --paging=off.');
-const reportSuffix=(directoryMode==='off'?'-no-dir':'')+(pagingMode==='off'?'-no-paging':'');
+const pagingMode=process.argv.find(x=>x.startsWith('--paging='))?.slice(9)||'adaptive';
+if(!['on','off','eager','adaptive'].includes(pagingMode))throw Error('Use --paging=adaptive, eager, on (eager alias), or off.');
+const reportSuffix=(directoryMode==='off'?'-no-dir':'')+(pagingMode==='off'?'-no-paging':pagingMode==='adaptive'?'-adaptive':'');
 if(!['on','off'].includes(directoryMode))throw Error('Use --directory=on or --directory=off.');
 const reportRoot=process.env.BLACKICE_BENCH_REPORT_DIR||path.join(path.dirname(candidateRoot),'BLACKICE-context-benchmark-results-20261123');
 const sourceRoot=variant==='control'?baselineRoot:candidateRoot;
@@ -27,11 +27,11 @@ if(!nativeModel&&(!model.startsWith('kilo_free::')||!model.endsWith(':free')))th
 const moduleImport=async file=>import(pathToFileURL(path.join(sourceRoot,'lib',file)).href);
 const [{HarnessEngine},{ProviderRuntime},{ProviderStore},{CodexRuntime}]=await Promise.all([
  moduleImport('engine.mjs'),moduleImport('providers.mjs'),moduleImport('provider-store.mjs'),moduleImport('codex.mjs')]);
-const results={variant,testId,model,directoryMode,pagingMode,effectivePaging:variant==='candidate'&&pagingMode==='on',sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
+const results={variant,testId,model,directoryMode,pagingMode,effectivePaging:variant==='candidate'&&pagingMode!=='off',sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
   harnessEngineSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','engine.mjs'))).digest('hex'),
   workspaceToolSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','workspace-tools.mjs'))).digest('hex'),
   benchmarkFixtureSha256:testId==='event-replay'?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-event-replay.mjs'))).digest('hex'):null,
-  contextPolicy:variant==='candidate'&&pagingMode==='on'?'source-continuation-v3':variant==='candidate'?'ablation-no-paging':'unmodified-2.40.75',
+  contextPolicy:variant==='candidate'?(pagingMode==='adaptive'?'adaptive-visible-96kb':pagingMode==='off'?'ablation-no-paging':'eager-context-v3'):'unmodified-2.40.75',
   contextImplementationSha256:variant==='candidate'?
     createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','task-external-context.mjs'))).digest('hex'):null};
 const root=await mkdtemp(path.join(tmpdir(),'blackice-context-live-'+variant+'-'));
@@ -231,7 +231,7 @@ try{
       return value;
     }catch(error){entry.threw=String(error.code||error.message||error).slice(0,180);throw error;}
   }});
-  engine=await new HarnessEngine({runtime,dataDir:path.join(root,'engine'),defaultCwd:taskRoot,contextPagingEnabled:pagingMode==='on'}).init();
+  engine=await new HarnessEngine({runtime,dataDir:path.join(root,'engine'),defaultCwd:taskRoot,contextPagingEnabled:pagingMode!=='off',contextPagingPolicy:pagingMode==='adaptive'?'adaptive':'eager'}).init();
   const graph={name:'Benchmark coding',nodes:[{id:'i',type:'input'},{id:'a',type:'agent',name:'Coding agent',model,prompt:'You are the coding agent. Fix the described software bugs. Inspect files and tests with your tools. Use only this isolated workspace. Verify the changes by running the test suite. Use current tool schemas.'},{id:'o',type:'output'}],edges:[{source:'i',target:'a'},{source:'a',target:'o'}],settings:{maxParallel:1,planningMode:'off',context:{outputReserveTokens:16384,headroomTokens:2048}}};
   const task='In this isolated coding project ('+taskRoot+'), read README.md, incident.log and source files, fix the implementation until node --test passes. Preserve the public API, test files and user instructions. Be careful with false or stale outputs. Run tests to confirm. You may use the given workspace tools. This is a real coding benchmark; do not merely describe a fix.';
   const started=engine.startRun({workflow:graph,input:{task,directoryActions:directoryMode,directoryDiagnostics:'off'}});

@@ -20,7 +20,7 @@ test('new ordinary Chat stores large read results externally and can search/page
  const marker='CRITICAL_FINAL_DIAGNOSIS_20261123';
  await writeFile(file,'trace-0\n'+Array.from({length:300},(_,i)=>String(i+1).padStart(4,'0')+' opaque event '.repeat(8)).join('\n')+'\n'+marker);
  const runtime=new Runtime();
- const engine=await new HarnessEngine({runtime,dataDir,defaultCwd:root}).init();
+ const engine=await new HarnessEngine({runtime,dataDir,defaultCwd:root,contextPagingPolicy:'eager'}).init();
  t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});
  let originalBytes=0,modelBytes=0;
  runtime.execute=async o=>{

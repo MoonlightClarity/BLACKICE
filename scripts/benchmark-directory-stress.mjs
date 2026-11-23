@@ -46,16 +46,21 @@ for(const [variant,sourceRoot] of [['control',control],['candidate',candidate]])
      const payload=result.contentItems[0].text;
      if(metrics.hasPagingTool){
        const row=JSON.parse(payload);
-       if(row.externalContext!==true||!row.reference)throw Error('Large result was not externalized');
-       refs.push(row.reference);
-       if(i===50||i===120||i===readCount-1){
-        const found=await call('relay_context_page',{action:'search',reference:row.reference,needle:'SENTINEL_2077'});
-        metrics.pageCount++;
-        const offset=JSON.parse(found.contentItems[0].text).matches[0]?.offset;
-        if(!Number.isInteger(offset))throw Error('Saved evidence was not searchable');
-        const page=await call('relay_context_page',{action:'read',reference:row.reference,offset,maxBytes:512});
-        metrics.pageCount++;
-        if(!JSON.parse(page.contentItems[0].text).text.startsWith('SENTINEL_2077'))throw Error('Archived evidence could not be recovered exactly');
+       if(row.externalContext===true&&row.reference){
+        metrics.archivedReads=(metrics.archivedReads||0)+1;
+        refs.push(row.reference);
+        if(i===50||i===120||i===readCount-1){
+         const found=await call('relay_context_page',{action:'search',reference:row.reference,needle:'SENTINEL_2077'});
+         metrics.pageCount++;
+         const offset=JSON.parse(found.contentItems[0].text).matches[0]?.offset;
+         if(!Number.isInteger(offset))throw Error('Saved evidence was not searchable');
+         const page=await call('relay_context_page',{action:'read',reference:row.reference,offset,maxBytes:512});
+         metrics.pageCount++;
+         if(!JSON.parse(page.contentItems[0].text).text.startsWith('SENTINEL_2077'))throw Error('Archived evidence could not be recovered exactly');
+        }
+       }else{
+        if(!row.content?.includes('SENTINEL_2077'))throw Error('Retained original workspace observation lacks its evidence marker');
+        metrics.inlineReads=(metrics.inlineReads||0)+1;
        }
      }else if(!payload.includes('SENTINEL_2077'))throw Error('Control did not receive full source result');
     }
@@ -88,7 +93,12 @@ for(const [variant,sourceRoot] of [['control',control],['candidate',candidate]])
     const readCheck=check.contentItems[0].text;
     if(!readCheck.includes('"exitCode":0'))throw Error('Source tests did not pass');
     await dir('observe',{id:'repair',outcome:'objective-met',claim:'Code repaired and its test passed.',receipts:[receipt]});
-    if(await options.onBeforeFinal({output:'Fixed and tested.',signal:options.signal})!==undefined)throw Error('Directory refused final');
+    const firstFinal=await options.onBeforeFinal({output:'Fixed and tested.',signal:options.signal});
+    if(firstFinal?.continue===true&&/ONE-TIME CODING VERIFICATION REVIEW/.test(firstFinal.prompt||'')){
+      metrics.coverageReviewSeen=true;
+      if(await options.onBeforeFinal({output:'The public test passed; no further checks are claimed by this scripted fixture.',signal:options.signal})!==undefined)
+        throw Error('Directory requested another finalization after the one-time coverage handoff.');
+    }else if(firstFinal!==undefined)throw Error('Directory refused final for a reason other than a verified one-time coding review.');
     metrics.references=refs;
     return {output:'Fixed and tested.'};
    }

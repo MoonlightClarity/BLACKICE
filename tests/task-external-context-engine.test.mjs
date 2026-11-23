@@ -21,7 +21,7 @@ test('a Directory agent receives a short reference, pages the original source te
   const sentinel = 'LAST-VERIFIED-MARKER-1987';
   await writeFile(filename, 'begin\n' + 'alpha beta gamma '.repeat(1500) + '\n' + sentinel);
   const runtime = new Runtime();
-  const engine = await new HarnessEngine({ runtime, dataDir: path.join(root, 'engine'), defaultCwd: root }).init();
+  const engine = await new HarnessEngine({ runtime, dataDir: path.join(root, 'engine'), defaultCwd: root, contextPagingPolicy:'eager' }).init();
   t.after(async () => { await engine.close(); await rm(root, { recursive: true, force: true }); });
   let baselineText, visibleText, recoveredText, evidenceId;
   runtime.execute = async options => {
