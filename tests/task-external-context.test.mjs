@@ -112,6 +112,8 @@ test('large structured diagnostic results preserve both ends and actionable stat
   assert.match(pointer.preview.tail,/ROOT_CAUSE_CYCLE_WAITED_FOREVER/);
   assert.equal(pointer.preview.truncated,true);
   assert.equal(pointer.preview.nextStartLine,3003);
+  assert.deepEqual(pointer.sourceContinuation,{tool:'relay_workspace',action:'read',path:'incident.log',startLine:3003});
+  assert.match(pointer.nextAction,/original workspace result was truncated/);
   assert.match(pointer.preview.warning,/not complete evidence/);
   assert(Buffer.byteLength(compact.contentItems[0].text)<Buffer.byteLength(raw)*0.2);
   const match = await store.search({reference:pointer.reference,needle:'ROOT_CAUSE_CYCLE_WAITED_FOREVER'});

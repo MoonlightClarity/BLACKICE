@@ -25,6 +25,7 @@ test('new ordinary Chat stores large read results externally and can search/page
  let originalBytes=0,modelBytes=0;
  runtime.execute=async o=>{
   assert.match(String(o.prompt)+'\n'+String(o.developerInstructions),/WORKSPACE MUTATION CAPABILITY \(HOST-VERIFIED FOR THIS RUN\)/);
+  assert.match(String(o.prompt)+'\n'+String(o.developerInstructions),/a passing provided test suite proves those checks only/i);
   const tools=o.dynamicTools.map(x=>x.name);
   assert(tools.includes('relay_context_page'),'Paging should be available with Directory Off.');
   assert(!tools.includes('relay_directory_action'));
