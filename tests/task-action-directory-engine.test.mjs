@@ -388,7 +388,13 @@ test('focus-after-read live trace replay advances without repeating the successf
   const observed=await obs();assert.equal(observed.success,true,JSON.stringify(observed));
   const state=JSON.parse(observed.contentItems[0].text);assert.deepEqual(state.ready,['use']);
   assert.equal((await dir('focus',{id:'use'})).success,true);
-  assert.equal((await dir('block',{id:'use',blocker:'no-viable-route',claim:'Offline replay ends here'})).success,true);
+  const missingSource=await o.onToolCall({name:'relay_workspace',callId:'missing-second-source',
+     arguments:{action:'read',path:'does-not-exist-second-source.txt'}});
+   assert.equal(missingSource.success,false,'The blocked route must be based on an actual failed source attempt.');
+   const missingNote=missingSource.contentItems.at(-1).text;
+   const [missingReceipt]=missingNote.match(/receipt-[0-9]+/);
+   assert.equal((await dir('block',{id:'use',blocker:'no-viable-route',
+     claim:'The specific requested second source was not found.',receipts:[missingReceipt]})).success,true);
   assert.equal(Boolean(await o.onBeforeFinal({signal:o.signal})),false);
   return{output:'Found the local input; no other source was contacted.'};
  });
@@ -396,8 +402,9 @@ test('focus-after-read live trace replay advances without repeating the successf
   const run=engine.startRun({workflow:graph,input:{task:'Inspect input and another source',directoryActions:'on',directoryDiagnostics:mode}});
   await engine.executions.get(run.id);const result=engine.getRun(run.id);assert.equal(result.status,'completed',result.error);
   const ledger=await engine.actionDirectories.get(run.id,'Inspect input and another source');
-  assert.equal(ledger.read().receipts.length,1);
+  assert.equal(ledger.read().receipts.length,2);
   assert.equal(ledger.read().receipts[0].linkedByActionId,'find');
+  assert.equal(ledger.read().receipts[1].success,false,'The missing-source attempt stays recorded.');
   if(mode==='maximal')assert(engine.runs.get(run.id).turnMachineTrace.head.some(e=>e.kind==='directory.mutation'&&e.metadata.linkedReadCount===1));
  }
 });
