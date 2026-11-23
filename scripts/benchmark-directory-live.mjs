@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import {makeEventReplayTask,applyEventReplayGold} from './benchmark-fixture-event-replay.mjs';
 import {makeLongEvidence} from './benchmark-fixture-long-evidence.mjs';
+import {createBenchmarkChatWorkflow} from './benchmark-chat-workflow.mjs';
 
 const candidateRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const baselineRoot=process.env.BLACKICE_BENCH_CONTROL_ROOT||path.join(path.dirname(candidateRoot),'BLACKICE-context-control-20261123');
@@ -16,10 +17,12 @@ const variant=process.argv.find(x=>x.startsWith('--variant='))?.slice(10)||'cand
 const model=process.argv.find(x=>x.startsWith('--model='))?.slice(8)||'kilo_free::cohere/north-mini-code:free';
 const testId=process.argv.find(x=>x.startsWith('--case='))?.slice(7)||'async-cache';
 const longEvidenceCase=testId==='event-replay-long';
+const workflowKind=process.argv.find(arg=>arg.startsWith('--workflow='))?.slice(11)||'ordinary-chat';
+if(!['ordinary-chat','generic'].includes(workflowKind))throw Error('Use --workflow=ordinary-chat or --workflow=generic.');
 const directoryMode=process.argv.find(x=>x.startsWith('--directory='))?.slice(12)||'on';
 const pagingMode=process.argv.find(x=>x.startsWith('--paging='))?.slice(9)||'adaptive';
 if(!['on','off','eager','adaptive'].includes(pagingMode))throw Error('Use --paging=adaptive, eager, on (eager alias), or off.');
-const reportSuffix=(directoryMode==='off'?'-no-dir':'')+(pagingMode==='off'?'-no-paging':pagingMode==='adaptive'?'-adaptive':'');
+const reportSuffix=(directoryMode==='off'?'-no-dir':'')+(pagingMode==='off'?'-no-paging':pagingMode==='adaptive'?'-adaptive':'')+'-'+workflowKind;
 if(!['on','off'].includes(directoryMode))throw Error('Use --directory=on or --directory=off.');
 const reportRoot=process.env.BLACKICE_BENCH_REPORT_DIR||path.join(path.dirname(candidateRoot),'BLACKICE-context-benchmark-results-20261123');
 const sourceRoot=variant==='control'?baselineRoot:candidateRoot;
@@ -29,11 +32,14 @@ if(!nativeModel&&(!model.startsWith('kilo_free::')||!model.endsWith(':free')))th
 const moduleImport=async file=>import(pathToFileURL(path.join(sourceRoot,'lib',file)).href);
 const [{HarnessEngine},{ProviderRuntime},{ProviderStore},{CodexRuntime}]=await Promise.all([
  moduleImport('engine.mjs'),moduleImport('providers.mjs'),moduleImport('provider-store.mjs'),moduleImport('codex.mjs')]);
-const results={variant,testId,model,directoryMode,pagingMode,effectivePaging:variant==='candidate'&&pagingMode!=='off',sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
+const results={variant,testId,model,directoryMode,pagingMode,workflowKind,effectivePaging:variant==='candidate'&&pagingMode!=='off',sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
   harnessEngineSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','engine.mjs'))).digest('hex'),
   workspaceToolSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','workspace-tools.mjs'))).digest('hex'),
   benchmarkFixtureSha256:testId.startsWith('event-replay')?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-event-replay.mjs'))).digest('hex'):null,
   longEvidenceFixtureSha256:longEvidenceCase?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-long-evidence.mjs'))).digest('hex'):null,
+  benchmarkDriverSha256:createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-directory-live.mjs'))).digest('hex'),
+  benchmarkWorkflowSha256:createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-chat-workflow.mjs'))).digest('hex'),
+  finalReviewCalls:[],
   contextPolicy:variant==='candidate'?(pagingMode==='adaptive'?'adaptive-visible-96kb':pagingMode==='off'?'ablation-no-paging':'eager-context-v3'):'unmodified-2.40.75',
   contextImplementationSha256:variant==='candidate'?
     createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','task-external-context.mjs'))).digest('hex'):null};
@@ -225,7 +231,22 @@ try{
     runtime.store=installed; // read-only provider settings; provider sessions stored in isolated root
   }
   const actual=runtime.runAgent.bind(runtime);
-  runtime.runAgent=options=>actual({...options,onToolCall:async(call,ctx)=>{
+  runtime.runAgent=options=>actual({...options,
+    ...(typeof options.onBeforeFinal==='function'?{onBeforeFinal:async candidate=>{
+      try{
+        const next=await options.onBeforeFinal(candidate);
+        if(results.finalReviewCalls.length<40)results.finalReviewCalls.push({
+          continued:next?.continue===true,
+          promptKind:typeof next?.prompt==='string'?(next.prompt.includes('CURRENT USER REQUEST')?'ordinary-chat-execution':next.prompt.includes('OUTCOME')?'outcome':'other'):null,
+          remainingSteps:Number.isInteger(candidate?.remainingSteps)?candidate.remainingSteps:null,
+        });
+        return next;
+      }catch(error){
+        if(results.finalReviewCalls.length<40)results.finalReviewCalls.push({threw:String(error?.code||error?.message||error).slice(0,200)});
+        throw error;
+      }
+    }}:{}),
+    onToolCall:async(call,ctx)=>{
     const supplied=typeof call.arguments==='string'?JSON.parse(call.arguments):call.arguments;
     const entry={name:call.name,action:supplied?.action,argumentsPreview:JSON.stringify(supplied).slice(0,900),at:Date.now()};
     results.toolCalls.push(entry);
@@ -248,7 +269,10 @@ try{
     }catch(error){entry.threw=String(error.code||error.message||error).slice(0,180);throw error;}
   }});
   engine=await new HarnessEngine({runtime,dataDir:path.join(root,'engine'),defaultCwd:taskRoot,contextPagingEnabled:pagingMode!=='off',contextPagingPolicy:pagingMode==='adaptive'?'adaptive':'eager'}).init();
-  const graph={name:'Benchmark coding',nodes:[{id:'i',type:'input'},{id:'a',type:'agent',name:'Coding agent',model,prompt:'You are the coding agent. Fix the described software bugs. Inspect files and tests with your tools. Use only this isolated workspace. Verify the changes by running the test suite. Use current tool schemas.'},{id:'o',type:'output'}],edges:[{source:'i',target:'a'},{source:'a',target:'o'}],settings:{maxParallel:1,planningMode:'off',context:{outputReserveTokens:16384,headroomTokens:2048}}};
+  const graph=createBenchmarkChatWorkflow(model,{workflowKind});
+  const {ordinaryChatWorkflow:recognizedAsChat}=await import(pathToFileURL(path.join(sourceRoot,'public','chat-turn-defaults.mjs')).href);
+  if(workflowKind==='ordinary-chat'&&!recognizedAsChat(graph))throw Error('The benchmark graph did not activate BLACKICE ordinary Chat Mode.');
+  results.graphIdentity={id:graph.id||null,description:graph.description||null,recognizedAsOrdinaryChat:recognizedAsChat(graph)};
   const task=longEvidenceCase
     ? 'In this isolated coding project ('+taskRoot+'), repair the event-replay implementation. Read README.md and diagnostics/INDEX.md first, then audit all eight distinct diagnostics/trace-*.log evidence shards. Each contains a different relevant failure class and conflicting early hypotheses. Use any efficient read/search/programmatic strategy; do not skip the evidence audit or assume a first-page fragment contains the final conclusion. Implement and test both modules, including invalid inputs and failed-apply side effects. Preserve the public API and the provided tests. Run node --test on your final source and report what was actually verified. You have authorized workspace read/write tools. Avoid unnecessary repeated work and do not request routine approval.'
     : 'In this isolated coding project ('+taskRoot+'), read README.md, incident.log and source files, fix the implementation until node --test passes. Preserve the public API, test files and user instructions. Be careful with false or stale outputs. Run tests to confirm. You may use the given workspace tools. This is a real coding benchmark; do not merely describe a fix.';
@@ -262,7 +286,9 @@ try{
     results.directoryFinal={focus:directorySnapshot.focus,revision:directorySnapshot.revision,receiptCount:directorySnapshot.receipts.length,ready:directorySnapshot.ready};
   }else{results.directoryRecords=[];results.directoryFinal=null;}
   const state=engine.runs.get(started.id)?.nodes?.a||{};
-  results.nodeDiagnostics={directoryOutcome:state.directoryOutcome||null,runtimePhase:state.runtimePhase||null,toolNames:state.toolNames||[],usage:state.usage||state.tokenUsage||null};
+  results.nodeDiagnostics={directoryOutcome:state.directoryOutcome||null,runtimePhase:state.runtimePhase||null,toolNames:state.toolNames||[],usage:state.usage||state.tokenUsage||null,
+   outcomeAssessment:state.outcomeAssessment||null,outcomeReviewUsage:state.outcomeReviewUsage||null};
+  results.ordinaryReviewObserved=results.finalReviewCalls.some(review=>review.continued===true);
   results.completedAt=new Date().toISOString();
   const eligibleToolOutput=results.toolCalls.filter(row=>row.success===true&&(
    row.name==='relay_workspace'&&['read','find','search','list','run'].includes(row.action)||
@@ -306,6 +332,6 @@ finally{
   results.finishedAt=new Date().toISOString();
   const reportPath=path.join(reportRoot,testId+'-'+variant+reportSuffix+'-'+randomUUID().slice(0,8)+'.json');
   await writeFile(reportPath,JSON.stringify(results,null,2));
-  console.log(JSON.stringify({reportPath,variant,testId,model,directoryMode,pagingMode,contextPolicy:results.contextPolicy,runStatus:results.runStatus,trialValid:results.trialValid,codingCorrect:results.codingCorrect,workflowCompleted:results.workflowCompleted,codingSuccess:results.codingSuccess,toolCalls:results.toolCalls.length,externalArtifactCount:results.externalArtifactCount,infraError:results.infraError,runError:results.runError}));
+  console.log(JSON.stringify({reportPath,variant,testId,model,directoryMode,pagingMode,workflowKind,ordinaryReviewCalls:results.finalReviewCalls.length,contextPolicy:results.contextPolicy,runStatus:results.runStatus,trialValid:results.trialValid,codingCorrect:results.codingCorrect,workflowCompleted:results.workflowCompleted,codingSuccess:results.codingSuccess,toolCalls:results.toolCalls.length,externalArtifactCount:results.externalArtifactCount,infraError:results.infraError,runError:results.runError}));
   await rm(root,{recursive:true,force:true}).catch(()=>{});
 }
