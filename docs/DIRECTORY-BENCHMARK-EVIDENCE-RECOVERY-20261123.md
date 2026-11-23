@@ -31,3 +31,19 @@ This is only **one stochastic sample per arm**. The gold solution independently 
 Run the same 21-test event-replay fixture from this exact source commit with all four arms. Preserve same task, source hash, hidden tests, model and native provider; use independent temporary workspaces. Score **full workflow completion AND 21/21 hidden tests** as the only complete success. Use action receipts, tool errors, ignored tool arguments, test failures and model-imposed false blockers as diagnostics. Do not infer a general performance improvement from one re-run.
 
 If this fix removes the prior observed coordination failure, the next benchmark should involve multiple dependent code fixes and later retrieval of a long log, rather than assuming a short three-action coding exercise measures long-horizon planning.
+
+## First isolated native recheck and concurrent-admission defect
+
+The source-matched `gpt-6-luna` native recheck of the prior fix (commit `455081d0`) gave a valid Directory-only run that reached 19/21 hidden tests with real source writes and an observed repair action, versus the earlier single Directory-only run's 6/21. It is **not** a full pass and cannot establish a causal success rate from one stochastic sample. Raw file: `BLACKICE-directory-recovery-results-20261123/event-replay-candidate-directory-only-3c439ada.json`.
+
+The same-source Planning + Directory recheck still failed, with only 9/21 tests passing (5 failed, 7 cancelled); inspection was observed, repair active, verification pending. Raw file: `event-replay-candidate-planning-directory-a8f19aba.json`.
+
+**New precise root cause:** The Planning + Directory model issued two different `relay_workspace write` calls targeting `src/ledger.mjs` and `src/processor.mjs` in the *same millisecond* (`1795438280492`). The first write was reserved and dispatched; the second was rejected as `DIRECTORY_UNKNOWN` before its handler ran. The first result subsequently returned successfully. Directory incorrectly treated a pending actively dispatched effect as an unresolved historical attempt, even though the second target was independent.
+
+A blanket queue of all same-action effects was tested and **discarded**: it deadlocked fixtures with parallel browser/form coordination. It was never committed, installed or shipped.
+
+The revised approach tracks current active effect reservations **only in memory** and permits concurrent `relay_workspace write/patch` actions whose lexical normalized targets are different and of the same path kind, within the **same run and node**. It does not change or weaken persisted unknown-result receipts, and it does not permit same-target aliases (including Win32 case and slash variations), different model/runtime scopes, opaque browser effects or unknown tool kinds to bypass the uncertainty guard. The active reservation is removed on all normal, failure, and cancellation paths. This retains independently useful concurrency rather than imposing an artificial all-task serialization bottleneck.
+
+The revised combined suite passed **349/349** Directory/Planning regression tests across **47 files**. Dedicated tests verify two simultaneous disjoint writes both dispatch, same-target overlapping calls are denied, genuine post-dispatch uncertainty remains protected, observation-only reads proceed independently, and Win32 path aliases are not misclassified as distinct.
+
+**Not yet claimed:** the revised in-flight classification has not been qualified by a new native-model run at the moment of this checkpoint. It is not a proof that an entire long-horizon coding task succeeds. The next benchmark should use this exact frozen source and preserve independent acceptance evidence.
