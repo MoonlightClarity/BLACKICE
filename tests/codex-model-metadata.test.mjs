@@ -301,3 +301,20 @@ test('ordinary native startup does not add a speculative catalog reread or raw r
   assert.equal(lists, 1);
   assert.ok(calls.every(call => call.args.includes('--bundled')));
 });
+
+
+test('native explicit refresh retains first complete list when final read is empty; subsequent failure keeps it',async()=>{
+  const {resolver}=metadataFixture();
+  const client=new CodexRuntime({command:process.execPath,nativeModelMetadata:resolver});
+  client.child={};client.info.connected=true;let reads=0;
+  client._request=async method=>{
+    if(method==='account/read')return {account:{type:'chatgpt'},requiresOpenaiAuth:true};
+    if(method==='config/read')return {config:{}};
+    if(method==='model/list')return {data:++reads===1?[listModel('native-exact',{isDefault:true})]:[],nextCursor:null};
+    throw Error('Unexpected fixture method '+method);
+  };
+  const result=await client.start({refresh:true});
+  assert.equal(result.models.length,1);assert.equal(result.defaultModel,'native-exact');assert.equal(result.modelCatalog.stale,true);
+  await assert.rejects(client.start({refresh:true}),{code:'CODEX_CATALOG_EMPTY'});
+  assert.equal(client.status().models[0].id,'native-exact');assert.equal(client.status().modelCatalog.stale,true);
+});

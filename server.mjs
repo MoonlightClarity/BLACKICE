@@ -1347,6 +1347,13 @@ export async function createHarnessServer(options = {}) {
       if (pathname === '/api/shutdown' && req.method === 'POST' && server.listenerCount('relay.shutdown')) {
         await body(req); json(res, 200, { ok: true }); setImmediate(() => server.emit('relay.shutdown')); return;
       }
+      if (pathname === '/api/runtime/settings/model-provider-visibility' && req.method === 'POST') {
+        const value = await body(req);
+        if (!value || Array.isArray(value) || Object.keys(value).length !== 2) return json(res, 400, { error: 'Supply providerId and hidden.' });
+        const saved = await runtimeSettings.setProviderHidden(value.providerId, value.hidden);
+        runtimeUpdate();
+        return json(res, 200, saved);
+      }
       if (pathname === '/api/runtime/settings' && req.method === 'GET') return json(res, 200, runtimeSettings.get());
       if (pathname === '/api/runtime/settings' && req.method === 'POST') return json(res, 200, await runtimeSettings.update(await body(req)));
       if (pathname === '/api/runtime/reconnect' && req.method === 'POST') {

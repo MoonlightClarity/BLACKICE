@@ -230,3 +230,22 @@ test('output truncation reports saved capacity separately from configured budget
     assert.equal(JSON.parse(requests[0].body).max_tokens, capacity || 8192);
   });
 });
+
+
+test('live provider catalog refresh replaces successful data, retains catalog on error or empty response, and keeps saved selections',async t=>{
+  let mode='first';
+  const model=id=>({id,context_length:65536,max_output_tokens:8192});
+  const f=await fixture(t,()=>mode==='error'?new Response('temporarily unavailable',{status:503}):response({data:mode==='empty'?[]:mode==='first'?[model('saved'),model('old')]:[model('saved'),model('new')]}));
+  await f.runtime.saveProvider({...config,models:['saved']},{preserveDefault:true});
+  const before=await f.runtime.discoverModels(config.id,{refresh:true});
+  assert.deepEqual(before.models.map(m=>m.id).sort(),['old','saved']);
+  mode='second';
+  const next=await f.runtime.discoverModels(config.id,{refresh:true});
+  assert.deepEqual(next.models.map(m=>m.id).sort(),['new','saved']);assert.equal(next.catalogAvailable,true);assert.ok(next.fetchedAt);
+  for(const failure of ['error','empty']){
+    mode=failure;const stale=await f.runtime.discoverModels(config.id,{refresh:true});
+    assert.deepEqual(stale.models.map(m=>m.id).sort(),['new','saved']);assert.equal(stale.catalogAvailable,false);assert.equal(stale.catalogStale,true);assert.equal(stale.fetchedAt,next.fetchedAt);assert.ok(stale.catalogError);
+  }
+  assert.deepEqual(f.runtime.store.get(config.id).models.map(m=>m.id),['saved']);
+  assert.equal(f.runtime.store.defaultModel,null);
+});

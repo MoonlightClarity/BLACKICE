@@ -8,7 +8,7 @@ const unavailableReason=model=>[model?.availabilityReason,model?.error].find(val
 const noop=()=>({update(){},close(){},destroy(){}});
 
 /** The native select owns the chosen value and its existing change handler. */
-export function createGroupedModelPicker({select,label='Model',onEnableProvider,onSetupProvider,onBeforeSelect,onOpenAvailability,onRemoveModel}={}){
+export function createGroupedModelPicker({select,label='Model',onEnableProvider,onSetupProvider,onBeforeSelect,onOpenAvailability,onRemoveModel,api,notify=()=>{}}={}){
   const doc=select?.ownerDocument,owner=select?.parentElement;
   if(!select||!doc?.body||!owner)return noop();
   const create=(tag,className,value)=>{const node=doc.createElement(tag);if(className)node.className=className;if(value!==undefined)node.textContent=value;return node;};
@@ -23,6 +23,25 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
   let opened=false,destroyed=false,models=[],status={},selected=select.value,signature='',expanded=new Map(),limits=new Map(),activating=null,activationError='',openRevision=0,unavailable={};
   const providerOptions=()=>({providers:[...(status.providers||[]),...(status.subscriptionProviders||[])],defaultProviderId:'codex'});
   const hiddenProviders=()=>Array.isArray(status.runtimeSettings?.hiddenModelProviders)?status.runtimeSettings.hiddenModelProviders:[];
+  let pendingAction=false,actionMessage='';
+  const providerLabel=id=>id==='codex'?'Codex':providerOptions().providers.find(p=>p.id===id)?.name||id;
+  async function providerAction(id,action){
+    if(!api||pendingAction||destroyed||activating||!opened||select.disabled)return;pendingAction=true;actionMessage=action==='refresh'?'Refreshing '+providerLabel(id)+' catalog…':'Updating provider visibility…';render();
+    try{
+      if(action==='refresh'){
+        const result=id==='codex'?await api('/api/codex/models?refresh=true','GET',undefined,{deadlineMs:120000}):await api('/api/providers/'+encodeURIComponent(id)+'/models','POST',{refresh:true,limit:1},{deadlineMs:120000});
+        if(result?.catalogAvailable===false||result?.modelCatalog?.stale){actionMessage=providerLabel(id)+' refresh incomplete. Previous catalog retained if available.';notify(actionMessage,true);}
+        else{actionMessage=providerLabel(id)+' catalog refreshed. Saved selections unchanged.';notify(actionMessage);}
+      }else{
+        const saved=await api('/api/runtime/settings/model-provider-visibility','POST',{providerId:id,hidden:action==='hide'});
+        status={...status,runtimeSettings:saved};actionMessage=providerLabel(id)+(action==='hide'?' hidden. Restore below.':' restored.');notify(actionMessage);
+      }
+    }catch(error){actionMessage=(error?.message||'Provider action failed.');notify(actionMessage,true);}
+    finally{pendingAction=false;if(!destroyed)render();}
+  }
+  function actionButton(id,action,label){const control=button('next-model-picker-provider-action',label);control.dataset.providerAction=action;control.dataset.providerId=id;control.disabled=pendingAction||Boolean(activating);control.setAttribute('aria-label',label+' '+providerLabel(id));control.addEventListener('click',event=>{event.preventDefault();event.stopPropagation?.();return providerAction(id,action);});return control;}
+  const canRefresh=id=>id==='codex'||(status.providers||[]).some(p=>p.id===id&&!['llamacpp','ollama','lmstudio'].includes(p.preset));
+  function providerActions(id){const actions=create('span','next-model-picker-provider-actions');if(canRefresh(id))actions.append(actionButton(id,'refresh','Refresh'));actions.append(actionButton(id,'hide','Hide'));return actions;}
   const options=()=>({...providerOptions(),query:search.value,hiddenModelProviders:hiddenProviders()});
   const localReason=model=>unavailable[model?.id==='default'?status.defaultModel:model?.id];
   const available=model=>Boolean(model)&&!localReason(model)&&model.disabled!==true&&model.available!==false;
@@ -147,7 +166,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
       results.append(section);
     }
     for(const group of groups){
-      const details=create('details','next-model-picker-group'),caption=create('summary','next-model-picker-group-title'),name=create('span','',group.label),count=create('span','next-model-picker-count',`${group.models.length} model${group.models.length===1?'':'s'}`),body=create('div','next-model-picker-group-models');caption.dataset.modelProvider=group.id;caption.append(name,count);details.append(caption,body);details.dataset.modelProvider=group.id;
+      const details=create('details','next-model-picker-group'),caption=create('summary','next-model-picker-group-title'),name=create('span','',group.label),count=create('span','next-model-picker-count',`${group.models.length} model${group.models.length===1?'':'s'}`),body=create('div','next-model-picker-group-models');caption.dataset.modelProvider=group.id;caption.append(name,count);details.append(caption,body);details.dataset.modelProvider=group.id;if(api)caption.append(providerActions(group.id));
       const populate=()=>{
         setChildren(body);if(!details.open)return;const limit=limits.get(group.id)||PAGE;
         for(const model of group.models.slice(0,limit))body.append(modelRow(model));
@@ -155,7 +174,16 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
       };
       details.open=expanded.has(group.id)?expanded.get(group.id):Boolean(search.value.trim());details.addEventListener('toggle',event=>{if(event.target!==details)return;expanded.set(group.id,details.open);populate();position();});results.append(details);populate();
     }
-    summary.textContent=activationError||(activating?(activating.startsWith('remove:')?'Removing local model.':activating.startsWith('setup:')?'Opening model settings.':'Preparing the selected model.'):entries.length?`${entries.length} model${entries.length===1?'':'s'} in ${allGroups.length} provider${allGroups.length===1?'':'s'}.`:connections.length?'Set up a native account connection to load its model catalog.':'No matching models. Try another search.');
+    if(api){
+      const shown=new Set(groups.map(group=>group.id)),withModels=new Set(allGroups.map(group=>group.id));
+      for(const provider of [{id:'codex',name:'Codex'},...(status.providers||[])]){
+        if(shown.has(provider.id)||hiddenProviders().includes(provider.id)||!query.every(word=>(providerLabel(provider.id)+' '+provider.id).toLowerCase().includes(word)))continue;
+        if(provider.id!=='codex'&&!canRefresh(provider.id)&&!withModels.has(provider.id))continue;
+        shown.add(provider.id);const empty=create('div','next-model-picker-empty-provider');empty.append(create('span','',providerLabel(provider.id)),providerActions(provider.id));results.append(empty);
+      }
+      if(hiddenProviders().length){const hidden=create('details','next-model-picker-hidden'),caption=create('summary','', 'Hidden providers ('+hiddenProviders().length+')');hidden.append(caption);hidden.open=true;for(const id of hiddenProviders()){const item=create('div','next-model-picker-empty-provider');item.append(create('span','',providerLabel(id)),actionButton(id,'restore','Restore'));hidden.append(item);}results.append(hidden);}
+    }
+    summary.textContent=activationError||actionMessage||(activating?(activating.startsWith('remove:')?'Removing local model.':activating.startsWith('setup:')?'Opening model settings.':'Preparing the selected model.'):entries.length?`${entries.length} model${entries.length===1?'':'s'} in ${allGroups.length} provider${allGroups.length===1?'':'s'}.`:connections.length?'Set up a native account connection to load its model catalog.':'No matching models. Try another search.');
     if(restore){const target=focusValue?Array.from(results.querySelectorAll('[data-model-value]')).find(node=>node.dataset.modelValue===focusValue):focusProvider?Array.from(results.querySelectorAll('summary')).find(node=>node.dataset.modelProvider===focusProvider):focusSetup?Array.from(results.querySelectorAll('[data-model-setup-provider]')).find(node=>node.dataset.modelSetupProvider===focusSetup):focusRemove?Array.from(results.querySelectorAll('[data-model-remove]')).find(node=>node.dataset.modelRemove===focusRemove):null;(target||search).focus({preventScroll:true});}
     position();
   }
@@ -168,7 +196,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
       unavailable=result||{};render();
     }catch{/* Keep the prior check; the backend will still validate a load. */}
   }
-  function open(){if(destroyed||select.disabled)return;if(opened){close();return;}opened=true;openRevision++;activationError='';expanded=new Map();limits=new Map();search.value='';panel.hidden=false;trigger.setAttribute('aria-expanded','true');render();search.focus({preventScroll:true});void refreshAvailability(openRevision);}
+  function open(){if(destroyed||select.disabled)return;if(opened){close();return;}opened=true;openRevision++;activationError='';actionMessage='';expanded=new Map();limits=new Map();search.value='';panel.hidden=false;trigger.setAttribute('aria-expanded','true');render();search.focus({preventScroll:true});void refreshAvailability(openRevision);}
   const onTrigger=event=>{event.preventDefault();open();};
   const onTriggerKey=event=>{if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();if(!opened)open();}};
   const onFilter=()=>{expanded.clear();limits.clear();render();};
@@ -177,7 +205,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
     if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();return;}
     if(event.isComposing||!['ArrowDown','ArrowUp'].includes(event.key))return;
     if(event.target!==search&&!results.contains(event.target))return;
-    const targets=Array.from(results.querySelectorAll('summary,[data-model-value],[data-model-more],[data-model-setup-provider],[data-model-remove]')).filter(node=>!node.disabled&&visibleInDetails(node));
+    const targets=Array.from(results.querySelectorAll('summary,[data-model-value],[data-model-more],[data-model-setup-provider],[data-model-remove],[data-provider-action]')).filter(node=>!node.disabled&&visibleInDetails(node));
     if(!targets.length)return;event.preventDefault();const current=targets.indexOf(doc.activeElement),next=event.key==='ArrowDown'?(current+1)%targets.length:(current<=0?targets.length-1:current-1);targets[next].focus();
   };
   const onOutside=event=>{if(opened&&!panel.contains(event.target)&&!trigger.contains(event.target))close({restoreFocus:false});};

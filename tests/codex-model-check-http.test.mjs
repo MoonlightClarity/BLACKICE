@@ -165,3 +165,20 @@ test('native model check HTTP preserves rejection and interruption outcomes and 
   assert.deepEqual(f.checkCalls, [EXACT_MODEL, EXACT_MODEL, EXACT_MODEL]);
   await f.unchanged();
 });
+
+test('provider visibility endpoint validates actions and preserves independent concurrent updates', async t => {
+  const f=await application(t),route='/api/runtime/settings/model-provider-visibility';
+  const post=body=>f.api(route,{method:'POST',body});
+  assert.equal((await f.request(route,{method:'POST',body:{providerId:'codex',hidden:true}})).status,401);
+  for(const body of [{providerId:'codex',hidden:1},{providerId:'not::valid',hidden:true},{providerId:'codex'},{providerId:'codex',hidden:true,extra:1}]){
+    assert.equal((await post(body)).status,400);
+  }
+  const changes=await Promise.all([post({providerId:'codex',hidden:true}),post({providerId:'groq',hidden:true})]);
+  assert.ok(changes.every(r=>r.status===200));
+  let status=await f.api('/api/status');
+  assert.deepEqual(new Set(status.data.runtimeSettings.hiddenModelProviders),new Set(['codex','groq']));
+  assert.equal((await post({providerId:'codex',hidden:false})).status,200);
+  status=await f.api('/api/status');
+  assert.deepEqual(status.data.runtimeSettings.hiddenModelProviders,['groq']);
+  await f.unchanged();
+});

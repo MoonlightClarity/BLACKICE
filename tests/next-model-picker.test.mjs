@@ -16,14 +16,14 @@ const catalog=[
   model('alpha::unknown',{contextWindowTokens:null,supportsTools:false}),
   model('zeta::other',{contextWindowTokens:64000,...free,supportsTools:false}),
 ];
-function fixture(t,{models=catalog,selected='default',hidden=[],modelProviders=providers,subscriptionProviders=[],onEnableProvider,onSetupProvider}={}){
+function fixture(t,{models=catalog,selected='default',hidden=[],modelProviders=providers,subscriptionProviders=[],onEnableProvider,onSetupProvider,api}={}){
   const dom=planningDOM(t),select=dom.element('select');select.id='test-model';dom.mount.append(select);
   const choices=[{id:'default',label:'Automatic'},...models.map(item=>({id:item.id,label:item.displayName,disabled:item.available===false}))];
   if(!choices.some(item=>item.id===selected))choices.push({id:selected,label:selected,disabled:true});
   for(const item of choices){const option=dom.element('option');option.setAttribute('value',item.id);option.textContent=item.label;select.append(option);}select.value=selected;
   const changes=[];select.dispatchEvent=event=>{void select.dispatch(event.type,{target:select},true);return true;};select.addEventListener('change',()=>changes.push(select.value));
   let status={providers:modelProviders,subscriptionProviders,models,runtimeSettings:{hiddenModelProviders:hidden}};
-  const picker=createGroupedModelPicker({select,onSetupProvider,onEnableProvider:onEnableProvider&&(async id=>{
+  const picker=createGroupedModelPicker({select,api,onSetupProvider,onEnableProvider:onEnableProvider&&(async id=>{
     const fresh=await onEnableProvider(id);
     if(fresh){status={...status,...fresh};for(const choice of choices){const metadata=(status.models||[]).find(model=>model.id===choice.id);if(metadata)choice.disabled=metadata.available===false;}picker.update({models:choices,status,selected:select.value});}
     return fresh;
@@ -273,4 +273,21 @@ test('a deleted API does not appear as a raw-ID group, default or historical mod
   assert.throws(()=>validateChatOptions(status,{model:'default'}),/connection was removed/);
   assert.throws(()=>validateChatOptions(status,{model:removed.id}),/connection was removed/);
   assert.equal(validateChatOptions(status,{model:active.id}).model,active.id);
+});
+
+test('picker hides and restores a provider directly without changing its selected model; refresh uses live endpoint',async t=>{
+  const calls=[];let hidden=[];
+  const api=async(route,method,body)=>{calls.push({route,method,body});if(route.includes('visibility')){hidden=body.hidden?[body.providerId]:[];return {hiddenModelProviders:hidden};}return {catalogAvailable:true};};
+  const f=fixture(t,{selected:'alpha::free-low',api});await f.open();
+  const action=(id,name)=>f.panel().querySelector('[data-provider-id="'+id+'"][data-provider-action="'+name+'"]');
+  // The fixture DOM has limited compound selector support; match controls by dataset.
+  const control=(id,name)=>Array.from(f.panel().querySelectorAll('[data-provider-action]')).find(node=>node.dataset.providerId===id&&node.dataset.providerAction===name);
+  await control('alpha','refresh').dispatch('click',{},true);
+  assert.deepEqual(calls.at(-1),{route:'/api/providers/alpha/models',method:'POST',body:{refresh:true,limit:1}});
+  await control('alpha','hide').dispatch('click',{},true);
+  assert.equal(f.groups().some(g=>g.dataset.modelProvider==='alpha'),false);assert.equal(f.select.value,'alpha::free-low');assert.deepEqual(f.changes,[]);
+  await control('alpha','restore').dispatch('click',{},true);
+  assert.equal(f.groups().some(g=>g.dataset.modelProvider==='alpha'),true);
+  await control('codex','refresh').dispatch('click',{},true);
+  assert.equal(calls.at(-1).route,'/api/codex/models?refresh=true');assert.deepEqual(f.changes,[]);
 });
