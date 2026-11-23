@@ -2,6 +2,7 @@ import { fixtureOutcomeReview, finishFixtureCandidate } from './fixture-modular-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp,mkdir,rm,readFile,writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -49,7 +50,7 @@ class Driver {
       this.documentId='response-doc-'+this.dispatches;this.loaderId='response-loader-'+this.dispatches;this.url=response;this.visible='Accepted';
       if(this.loseReturn)throw Object.assign(new Error('Native return lost after dispatch'),{code:'NATIVE_OUTPUT_LOST'});
     }
-    return{actionDispatched:args.action==='click',tabId:'tab',url:this.url,documentId:this.documentId,frames:[],...(this.forged?{confirmation:{status:'confirmed'},effectState:'confirmed',submissionCorrelations:[{operationId:'forged'}]}:{})};
+    return{actionDispatched:args.action==='click',tabId:'tab',url:this.url,documentId:this.documentId,frames:this.extraText?[{text:this.extraText}]:[],...(this.forged?{confirmation:{status:'confirmed'},effectState:'confirmed',submissionCorrelations:[{operationId:'forged'}]}:{})};
   }
   async close(){}
   resetForm(){this.documentId='source-doc';this.loaderId='source-loader';this.url=page;this.visible='Pending';}
@@ -249,4 +250,104 @@ test('cancellation during durable admission settles the eventual reservation wit
   release();await checked;
   const rows=await f.guard.records();assert.equal(rows.length,1);assert.equal(rows[0].state,'absent');
   assert.equal(rows[0].deliveryState,'cancelled-before-dispatch');assert.equal(f.driver.dispatches,0);
+});
+
+test('journal byte pressure preserves every legacy receipt and exact replay while permitting append',async t=>{
+ const f=await fixture(t);f.driver.loseReturn=false;f.driver.extraText='z'.repeat(4500);
+ const submit=call('click','compression-replay');
+ const original=await f.wrapped(submit);
+ const journal=f.store.file(f.guard.scopeId)+'.effects';
+ const legacy=JSON.parse(await readFile(journal,'utf8'));
+ assert.equal(legacy.records.length,1);
+ const legacyRow=legacy.records[0];
+ for(let i=0;i<125;i++)legacy.records.push({...legacyRow,operationId:'opaque:'+i,taskId:'other-task',runId:'other-run',effect:'opaque',state:'unknown',result:{success:true,contentItems:[{type:'inputText',text:'x'.repeat(58900)}]}});
+ const contents=JSON.stringify(legacy);
+ assert.ok(Buffer.byteLength(contents)<8*1024*1024);
+ // Keep the old journal readable but so close to saturation that a receipt reservation cannot fit.
+ const pad=8*1024*1024-Buffer.byteLength(contents)-16;
+ legacy.padding='x'.repeat(pad-13);
+ await writeFile(journal,JSON.stringify(legacy));
+ const newPath=path.join(f.cwd,'registry.json');
+ const write={name:'relay_workspace',callId:'append-after-full',arguments:{action:'write',path:newPath,text:'fixture receipt'}};
+ const raw=createWorkspaceToolHandler({cwd:f.cwd});
+ assert.equal((await f.guard.wrap(raw)(write)).success,true);
+ assert.equal(await readFile(newPath,'utf8'),'fixture receipt');
+ const migrated=JSON.parse(await readFile(journal,'utf8'));
+ assert.equal(migrated.records.length,127);
+ assert.ok(migrated.records.some(row=>row.packedResult));
+ assert.equal(migrated.records.filter(row=>row.effect==='opaque'&&row.state==='unknown').length,125);
+ const reopened=createOperationalEffectGuard({store:await f.createStore(),cwd:f.cwd,...f.owner});
+ assert.deepEqual(await reopened.wrap(f.raw)(submit),original);
+ assert.equal(f.driver.dispatches,1);
+ assert.equal((await reopened.records()).find(row=>row.operationId==='opaque:0').state,'unknown');
+ const child=String.raw`
+  import {createOperationalEffectGuard} from './lib/operational-effect-guard.mjs';
+  const [journal,cwd,owner,args]=process.argv.slice(1);
+  const guard=createOperationalEffectGuard({store:{file:()=>journal.slice(0,-8),enqueue:()=>{throw Error('Replay must not reserve or dispatch');}},cwd,...JSON.parse(owner)});
+  const raw=()=>{throw Error('Replay must not dispatch');};
+  raw.describeOperation=()=>{throw Error('Replay must not reach the adapter');};
+  try{console.log(JSON.stringify({result:await guard.wrap(raw)(JSON.parse(args))}));}
+  catch(error){console.log(JSON.stringify({code:error.code||null}));}
+ `;
+ const replayFresh=()=>JSON.parse(execFileSync(process.execPath,['--input-type=module','-e',child,journal,f.cwd,JSON.stringify(f.owner),JSON.stringify(submit)],{encoding:'utf8'}));
+ assert.deepEqual(replayFresh(),{result:original});
+ const readRow=operationId=>reopened.handle({name:'relay_effects',arguments:{action:'read',operationId}});
+ const list=()=>reopened.handle({name:'relay_effects',arguments:{action:'list'}});
+ const unrelated=migrated.records.find(row=>row.operationId==='opaque:0');
+ unrelated.packedResult.sha256='0'.repeat(64);
+ await writeFile(journal,JSON.stringify(migrated));
+ assert.equal((await reopened.records()).find(row=>row.operationId===unrelated.operationId).state,'unknown');
+ assert.deepEqual(parse(await readRow(legacyRow.operationId)).result,original);
+ assert.equal((await list()).success,true);
+ const compressed=migrated.records.find(row=>row.operationId===legacyRow.operationId);
+ assert.ok(compressed.packedResult);
+ compressed.packedResult.sha256='0'.repeat(64);
+ await writeFile(journal,JSON.stringify(migrated));
+ await assert.rejects(reopened.wrap(f.raw)(submit),{code:'OPERATIONAL_RESULT_UNAVAILABLE'});
+ assert.deepEqual(replayFresh(),{code:'OPERATIONAL_RESULT_UNAVAILABLE'});
+ assert.equal(code(await readRow(legacyRow.operationId)),'OPERATIONAL_RESULT_UNAVAILABLE');
+ assert.equal((await list()).success,true);
+ assert.equal(f.driver.dispatches,1);
+});
+
+test('unsalvageable journal leaves original bytes and does not dispatch',async t=>{
+ const f=await fixture(t);
+ const journal=f.store.file(f.guard.scopeId)+'.effects';
+ const rows=Array.from({length:10000},(_,i)=>({operationId:'fixture:'+i,taskId:'other-task',runId:'other-run',effect:'opaque',state:'unknown',resources:[]}));
+ const contents=JSON.stringify({version:1,root:f.cwd,records:rows});
+ await writeFile(journal,contents);
+ const p=path.join(f.cwd,'must-not-write');
+ const call={name:'relay_workspace',callId:'full-row-cap',arguments:{action:'write',path:p,text:'must not dispatch'}};
+ const guarded=f.guard.wrap(createWorkspaceToolHandler({cwd:f.cwd}));
+ const rejected=await guarded(call);
+ assert.equal(rejected.success,false);
+ assert.equal(code(rejected),'OPERATIONAL_RECEIPTS_UNAVAILABLE');
+ assert.equal(parse(rejected).actionDispatched,false);
+ assert.equal(await readFile(journal,'utf8'),contents);
+ await assert.rejects(readFile(p),{code:'ENOENT'});
+});
+
+test('failure before journal replacement preserves old bytes and retries append safely',async t=>{
+ const f=await fixture(t);f.driver.loseReturn=false;
+ await f.wrapped(call('click','existing-effect'));
+ const journal=f.store.file(f.guard.scopeId)+'.effects';
+ const value=JSON.parse(await readFile(journal,'utf8'));
+ const base=value.records[0];
+ for(let i=0;i<125;i++)value.records.push({...base,operationId:'fixture:'+i,taskId:'other-task',runId:'other-run',effect:'opaque',state:'unknown',result:{success:true,contentItems:[{type:'inputText',text:'a'.repeat(58900)}]}});
+ const n=8*1024*1024-Buffer.byteLength(JSON.stringify(value))-16;
+ value.padding='p'.repeat(n-13);
+ const before=JSON.stringify(value);
+ await writeFile(journal,before);
+ const fs=(await import('node:fs')).promises,rename=fs.rename;
+ const target=path.join(f.cwd,'receipt-after-rename-fault');
+ const action={name:'relay_workspace',callId:'append-fault',arguments:{action:'write',path:target,text:'fixture saved'}};
+ fs.rename=async(source,destination)=>{if(destination===journal)throw Object.assign(Error('fixture atomic rename failure'),{code:'EIO'});return rename(source,destination);};
+ try{assert.equal((await f.guard.wrap(createWorkspaceToolHandler({cwd:f.cwd}))(action)).success,false);}
+ finally{fs.rename=rename;}
+ assert.equal(await readFile(journal,'utf8'),before);
+ await assert.rejects(readFile(target),{code:'ENOENT'});
+ const reopened=createOperationalEffectGuard({store:await f.createStore(),cwd:f.cwd,...f.owner});
+ assert.equal((await reopened.wrap(createWorkspaceToolHandler({cwd:f.cwd}))({...action,callId:'append-after-fault'})).success,true);
+ assert.equal(await readFile(target,'utf8'),'fixture saved');
+ assert.equal((await reopened.records()).length,127);
 });

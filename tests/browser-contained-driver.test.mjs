@@ -3248,3 +3248,47 @@ test('a native popup is attributed during click and inspection is a separate too
  assert.deepEqual(events.filter(x=>x.event.phase==='inspection-returned'),[{callId:'inspect-call',
   event:{type:'browser.destination',action:'snapshot',phase:'inspection-returned',tabId:child.id}}]);
 });
+test('capture timeout tags pre-pointer capture, but not screenshot or a timed out pointer reply', async t => {
+  const { driver, windows } = await fixture(t), tab=driver.newTab('https://careers.example.test/application');
+  await tab.loading;
+  const timeout=()=>Object.assign(new Error('Test capture deadline'), {code:'BROWSER_CAPTURE_TIMEOUT'});
+  const guard={action:'click',tabId:tab.id,expectedUrl:tab.url,expectedDocumentId:tab.id+':'+tab.revision};
+  rememberFixtureRef(driver,tab,'submit');
+  driver.element=async()=>({frame:{},result:{x:20,y:20}});
+  driver.browserPoint=async()=>({x:20,y:20});
+  const contents=windows[0].webContents, original=contents.capturePage;
+  contents.capturePage=async()=>{throw timeout();};
+  let dispatched=0;
+  driver.pointerInput=async()=>{dispatched++;throw timeout();};
+  await assert.rejects(driver.perform({...guard,ref:'submit'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage==='pre-pointer-capture'&&e.inputDispatched===undefined&&e.actionDispatched===undefined);
+  await assert.rejects(driver.perform({...guard,x:20,y:20}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage==='pre-pointer-capture'&&e.inputDispatched===undefined&&e.actionDispatched===undefined);
+  await assert.rejects(driver.perform({...guard,action:'screenshot'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage===undefined&&e.inputDispatched===undefined);
+  assert.equal(dispatched,0);
+  contents.capturePage=original;
+  await assert.rejects(driver.perform({...guard,ref:'submit'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage===undefined&&e.inputDispatched===undefined);
+  assert.equal(dispatched,1);
+});
+test('input binding diagnostics distinguish bad shape, URL, obsolete document and same-document missing ref without dispatch', async t => {
+  const {driver,windows}=await fixture(t),tab=driver.newTab('https://careers.example.test/application');
+  await tab.loading;
+  const before=tab.revision, observed={action:'fill',tabId:tab.id,expectedUrl:tab.url,expectedDocumentId:tab.id+':'+before,ref:'known',text:'inert'};
+  rememberFixtureRef(driver,tab,'known');
+  let elementCalls=0;
+  driver.element=async()=>{elementCalls++;assert.fail('must not touch the page');};
+  const check=async (args,reason,requestedRevision,currentRevision)=>{
+    await assert.rejects(driver.perform(args), cause=>{
+      assert.equal(cause.code,'BROWSER_INPUT_DOCUMENT_CHANGED');
+      assert.equal(cause.actionDispatched,false);
+      assert.deepEqual(cause.browserReferenceDiagnostic,{reason,requestedRevision,currentRevision});
+      return true;
+    });
+  };
+  await check({...observed,expectedUrl:undefined},'input-identity-invalid',before,before);
+  await check({...observed,expectedUrl:'https://other.example.test/application'},'input-url-mismatch',before,before);
+  await check({...observed,ref:'not-in-the-current-snapshot'},'input-reference-mismatch',before,before);
+  driver.navigationChanged(tab,true);
+  await check(observed,'input-document-mismatch',before,tab.revision);
+  assert.ok(tab.revision>before);
+  assert.equal(elementCalls,0);
+  assert.equal(windows[0].protocol.filter(call=>call.method.startsWith('Input.')).length,0);
+});

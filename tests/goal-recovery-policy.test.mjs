@@ -4,7 +4,8 @@ import {mkdtemp, readFile, writeFile, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {observeGoalToolOutcome, repeatedUnproductiveOperations, assessGoalProgress, detectNoProgressDispatchLoop, detectUnknownEffectReplay, inFlightEffectSignature} from '../lib/goal-recovery-policy.mjs';
-import {ConversationGoals} from '../lib/conversation-goals.mjs';
+import {ConversationGoals, GOAL_TOOL} from '../lib/conversation-goals.mjs';
+import {createProviderExecutionContract} from '../lib/provider-execution-contract.mjs';
 
 const call = (name, args) => ({name, arguments: args});
 const result = (success, code = null, data = null) => ({
@@ -249,4 +250,79 @@ test('local action changes actual state and independent readback, without equati
   const readReceipt=observeGoalToolOutcome(call('relay_workspace',{action:'read',path:file}),result(true,null,observed));
   assert.equal(readReceipt.kind,'observation');
   assert.equal(observed.checked,true);
+});
+for (const scenario of ['old snapshot', 'intervening read', 'first snapshot', 'same binding', 'missing binding']) test('form document recovery: ' + scenario, async () => {
+  const manager=new ConversationGoals({engine:{runs:new Map()},conversations:{states:{fixture:{}}},autoStart:false});
+  manager.raw=()=>({lastToolEvidence:[]});
+  const run={taskId:'fixture',goal:{id:'goal'},goalEvidence:[]};
+  const url='https://example.test/form';
+  const form = (generation, args = {}) => call('relay_browser',{action:'fill',tabId:'form',expectedUrl:url,expectedDocumentId:'form:'+generation,text:'inert',ref:'field-a',...args});
+  const snapshot = call('relay_browser',{action:'snapshot',tabId:'form'});
+  let generation=1, adapterCalls=0, stale=true;
+  const guarded=manager.wrapTools(run,'agent',async ({arguments:args}) => {
+    if(['snapshot','read'].includes(args.action)) return result(true,null,{tabId:'form',url,documentId:'form:'+generation,frames:[{elements:[{ref:'field-a'},{ref:'field-b'}]}]});
+    adapterCalls++;
+    if(stale) return {...result(false,'BROWSER_INPUT_DOCUMENT_CHANGED'),actionDispatched:false};
+    return result(true,null,{receipt:{filled:true}});
+  });
+  if(scenario!=='first snapshot') await guarded(snapshot);
+  if(scenario!=='same binding') generation=2;
+  for(let i=0;i<3;i++) assert.equal((await guarded(form(1,{requestId:'attempt-'+i,...(scenario==='missing binding'&&{expectedDocumentId:undefined})}))).code,'BROWSER_INPUT_DOCUMENT_CHANGED');
+  if(scenario==='intervening read') await guarded(call('relay_browser',{action:'read',tabId:'form'}));
+  assert.equal((await guarded(form(2))).code,'GOAL_REPLAN_REQUIRED','unobserved caller claim cannot reset the refusal');
+  await new Promise(resolve=>setTimeout(resolve,5));
+  await guarded(snapshot);
+  assert.equal((await guarded(form(1))).code,'GOAL_REPLAN_REQUIRED','obsolete generation still blocked');
+  assert.equal((await guarded(form(2,{ref:'guessed-field'}))).code,'GOAL_REPLAN_REQUIRED','unobserved ref still blocked');
+  stale=false;
+  const allowed = scenario!=='same binding' && scenario!=='missing binding';
+  const fresh = await guarded(form(generation,{ref:'field-b'}));
+  assert.equal(fresh.success,allowed,'only a positively replaced failed binding reaches the adapter');
+  if(!allowed) assert.equal(fresh.code,'GOAL_REPLAN_REQUIRED');
+  assert.equal(adapterCalls,allowed?4:3);
+});
+
+test('pre-pointer capture diagnostic retains uncertain effect replay protection', () => {
+  const code='BROWSER_CAPTURE_TIMEOUT';
+  const click=call('relay_browser',{action:'click',tabId:'form',ref:'submit'});
+  const diagnostic = result(false,code,{code,pointerStage:'pre-pointer-capture'});
+  const before=observeGoalToolOutcome(click,diagnostic);
+  assert.equal(before.actionDispatched,null);
+  assert.equal(before.inputDispatched,undefined);
+  assert.match(before.guidance,/before pointer dispatch/);
+  assert.match(before.guidance,/whole operation remains UNKNOWN/);
+  for (const response of [diagnostic,result(false,code,{code}),result(false,'TRANSPORT_LOST')]) {
+    const observation=observeGoalToolOutcome(click,response);
+    assert.equal(observation.kind,'uncertain_external_effect');
+    assert.equal(detectUnknownEffectReplay([observation],click)?.code,'GOAL_EFFECT_UNRESOLVED');
+  }
+  assert.doesNotMatch(observeGoalToolOutcome({...click,namespace:'third_party'},diagnostic).guidance,/before pointer dispatch/);
+});
+
+test('model effects view supplies exact reconcile identity without suggesting any outcome', async () => {
+  const manager=Object.create(ConversationGoals.prototype);
+  const at='2026-11-23T03:18:00Z', signature='a'.repeat(64);
+  const originals=[
+    {id:'one',signature,at,resolutions:[{outcome:'unknown'}],resolution:{outcome:'unknown'}},
+    {signature,at},
+    {id:'old',signature,at,resolution:{outcome:'occurred'}},
+    {id:'incomplete',signature}
+  ];
+  manager.effectReceipts=async()=>originals;
+  const run={taskId:'fixture'};
+  const projected=await manager.handle(run,'agent',call('relay_goal',{action:'effects'}));
+  assert.equal(projected.success,true);
+  const {receipts,guidance}=JSON.parse(projected.contentItems[0].text);
+  assert.match(guidance,/copy its reconcileIdentity fields/);
+  assert.match(guidance,/does not prove an outcome/);
+  assert.deepEqual(receipts[0].reconcileIdentity,{receiptId:'one',signature,observedAt:at,expectedResolutionCount:1});
+  assert.deepEqual(receipts[1].reconcileIdentity,{receiptId:null,signature,observedAt:at,expectedResolutionCount:0});
+  assert.equal(receipts[2].reconcileIdentity,undefined);
+  assert.equal(receipts[3].reconcileIdentity,undefined);
+  assert.equal(originals[0].reconcileIdentity,undefined);
+});
+
+test('the Goal effect projection preserves the .75 Goal tool catalog fingerprint', () => {
+  const {catalogHash}=createProviderExecutionContract({dynamicTools:[GOAL_TOOL],planningContractVersion:1});
+  assert.equal(catalogHash,'22d3ee1da8210555bf0c2f946626d2a02badac6a87a40b4d270703cbeb57418f');
 });

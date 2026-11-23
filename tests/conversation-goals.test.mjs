@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {ConversationArchive} from '../lib/conversations.mjs';
 import {ConversationGoals, validateGoalInput} from '../lib/conversation-goals.mjs';
+import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 
 const deferred = () => { let resolve; const promise = new Promise(done => {resolve = done;}); return {promise, resolve}; };
 const waitFor = async (fn, message = 'condition') => {
@@ -38,6 +39,62 @@ async function report(options, action, fields = {}) {
   return {goal,result};
 }
 const output = n => ({output:'Fixture progress '+n,threadId:'goal-test-thread'});
+
+for(const isolatedHistory of [false,true])test('an explicitly restarted job-search Goal delivers the effective skill to initial and exactly bound successor providers only (isolated history '+isolatedHistory+')',async t=>{
+  const objective='Restart the real BLACKICE job-search/application workflow as a diagnostic endurance test in Chat Mode. '+(isolatedHistory?'Shortlist suitable roles only.':'You are authorized to search for and submit real applications that meet my constraints.');
+  const heading='JOB SEARCH (advisory execution method; not permission)';
+  const skillId='library-job-search';
+  const {engine,goals,conversations,dataDir,runtime}=await fixture(t,async(options,n)=>{
+    const run=[...engine.runs.values()].at(-1);
+    if(n===3){
+      assert.doesNotMatch(options.prompt,/JOB SEARCH \(advisory execution method/);
+      assert.equal(goals.skillObjectiveForDispatch(run),null);
+      options.onPromptAccepted(options.prompt);
+      assert.ok(!run.skillLoadReceipts?.some(row=>row.skillId===skillId));
+      return output(n);
+    }
+    assert.ok(options.prompt.includes(heading));
+    assert.match(options.prompt,/Check the last completed week on multiple independent sources/);
+    assert.doesNotMatch(options.prompt,/rolling last seven days/,'the owner skill replaces bundled content');
+    assert.ok(!run.skillLoadReceipts?.some(row=>row.skillId===skillId),'prepared is not accepted');
+    options.onPromptAccepted(options.prompt);
+    assert.deepEqual(run.skillLoadReceipts.filter(row=>row.skillId===skillId),[
+      {type:'skill_context_submitted',skillId,title:'Job Search',source:'user',sourceRevision:2},
+    ]);
+    assert.equal(run.nodes.agent.instructionAudit.sections.find(row=>row.id==='skill-'+skillId)?.status,'accepted');
+    if(n===2){
+      assert.equal(goals.skillObjectiveForDispatch(run),objective);
+      const bound=run.goalDispatch;
+      try{
+        for(const change of [{conversationId:'foreign-root'},{goalId:'foreign-goal'},{generation:bound.generation+1},{epoch:bound.epoch+1}]){
+          run.goalDispatch={...bound,...change};
+          assert.equal(goals.skillObjectiveForDispatch(run),null);
+        }
+      }finally{run.goalDispatch=bound;}
+    }
+    assert.equal((await report(options,n===1?'progress':'complete')).result.success,true);
+    return output(n);
+  });
+  const status=runtime.status.bind(runtime);
+  runtime.status=()=>({...status(),isolatedHistory});
+  const skills=createSkillsCatalog({dataDir});
+  try{await skills.save({id:skillId,value:{expectedRevision:1,content:'# Job Search\nCheck the last completed week on multiple independent sources.'}});}
+  finally{await skills.close();}
+  const workflow={...graph(),id:'mission_chat_bound_job_skill',description:'A focused task started from Mission.'};
+  const first=engine.startRun({workflow,input:{task:objective,goal:{objective}}});
+  await waitFor(async()=>(await goals.get(first.id))?.status==='completed');
+  const family=await conversations.family(first.id);
+  const successor=family.runs.at(-1);
+  assert.equal(successor.goalDispatch.conversationId,first.id);
+  assert.equal(successor.goalDispatch.generation,1);
+  assert.equal(successor.modelHandoff?.reason,isolatedHistory?'relay-history':undefined);
+  assert.match(successor.input,/^Resume autonomous execution for the saved conversation goal:/);
+  const unrelated=engine.continueRun(successor.id,{nodeId:'agent',message:'Explain the difference between diagnostic benchmarking and normal execution.'},{historyRuns:family.runs});
+  await waitFor(()=>engine.getRun(unrelated.id).settled);
+  assert.equal(engine.getRun(unrelated.id).status,'completed');
+  assert.equal(engine.getRun(unrelated.id).goal,undefined);
+  assert.ok(!engine.getRun(unrelated.id).skillLoadReceipts?.some(row=>row.skillId===skillId));
+});
 
 test('goals have no implicit budget and reject invalid authored limits', () => {
   assert.deepEqual(validateGoalInput({objective:'Finish the work'}),{objective:'Finish the work',maxTurns:null,maxMinutes:null});
@@ -825,4 +882,90 @@ test('direct goal controls persist null by default and remove an explicit finite
   goal=await control('resume-null',{action:'resume',expectedRevision:goal.revision});
   assert.equal(goal.maxTurns,null);await persisted(null);
   assert.equal(runtime.calls.length,1,'Automatic continuations remain disabled in this fixture.');
+});
+test('Goal successor receives conflicting prior reports with provenance, never as verified effects or prior directives', async t => {
+  const won = {summary:'The exact destination displayed acceptance.',evidence:'The prior assistant reports an acceptance after sending the request.',
+    milestone:'destination-A-accepted',nextAction:'Earlier proposal must not become a successor directive.'};
+  const lost = {summary:'No destination accepted a new request.',evidence:'The final claimant reports no new effects.',
+    milestone:'no-intake',nextAction:'Inspect the current exact destination without sending again.'};
+  const prefix='Earlier checkpoints (JSON;';
+  const {engine,goals}=await fixture(t,async (options,n)=>{
+    if(n===1){
+      for(const checkpoint of [won,won,lost]) assert.equal((await report(options,'progress',checkpoint)).result.success,true);
+      const root=[...engine.runs.values()][0].id, goal=goals.raw(root);
+      const [earlier]=goal.reportedCheckpoints;
+      assert.equal(goal.reportedCheckpoints.length,2);
+      await goals.save(root,{...goal,reportedCheckpoints:[...goal.reportedCheckpoints,
+        {...earlier,identity:'different-conversation',conversationId:'other',summary:'Foreign conversation marker'},
+        {...earlier,identity:'different-goal',goalId:'other',summary:'Foreign goal marker'},
+        {...earlier,identity:'different-generation',generation:goal.generation+1,summary:'Foreign generation marker'},
+        {...earlier,identity:'different-run',runId:'other',summary:'Foreign run marker'}]});
+    } else if(n===2) {
+      const next=[...engine.runs.values()].at(-1).input;
+      const block=next.split('\n\n').find(row=>row.startsWith(prefix));
+      assert.ok(block);
+      assert.match(block,/model reports, not proof or current instructions/);
+      const history=JSON.parse(block.slice(block.indexOf('\n')+1));
+      assert.equal(history.length,1);
+      assert.equal(history[0].status,'model-reported-unverified');
+      assert.equal(history[0].summary,won.summary);
+      assert.equal(history[0].evidence,won.evidence);
+      assert.equal(history[0].nextAction,undefined);
+      assert.match(next,/Latest checkpoint: No destination accepted/);
+      assert.match(next,/Inspect the current exact destination without sending again/);
+      assert.doesNotMatch(next,/Foreign |Earlier proposal must not/);
+      assert.equal((await report(options,'complete')).result.success,true);
+    } else assert.fail('unexpected extra turn');
+    return output(n);
+  });
+  const first=engine.startRun({workflow:graph(),input:{task:'Check the destination.',goal:{objective:'Check the destination.'}}});
+  await waitFor(async()=> (await goals.get(first.id))?.status==='completed');
+});
+test('retained Goal reports are bounded and mark clipped claims', async t => {
+  const {engine,goals}=await fixture(t,async options=>{
+    for(let i=0;i<8;i++) {
+      const accepted=await report(options,'progress',{summary:'Summary '+i,evidence:'Report '+i+' '+('x'.repeat(1100))});
+      assert.equal(accepted.result.success,true);
+      assert.doesNotMatch(accepted.result.contentItems[0].text,/reportedCheckpoints/);
+    }
+    assert.equal((await report(options,'complete')).result.success,true);
+    return output(1);
+  });
+  const first=engine.startRun({workflow:graph(),input:{task:'Check eight stages.',goal:{objective:'Check eight stages.'}}});
+  await waitFor(async()=> (await goals.get(first.id))?.status==='completed');
+  const reports=goals.raw(first.id).reportedCheckpoints;
+  assert.deepEqual(reports.map(row=>row.summary),[2,3,4,5,6,7].map(i=>'Summary '+i));
+  assert.ok(reports.every(row=>row.truncated===true && row.evidence.length===1000));
+});
+for(const scenario of [{length:46032,expectHistory:true},{length:48300,expectHistory:false}]) test('long valid Goal successor preserves mandatory message: '+scenario.length, async t=>{
+  const heading='Earlier checkpoints (JSON;';
+  const objective='O'.repeat(scenario.length);
+  const {engine,goals}=await fixture(t,async (options,n)=>{
+    if(n===1){
+      for(let i=0;i<7;i++){
+        const evidence=('Report '+i+' '+('"෴\\'.repeat(500))).slice(0,1000);
+        assert.equal((await report(options,'progress',{summary:'Long report '+i,evidence})).result.success,true);
+      }
+    } else if(n===2) {
+      const next=[...engine.runs.values()].at(-1).input;
+      assert.ok(next.length<=50000);
+      assert.ok(next.includes(objective));
+      assert.match(next,/Latest checkpoint: Long report 6/);
+      assert.match(next,/Recorded evidence: Report 6/);
+      const section=next.split('\n\n').find(row=>row.startsWith(heading));
+      assert.equal(!!section,scenario.expectHistory);
+      if(section){
+        const reports=JSON.parse(section.slice(section.indexOf('\n')+1));
+        const summary=reports.map(row=>row.summary);
+        assert.ok(summary.length>0&&summary.length<6);
+        assert.equal(summary.at(-1),'Long report 5');
+        assert.deepEqual(summary,[...summary].sort());
+        assert.ok(reports.every(row=>row.evidence.length===1000));
+      }
+      assert.equal((await report(options,'complete')).result.success,true);
+    } else assert.fail('unexpected extra turn');
+    return output(n);
+  });
+  const first=engine.startRun({workflow:graph(),input:{task:'Retain a large objective.',goal:{objective}}});
+  await waitFor(async()=> (await goals.get(first.id))?.status==='completed');
 });

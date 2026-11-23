@@ -266,3 +266,15 @@ test('destination references join click and inspection after trace restore',()=>
  assert.notEqual(entries[0].callRef,entries[1].callRef);
  assert.doesNotMatch(JSON.stringify(entries),/private/);
 });
+test('machine trace keeps bounded input binding comparisons without storing request identities',()=>{
+ const run=fixture();
+ for(const [bindingReason,requestedRevision] of [['input-reference-mismatch',36],['input-document-mismatch',35],['PRIVATE_REASON','PRIVATE_REVISION']]){
+   recordTurnMachineEvent(run,wrap({type:'browser.reference',action:'fill',phase:'rejected',tool:'relay_browser',
+     code:'BROWSER_INPUT_DOCUMENT_CHANGED',bindingReason,requestedRevision,currentRevision:36,actionDispatched:false,
+     expectedDocumentId:'PRIVATE_DOC',expectedUrl:'PRIVATE_URL',ref:'PRIVATE_REF'}));
+ }
+ const entries=projectTurnMachineTrace(run).entries;
+ assert.deepEqual(entries.map(e=>[e.metadata.bindingReason,e.metadata.requestedRevision,e.metadata.currentRevision]),
+   [['input-reference-mismatch',36,36],['input-document-mismatch',35,36],[undefined,undefined,36]]);
+ assert.doesNotMatch(JSON.stringify(entries),/PRIVATE/);
+});

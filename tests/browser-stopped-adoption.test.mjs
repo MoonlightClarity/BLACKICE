@@ -54,6 +54,11 @@ test('adoption checks retained native effect journal without clearing or moving 
   await writeFile(engine.tasks.file(guard.scopeId)+'.effects',JSON.stringify(journal));
   const inherited=await readStoppedTabEffects(owner,engine);assert.equal(inherited.uncertain,true);assert.equal(inherited.operations[0].operationId,'effect-a');
   assert.deepEqual(await guard.records(),journal.records);
+  journal.records.push({...journal.records[0],operationId:'bad-unrelated',taskId:'other-task',packedResult:{codec:'invalid'}});
+  await writeFile(engine.tasks.file(guard.scopeId)+'.effects',JSON.stringify(journal));
+  const retained=await readStoppedTabEffects(owner,engine);
+  assert.equal(retained.unavailable,false);
+  assert.deepEqual(retained.operations.map(row=>row.operationId),['effect-a']);
   await writeFile(engine.tasks.file(guard.scopeId)+'.effects','invalid');
   const missing=await readStoppedTabEffects(owner,engine);assert.equal(missing.uncertain,true);assert.equal(missing.unavailable,true);
 });
