@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
+import {makeEventReplayTask,applyEventReplayGold} from './benchmark-fixture-event-replay.mjs';
 
 const candidateRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const baselineRoot=process.env.BLACKICE_BENCH_CONTROL_ROOT||path.join(path.dirname(candidateRoot),'BLACKICE-context-control-20261123');
@@ -15,7 +16,7 @@ const model=process.argv.find(x=>x.startsWith('--model='))?.slice(8)||'kilo_free
 const testId=process.argv.find(x=>x.startsWith('--case='))?.slice(7)||'async-cache';
 const reportRoot=process.env.BLACKICE_BENCH_REPORT_DIR||path.join(path.dirname(candidateRoot),'BLACKICE-context-benchmark-results-20261123');
 const sourceRoot=variant==='control'?baselineRoot:candidateRoot;
-if(!['control','candidate'].includes(variant)||!['async-cache','stream-scheduler'].includes(testId))throw Error('Unsupported variant/case');
+if(!['control','candidate'].includes(variant)||!['async-cache','stream-scheduler','event-replay'].includes(testId))throw Error('Unsupported variant/case');
 const nativeModel=/^gpt-[a-z0-9.-]{2,80}$/.test(model);
 if(!nativeModel&&(!model.startsWith('kilo_free::')||!model.endsWith(':free')))throw Error('Use a native ChatGPT-subscription model or a configured free Kilo model; paid API providers are not permitted.');
 const moduleImport=async file=>import(pathToFileURL(path.join(sourceRoot,'lib',file)).href);
@@ -111,11 +112,16 @@ async function makeSchedulerTask(){
  'final values and order report actual completed nodes. Run node --test.',
  ].join('\n')+'\n');
 }
-if(testId==='async-cache')await makeCacheTask();else await makeSchedulerTask();
+let eventReplayGrader=null;
+if(testId==='async-cache')await makeCacheTask();
+else if(testId==='stream-scheduler')await makeSchedulerTask();
+else eventReplayGrader=await makeEventReplayTask(write,taskRoot);
+if(testId!=='event-replay'){
 const incident=['2026-11-22T12:00:00Z INCIDENT TRACE '+testId];
 for(let i=0;i<240;i++)incident.push('2026-11-22T12:00:'+String(i%60).padStart(2,'0')+'Z trace request='+i+' key='+(['alpha','beta','gamma'][i%3])+' pending='+((i*7)%13)+' note=scheduled-repeat-observation');
 incident.push(testId==='async-cache'?'2026-11-22T12:59:59Z defect: a fulfilled promise was replaced by a stale value after invalidation; duplicate loader race confirmed.':'2026-11-22T12:59:59Z defect: root dependency checks skip every root and an all-of dependency was implemented as any-of.');
 await writeFile(path.join(taskRoot,'incident.log'),incident.join('\n')+'\n');
+}
 const acceptanceCache=[
  "import test from 'node:test';import assert from 'node:assert/strict';",
  "import {AsyncCache} from '../src/cache.mjs';",
@@ -134,9 +140,10 @@ const acceptanceScheduler=[
  "test('all prerequisites are satisfied before a node runs',async()=>{let release;const slow=new Promise(r=>release=r);const task=runGraph([{id:'a',run:async()=>1},{id:'b',run:async()=>{await slow;return 2;}},{id:'c',dependsOn:['a','b'],run:async(x)=>x.join(',')}]);await new Promise(r=>setTimeout(r,20));release();assert.equal((await task).values.c,'1,2');});",
  "test('maxParallel=1 prevents overlap',async()=>{let active=0,peak=0;await runGraph(Array.from({length:6},(_,i)=>({id:'n'+i,run:async()=>{peak=Math.max(peak,++active);await new Promise(r=>setTimeout(r,5));active--;return i;}})),{maxParallel:1});assert.equal(peak,1);});",
 ];
-const grader=(testId==='async-cache'?acceptanceCache:acceptanceScheduler).join('\n')+'\n';
+const grader=testId==='event-replay'?eventReplayGrader:(testId==='async-cache'?acceptanceCache:acceptanceScheduler).join('\n')+'\n';
 if (process.argv.includes('--verify-gold')) {
-  if (testId === 'async-cache') {
+  if (testId === 'event-replay') await applyEventReplayGold(write);
+  else if (testId === 'async-cache') {
     await write('src/cache.mjs', [
       'export class AsyncCache {',
       'constructor({limit=3,ttl=50,clock=()=>Date.now()}={}){this.limit=limit;this.ttl=ttl;this.clock=clock;this.entries=new Map();}',

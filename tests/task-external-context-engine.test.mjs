@@ -28,11 +28,20 @@ test('a Directory agent receives a short reference, pages the original source te
     let number = 0;
     const call = (name, args) => options.onToolCall({ name, arguments: args, callId: 'context-fixture-' + (++number) });
     if (!options.dynamicTools.some(tool => tool.name === 'relay_directory_action')) {
-      assert(!options.dynamicTools.some(tool => tool.name === 'relay_context_page'));
+      assert(options.dynamicTools.some(tool => tool.name === 'relay_context_page'));
       const raw = await call('relay_workspace', { action: 'read', path: filename });
       assert.equal(raw.success, true);
-      baselineText = raw.contentItems[0].text;
-      assert(baselineText.includes(sentinel), 'Unmodified baseline returned the full selected text.');
+      const pointer=JSON.parse(raw.contentItems[0].text);
+      assert.equal(pointer.externalContext,true,'Ordinary Chat also externalizes oversized results.');
+      let offset=0;baselineText='';
+      for(let n=0;n<20;n++){
+        const page=await call('relay_context_page',{action:'read',reference:pointer.reference,offset,maxBytes:8192});
+        assert.equal(page.success,true);
+        const part=JSON.parse(page.contentItems[0].text);
+        baselineText+=part.text;offset=part.nextOffset;
+        if(part.complete)break;
+      }
+      assert(baselineText.includes(sentinel), 'Ordinary Chat recovered the complete source result.');
       return { output: 'Baseline read.' };
     }
     assert(options.dynamicTools.some(tool => tool.name === 'relay_context_page'), 'The retrieval tool is attached with Action Directory.');
