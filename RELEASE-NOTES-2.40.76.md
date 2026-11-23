@@ -1,6 +1,6 @@
-# BLACKICE 2.40.76 — local integration candidate
+# BLACKICE 2.40.76 — integration release
 
-**Status: local source/build candidate, not a published release.** The most recent confirmed public release remains 2.40.75. This revision combines the isolated changes available for the November 23, 2026 integration pass; verification of an eventual installer must be recorded separately.
+**Source scope:** Integrated November 23, 2026 branches, including the subsequent upstream developer-layer and Skills edits. The release status and installer verification must be established by the exact GitHub release and Windows validation receipts; source tests do not prove installation.
 
 ## Integrated changes
 
@@ -9,7 +9,8 @@
 - **Operational result reliability:** expanded journal capacity and lossless compression with an independent soft threshold, exact replay, receipt preservation and read-only reconciliation.
 - **Job workflow accuracy:** employer-first vacancy discovery, role-level W-2 versus gig-work interpretation, scoped application-history reuse, exact requisition matching, and selective skill loading.
 - **Planning/Directory:** recursive executable child plans, long-horizon benchmark/context research, and retained source-linked evidence; benchmarks and notes are not claims of completed real-world success.
-- **Skills:** existing nested skill folders and explicit skill-to-folder assignment through the Skills outline remain present and have HTTP/UI/persistence regression coverage.
+- **Skills:** persistent nested folders, explicit skill-to-folder assignment, consecutive drag handling, category drops, and requested skill edits retain regression coverage.
+- **Owner instructions:** editable developer/system layer from Behavior and Profile with transport and instruction-audit integration.
 - **Documentation:** autonomy-first project direction, clear distinction between released capabilities and experiments, and classification of new research references.
 
 ## Integration checks and boundaries
