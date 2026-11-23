@@ -1,6 +1,6 @@
 # Stopped-task tab adoption
 
-> Status: Current source behavior on this feature candidate, not proof of release or installation.
+> Status: Implemented in published 2.40.75. Source regressions cover ownership checks; the release's native smoke tests did not exercise end-to-end stopped-task adoption.
 
 The model can use `take_ownership` for another task's tab after that task has stopped and settled. It must supply `expectedOwnerKey` from `ownershipCandidates`, plus the observed URL and document identity. Candidate eligibility is advisory; durable effect history and ownership are rechecked at dispatch.
 

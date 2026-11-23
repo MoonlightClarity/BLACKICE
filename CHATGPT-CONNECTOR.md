@@ -5,7 +5,7 @@
 ChatGPT owns the calling conversation and reasoning. BLACKICE supplies tools for local files and commands, contained and connected native browsers, browser profile imports, durable action receipts, and saved planning data. Ordinary direct operations do not start a BLACKICE model or depend on ChatGPT Work computer tools. Explicit tools for starting a saved Chat, Goal, or Planning module can start the selected BLACKICE model; the current catalog and status identify those tools. The experimental BLACKICE-to-ChatGPT browser provider has been removed; the supported direction is ChatGPT calling BLACKICE.
 
 1. Keep BLACKICE and Tailscale running. In **Config → App connections → ChatGPT**, choose **Prepare this computer** and confirm public publication when requested. Copy the displayed server URL ending in `/mcp/chatgpt`. Reuse a healthy existing connection.
-2. In the intended ChatGPT account, open **Plugins → + → Add custom MCP server**. Name it **BLACKICE connection**, paste this computer's URL, and choose **OAuth** with client metadata discovery (**CIMD**). Discovery should populate BLACKICE's authorization and token endpoints. No manual client ID, client secret or Owner login key is needed.
+2. In the intended ChatGPT account **on the web**, open **Plugins → + → Add custom MCP server**. Name it **BLACKICE connection**, paste this computer's URL, and choose **OAuth** with client metadata discovery (**CIMD**). Discovery should populate BLACKICE's authorization and token endpoints. No manual client ID, client secret or Owner login key is needed.
 3. Review the host's warning, choose **Create as a plugin**, then **Connect BLACKICE connection**. Complete **Install** if the host offers that separate step; some flows make the connection available automatically. Do not create another copy just because there is no Install button.
 4. On the authorization page, match its request code with the pending request in **BLACKICE → Config → App connections → ChatGPT**. Choose **Connect with full BLACKICE access**. The connection authorizes the complete BLACKICE tool catalog; there are no per-capability checkboxes. The browser returns to ChatGPT after the connection decision.
 5. Start a new conversation in ordinary **Chat mode**. Type `@BLACKICE` and choose **Plugins → BLACKICE connection**. A typed name, uploaded source archive, package listing, or Files-only picker does not attach this computer's tools.
@@ -13,7 +13,7 @@ ChatGPT owns the calling conversation and reasoning. BLACKICE supplies tools for
 
 **Command access (`commands:run`):** Run a shell command in the configured workspace. Supports cancellation and saved results.
 
-These host setup and authentication concepts are covered by [OpenAI's custom MCP setup](https://developers.openai.com/api/docs/guides/custom-mcp-server) and [OAuth/CIMD documentation](https://developers.openai.com/plugins/build/auth). Account and workspace policy can affect which controls are available.
+These host setup and authentication concepts are covered by [OpenAI's custom MCP setup](https://developers.openai.com/api/docs/guides/custom-mcp-server) and [OAuth/CIMD documentation](https://developers.openai.com/plugins/build/auth). The official setup flow currently uses ChatGPT on the web. Account and workspace policy can affect which controls are available; an installed plugin can subsequently be used on other supported surfaces.
 
 New profiles use standard HTTPS port **443**, displayed without a port suffix. When 443 and 8443 are already owned by other services, the local CLI can opt into Tailscale Funnel HTTPS **10000** using `BLACKICE chatgpt prepare --confirm-public --https-port=10000`. This creates a separate owned endpoint at `https://<hostname>:10000/mcp/chatgpt`, leaves both existing ports untouched, and does not relax OAuth, route-ownership or publication consent. Saved **8443** profiles retain their existing URL. Use the exact displayed address; changing the origin invalidates the old grant and requires authorization again. BLACKICE refuses to adopt an unowned root route automatically. A reviewed, explicitly authorized migration must preserve other paths, unrelated routes and their existing public/private exposure. See [Remote access](REMOTE-ACCESS.md).
 
@@ -33,7 +33,7 @@ The connector retains `chatSurfaceVerification: "not-recorded"`; it cannot indep
 
 Custom MCP connection creation is available across personal tiers. A Free-account creation check was reported on **2026-11-22**, consistent with prior Plus and Pro use. Qualify each BLACKICE account/endpoint route with its own end-to-end connection and tool receipts:
 
-1. In the intended ChatGPT account, open **Plugins → + → Add custom MCP server**.
+1. In the intended ChatGPT account **on the web**, open **Plugins → + → Add custom MCP server**.
 2. Add the endpoint displayed by BLACKICE, choose **OAuth**, and complete local owner approval in BLACKICE. Attach the connection in ordinary Chat and verify that its tools appear.
 3. Run a fresh status check and a harmless command, such as PowerShell `Write-Output 'BLACKICE connection check'`. Read the settled command result and record the matching connection/job receipt. Record any error at the step where it occurs.
 
