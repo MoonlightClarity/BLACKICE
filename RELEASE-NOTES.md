@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.76 local integration candidate (not published).** Source package version is **2.40.76**. See [2.40.76 integration notes](RELEASE-NOTES-2.40.76.md). The latest confirmed published release remains [2.40.75](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75).
+> **Status: 2.40.77 local installation candidate (not published).** Source package version is **2.40.77**. See [2.40.77 notes](RELEASE-NOTES-2.40.77.md). The latest confirmed published release remains [2.40.75](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75).
 
 ## Recent published and versioned source notes
+
+- [2.40.77](RELEASE-NOTES-2.40.77.md) - Searchable Skills Move controls; local installation candidate, not published
 
 - [2.40.76](RELEASE-NOTES-2.40.76.md) - Local integration candidate; not published
 

@@ -49,6 +49,8 @@
 .skills-document-line{display:flex;align-items:center;gap:4px}
 .skills-document-line>.skills-document-row{flex:1;min-width:0}
 .skills-document-line>.skills-document-delete{flex:none;width:auto;font-size:11px;padding:4px}
+.skills-document-line>.skills-document-move{flex:none;width:30px;min-width:30px}
+.skills-folder-row>.skills-folder-move{flex:none;width:30px}
 
 /* One inline tree: explicit root/child creation and SVG-only row actions. */
 .skills-tree-root{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:5px 0}
@@ -65,3 +67,19 @@
 .skills-inline-create input{min-width:0;width:100%}
 .skills-drop-target{outline:1px solid var(--accent);background:var(--next-selection-background)}
 .skills-folder-row>input{flex:1;min-width:40px;width:0}
+
+/* A searchable destination list replaces long-distance dragging through the outline. */
+.skills-move-dialog{box-sizing:border-box;position:fixed;inset:0;margin:auto;width:min(540px,calc(100vw - 32px));max-height:min(85dvh,800px);overflow:auto;border:1px solid var(--line);border-radius:10px;padding:20px;background:var(--next-workspace-background);color:var(--text);box-shadow:0 18px 45px #0005}
+.skills-move-dialog::backdrop{background:#0009}
+.skills-move-dialog h2{font-size:17px;margin:0 0 8px}
+.skills-move-dialog .next-help{margin:0 0 14px}
+.skills-move-dialog .next-label{display:grid;gap:5px;margin:0 0 12px}
+.skills-move-dialog .next-field{width:100%;box-sizing:border-box}
+.skills-move-options{display:grid;gap:2px;max-height:45dvh;overflow:auto;overscroll-behavior:contain;border:1px solid var(--line);border-radius:6px;padding:6px}
+.skills-move-group-heading{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:10px 7px 4px}
+.skills-move-group-heading:first-child{margin-top:4px}
+.skills-move-choice{background:transparent;text-align:left;border:1px solid transparent;border-radius:5px;padding:8px 10px;overflow-wrap:anywhere;color:inherit}
+.skills-move-choice:hover:not(:disabled),.skills-move-choice:focus-visible{background:var(--next-selection-background);border-color:var(--accent)}
+.skills-move-choice:disabled{opacity:.55}
+#skills-move-status{font-size:12px;color:var(--muted);margin:8px 0 12px}
+#skills-move-cancel{margin-left:auto}
