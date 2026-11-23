@@ -22,7 +22,7 @@ import { createContextControls, conversationContext, contextStatistics, compacti
 
 export function createChatWorkspace({ mount, api, events, getStatus, notify = () => {}, onNavigate }) {
   const view = createChatFrame(mount);
-  const modelPicker=createGroupedModelPicker({select:view.model,label:'Model',onOpenAvailability:async catalog=>{
+  const modelPicker=createGroupedModelPicker({select:view.model,label:'Model',api,notify,onOpenAvailability:async catalog=>{
     if(!catalog.some(item=>item.id?.startsWith('local_llamacpp::')))return {};
     const result=await api('/api/local-models/missing-files');
     return Object.fromEntries((result.models||[]).map(id=>['local_llamacpp::'+id,'Model file is missing.']));

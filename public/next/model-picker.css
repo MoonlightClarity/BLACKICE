@@ -35,3 +35,5 @@
 .next-model-picker-remove{font-size:11px;min-height:30px;padding:3px 7px}
 .next-model-picker-panel :is(button,summary,input):focus-visible{outline:2px solid #9edbe5;outline-offset:2px}
 @media(max-width:600px){.next-chat-model{max-width:100%;flex:1 1 180px}.next-model-picker-panel{padding:10px}}
+
+.next-model-picker-provider-actions{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle}.next-model-picker-provider-action{font-size:11px;min-height:25px;padding:2px 7px}.next-model-picker-empty-provider{display:flex;align-items:center;gap:6px;padding:7px 10px}.next-model-picker-empty-provider>span{flex:1;min-width:0;overflow-wrap:anywhere}

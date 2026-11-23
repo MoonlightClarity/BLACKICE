@@ -44,7 +44,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     <section id="next-provider-editor" class="next-card" aria-label="Connection editor"><p id="next-provider-empty" class="next-help">Choose a connection or add one.</p>
     <form id="next-provider-form" class="next-stack" hidden autocomplete="off">
       <h3 id="next-provider-title">Connection</h3><p id="next-provider-stale" class="next-help" hidden>Saved settings changed. Your draft is kept; Reload saved settings replaces it.</p>
-      <div class="next-row next-provider-manage-actions"><button type="button" id="next-provider-manage-models" class="next-primary">Manage models / Add models</button><button type="button" id="next-provider-limits-refresh">Refresh model limits</button><button type="button" id="next-provider-hide">Hide provider from model menus</button></div>
+      <div class="next-row next-provider-manage-actions"><button type="button" id="next-provider-manage-models" class="next-primary">Manage models / Add models</button><button type="button" id="next-provider-limits-refresh">Refresh model list and limits</button><button type="button" id="next-provider-hide">Hide provider from model menus</button></div>
       <details id="next-provider-connection-details" class="next-provider-advanced"><summary>Connection settings · address, API key and limits</summary><div class="next-stack">
       <div class="next-provider-fields"><label class="next-label">Provider<select id="next-provider-preset" class="next-field"></select></label><label class="next-label">API protocol<select id="next-provider-protocol" class="next-field"><option value="compatible">OpenAI Chat Completions compatible</option><option value="openai">OpenAI Responses</option><option value="anthropic">Anthropic Messages</option></select></label><label class="next-label">Connection name<input id="next-provider-name" class="next-field" maxlength="100" required></label><label class="next-label">Connection ID<input id="next-provider-id" class="next-field" maxlength="40" spellcheck="false" required></label></div>
       <div id="next-provider-support" class="next-provider-support" aria-label="Provider setup details"></div><p id="next-provider-legacy" class="next-help" hidden></p><button type="button" id="next-provider-replacement" hidden>Use current provider settings</button>
@@ -107,7 +107,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
       f.test.disabled=busy||catalogBusy||draft.conflict===true||!draft.baseUrl.trim();f.delete.disabled=busy||draft.conflict===true||!draft.saved;
       f.discard.disabled=busy||listBusy;f.delete.hidden=!draft.saved;
       const canCatalog=Boolean(draft.baseUrl.trim())&&!draft.conflict&&!busy&&!catalogBusy;
-      f['manage-models'].disabled=!canCatalog;f['limits-refresh'].disabled=!canCatalog;f['limits-refresh'].textContent=draft.limitsNeedRetry?'Retry model limits':'Refresh model limits';f.hide.disabled=busy||!draft.saved;f.hide.hidden=!draft.saved;
+      f['manage-models'].disabled=!canCatalog;f['limits-refresh'].disabled=!canCatalog;f['limits-refresh'].textContent=draft.limitsNeedRetry?'Retry model limits':'Refresh model list and limits';f.hide.disabled=busy||!draft.saved;f.hide.hidden=!draft.saved;
       f['manage-models'].textContent=draft.saved?'Manage models / Add models':'Load models';
       f.hide.textContent=hiddenProviders().has(draft.id)?'Restore provider to model menus':'Hide provider from model menus';
       f.save.textContent=draft.saved&&!settingsChanged(draft)?'Save selected models':'Save connection';
@@ -172,9 +172,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
   async function setProviderHidden(id,hide){
     if(!(id==='codex'?codexActive():active)||destroyed||busy)return;busy=true;cancelCatalog();status(f.info,hide?'Hiding provider from model menus…':'Restoring provider to model menus…');controls();
     try{
-      const latest=await api('/api/runtime/settings','GET');if(destroyed)return;
-      const ids=new Set(Array.isArray(latest.hiddenModelProviders)?latest.hiddenModelProviders:[]);hide?ids.add(id):ids.delete(id);
-      const saved=await api('/api/runtime/settings','POST',{hiddenModelProviders:[...ids]});if(destroyed)return;
+      const saved=await api('/api/runtime/settings/model-provider-visibility','POST',{providerId:id,hidden:hide});if(destroyed)return;
       runtimeSettings=copy(saved);onRuntimeSettings(saved);notifyChanged();status(f.info,hide?'Provider hidden from model menus. Restore it from Hidden providers.':'Provider restored to model menus.');
     }catch(error){if(!destroyed)status(f.info,safeError(error),true);}
     finally{busy=false;if(codexActive()&&!destroyed){paintList();controls();if(active&&stale)void load();}}
@@ -230,7 +228,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     paintGroups(f.catalog,draft.selection.page(),draft,'catalog');
     if(!draft.selection.page().length)add(f.catalog,'p',draft.catalog?.available===false?'Provider catalog unavailable. Selected models are kept. Use Retry model limits to try again.':draft.catalog?'No models match these filters.':'Search the catalog to find models.','next-help');
     const page=draft.catalog;
-    f['catalog-page'].textContent=draft.catalogFetchedAt&&draft.catalog?.available?`Fetched ${new Date(draft.catalogFetchedAt).toLocaleString()} · `:'';
+    f['catalog-page'].textContent=draft.catalogFetchedAt&&(draft.catalog?.available||draft.catalog?.stale)?`Fetched ${new Date(draft.catalogFetchedAt).toLocaleString()} · `:'';
     f['catalog-page'].textContent+=draft.catalogPending?(page?'Updating results… previous results are shown until the new search completes.':'Searching the full catalog…'):page?.available===false?'Full provider catalog unavailable · selected IDs kept':page?`${page.total?`${page.offset+1}–${page.offset+page.returned} of ${page.total} matching models`:'No matches'} · whole catalog filtered · selections kept across pages`:'';
   }
   function feedback(){const draft=current();if(!draft)return;status(f.receipt,draft.receipt);status(f.error,draft.error,true);}
@@ -375,13 +373,13 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     const draft=current();if(!active||destroyed||busy||catalogBusy||!draft||draft.conflict)return;
     const usePreview=preview||settingsChanged(draft);
     let options,connection;try{options=catalogOptions(draft);if(usePreview)connection=payload(draft);}catch(error){draft.catalogPending=false;draft.error=safeError(error);paintModels();feedback();controls();return;}
-    const fingerprint=JSON.stringify(options),key=selected,token=++catalogSequence,controller=new AbortController();catalogAbort=controller;catalogBusy=true;draft.catalogStarted=true;draft.catalogPending=true;draft.catalogOpen=true;f['catalog-panel'].open=true;draft.error='';draft.receipt=usePreview?'Checking connection and loading live models…':refresh?'Refreshing model limits…':'Loading model catalog…';paintModels();feedback();controls();
+    const fingerprint=JSON.stringify(options),key=selected,token=++catalogSequence,controller=new AbortController();catalogAbort=controller;catalogBusy=true;draft.catalogStarted=true;draft.catalogPending=true;draft.catalogOpen=true;f['catalog-panel'].open=true;draft.error='';draft.receipt=usePreview?'Checking connection and loading live models…':refresh?'Refreshing model list and limits…':'Loading model catalog…';paintModels();feedback();controls();
     try{const result=await api(usePreview?'/api/providers/preview':path(draft.saved.id)+'/models','POST',{...options,offset,limit:PAGE,...(usePreview?{connection}:{}),...(refresh?{refresh:true}:{})},{signal:controller.signal});
       if(!active||destroyed||token!==catalogSequence||key!==selected||fingerprint!==JSON.stringify(catalogOptions(draft)))return;
-      const page=(result.models||[]).slice(0,PAGE);draft.selection.setPage(page);if(Array.isArray(result.selectedModels))draft.selection.mergeMetadata(result.selectedModels);draft.catalog={available:result.catalogAvailable!==false,offset:result.offset??offset,total:result.total??page.length,returned:page.length,hasMore:result.hasMore===true,groups:Array.isArray(result.groups)?result.groups:[]};
+      const page=(result.models||[]).slice(0,PAGE);draft.selection.setPage(page);if(Array.isArray(result.selectedModels))draft.selection.mergeMetadata(result.selectedModels);draft.catalog={available:result.catalogAvailable!==false,stale:result.catalogStale===true,offset:result.offset??offset,total:result.total??page.length,returned:page.length,hasMore:result.hasMore===true,groups:Array.isArray(result.groups)?result.groups:[]};
       draft.catalogPresence=draft.catalog.available&&Array.isArray(result.selectedPresence)?new Map(result.selectedPresence.map(item=>[item.id,item.listed===true])):null;draft.catalogFetchedAt=result.fetchedAt||null;
       const checked=[...draft.selection.selected(),...page];draft.limitsNeedRetry=!draft.catalog.available||checked.some(model=>['partial','unresolved','unavailable'].includes(model.modelLimitLookup?.status));
-      if(!draft.catalog.available)draft.receipt='Provider catalog unavailable. Current selections and edits are kept. You can keep an exact model ID or retry the connection.';
+      if(!draft.catalog.available)draft.receipt=(draft.catalog.stale?'Showing the previous catalog. ':'')+'Provider catalog unavailable. Current selections and edits are kept. You can keep an exact model ID or retry the connection.';
       else if(usePreview){
         const preset=getProviderPreset(draft.preset),verification=result.credentialVerified===true?'Credentials verified; live catalog loaded.':preset?.catalogAuthentication==='public'?'Public catalog loaded; API key validity was not verified.':'Live catalog loaded; API key validity was not independently verified.';
         const at=result.checkedAt||result.fetchedAt,checkedAt=at&&Number.isFinite(Date.parse(at))?' Checked '+new Date(at).toLocaleString()+'.':'';
@@ -430,7 +428,7 @@ export function createProviderSettings({mount,api,events,notify=()=>{},onChanged
     status(f['codex-error'],'');status(f['codex-status'],'Refreshing native model limits and check status…');controls();
     try{const result=await api('/api/codex/models?refresh=true','GET',undefined,{signal:controller.signal});
       if(!codexActive()||destroyed||token!==codexSequence)return;codex=result;uncertainCheck=false;
-      status(f['codex-status'],`${result.connected&&result.authenticated?'Codex connected.':'Connect and sign in to Codex to try a model.'} ${checkReceipt(result.modelCheck)}${result.modelCheckBlocked?' Previous check cleanup is unresolved; restart BLACKICE before trying another model.':''}`);paintCodex();notifyChanged();
+      status(f['codex-status'],`${result.connected&&result.authenticated?'Codex connected.':'Connect and sign in to Codex to try a model.'} ${result.modelCatalog?.stale?'Catalog refresh incomplete; previous results retained. ':''}${checkReceipt(result.modelCheck)}${result.modelCheckBlocked?' Previous check cleanup is unresolved; restart BLACKICE before trying another model.':''}`);paintCodex();notifyChanged();
     }catch(error){if(codexActive()&&!destroyed&&token===codexSequence){status(f['codex-error'],safeError(error),true);status(f['codex-status'],'Model limits could not refresh. Previous results are kept. Use Refresh model list and limits to retry.');}}
     finally{if(token===codexSequence){codexBusy=false;codexAbort=null;if(codexActive()&&!destroyed)controls();}}
   }

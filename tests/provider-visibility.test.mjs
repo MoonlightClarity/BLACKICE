@@ -93,3 +93,14 @@ test('hiding API and Codex providers leaves endpoints, credentials, model availa
   await settings.update({ hiddenModelProviders: [] });
   assert.deepEqual(runtime.status(), beforeStatus); assert.equal(requests, 0);
 });
+
+test('direct provider hide and restore operations merge atomically and persist without changing defaults', async t => {
+  const {settings,dataDir}=await fixture(t);
+  await Promise.all([settings.setProviderHidden('codex',true),settings.setProviderHidden('groq',true),settings.update({defaultEffort:'high'})]);
+  assert.deepEqual(new Set(settings.get().hiddenModelProviders),new Set(['codex','groq']));
+  await Promise.all([settings.setProviderHidden('codex',false),settings.setProviderHidden('openrouter',true)]);
+  assert.deepEqual(new Set(settings.get().hiddenModelProviders),new Set(['groq','openrouter']));
+  await assert.rejects(settings.setProviderHidden('codex',1),{code:'RUNTIME_SETTINGS_INVALID'});
+  const reopened=await new RuntimeSettingsStore({dataDir}).init();t.after(()=>reopened.close());
+  assert.deepEqual(reopened.get(),settings.get());assert.equal(reopened.get().defaultEffort,'high');
+});

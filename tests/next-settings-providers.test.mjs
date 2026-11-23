@@ -25,6 +25,7 @@ async function fixture(t,{providers=[provider(),provider('second',{name:'Second 
     if(wrapped&&route==='/api/config')return {};
     if(route==='/api/runtime/settings'&&method==='GET')return structuredClone(state.runtimeSettings);
     if(route==='/api/runtime/settings'&&method==='POST'){state.runtimeSettings={...state.runtimeSettings,...body};return structuredClone(state.runtimeSettings);}
+    if(route==='/api/runtime/settings/model-provider-visibility'&&method==='POST'){const ids=new Set(state.runtimeSettings.hiddenModelProviders);body.hidden?ids.add(body.providerId):ids.delete(body.providerId);state.runtimeSettings.hiddenModelProviders=[...ids];return structuredClone(state.runtimeSettings);}
     if(route==='/api/providers'&&method==='GET')return structuredClone(state.providers);
     if(route==='/api/providers/preview'&&method==='POST')return previewResult(body);
     if(route==='/api/providers'&&method==='POST'){
@@ -325,7 +326,7 @@ test('hide and restore preserve connection execution state and merge the freshes
   const f=await fixture(t);const original=structuredClone(f.state.providers);
   f.state.runtimeSettings.hiddenModelProviders=['external-provider'];
   await f.click('[data-provider-hide="gateway"]');await f.idle();
-  assert.deepEqual(f.calls.filter(call=>call.route==='/api/runtime/settings').map(call=>[call.method,call.body]),[['GET',undefined],['POST',{hiddenModelProviders:['external-provider','gateway']}]]);
+  assert.deepEqual(f.calls.filter(call=>call.route==='/api/runtime/settings/model-provider-visibility').map(call=>[call.method,call.body]),[['POST',{providerId:'gateway',hidden:true}]]);
   assert.equal(f.$('[data-provider-id="gateway"]'),null);assert.equal(f.$('#next-provider-hidden').hidden,false);assert.equal(f.$('#next-provider-hidden').open,false);assert.ok(f.$('[data-provider-restore="gateway"]'));
   assert.deepEqual(f.state.providers,original);assert.equal(f.calls.filter(call=>call.route==='/api/providers'&&call.method==='POST').length,0);
   await f.click('[data-provider-restore="gateway"]');await f.idle();assert.ok(f.$('[data-provider-id="gateway"]'));assert.deepEqual(f.state.runtimeSettings.hiddenModelProviders,['external-provider']);assert.deepEqual(f.state.providers,original);
@@ -334,7 +335,7 @@ test('hide and restore preserve connection execution state and merge the freshes
 });
 
 test('fresh settings updates expose hidden providers for restore, and failed hiding never changes visibility optimistically',async t=>{
-  const f=await fixture(t,{hook:call=>{if(call.route==='/api/runtime/settings'&&call.method==='POST')throw Error('Preference save failed');}});
+  const f=await fixture(t,{hook:call=>{if(call.route==='/api/runtime/settings/model-provider-visibility'&&call.method==='POST')throw Error('Preference save failed');}});
   f.panel.updateRuntimeSettings({hiddenModelProviders:['second','codex']});assert.equal(f.$('[data-provider-id="second"]'),null);assert.ok(f.$('[data-provider-restore="second"]'));assert.equal(f.$('#next-provider-codex').hidden,true);
   f.panel.updateRuntimeSettings({hiddenModelProviders:[]});await f.click('[data-provider-hide="gateway"]');await f.idle();
   assert.ok(f.$('[data-provider-id="gateway"]'));assert.equal(f.$('[data-provider-restore="gateway"]'),null);assert.match(f.$('#next-provider-info').textContent,/Preference save failed/);

@@ -92,7 +92,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
   };
   for(const [key,control] of chatDefaultsControls) control.addEventListener('change',()=>{editedChatDefaults.set(key,++chatDefaultsRevision);f.chatDefaultsFeedback.textContent='';});
   drawChatDefaults();
-  const modelPicker=createGroupedModelPicker({select:f.model,label:'Default model',onSetupProvider:openModelProvider,onEnableProvider:async id=>{
+  const modelPicker=createGroupedModelPicker({select:f.model,label:'Default model',api,notify,onSetupProvider:openModelProvider,onEnableProvider:async id=>{
     const fresh=await enableProviderForModel(api,status,id);
     if(destroyed||!active)return null;
     drawStatus(fresh);return fresh;
