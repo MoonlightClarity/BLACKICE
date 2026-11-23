@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { TaskExternalContextStore, eligibleExternalContextCall, EXTERNAL_CONTEXT_TOOL } from '../lib/task-external-context.mjs';
@@ -126,6 +126,55 @@ test('large failed reads are not hidden behind context references',async t=>{
   const failure={success:false,code:'WORKSPACE_ERROR',contentItems:[{type:'inputText',text:'File error '+('x'.repeat(3000))}]};
   assert.strictEqual(await store.archiveResult(readCall,failure),failure);
   assert.deepEqual((await store.list()).items,[]);
+});
+
+test('identical tool observations deduplicate across concurrent calls, retries, and reopened task stores',async t=>{
+ const {dataDir,store}=await fixture(t);
+ const original=JSON.stringify({path:'incident.log',content:'diagnostic event\n'.repeat(1400)+'ROOT_CAUSE'});
+ const observations=await Promise.all(Array.from({length:32},(_,index)=>
+   store.archiveResult({...readCall,callId:'parallel-'+index},result(original))));
+ const ids=new Set(observations.map(item=>parsed(item).reference));
+ assert.equal(ids.size,1,'All equivalent observations refer to one preserved artifact.');
+ assert.equal((await readdir(store.root)).length,2,'One payload and one metadata file, not 64 files.');
+ const reopened=new TaskExternalContextStore({dataDir,taskId:'task-alpha',thresholdBytes:500});
+ const again=await reopened.archiveResult({...readCall,callId:'after-restart'},result(original));
+ assert.equal(parsed(again).reference,[...ids][0]);
+ assert.equal((await readdir(store.root)).length,2);
+ const other=await reopened.archiveResult({name:'relay_browser',arguments:{action:'read'}},result(original));
+ assert.notEqual(parsed(other).reference,[...ids][0],'Tool provenance is part of the deduplication identity.');
+ assert.equal((await readdir(store.root)).length,4);
+});
+
+test('two simultaneous task-store instances converge on the same archived result',async t=>{
+ const {dataDir,store}=await fixture(t);
+ const peer=new TaskExternalContextStore({dataDir,taskId:'task-alpha',thresholdBytes:500});
+ const original='parallel writer evidence '.repeat(2000);
+ const items=await Promise.all(Array.from({length:20},(_,index)=>
+  (index%2?peer:store).archiveResult({...readCall,callId:'concurrent-'+index},result(original))));
+ assert.equal(new Set(items.map(item=>parsed(item).reference)).size,1);
+ assert.equal((await readdir(store.root)).length,2);
+});
+
+test('corrupt stored content fails closed, and an archive failure never removes shared earlier evidence',async t=>{
+ const {store}=await fixture(t);
+ const original='shared observation '.repeat(1500);
+ const first=await store.archiveResult(readCall,result(original));
+ const ref=parsed(first).reference;
+ const save=store.save.bind(store);
+ store.save=async(text,name)=>text.startsWith('FAIL-LATER')?Promise.reject(Error('Simulated storage problem')):save(text,name);
+ const combined={success:true,contentItems:[
+  {type:'inputText',text:original},{type:'inputText',text:'FAIL-LATER'+('x'.repeat(3000))}]};
+ assert.strictEqual(await store.archiveResult(readCall,combined),combined,'If any block cannot archive, the entire original result is returned.');
+ assert.equal((await store.read({reference:ref,maxBytes:512})).text.slice(0,10),original.slice(0,10));
+ assert.equal((await readdir(store.root)).length,2,'The shared artifact survived later failures.');
+ store.save=save;
+ const file=store.file(ref,'.txt'),text=await readFile(file,'utf8');
+ await writeFile(file,'Z'+text.slice(1),'utf8'); // Same byte length, altered contents
+ const failed=await store.handle({arguments:{action:'read',reference:ref}});
+ assert.equal(failed.success,false);
+ assert.equal(failed.code,'CONTEXT_ARCHIVE_CORRUPT');
+ const retry=result(original);
+ assert.strictEqual(await store.archiveResult(readCall,retry),retry,'Corruption cannot yield a false pointer.');
 });
 
 test('missing disk storage leaves full tool result intact instead of losing evidence', async t => {

@@ -12,6 +12,7 @@ const reportDir=process.env.BLACKICE_BENCH_REPORT_DIR||path.join(path.dirname(ca
 const readCount=Number(process.argv.find(arg=>arg.startsWith('--reads='))?.slice(8)||180);
 if(!Number.isSafeInteger(readCount)||readCount<1||readCount>2000)throw Error('Choose 1–2000 read operations.');
 const expectCapacity=process.argv.includes('--expect-capacity');
+const expectControlCapacity=process.argv.includes('--expect-control-capacity');
 const outputs=[];
 for(const [variant,sourceRoot] of [['control',control],['candidate',candidate]]){
  const {HarnessEngine}=await import(pathToFileURL(path.join(sourceRoot,'lib','engine.mjs')).href);
@@ -58,6 +59,19 @@ for(const [variant,sourceRoot] of [['control',control],['candidate',candidate]])
        }
      }else if(!payload.includes('SENTINEL_2077'))throw Error('Control did not receive full source result');
     }
+    if(metrics.hasPagingTool&&readCount>256){
+      const history=await call('relay_directory_action',{action:'read'});
+      if(history.success!==true)throw Error('Ledger archive retrieval was rejected');
+      const archive=JSON.parse(history.contentItems[0].text);
+      const active=JSON.parse(history.contentItems.at(-1).text);
+      if(!archive.externalContext||active.view!=='bounded-active-context')throw Error('Large Directory read did not provide an external reference and bounded active view');
+      const search=await call('relay_context_page',{action:'search',reference:archive.reference,needle:'"id":"receipt-1"'});
+      const first=JSON.parse(search.contentItems[0].text).matches[0]?.offset;
+      if(!Number.isInteger(first))throw Error('Oldest saved Directory receipt was not searchable');
+      const page=await call('relay_context_page',{action:'read',reference:archive.reference,offset:first,maxBytes:512});
+      if(!JSON.parse(page.contentItems[0].text).text.startsWith('"id":"receipt-1"'))throw Error('Oldest saved receipt could not be recovered from the archive');
+      metrics.ledgerArchiveRetrieved=true;
+    }
     const denied=await call('relay_workspace',{action:'read',path:path.join(work,'missing.txt')});
     if(denied.success!==false)throw Error('Expected negative read to fail');metrics.negativeReads++;
     const dir=async(action,extra={})=>{
@@ -89,11 +103,18 @@ for(const [variant,sourceRoot] of [['control',control],['candidate',candidate]])
   metrics.status=outcome.status; metrics.error=outcome.error||null;
   const state=(await engine.actionDirectories.get(task.id,'Inspect incident traces')).read();
   metrics.receipts=state.receipts.length;
+  if(metrics.hasPagingTool&&readCount>256){
+    const disk=JSON.parse(await readFile(path.join(temp,'engine','task-action-directory',task.id+'.json'),'utf8'));
+    if(disk.receipts?.length!==metrics.receipts||disk.receipts[0]?.id!=='receipt-1')throw Error('Saved host Directory ledger lost historical receipts');
+    metrics.durableLedgerVerified=true;
+  }
   metrics.codeFinal=(await readFile(target,'utf8')).trim();
   if(metrics.status!=='completed'||!metrics.codeFinal.includes('a+b'))throw Error(metrics.error||'Run did not complete');
   if(variant==='candidate'){
    const root=path.join(temp,'engine','task-external-context',task.id);
-   metrics.archiveFiles=(await readdir(root)).length;
+   const archiveEntries=await readdir(root);metrics.archiveFiles=archiveEntries.length;
+   const archiveStats=await Promise.all(archiveEntries.map(name=>stat(path.join(root,name))));
+   metrics.archiveBytes=archiveStats.reduce((sum,row)=>sum+row.size,0);
    const {TaskExternalContextStore}=await import(pathToFileURL(path.join(sourceRoot,'lib','task-external-context.mjs')).href);
    const reopened=new TaskExternalContextStore({dataDir:path.join(temp,'engine'),taskId:task.id});
    const last=metrics.references.at(-1);
@@ -111,9 +132,9 @@ for(const [variant,sourceRoot] of [['control',control],['candidate',candidate]])
  }
 }
 await mkdir(reportDir,{recursive:true});
-const f=path.join(reportDir,readCount===180&&!expectCapacity?'offline-longhorizon-stress.json':`offline-stress-${readCount}${expectCapacity?'-capacity':''}.json`);
+const f=path.join(reportDir,readCount===180&&!expectCapacity&&!expectControlCapacity?'offline-longhorizon-stress.json':`offline-stress-${readCount}${expectCapacity?'-capacity':expectControlCapacity?'-paged':''}.json`);
 await writeFile(f,JSON.stringify({sourceHashes:{control:'3fc873c8394fb8381456c305cd91068ce9b98eac',candidate:'b49913517b409338cfe93ce0d450a710c34949d3'},results:outputs},null,2));
 console.log(JSON.stringify({report:f,results:outputs.map(o=>({variant:o.variant,pass:o.pass,reads:o.readCount,calls:o.callSequence,modelFacingBytes:o.readTextBytes,receipts:o.receipts,archiveFiles:o.archiveFiles,error:o.error}))}));
-const valid=expectCapacity?outputs.every(x=>!x.pass&&String(x.error||'').includes('DIRECTORY_CAPACITY')):outputs.every(x=>x.pass);
+const valid=expectControlCapacity?(outputs.find(x=>x.variant==='control')?.pass===false&&String(outputs.find(x=>x.variant==='control')?.error||'').includes('DIRECTORY_CAPACITY')&&outputs.find(x=>x.variant==='candidate')?.pass===true&&outputs.find(x=>x.variant==='candidate')?.ledgerArchiveRetrieved===true&&outputs.find(x=>x.variant==='candidate')?.durableLedgerVerified===true):expectCapacity?outputs.every(x=>!x.pass&&String(x.error||'').includes('DIRECTORY_CAPACITY')):outputs.every(x=>x.pass);
 console.log(JSON.stringify({expectCapacity,requestedReads:readCount,valid}));
 process.exitCode=valid?0:1;
