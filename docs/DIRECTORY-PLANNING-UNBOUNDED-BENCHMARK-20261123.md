@@ -57,3 +57,26 @@ All coding tasks execute against clean temporary projects with real workspace to
 - The Native/compatible provider API and tools retain real protocol constraints, actual file/memory availability, task cancellation, authorization boundaries and explicit user deadlines. Removal of arbitrary numeric ceilings must never imply permission to replay uncertain external effects.
 - The deterministic tests, even when substantial, do not prove that real models succeed more often. Until independent matched real-model trials finish, claims of an end-to-end Planning + Directory advantage remain **unproven**.
 - No live consumer release has been installed or activated from this experimental source. The older production integration and MiniCPM branches remain preserved.
+
+## First authenticated native four-arm trial — 2026-11-23
+
+The runner was exercised against an actual authenticated `gpt-6-luna` Codex/ChatGPT subscription session with real BLACKICE workspace tools, on exact source commit `192206cde74878f4da01277f9e67394625d9f5d1`. Every arm received the same **event-replay** task, original fixture, independently validated **21 hidden tests**, native model ID, and source implementation. Trials ran sequentially in fresh isolated temporary projects. All four were independently valid: no provider transport failure or quota gate is scored.
+
+| Arm | Status | Tool calls | Hidden pass / 21 | Full task success |
+|---|---|---:|---:|---|
+| Planning + Directory | failed: Directory repair active and verification pending | 21 | 18 | **No** |
+| Planning only | completed | 11 | 19 | **No** |
+| Directory only | completed | 13 | 6 (8 failed, 7 cancelled) | **No** |
+| Neither | completed | 13 | 19 | **No** |
+
+The combined arm completed `builtin-decomposition` and made three Directory actions: the initial inspection was observed, while repair was still active and verification pending. Its final Directory calls included rejected `observe` attempts; no completed task receipt was fabricated. Planning-only also completed decomposition and achieved 19/21 hidden checks, but that is still not an accepted code repair. Directory-only recorded a completed run with several actions blocked or pending, another reason to maintain independent whole-task grading.
+
+**Independent score:** `C:\\Users\\user\\Documents\\Codex\\BLACKICE-context-benchmark-results-20261123\\score-planning-directory-four-arm-192206cd.json`. Four raw JSON reports alongside it:
+`event-replay-candidate-planning-directory-62dc0998.json`,
+`event-replay-candidate-planning-only-b86d4b4e.json`,
+`event-replay-candidate-directory-only-b33b439a.json`, and
+`event-replay-candidate-neither-06bc2b97.json`.
+
+**Inference:** The four-arm benchmark is operational and each sample is valid. **No arm achieved the full task, and one stochastic trial per arm cannot establish that Planning + Directory helps or harms completion.** Historic trials on the same general event-replay fixture varied substantially even without changing source, so descriptive test counts must not be mistaken for a stable ranking.
+
+The next higher-value benchmark should go beyond a single coding agent and three planned actions: multiple dependent code changes, a long incident/event log requiring later exact retrieval, interrupted progress with unknown-effect receipts, new bugs encountered and fixed, and final acceptance tests covering all workstreams. Compare all four arms on that same difficult task with repeated independent native runs, exact-source receipts, and no experiment-imposed provider step limit. Do not escalate task difficulty merely because short-source checks pass; full end-to-end success is the qualification threshold.
