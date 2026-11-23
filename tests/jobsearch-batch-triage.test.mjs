@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {fileURLToPath} from 'node:url';
+const exec=promisify(execFile);
 import {loadJobSearchHistory,triageJobSearchCandidates} from '../lib/jobsearch-batch-triage.mjs';
 
 const old='11111111-1111-4111-8111-111111111111';
@@ -106,6 +110,19 @@ test('an unsubmitted draft without an application-count block is reviewable, not
  const [row]=triageJobSearchCandidates(idx,[base(newUrl)]).candidates;
  assert.equal(row.disposition,'review_prior_history');
  assert(row.prior.some(p=>p.state==='not_sent'));
+});
+
+
+test('CLI inline JSON avoids any candidate-file write and keeps exact history protections',async t=>{
+ const dir=await fixture(t);
+ const script=new URL('../scripts/jobsearch-batch-triage.mjs',import.meta.url);
+ const text=JSON.stringify([base(oldUrl),base(uncertainUrl),base(newUrl)]);
+ const {stdout}=await exec(process.execPath,[fileURLToPath(script),'--history',dir,'--json',text]);
+ const result=JSON.parse(stdout);
+ assert.equal(result.candidates.length,3);
+ assert.equal(result.candidates.find(row=>row.position===0).disposition,'do_not_reapply');
+ assert.equal(result.candidates.find(row=>row.position===1).disposition,'hold_reconcile');
+ assert.equal(result.candidates.find(row=>row.position===2).disposition,'candidate');
 });
 
 test('unknown source and source filename alone never prove a confirmed external submission',async t=>{

@@ -8,11 +8,12 @@ const args=process.argv.slice(2);
 const option=name=>{const idx=args.indexOf(name);return idx>=0?args[idx+1]:null;};
 const history=option('--history');
 const candidates=option('--candidates');
-if(!history||!candidates||!path.isAbsolute(history)||!path.isAbsolute(candidates)){
-  fail('Usage: node scripts/jobsearch-batch-triage.mjs --history <absolute Application History folder> --candidates <absolute JSON array file>');
+const inline=option('--json');
+if(!history||!path.isAbsolute(history)||(Boolean(candidates)===Boolean(inline))||(candidates&&!path.isAbsolute(candidates))){
+  fail('Usage: node scripts/jobsearch-batch-triage.mjs --history <absolute Application History folder> (--candidates <absolute JSON array file> | --json <inline JSON array>)');
 } else {
   try{
-    const raw=await readFile(candidates,'utf8');
+    const raw=candidates?await readFile(candidates,'utf8'):inline;
     if(raw.length>2*1024*1024)throw new Error('Candidate batch too large.');
     const input=JSON.parse(raw.replace(/^\uFEFF/,''));
     const index=await loadJobSearchHistory(history);
