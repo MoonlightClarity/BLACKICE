@@ -250,3 +250,20 @@ test('local action changes actual state and independent readback, without equati
   assert.equal(readReceipt.kind,'observation');
   assert.equal(observed.checked,true);
 });
+test('capture timeout certifies only the pre-pointer boundary, never an unmarked or lost reply', () => {
+  const code='BROWSER_CAPTURE_TIMEOUT';
+  const click=call('relay_browser',{action:'click',tabId:'form',ref:'submit'});
+  const receipt = inputDispatched => result(false,code,{code,inputDispatched});
+  const before=observeGoalToolOutcome(click,receipt(false));
+  assert.equal(before.kind,'recoverable_no_input');
+  assert.equal(before.inputDispatched,false);
+  assert.equal(before.actionDispatched,null);
+  assert.match(before.guidance,/frame capture timed out during input preparation/);
+  assert.match(before.guidance,/not proof that the whole operation had no effects/);
+  for (const response of [receipt(undefined),receipt(true),{...receipt(false),actionDispatched:true},result(false,'TRANSPORT_LOST')]) {
+    const observation=observeGoalToolOutcome(click,response);
+    assert.equal(observation.kind,'uncertain_external_effect');
+    assert.equal(detectUnknownEffectReplay([observation],click)?.code,'GOAL_EFFECT_UNRESOLVED');
+  }
+  assert.equal(observeGoalToolOutcome({...click,namespace:'third_party'},receipt(false)).kind,'uncertain_external_effect');
+});

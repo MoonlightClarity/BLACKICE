@@ -1914,7 +1914,13 @@ export class ElectronBrowserDriver extends EventEmitter {
         if (beforeInput) throw Object.assign(error('The page changed before the requested pointer input was dispatched. Take a fresh snapshot before acting.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', inputDispatched: false });
         throw error('The page changed while preparing browser input. Take a fresh snapshot before acting.');
       }
-    } });
+    } }).catch(reason => {
+      // In click/hover preparation, the pointer routine has not been invoked.
+      // Scroll/layout may already have changed; do not claim actionDispatched:false.
+      if (beforeInput && reason?.code === 'BROWSER_CAPTURE_TIMEOUT')
+        throw Object.assign(error(reason.message), {code: reason.code, inputDispatched: false});
+      throw reason;
+    });
   }
   async clickPoint(tab, point, signal, expected, sessionId) {
     cancel(signal);
