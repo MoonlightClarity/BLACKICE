@@ -23,10 +23,11 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
   let opened=false,destroyed=false,models=[],status={},selected=select.value,signature='',expanded=new Map(),limits=new Map(),activating=null,activationError='',openRevision=0,unavailable={};
   const providerOptions=()=>({providers:[...(status.providers||[]),...(status.subscriptionProviders||[])],defaultProviderId:'codex'});
   const hiddenProviders=()=>Array.isArray(status.runtimeSettings?.hiddenModelProviders)?status.runtimeSettings.hiddenModelProviders:[];
-  let pendingAction=false,actionMessage='';
+  let pendingAction=false,actionMessage='',visibilityRevision=0;
+  const visibilityKey=()=>JSON.stringify([...hiddenProviders()].sort());
   const providerLabel=id=>id==='codex'?'Codex':providerOptions().providers.find(p=>p.id===id)?.name||id;
   async function providerAction(id,action){
-    if(!api||pendingAction||destroyed||activating||!opened||select.disabled)return;pendingAction=true;actionMessage=action==='refresh'?'Refreshing '+providerLabel(id)+' catalog…':'Updating provider visibility…';render();
+    if(!api||pendingAction||destroyed||activating||!opened||select.disabled)return;const visibilityAtStart=visibilityRevision;pendingAction=true;actionMessage=action==='refresh'?'Refreshing '+providerLabel(id)+' catalog…':'Updating provider visibility…';render();
     try{
       if(action==='refresh'){
         const result=id==='codex'?await api('/api/codex/models?refresh=true','GET',undefined,{deadlineMs:120000}):await api('/api/providers/'+encodeURIComponent(id)+'/models','POST',{refresh:true,limit:1},{deadlineMs:120000});
@@ -34,7 +35,12 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
         else{actionMessage=providerLabel(id)+' catalog refreshed. Saved selections unchanged.';notify(actionMessage);}
       }else{
         const saved=await api('/api/runtime/settings/model-provider-visibility','POST',{providerId:id,hidden:action==='hide'});
-        status={...status,runtimeSettings:saved};actionMessage=providerLabel(id)+(action==='hide'?' hidden. Restore below.':' restored.');notify(actionMessage);
+        // The live settings stream may already have delivered a later save
+        // from another window. Do not roll its visibility back with this reply.
+        if(visibilityAtStart===visibilityRevision && Array.isArray(saved?.hiddenModelProviders)){
+          status={...status,runtimeSettings:{...status.runtimeSettings,hiddenModelProviders:saved.hiddenModelProviders}};signature='';
+        }
+        actionMessage=providerLabel(id)+(action==='hide'?' hidden. Restore below.':' restored.');notify(actionMessage);
       }
     }catch(error){actionMessage=(error?.message||'Provider action failed.');notify(actionMessage,true);}
     finally{pendingAction=false;if(!destroyed)render();}
@@ -214,7 +220,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
   trigger.addEventListener('click',onTrigger);trigger.addEventListener('keydown',onTriggerKey);dismiss.addEventListener('click',onDismiss);search.addEventListener('input',onFilter);panel.addEventListener('keydown',onKey);select.addEventListener('change',onSelect);doc.addEventListener('pointerdown',onOutside,true);doc.addEventListener('focusin',onOutside,true);const viewport=doc.defaultView||globalThis.window;viewport?.addEventListener?.('resize',position);
   return{
     update({models:choices=[],status:nextStatus={},selected:nextSelected=select.value}={}){
-      if(destroyed)return;status=nextStatus||{};selected=nextSelected;
+      if(destroyed)return;const priorVisibility=visibilityKey();status=nextStatus||{};selected=nextSelected;if(visibilityKey()!==priorVisibility)visibilityRevision++;
       const catalog=new Map();for(const model of status.models||[]){if(model.id)catalog.set(model.id,model);if(model.model)catalog.set(model.model,model);}
       const seen=new Set();models=[];for(const choice of choices){const id=idOf(choice);if(!id||seen.has(id))continue;seen.add(id);const metadata=catalog.get(id)||{},alias=id==='default'||id==='codex';models.push({...metadata,...choice,id,alias,label:choice.label||metadata.displayName||id,available:choice.disabled===true?false:choice.available??metadata.available??(alias||catalog.has(id))});}
       if(selected&&!seen.has(selected))models.push({id:selected,label:selected,available:false,disabled:true,alias:selected==='default'||selected==='codex'});

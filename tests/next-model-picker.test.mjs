@@ -291,3 +291,15 @@ test('picker hides and restores a provider directly without changing its selecte
   await control('codex','refresh').dispatch('click',{},true);
   assert.equal(calls.at(-1).route,'/api/codex/models?refresh=true');assert.deepEqual(f.changes,[]);
 });
+
+test('a delayed visibility response cannot undo newer settings from another window',async t=>{
+  let release;const response=new Promise(resolve=>release=resolve);const api=()=>response;
+  const f=fixture(t,{selected:'alpha::free-low',hidden:['alpha','zeta'],api});await f.open();
+  const control=Array.from(f.panel().querySelectorAll('[data-provider-action]')).find(node=>node.dataset.providerId==='alpha'&&node.dataset.providerAction==='restore');
+  const pending=control.dispatch('click',{},true);
+  f.update({runtimeSettings:{hiddenModelProviders:['zeta']}});
+  f.update({runtimeSettings:{hiddenModelProviders:[]}});
+  release({hiddenModelProviders:['zeta']});await pending;
+  assert.deepEqual(f.groups().map(group=>group.dataset.modelProvider),['alpha','zeta']);
+  assert.equal(f.select.value,'alpha::free-low');assert.deepEqual(f.changes,[]);
+});
