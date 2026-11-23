@@ -23,6 +23,8 @@ const moduleImport=async file=>import(pathToFileURL(path.join(sourceRoot,'lib',f
 const [{HarnessEngine},{ProviderRuntime},{ProviderStore},{CodexRuntime}]=await Promise.all([
  moduleImport('engine.mjs'),moduleImport('providers.mjs'),moduleImport('provider-store.mjs'),moduleImport('codex.mjs')]);
 const results={variant,testId,model,sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
+  harnessEngineSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','engine.mjs'))).digest('hex'),
+  benchmarkFixtureSha256:testId==='event-replay'?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-event-replay.mjs'))).digest('hex'):null,
   contextPolicy:variant==='candidate'?'structured-head-tail-v2':'unmodified-2.40.75',
   contextImplementationSha256:variant==='candidate'?
     createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','task-external-context.mjs'))).digest('hex'):null};
@@ -214,7 +216,8 @@ try{
   }
   const actual=runtime.runAgent.bind(runtime);
   runtime.runAgent=options=>actual({...options,onToolCall:async(call,ctx)=>{
-    const entry={name:call.name,action:(typeof call.arguments==='string'?JSON.parse(call.arguments):call.arguments)?.action,at:Date.now()};
+    const supplied=typeof call.arguments==='string'?JSON.parse(call.arguments):call.arguments;
+    const entry={name:call.name,action:supplied?.action,argumentsPreview:JSON.stringify(supplied).slice(0,900),at:Date.now()};
     results.toolCalls.push(entry);
     try{const value=await options.onToolCall(call,ctx);entry.success=value?.success;entry.code=value?.code||null;
       const first=value?.contentItems?.find(item=>item?.type==='inputText'&&typeof item.text==='string')?.text;

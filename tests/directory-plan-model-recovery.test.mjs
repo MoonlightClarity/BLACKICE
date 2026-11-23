@@ -20,6 +20,7 @@ test('malformed Directory plans receive a minimal correction without dispatch or
  const engine=await new HarnessEngine({runtime,dataDir:path.join(root,'engine'),defaultCwd:root}).init();
  t.after(async()=>{await engine.close();await rm(root,{recursive:true,force:true});});
  runtime.execute=async options=>{
+  assert.match(String(options.prompt)+'\n'+String(options.developerInstructions),/WORKSPACE MUTATION CAPABILITY \(HOST-VERIFIED FOR THIS RUN\)/);
   const tool=options.dynamicTools.find(x=>x.name==='relay_directory_action');
   assert.match(tool.description,/minimal valid plan/);
   let seq=0;
