@@ -267,3 +267,23 @@ test('capture timeout certifies only the pre-pointer boundary, never an unmarked
   }
   assert.equal(observeGoalToolOutcome({...click,namespace:'third_party'},receipt(false)).kind,'uncertain_external_effect');
 });
+test('model effects view supplies exact reconcile identity without suggesting any outcome', async () => {
+  const manager=Object.create(ConversationGoals.prototype);
+  const at='2026-11-23T03:18:00Z', signature='a'.repeat(64);
+  const originals=[
+    {id:'one',signature,at,resolutions:[{outcome:'unknown'}],resolution:{outcome:'unknown'}},
+    {signature,at},
+    {id:'old',signature,at,resolution:{outcome:'occurred'}},
+    {id:'incomplete',signature}
+  ];
+  manager.effectReceipts=async()=>originals;
+  const run={taskId:'fixture'};
+  const projected=await manager.handle(run,'agent',call('relay_goal',{action:'effects'}));
+  assert.equal(projected.success,true);
+  const {receipts}=JSON.parse(projected.contentItems[0].text);
+  assert.deepEqual(receipts[0].reconcileIdentity,{receiptId:'one',signature,observedAt:at,expectedResolutionCount:1});
+  assert.deepEqual(receipts[1].reconcileIdentity,{receiptId:null,signature,observedAt:at,expectedResolutionCount:0});
+  assert.equal(receipts[2].reconcileIdentity,undefined);
+  assert.equal(receipts[3].reconcileIdentity,undefined);
+  assert.equal(originals[0].reconcileIdentity,undefined);
+});
