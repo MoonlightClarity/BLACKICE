@@ -41,3 +41,15 @@ This is a promising low-conflict **integration preview**, not authorization to m
 4. Enable paging for MiniCPM only if its actual task success or long-run reliability improves without unsafe completion claims. Keep Action Directory planning separately gated until the model can perform valid plan/focus/observe tool sequences. Use vision qualification as an independent lane.
 
 **No original branch, installed BLACKICE runtime, job-search task, or local-provider configuration was altered by this compatibility analysis.**
+
+## Later same-day continuation: actual MiniCPM paired trials
+
+A separate isolated compatibility branch, `test/minicpm-directory-review-gate-20261123` at `ed10a691`, combines the exact MiniCPM and current experimental Directory source lines, resolves only their provider-tool-catalog conflict, and retains detailed original evidence in `docs/MINICPM-DIRECTORY-AB-FINDINGS-20261123.md`.
+
+The combined source passed **145 deterministic tests with zero failures**, including two end-to-end archived-middle-evidence review cases. A preview without the middle source did not satisfy the reviewer; a model-retrieved exact page did. This proves the evidence boundary, not the local model's ability to choose the retrieval.
+
+The real local `MiniCPM-V-4.7-1B-heretic-Q4_K_S` was then run in paired long-log trials with Action Directory Off. **No full task succeeded.** In the initial relative-path pair both variants exhausted tool steps while looking for the log. In the narrower absolute-path pair, control read the exact hidden diagnosis and accurately stated `CACHE_EPOCH_STALE_42` but did not obtain an accepted final answer. The Directory variant archived the log, called the unsupported source checker on the `.log` file eight times, searched its context reference at the last tool step, but never read that page or completed the task.
+
+This is strong evidence that the current 1B model's *tool choice* remains the limiting factor even when Directory's storage and retrieval work correctly. It is not a population-level estimate of paging's effect. The independent MiniCPM branch now has commit `0f541860`, restricting the advertised code-check languages to the attached backend; targeted tests passed 42/42 and 29/29. Those live trials **preceded** that change, so they are not evidence of post-fix success.
+
+**Decision unchanged:** continue independent reliability integration, but do not enable experimental Directory paging or action planning by default for MiniCPM 1B. A further local-model benchmark is justified only after a materially different tool-use/recovery mechanism is implemented and tested.
