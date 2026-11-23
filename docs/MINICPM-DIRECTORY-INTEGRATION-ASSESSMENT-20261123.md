@@ -53,3 +53,18 @@ The real local `MiniCPM-V-4.7-1B-heretic-Q4_K_S` was then run in paired long-log
 This is strong evidence that the current 1B model's *tool choice* remains the limiting factor even when Directory's storage and retrieval work correctly. It is not a population-level estimate of paging's effect. The independent MiniCPM branch now has commit `0f541860`, restricting the advertised code-check languages to the attached backend; targeted tests passed 42/42 and 29/29. Those live trials **preceded** that change, so they are not evidence of post-fix success.
 
 **Decision unchanged:** continue independent reliability integration, but do not enable experimental Directory paging or action planning by default for MiniCPM 1B. A further local-model benchmark is justified only after a materially different tool-use/recovery mechanism is implemented and tested.
+
+## Correction after explicit step-budget challenge
+
+**The original 8–10-step trials were artificially constrained by the benchmark.** Read-only inspection of the installed BLACKICE `local_llamacpp` provider on 2026-11-23 confirmed **`maxSteps: null`, `maxTokens: 8192`, and no MiniCPM-specific maxOutputTokens value**. These are distinct from the prior test settings of 8–10 steps, a 4,096-token per-response limit, and only 85 seconds. Their short-budget results must not be reported as production capability failures.
+
+A subsequent 32-step paging run with the original 4,096-token cap failed `PROVIDER_TRUNCATED` after two tool calls, so it is **infrastructure-invalid for a step-limit comparison**. A new matched pair with **32 steps, 8,192 output tokens, and 540 seconds** then finished without exhausting any of those three budgets:
+
+- **Unpaged control:** two successful source reads contained `CACHE_EPOCH_STALE_42` and the model independently reported that exact code. BLACKICE nevertheless ended `CHAT_OUTCOME_STALLED` after ~204.7 s because the separate MiniCPM outcome reviewer repeatedly chose `continue`. The model's factual extraction was correct, but the full BLACKICE task was not accepted.
+- **Directory paging:** six tool calls and ~208.7 s, no exact code extracted. MiniCPM followed a sourceContinuation to line 225 instead of searching the *already archived* original page containing the code at line 149, made irrelevant repeated reads, and the reviewer rejected its unsupported completion with `CHAT_OUTCOME_STALLED`.
+
+This isolates **two further defects beyond low budgets**: Directory's archive-versus-source-continuation guidance and the local reviewer's false negative on a supported read-only answer. These are not proof of general model ability/inability from one paired stochastic trial.
+
+The Directory tool-contract correction is preserved in a **separate isolated branch** `fix/context-page-search-first-20261123` at `c3ab36c6`, with **146 passing combined regression tests**. It explicitly prioritizes archived literal search before continuing omitted source lines and rejects mismatched read/search arguments rather than ignoring them. **It has not been live-qualified with MiniCPM.**
+
+Complete budgets, outcomes and immutable raw receipts are at `test/minicpm-directory-review-gate-20261123` commit `d60a05e0`, in `docs/MINICPM-BUDGET-REASSESSMENT-20261123.md` and the associated `verification/minicpm-directory-ab-*-steps32-*.json` files. No installation, publishing or production provider configuration changes occurred.
