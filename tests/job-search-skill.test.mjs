@@ -9,7 +9,7 @@ import {HarnessEngine} from '../lib/engine.mjs';
 import {IdentityStore} from '../lib/identity.mjs';
 import {ACTION_DIRECTORY_INSTRUCTIONS,ACTION_DIRECTORY_TOOL} from '../lib/task-action-directory.mjs';
 import {ProviderRuntime} from '../lib/providers.mjs';
-import {wantsJobSearchSkill,wantsIntentInferenceSkill,wantsBrowserNavigationSkill} from '../lib/chat-intent-inference.mjs';
+import {wantsJobSearchSkill,wantsJobSearchExecutionSkill,wantsIntentInferenceSkill,wantsBrowserNavigationSkill} from '../lib/chat-intent-inference.mjs';
 import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 import {submitChat} from '../public/next/chat/send.mjs';
 
@@ -97,12 +97,22 @@ test('current actionable job requests select only the job skill, not the general
    'The user wrote: "Find three market analyst jobs."','> '+example,
    '`\x60\x60text\n'+example+'\n`\x60\x60','\u201c'+example+'\u201d'])assert.equal(wantsJobSearchSkill(input),false,input);
 });
+const diagnosisOnlyWorkflows=[
+ 'Run the job search workflow, but only diagnose it; do not take any actions.',
+ 'Restart the job-search workflow. Diagnose only.',
+ 'Run the job search workflow in simulation mode.',
+ 'Run the job search workflow for diagnosis only.',
+];
 test('explicit operational workflow commands select Job Search without selecting diagnostic examples',()=>{
  for(const input of [
   'Restart the real BLACKICE job-search/application workflow as a diagnostic endurance test in Chat Mode.',
   'Run my job search workflow and only shortlist roles.',
   'Resume the job application workflow.',
- ]) assert.equal(wantsJobSearchSkill(input),true,input);
+ ]) {
+  assert.equal(wantsJobSearchExecutionSkill(input),true,input);
+  assert.equal(wantsJobSearchSkill(input),false,"the legacy selector is unchanged: "+input);
+  assert.equal(wantsBrowserNavigationSkill(input),false,"workflow syntax alone does not load browser guidance: "+input);
+ }
  for(const input of [
   'Diagnose why we failed to restart the real BLACKICE job-search/application workflow.',
   'Explain how to resume the job search workflow.',
@@ -113,7 +123,8 @@ test('explicit operational workflow commands select Job Search without selecting
   'Run the job-search skill tests.',
   'Run the job-search workflow tests.',
   'Run the job-search workflow as a simulation.',
- ]) assert.equal(wantsJobSearchSkill(input),false,input);
+  ...diagnosisOnlyWorkflows,
+ ]) assert.equal(wantsJobSearchExecutionSkill(input),false,input);
 });
 
 test('the discoverable packaged skill checks recency and live requisition separately',async()=>{
@@ -366,6 +377,16 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.ok(ordinary.receipts.every(r=>r.skillId!==alignmentId));
  assert.ok(!ordinary.prompt.includes(heading));assert.ok(ordinary.receipts.every(r=>r.skillId!==id));
 
+ for(const task of diagnosisOnlyWorkflows){
+  const diagnostic=await invoke(task);
+  assert.ok(!diagnostic.prompt.includes(heading));
+  assert.ok(!diagnostic.prompt.includes(alignmentHeading));
+  assert.ok(diagnostic.receipts.every(r=>![id,alignmentId,browserSkill].includes(r.skillId)));
+ }
+ const shortlist=await invoke('Can you shortlist remote open roles?');
+ assert.ok(shortlist.prompt.includes(heading));
+ assert.deepEqual(shortlist.receipts.filter(r=>r.skillId===id),[accepted]);
+
  await catalog.delete({id,value:{expectedRevision:1}});
  await catalog.delete({id:alignmentId,value:{expectedRevision:1}});
  await catalog.delete({id:antiCompletion,value:{expectedRevision:2}});
@@ -377,9 +398,9 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.ok(!deleted.prompt.includes(alignmentHeading));
  assert.ok(deleted.receipts.every(r=>r.skillId!==alignmentId));
  assert.ok(!deleted.prompt.includes(heading));assert.ok(deleted.receipts.every(r=>r.skillId!==id));
- assert.equal(prompts.length,8,'four ordinary worker conversations retain their original two requests');
- assert.equal(assessmentRequests.length,4,'one isolated assessment per ordinary conversation');
- assert.equal(allRequests.length,12,'skill selection adds no unaccounted provider calls');
+ assert.equal(prompts.length,18,'nine ordinary worker conversations retain their original two requests');
+ assert.equal(assessmentRequests.length,9,'one isolated assessment per ordinary conversation');
+ assert.equal(allRequests.length,27,'skill selection adds no unaccounted provider calls');
  const instrumented=await invoke('Apply to one job for me: Senior Product Manager.','maximal',2);
  const decisions=instrumented.events.filter(event=>event.type==='chat.execution-review');
  const evidenceFingerprint=decisions[0]?.evidenceFingerprint;

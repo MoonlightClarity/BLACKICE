@@ -41,7 +41,7 @@ async function report(options, action, fields = {}) {
 const output = n => ({output:'Fixture progress '+n,threadId:'goal-test-thread'});
 
 for(const isolatedHistory of [false,true])test('an explicitly restarted job-search Goal delivers the effective skill to initial and exactly bound successor providers only (isolated history '+isolatedHistory+')',async t=>{
-  const objective='Restart the real BLACKICE job-search/application workflow as a diagnostic endurance test in Chat Mode. Shortlist suitable roles only.';
+  const objective='Restart the real BLACKICE job-search/application workflow as a diagnostic endurance test in Chat Mode. '+(isolatedHistory?'Shortlist suitable roles only.':'You are authorized to search for and submit real applications that meet my constraints.');
   const heading='JOB SEARCH (advisory execution method; not permission)';
   const skillId='library-job-search';
   const {engine,goals,conversations,dataDir,runtime}=await fixture(t,async(options,n)=>{
