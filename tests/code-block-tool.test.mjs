@@ -53,11 +53,19 @@ test('provider tool schemas advertise only code checks attached to their workspa
     assert.deepEqual(tool.inputSchema.properties.check.enum,[check]);
     assert.deepEqual(tool.inputSchema.oneOf[1].properties.check.enum,[check]);
     assert.match(tool.description,new RegExp('check:'+check));
+    assert.match(tool.description,/do not check log or text files/);
+    assert.deepEqual(tool.inputSchema.oneOf[1].properties.language.enum,
+      check==='syntax'?['javascript','json']:['javascript']);
+    assert.equal(tool.inputSchema.oneOf[0].properties.language.enum,undefined,
+      'Saving code remains available in other source languages.');
   }
   assert.deepEqual(CODE_BLOCK_TOOL.inputSchema.properties.check.enum,['syntax','public'],
     'The general tool definition remains intact for existing callers.');
   assert.notStrictEqual(ordinary.inputSchema,benchmark.inputSchema);
   assert.throws(()=>codeBlockToolForChecks({syntax:false,publicCheck:false}),TypeError);
+  assert.throws(()=>codeBlockToolForChecks({syntax:true,publicCheck:true}),TypeError);
+  assert.equal(CODE_BLOCK_TOOL.inputSchema.oneOf[1].properties.language.enum,undefined,
+    'No static or historic source tool schema is mutated.');
 });
 
 test('raw save preserves exact UTF-8/CRLF source, verifies bytes and never executes it', async t => {
