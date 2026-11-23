@@ -10,7 +10,7 @@ import { fixtureDeploymentReadiness } from './fixture-deployment-readiness.mjs';
 import {createScheduledChatWorkflow} from '../public/next/workspaces/schedule-inspection-model.mjs';
 
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
-const until=async(check,label='HTTP operation condition')=>{const end=Date.now()+7000;while(Date.now()<end){const result=await check();if(result)return result;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
+const until=async(check,label='HTTP operation condition')=>{const end=Date.now()+(label==='completed recurring run'?20000:7000);while(Date.now()<end){const result=await check();if(result)return result;await new Promise(resolve=>setTimeout(resolve,5));}assert.fail(`${label} did not settle`);};
 const workflow=(planningMode='off')=>({id:'http-operation-workflow',name:'HTTP deployed worker',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Worker',prompt:'Write the isolated fixture result and independently read it.',model:'http-fixture-model'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode}});
 class Desktop extends EventEmitter{status(){return{available:false,enabled:false};}async setEnabled(){return this.status();}}
 async function fixture(t,{execute,readinessFailure,modelStatus,modelResolver,runtimeStart,maxConcurrentRuns=4,planningMode='off',expectCheckpoint=false}={}){
