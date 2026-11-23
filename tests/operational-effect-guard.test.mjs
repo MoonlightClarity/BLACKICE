@@ -60,6 +60,29 @@ test('ATS actions use generic exact-effect receipts, not application-history fen
   assert.notEqual(applicationTarget(jobA).key,applicationTarget(jobB).key);
 });
 
+test('legacy 8 MiB workspace journal keeps every unknown effect and admits new receipts',async t=>{
+  const f=await fixture(t),g=f.guard('new-work');
+  const legacy={operationId:'legacy-original',taskId:'original-task',runId:'original-run',
+    nodeId:'agent',effect:'commit',operationKey:'operation:legacy',state:'unknown',
+    resources:['path:legacy-source'],content:'x'.repeat(9*1024*1024)};
+  const file=f.store.file(g.scopeId)+'.effects';
+  const initial=JSON.stringify({version:1,root:f.cwd,records:[legacy]});
+  assert.ok(Buffer.byteLength(initial)>8*1024*1024, 'This reproduces the former hard limit.');
+  await writeFile(file,initial);
+  const result=await f.submit(descriptor('fresh-task'),g);
+  assert.equal(result.success,true);
+  const records=await g.records();
+  assert.equal(records.length,2, 'Existing unknown and new operation must both persist.');
+  assert.equal(records[0].operationId,legacy.operationId);
+  assert.equal(records[0].state,'unknown');
+  assert.equal(records[0].content.length,legacy.content.length, 'No old receipt content may be discarded.');
+  assert.equal(records[1].taskId,'new-work');
+  assert.equal(records[1].state,'unknown', 'A successful transport is not proof of completion.');
+  const reopened=f.guard('independent-task',await f.makeStore());
+  assert.deepEqual((await reopened.records()).map(row=>row.operationId),
+    records.map(row=>row.operationId),'Reopening retains both effect identities.');
+});
+
 test('older application history remains data, not a native dispatch gate',async t=>{
   const f=await fixture(t);
   await writeFile(path.join(f.cwd,'applications.jsonl'),JSON.stringify({url:jobA,status:'submitted'})+'\n');

@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {createChatOutcomeReviewer} from '../lib/chat-outcome-review.mjs';
+import {strictProviderSchema} from '../lib/provider-output-schema.mjs';
 
 const boundary='\nREVIEW DATA (JSON):\n';
 const data=options=>JSON.parse(options.prompt.split(boundary).at(-1));
@@ -51,6 +52,26 @@ test('ordinary assessment preserves exact authority, model, effort, tier and cur
   assert.doesNotMatch(JSON.stringify(f.events),/EXACT_WORKER_DEVELOPER|OWNER_STANDING_LIMIT/);
 });
 
+test('local MiniCPM reviewer uses a closed six-field wire grammar and still binds host evidence',async t=>{
+  const receipt=row('local-source-read',{text:'The export is null.'});
+  const f=await fixture(t,options=>{
+    assert.equal(options.responseOnly,true);
+    assert.equal(strictProviderSchema(options.outputSchema),true,'Local reviewer output must be grammar compatible.');
+    assert.deepEqual(options.outputSchema.required,
+      ['decision','summary','remaining','nextAction','evidenceRefs','blockers']);
+    assert.equal(options.outputSchema.properties.concerns,undefined);
+    assert.equal(options.outputSchema.properties.outcomeChecks,undefined);
+    assert.match(options.prompt,/BLACKICE LOCAL OUTCOME REVIEW/);
+    assert.match(options.prompt,/A syntax check is not a file read/);
+    assert.doesNotMatch(options.prompt,/BLACKICE ORDINARY TASK OUTCOME REVIEW/);
+    return response({summary:'The saved read showed that the export is null.',evidenceRefs:['evidence-0001']});
+  },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+  const result=await f.reviewer.assess(request('Report the export value.',[receipt]));
+  assert.equal(result.decision,'respond');
+  assert.deepEqual(result.evidenceRefs,['local-source-read']);
+  assert.equal(result.verified,false,'Structured syntax is not independent effect verification.');
+});
+
 test('content, history and prepare-only requests do not require invented external work',async t=>{
   const f=await fixture(t,()=>response());
   for(const input of ['Explain the supplied calculation.','Report when the earlier export finished. Do not create one.','Prepare the note. Do not send it.']){
@@ -95,6 +116,14 @@ test('invalid references receive bounded review-only repair then explicit unrevi
   assert.equal(f.events.at(-1).status,'unreviewed');
 });
 
+test('schema-constrained local reviewer cannot certify success with an empty final summary',async t=>{
+  const f=await fixture(t,()=>response({summary:''}),{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+  const result=await f.reviewer.assess(request('Report the observed result.',[row('read',{text:'Actual value'})]));
+  assert.equal(result.decision,'unreviewed');assert.equal(result.reason,'MODULAR_REVIEW_INVALID');
+  assert.equal(f.calls.length,3,'Format repair is bounded.');
+  assert.equal(f.events.some(event=>event.status==='validated'),false);
+});
+
 test('missing evidence or unresolved default model never silently selects another reviewer',async t=>{
   const f=await fixture(t,()=>assert.fail('No model may run with incomplete admitted evidence.'));
   const r=request();r.evidence.omitted=1;
@@ -119,6 +148,23 @@ test('report correction uses isolated read-only synthesis and re-assessment, nev
   assert.deepEqual(f.events.filter(event=>event.status==='validated').map(event=>event.phase),['assessment','report-synthesis','report-reassessment']);
   assert.doesNotMatch(JSON.stringify(f.events.filter(event=>event.phase==='report-synthesis')),/The requested file was saved/,'draft is not emitted before re-assessment');
   assert.equal(f.usage.length,3);
+});
+
+test('local compact reviewer preserves report-only correction and independent reassessment',async t=>{
+  const corrected='The saved record contains the expected result.';
+  const f=await fixture(t,(options,index)=>{
+    assert.equal(strictProviderSchema(options.outputSchema),true);
+    if(index===1)return response({decision:'revise_response',summary:'Candidate report is wrong.',
+      nextAction:'Rewrite the report.',evidenceRefs:['evidence-0001']});
+    if(index===2){assert.match(options.prompt,/READ-ONLY REPORT SYNTHESIS/);
+      return response({summary:corrected,evidenceRefs:['evidence-0001']});}
+    assert.equal(data(options).candidate.output,corrected);
+    return response({summary:'The corrected report is supported.',evidenceRefs:['evidence-0001']});
+  },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+  const result=await f.reviewer.assess(request('Report the saved result.',[row('receipt',{status:'saved'})]));
+  assert.equal(result.decision,'respond');assert.equal(result.replacementOutput,corrected);
+  assert.equal(f.calls.length,3);
+  assert.ok(f.calls.every(options=>options.sandbox==='read-only' && options.hostOnlyTools===true));
 });
 
 test('report-only repair remains finite and does not publish an unaccepted draft',async t=>{
