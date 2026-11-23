@@ -47,7 +47,8 @@ test('a Directory agent receives a short reference, pages the original source te
     assert.equal(pointer.externalContext, true);
     assert.equal(pointer.tool, 'relay_workspace');
     evidenceId = read.contentItems.at(-1).text.match(/receipt-\d+/)[0];
-    assert(!visibleText.includes(sentinel), 'The huge tool result is not resident in the model response.');
+    assert.match(pointer.preview.tail,new RegExp(sentinel), 'Preserve the diagnostic tail even when most of the result is archived.');
+    assert(visibleText.length < baselineText.length / 5,'The entire large result is not resident in the model response.');
     const search = await call('relay_context_page', { action: 'search', reference: pointer.reference, needle: sentinel });
     assert.equal(search.success, true);
     const found = JSON.parse(search.contentItems[0].text);

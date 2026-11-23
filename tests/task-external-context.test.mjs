@@ -26,8 +26,8 @@ test('externalized read-only results can be paged and reassembled byte-exactly a
   assert.equal(pointer.externalContext, true);
   assert.equal(pointer.tool, 'relay_workspace');
   assert(pointer.bytes > 500);
-  assert(!compact.contentItems[0].text.includes('END-TOKEN-EXACT'));
-  assert(compact.contentItems[0].text.length < original.length / 4);
+  assert.match(pointer.preview.tail,/END-TOKEN-EXACT/, 'Preserve useful diagnostic tails in the short preview.');
+  assert(compact.contentItems[0].text.length < original.length / 2, 'The combined head/tail preview remains bounded even in a small synthetic fixture.');
   const resumed = new TaskExternalContextStore({ dataDir, taskId: 'task-alpha' });
   const listing = parsed(await resumed.handle({ arguments: { action: 'list' } }));
   assert(listing.items.some(row => row.reference === pointer.reference));
@@ -97,6 +97,35 @@ test('literal search finds evidence across chunk boundaries without paging throu
   const noMore = parsed(await search({ startOffset: second + 1 }));
   assert.deepEqual(noMore.matches, []);
   assert.equal(noMore.complete, true);
+});
+
+test('large structured diagnostic results preserve both ends and actionable status in a bounded preview', async t => {
+  const {store} = await fixture(t);
+  const content = '1: start\n' + 'observation\n'.repeat(3000) + '3002: ROOT_CAUSE_CYCLE_WAITED_FOREVER';
+  const raw = JSON.stringify({path:'incident.log',startLine:1,endLine:3002,content,truncated:true,nextStartLine:3003});
+  const host = result(raw);
+  const compact = await store.archiveResult(readCall, host);
+  const pointer = parsed(compact);
+  assert.equal(pointer.externalContext,true);
+  assert.equal(pointer.preview.contentField,'content');
+  assert.match(pointer.preview.head,/1: start/);
+  assert.match(pointer.preview.tail,/ROOT_CAUSE_CYCLE_WAITED_FOREVER/);
+  assert.equal(pointer.preview.truncated,true);
+  assert.equal(pointer.preview.nextStartLine,3003);
+  assert.match(pointer.preview.warning,/not complete evidence/);
+  assert(Buffer.byteLength(compact.contentItems[0].text)<Buffer.byteLength(raw)*0.2);
+  const match = await store.search({reference:pointer.reference,needle:'ROOT_CAUSE_CYCLE_WAITED_FOREVER'});
+  assert.equal(match.matches.length,1);
+  const page = await store.read({reference:pointer.reference,offset:match.matches[0].offset,maxBytes:512});
+  assert.match(page.text,/ROOT_CAUSE_CYCLE_WAITED_FOREVER/);
+  assert.equal(host.contentItems[0].text,raw);
+});
+
+test('large failed reads are not hidden behind context references',async t=>{
+  const {store}=await fixture(t);
+  const failure={success:false,code:'WORKSPACE_ERROR',contentItems:[{type:'inputText',text:'File error '+('x'.repeat(3000))}]};
+  assert.strictEqual(await store.archiveResult(readCall,failure),failure);
+  assert.deepEqual((await store.list()).items,[]);
 });
 
 test('missing disk storage leaves full tool result intact instead of losing evidence', async t => {

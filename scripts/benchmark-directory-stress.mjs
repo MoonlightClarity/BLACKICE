@@ -9,6 +9,9 @@ import { spawnSync } from 'node:child_process';
 const candidate=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const control=process.env.BLACKICE_BENCH_CONTROL_ROOT||path.join(path.dirname(candidate),'BLACKICE-context-control-20261123');
 const reportDir=process.env.BLACKICE_BENCH_REPORT_DIR||path.join(path.dirname(candidate),'BLACKICE-context-benchmark-results-20261123');
+const readCount=Number(process.argv.find(arg=>arg.startsWith('--reads='))?.slice(8)||180);
+if(!Number.isSafeInteger(readCount)||readCount<1||readCount>2000)throw Error('Choose 1–2000 read operations.');
+const expectCapacity=process.argv.includes('--expect-capacity');
 const outputs=[];
 for(const [variant,sourceRoot] of [['control',control],['candidate',candidate]]){
  const {HarnessEngine}=await import(pathToFileURL(path.join(sourceRoot,'lib','engine.mjs')).href);
@@ -35,16 +38,16 @@ for(const [variant,sourceRoot] of [['control',control],['candidate',candidate]])
     };
     metrics.hasPagingTool=options.dynamicTools.some(x=>x.name==='relay_context_page');
     metrics.callSequence=0;const refs=[];
-    for(let i=0;i<180;i++){
+    for(let i=0;i<readCount;i++){
      const result=await call('relay_workspace',{action:'read',path:log});
-     if(result.success!==true)throw Error('A planned read was not returned');
+     if(result.success!==true)throw Error('A planned read was not returned: '+String(result.code||'UNKNOWN')+' '+String(result.contentItems?.[0]?.text||'').slice(0,150));
      metrics.readCount++;
      const payload=result.contentItems[0].text;
      if(metrics.hasPagingTool){
        const row=JSON.parse(payload);
        if(row.externalContext!==true||!row.reference)throw Error('Large result was not externalized');
        refs.push(row.reference);
-       if(i===50||i===120||i===179){
+       if(i===50||i===120||i===readCount-1){
         const found=await call('relay_context_page',{action:'search',reference:row.reference,needle:'SENTINEL_2077'});
         metrics.pageCount++;
         const offset=JSON.parse(found.contentItems[0].text).matches[0]?.offset;
@@ -108,7 +111,9 @@ for(const [variant,sourceRoot] of [['control',control],['candidate',candidate]])
  }
 }
 await mkdir(reportDir,{recursive:true});
-const f=path.join(reportDir,'offline-longhorizon-stress.json');
+const f=path.join(reportDir,readCount===180&&!expectCapacity?'offline-longhorizon-stress.json':`offline-stress-${readCount}${expectCapacity?'-capacity':''}.json`);
 await writeFile(f,JSON.stringify({sourceHashes:{control:'3fc873c8394fb8381456c305cd91068ce9b98eac',candidate:'b49913517b409338cfe93ce0d450a710c34949d3'},results:outputs},null,2));
 console.log(JSON.stringify({report:f,results:outputs.map(o=>({variant:o.variant,pass:o.pass,reads:o.readCount,calls:o.callSequence,modelFacingBytes:o.readTextBytes,receipts:o.receipts,archiveFiles:o.archiveFiles,error:o.error}))}));
-process.exitCode=outputs.every(x=>x.pass)?0:1;
+const valid=expectCapacity?outputs.every(x=>!x.pass&&String(x.error||'').includes('DIRECTORY_CAPACITY')):outputs.every(x=>x.pass);
+console.log(JSON.stringify({expectCapacity,requestedReads:readCount,valid}));
+process.exitCode=valid?0:1;

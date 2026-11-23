@@ -5,7 +5,7 @@ import { tmpdir, homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 
 const candidateRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const baselineRoot=process.env.BLACKICE_BENCH_CONTROL_ROOT||path.join(path.dirname(candidateRoot),'BLACKICE-context-control-20261123');
@@ -16,11 +16,15 @@ const testId=process.argv.find(x=>x.startsWith('--case='))?.slice(7)||'async-cac
 const reportRoot=process.env.BLACKICE_BENCH_REPORT_DIR||path.join(path.dirname(candidateRoot),'BLACKICE-context-benchmark-results-20261123');
 const sourceRoot=variant==='control'?baselineRoot:candidateRoot;
 if(!['control','candidate'].includes(variant)||!['async-cache','stream-scheduler'].includes(testId))throw Error('Unsupported variant/case');
-if(!model.startsWith('kilo_free::')||!model.endsWith(':free'))throw Error('Only configured free Kilo models are allowed.');
+const nativeModel=/^gpt-[a-z0-9.-]{2,80}$/.test(model);
+if(!nativeModel&&(!model.startsWith('kilo_free::')||!model.endsWith(':free')))throw Error('Use a native ChatGPT-subscription model or a configured free Kilo model; paid API providers are not permitted.');
 const moduleImport=async file=>import(pathToFileURL(path.join(sourceRoot,'lib',file)).href);
-const [{HarnessEngine},{ProviderRuntime},{ProviderStore}]=await Promise.all([
- moduleImport('engine.mjs'),moduleImport('providers.mjs'),moduleImport('provider-store.mjs')]);
-const results={variant,testId,model,sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null};
+const [{HarnessEngine},{ProviderRuntime},{ProviderStore},{CodexRuntime}]=await Promise.all([
+ moduleImport('engine.mjs'),moduleImport('providers.mjs'),moduleImport('provider-store.mjs'),moduleImport('codex.mjs')]);
+const results={variant,testId,model,sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
+  contextPolicy:variant==='candidate'?'structured-head-tail-v2':'unmodified-2.40.75',
+  contextImplementationSha256:variant==='candidate'?
+    createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','task-external-context.mjs'))).digest('hex'):null};
 const root=await mkdtemp(path.join(tmpdir(),'blackice-context-live-'+variant+'-'));
 const taskRoot=path.join(root,'challenge');await mkdir(taskRoot,{recursive:true});await mkdir(path.join(taskRoot,'src'));await mkdir(path.join(taskRoot,'test'));
 const write=async (name,value)=>{const dest=path.join(taskRoot,name);await mkdir(path.dirname(dest),{recursive:true});await writeFile(dest,value,'utf8');};
@@ -187,18 +191,29 @@ if (process.argv.includes('--verify-gold')) {
 
 let engine,runtime;
 try{
-  const installed=new ProviderStore({dataDir:providerDir});
-  await installed.init(); // reads provider configuration, no writes
-  if(!installed.get('kilo_free')?.enabled||!installed.get('kilo_free')?.models?.some(m=>'kilo_free::'+m.id===model))throw Error('Specified free model not configured.');
-  const codex=new EventEmitter();
-  codex.status=()=>({connected:false,authenticated:false,models:[]});
-  codex.runAgent=async()=>{throw Error('Native Codex cannot be used in this benchmark');};
-  runtime=new ProviderRuntime({codex,dataDir:path.join(root,'provider'),modelLimitResolver:{enrich:async (_config,m)=>m},runTimeoutMs:360000,maxSteps:90,requestTimeoutMs:60000});
-  runtime.store=installed; // read-only provider settings; provider sessions stored in isolated root
+  if(nativeModel){
+    runtime=new CodexRuntime({cwd:taskRoot,isolatedHistory:true,requestTimeoutMs:30000,runTimeoutMs:600000});
+    const native=await runtime.start();
+    if(!native.authenticated||!native.models?.some(m=>(m.id||m.model)===model))throw Error('Selected native subscription model is not confirmed in authenticated Codex catalog.');
+  }else{
+    const installed=new ProviderStore({dataDir:providerDir});
+    await installed.init(); // reads provider configuration, no writes
+    if(!installed.get('kilo_free')?.enabled||!installed.get('kilo_free')?.models?.some(m=>'kilo_free::'+m.id===model))throw Error('Specified free model not configured.');
+    const codex=new EventEmitter();
+    codex.status=()=>({connected:false,authenticated:false,models:[]});
+    codex.runAgent=async()=>{throw Error('Native Codex cannot be used for an API-model trial');};
+    runtime=new ProviderRuntime({codex,dataDir:path.join(root,'provider'),modelLimitResolver:{enrich:async (_config,m)=>m},runTimeoutMs:360000,maxSteps:90,requestTimeoutMs:60000});
+    runtime.store=installed; // read-only provider settings; provider sessions stored in isolated root
+  }
   const actual=runtime.runAgent.bind(runtime);
   runtime.runAgent=options=>actual({...options,onToolCall:async(call,ctx)=>{
-    results.toolCalls.push({name:call.name,action:(typeof call.arguments==='string'?JSON.parse(call.arguments):call.arguments)?.action,at:Date.now()});
-    return options.onToolCall(call,ctx);
+    const entry={name:call.name,action:(typeof call.arguments==='string'?JSON.parse(call.arguments):call.arguments)?.action,at:Date.now()};
+    results.toolCalls.push(entry);
+    try{const value=await options.onToolCall(call,ctx);entry.success=value?.success;entry.code=value?.code||null;
+      const first=value?.contentItems?.find(item=>item?.type==='inputText'&&typeof item.text==='string')?.text;
+      entry.resultPreview=typeof first==='string'?first.slice(0,180):null;
+      return value;
+    }catch(error){entry.threw=String(error.code||error.message||error).slice(0,180);throw error;}
   }});
   engine=await new HarnessEngine({runtime,dataDir:path.join(root,'engine'),defaultCwd:taskRoot}).init();
   const graph={name:'Benchmark coding',nodes:[{id:'i',type:'input'},{id:'a',type:'agent',name:'Coding agent',model,prompt:'You are the coding agent. Fix the described software bugs. Inspect files and tests with your tools. Use only this isolated workspace. Verify the changes by running the test suite. Use current tool schemas.'},{id:'o',type:'output'}],edges:[{source:'i',target:'a'},{source:'a',target:'o'}],settings:{maxParallel:1,planningMode:'off',context:{outputReserveTokens:16384,headroomTokens:2048}}};
@@ -207,13 +222,19 @@ try{
   results.runId=started.id;
   await engine.executions.get(started.id);
   const run=engine.getRun(started.id); results.runStatus=run.status;results.runError=run.error||null;results.agentOutput=String(run.nodes?.a?.output||'').slice(0,1500);
-  results.directoryRecords=(await engine.actionDirectories.get(started.id,task)).read().actions.map(a=>({id:a.id,state:a.state}));
+  const directorySnapshot=(await engine.actionDirectories.get(started.id,task)).read();
+  results.directoryRecords=directorySnapshot.actions.map(a=>({id:a.id,state:a.state,objective:a.objective,notes:a.notes?.length||0,observation:a.observation?.claim||null}));
+  results.directoryFinal={focus:directorySnapshot.focus,revision:directorySnapshot.revision,receiptCount:directorySnapshot.receipts.length,ready:directorySnapshot.ready};
+  const state=engine.runs.get(started.id)?.nodes?.a||{};
+  results.nodeDiagnostics={directoryOutcome:state.directoryOutcome||null,runtimePhase:state.runtimePhase||null,toolNames:state.toolNames||[],usage:state.usage||state.tokenUsage||null};
   results.completedAt=new Date().toISOString();
   await writeFile(path.join(taskRoot,'test','hidden-acceptance.test.mjs'),grader);
   const hidden=spawnSync(process.execPath,['--test'],{cwd:taskRoot,encoding:'utf8',timeout:30000});
   results.hiddenGrade={exitCode:hidden.status,output:(hidden.stdout||'').slice(-5000),errors:(hidden.stderr||'').slice(-1500)};
-  results.trialValid=(run.status==='completed'||run.status==='failed')&&results.toolCalls.length>0&&!/(429|401|502|503|quota|rate limit|PROVIDER_TIMEOUT|network|unsupported model|model.*does not exist|context overflow|output limit|timeout|sign up for free|come back later|wait before trying again|free to continue|no credit card required)/i.test(String(run.error||''));
-  results.codingSuccess=run.status==='completed'&&hidden.status===0;
+  results.trialValid=(run.status==='completed'||run.status==='failed')&&results.toolCalls.length>0&&!/(429|401|502|503|quota|rate limit|PROVIDER_TIMEOUT|network|unsupported model|model.*does not exist|context overflow|output limit|timeout|sign up for free|come back later|wait before trying again|free to continue|no credit card required|CODEX_CAPABILITY_SCOPE|CODEX_RUNTIME|HOST_ONLY_TRANSPORT)/i.test(String(run.error||''));
+  results.codingCorrect=hidden.status===0;
+  results.workflowCompleted=run.status==='completed';
+  results.codingSuccess=results.workflowCompleted&&results.codingCorrect;
   results.externalArtifactCount=variant==='candidate'?((await import('node:fs/promises')).readdir(path.join(root,'engine','task-external-context',started.id)).then(a=>a.length/2).catch(()=>0)):Promise.resolve(0);
   results.externalArtifactCount=await results.externalArtifactCount;
 }catch(error){results.trialValid=false;results.infraError=String(error?.stack||error).slice(0,3000);}
@@ -228,6 +249,6 @@ finally{
   results.finishedAt=new Date().toISOString();
   const reportPath=path.join(reportRoot,testId+'-'+variant+'-'+randomUUID().slice(0,8)+'.json');
   await writeFile(reportPath,JSON.stringify(results,null,2));
-  console.log(JSON.stringify({reportPath,variant,testId,model,runStatus:results.runStatus,trialValid:results.trialValid,codingSuccess:results.codingSuccess,toolCalls:results.toolCalls.length,externalArtifactCount:results.externalArtifactCount,infraError:results.infraError,runError:results.runError}));
+  console.log(JSON.stringify({reportPath,variant,testId,model,contextPolicy:results.contextPolicy,runStatus:results.runStatus,trialValid:results.trialValid,codingCorrect:results.codingCorrect,workflowCompleted:results.workflowCompleted,codingSuccess:results.codingSuccess,toolCalls:results.toolCalls.length,externalArtifactCount:results.externalArtifactCount,infraError:results.infraError,runError:results.runError}));
   await rm(root,{recursive:true,force:true}).catch(()=>{});
 }
