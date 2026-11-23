@@ -435,7 +435,9 @@ test('real compatible public verification repairs the second final after a no-ac
   ()=>'Saved the source and verified both fixed public cases.',
  ]});
  assert.equal(f.reviews.length,3);
- assert.match(f.reviews[0].result.prompt,/Directory has no actions/);
+ const benchmarkCode=f.openings.find(row=>!row.responseOnly)?.tools.find(tool=>tool.name==='relay_code');
+  assert.deepEqual(benchmarkCode?.inputSchema.properties.check.enum,['public'], 'Benchmark only offers its attached public checker.');
+  assert.match(f.reviews[0].result.prompt,/Directory has no actions/);
  assert.match(f.reviews[1].result.prompt,/source-bound public test check returned successfully/);
  assert.match(f.reviews[1].result.prompt,/not hidden-test success or full-objective completion/);
  assert.match(f.reviews[1].result.prompt,/Do not repeat the save or check merely to create a new receipt/);
@@ -464,7 +466,9 @@ test('ordinary coding syntax verification receives scoped reconciliation through
   ()=>'Saved the JavaScript and verified syntax only.',
  ]});
  assert.ok(!f.run.benchmark);
- assert.equal(f.value('syntax-check').check.passed,true);
+ const ordinaryCode=f.openings.find(row=>!row.responseOnly)?.tools.find(tool=>tool.name==='relay_code');
+  assert.deepEqual(ordinaryCode?.inputSchema.properties.check.enum,['syntax'], 'Ordinary coding must not advertise unavailable public tests.');
+  assert.equal(f.value('syntax-check').check.passed,true);
  assert.equal(f.value('syntax-check').exitCode,0);
  assert.equal(f.value('syntax-check').source.unchanged,true);
  assert.equal(f.value('syntax-check').check.receipt.sourceAtomic,false);

@@ -22,7 +22,7 @@ Start LM Studio's local server at `http://127.0.0.1:1234`, refresh the Local mod
 
 BLACKICE connects directly to the official `llama-server` OpenAI-compatible API. Neither Ollama nor LM Studio is required.
 
-1. The Windows x64 installer includes a pinned **llama.cpp** runtime; no separate runtime installation is needed. This candidate includes the MiniCPM QX4 tool-schema repair. See [bundled runtime provenance](BUNDLED-LLAMA.md) for the exact upstream and repair revisions. Custom setups can use a compatible `llama-server` from the [upstream release](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0), but an upstream binary is not proof that it contains BLACKICE's qualified repair. Model weights remain separate.
+1. The Windows x64 installer includes a pinned **llama.cpp** runtime; no separate runtime installation is needed. The published 2.40.75 bundled runtime includes the MiniCPM QX4 tool-schema repair. See [bundled runtime provenance](BUNDLED-LLAMA.md) for the exact upstream and repair revisions. Custom setups can use a compatible `llama-server` from the [upstream release](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0), but an upstream binary is not proof that it contains BLACKICE's qualified repair. Model weights remain separate.
 2. Under **Models → Local models**, click **Load GGUF file…** and confirm the file to load it immediately. To return to a saved model, select it and click **Load**. Switching does not require deleting the previous model or its weights.
 3. **More options** contains folder discovery, runtime setup, and tuning. Discovery starts or refreshes the owned idle router without loading a model. The router may unload cached weights when it restarts. BLACKICE does not create a missing custom folder. Unavailable saved files are skipped when launching other models; their entries are retained if the files return.
 
@@ -109,7 +109,7 @@ The requested target is not a measured usable context. Use only a model that doc
 
 The adapter is covered by controlled HTTP and UI fixtures, including single-server mode, router lifecycle, context admission, image capabilities, and per-slot context metadata. A bounded MiniCPM-V 4.7 check also verified real managed-router startup and image-tool delivery with a full 262,144-token allocation; see [the measured profile and validation limits](minicpm-context-vision-runtime-20261120.md). This does not establish maximum-window recall or general coding quality. Sleeping processes are shown as sleeping rather than resident in memory; inference can wake them.
 
-Candidate bundled-runtime implementation and verification: [Bundled llama.cpp](BUNDLED-LLAMA.md). This is not an installed-release claim.
+Bundled-runtime implementation and provenance: [Bundled llama.cpp](BUNDLED-LLAMA.md). The published 2.40.75 installer passed packaging and native installation checks; that does not establish a reproducible MiniCPM benchmark or model performance on another host.
 
 ### Read-only prerequisite check
 

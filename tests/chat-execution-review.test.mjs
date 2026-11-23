@@ -233,6 +233,44 @@ test('real cancellation, steering, host budgets and provider termination win ove
   }
 });
 
+test('last provider step cannot silently publish success when read-only evidence says work remains',async()=>{
+  const decisions=[],assessments=[];
+  const review=createChatExecutionReview({
+    input:'Fix src/math.cjs and run its public tests.',
+    onDecision:value=>decisions.push(value),
+    assessOutcome:async payload=>{
+      assessments.push(payload);
+      return {decision:'continue',summary:'No successful write or test receipt was recorded.',
+        remaining:['Saved source and passing test'],nextAction:'Save the corrected source and run tests.'};
+    },
+  });
+  const read={name:'relay_code',callId:'failed-check',arguments:{action:'check',language:'javascript',path:'src/math.cjs',check:'syntax'}};
+  review.started(read);
+  review.observe({type:'tool.result',callId:read.callId,tool:read.name,success:false,actionDispatched:false});
+  review.delivered({call:read,result:{success:false,code:'CODE_READBACK_FAILED',actionDispatched:false,
+    contentItems:[{type:'inputText',text:JSON.stringify({error:'Source file was not read',actionDispatched:false})}]}});
+  await assert.rejects(review.beforeFinal({output:'All tests passed.',remainingSteps:0}),
+    {code:'CHAT_OUTCOME_STEP_BUDGET'});
+  assert.equal(assessments.length,1,'One bounded read-only assessment, not another worker step.');
+  assert.equal(assessments[0].evidence.records.length,1);
+  assert.equal(decisions.at(-1).reason,'review-budget-low');
+  assert.equal(decisions.at(-1).reviewDecision,'stopped');
+});
+
+test('last provider step can accept only a supported reviewed report',async()=>{
+  const decisions=[];
+  const review=createChatExecutionReview({
+    input:'Report the already-recorded correct result.',
+    onDecision:value=>decisions.push(value),
+    assessOutcome:async()=>({decision:'respond',summary:'The result matches admitted evidence.',
+      remaining:[],nextAction:'',evidenceRefs:['user-request'],blockers:[]}),
+  });
+  const result=await review.beforeFinal({output:'The result is correct.',remainingSteps:0});
+  assert.equal(result,null);
+  assert.equal(decisions.at(-1).reason,'task-outcome-supported');
+  assert.equal(decisions.at(-1).reviewDecision,'accepted');
+});
+
 test('prepare-only scope stays in force and ambiguous/conditional authorization is not expanded',()=>{
   const input='Prepare the form for review. Do not submit it.',review=setup(input);
   assert.ok(review);

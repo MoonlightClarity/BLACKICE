@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, readFile, stat, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { CODE_BLOCK_TOOL, parseCodeBlockCall, createCodeBlockToolHandler } from '../lib/code-block-tool.mjs';
+import { CODE_BLOCK_TOOL, codeBlockToolForChecks, parseCodeBlockCall, createCodeBlockToolHandler } from '../lib/code-block-tool.mjs';
 import { createWorkspaceToolHandler, processRun } from '../lib/workspace-tools.mjs';
 
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -43,6 +43,21 @@ test('tool has explicit save/check schemas and rejects unknown fields before bac
     save('x', { path: 'bad\0path' }), save('x', { language: 'js;run' })
   ]) assert.equal((await handler(value)).success, false);
   assert.equal(calls, 0);
+});
+
+test('provider tool schemas advertise only code checks attached to their workspace', () => {
+  const ordinary=codeBlockToolForChecks({syntax:true,publicCheck:false});
+  const benchmark=codeBlockToolForChecks({syntax:false,publicCheck:true});
+  for(const [tool,check] of [[ordinary,'syntax'],[benchmark,'public']]) {
+    assert.equal(tool.name,CODE_BLOCK_TOOL.name);
+    assert.deepEqual(tool.inputSchema.properties.check.enum,[check]);
+    assert.deepEqual(tool.inputSchema.oneOf[1].properties.check.enum,[check]);
+    assert.match(tool.description,new RegExp('check:'+check));
+  }
+  assert.deepEqual(CODE_BLOCK_TOOL.inputSchema.properties.check.enum,['syntax','public'],
+    'The general tool definition remains intact for existing callers.');
+  assert.notStrictEqual(ordinary.inputSchema,benchmark.inputSchema);
+  assert.throws(()=>codeBlockToolForChecks({syntax:false,publicCheck:false}),TypeError);
 });
 
 test('raw save preserves exact UTF-8/CRLF source, verifies bytes and never executes it', async t => {

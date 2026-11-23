@@ -23,7 +23,7 @@ class Native extends EventEmitter {
 }
 const response = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 
-async function fixture(t, { parameters = supported, openrouter = false, catalogError = false, inferenceError = false, inferenceSseError = false, blockCatalog = false, outputSchema = schema, output = answer } = {}) {
+async function fixture(t, { parameters = supported, openrouter = false, local = false, catalogError = false, inferenceError = false, inferenceSseError = false, blockCatalog = false, outputSchema = schema, output = answer } = {}) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'provider-output-schema-')), requests = [], events = [];
   let catalogEntered;
   const entered = new Promise(resolve => { catalogEntered = resolve; });
@@ -48,9 +48,9 @@ async function fixture(t, { parameters = supported, openrouter = false, catalogE
   const runtime = await make();
   // Declared synthetic capacities keep these capability tests cold until runAgent.
   // Save-time capacity discovery has its own provider-model-limits suite.
-  await runtime.saveProvider({ id: 'fixture', type: 'compatible', baseUrl: openrouter ? 'https://openrouter.ai/api/v1' : 'https://synthetic-api.example/v1', ...(openrouter ? { apiKey: 'synthetic-fixture-key' } : {}), models: [{ id: 'exact-model', contextWindowTokens: 65536, maxOutputTokens: 8192 }] }, { preserveDefault: true });
+  await runtime.saveProvider({ id: local ? 'local_llamacpp' : 'fixture', type: 'compatible', ...(local ? {preset:'llamacpp'} : {}), baseUrl: local ? 'http://127.0.0.1:8080/v1' : openrouter ? 'https://openrouter.ai/api/v1' : 'https://synthetic-api.example/v1', ...(openrouter ? { apiKey: 'synthetic-fixture-key' } : {}), models: [{ id: 'exact-model', contextWindowTokens: 65536, maxOutputTokens: 8192 }] }, { preserveDefault: true });
   t.after(async () => { for (const item of runtimes) await item.close(); await rm(dir, { recursive: true, force: true }); });
-  const options = { model: 'fixture::exact-model', cwd: dir, prompt: 'Return the synthetic typed response.', responseOnly: true, dynamicTools: [], outputSchema, onEvent: event => events.push(event) };
+  const options = { model: (local ? 'local_llamacpp' : 'fixture') + '::exact-model', cwd: dir, prompt: 'Return the synthetic typed response.', responseOnly: true, dynamicTools: [], outputSchema, onEvent: event => events.push(event) };
   return { dir, runtime, make, requests, events, options, entered };
 }
 
@@ -64,6 +64,19 @@ test('cold analytical compatible turn discovers exact support then sends the com
   const capability = f.events.find(event => event.type === 'capabilities');
   assert.equal(capability.structuredOutput, 'provider-json-schema'); assert.equal(capability.hostValidationRequired, true);
   assert.equal(capability.structuredOutputTransport, 'chat-completions-response-format');
+});
+
+test('managed local llama uses strict JSON grammar even when /models advertises no supported parameters', async t => {
+  const f = await fixture(t, { local: true, parameters: null });
+  assert.equal((await f.runtime.runAgent(f.options)).output, answer);
+  assert.deepEqual(f.requests.map(item => item.method), ['POST'], 'The managed endpoint capability does not require a catalog advertisement.');
+  const body = f.requests[0].body;
+  assert.deepEqual(body.response_format, {type:'json_schema',json_schema:{name:'planning_response',strict:true,schema}});
+  assert.equal(body.tools, undefined);
+  const capability = f.events.find(event => event.type === 'capabilities');
+  assert.equal(capability.structuredOutput, 'provider-json-schema');
+  assert.equal(capability.structuredOutputReason, 'managed_local_llama_json_schema');
+  assert.equal(capability.hostValidationRequired, true);
 });
 
 test('fresh catalog is reused and a recreated runtime performs one cold discovery before inference', async t => {

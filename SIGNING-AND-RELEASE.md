@@ -14,6 +14,8 @@ When the project is directly inside an `outputs` directory, the candidate is wri
 
 Setup uses the BLACKICE program name, `BLACKICE.exe`, Start menu and Desktop shortcuts, and an Installed apps entry with an uninstaller. The stable application ID, package identity, and `%APPDATA%\Relay` profile directory remain unchanged for installation and data continuity. Do not rename those identifiers as a branding cleanup. Uninstalling preserves profile data.
 
+**Published checkpoint:** [v2.40.75](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75) targets `3fc873c8394fb8381456c305cd91068ce9b98eac`; the installer SHA-256 is `217178b3d4c913790c99bf65d3d138aa1986a54a5ec30d205034e9210eaa3b09`. The [GitHub Windows release workflow](https://github.com/MoonlightClarity/BLACKICE/actions/runs/45091943186) verified that exact uploaded installer. Owner-machine installation and skill/UI/browser smoke checks were recorded separately. Future releases must use their own version, commit, receipt, and checksum.
+
 ## Release priorities and Windows Smart App Control
 
 **The current BLACKICE project intentionally ships unsigned Windows builds.** BLACKICE is free and open source, maintained by one person without a signing budget. Code signing is a possible later improvement *after adoption*, not a required milestone or a reason to divert development time from working features. No paid certificate or signing service should be purchased to publish this project.
@@ -88,9 +90,9 @@ Finish the current source tests and installed application acceptance first, then
 ```json
 {
   "format": 1,
-  "version": "2.40.75",
+  "version": "<next-version>",
   "appFingerprint": "<actual application SHA-256>",
-  "sourceTestReceipt": "verification/windows-2.40.75.json",
+  "sourceTestReceipt": "verification/<tracked-source-test-receipt>.json",
   "publish": false
 }
 ```
@@ -175,7 +177,7 @@ An explicit dispatch still checks the exact source, test evidence, candidate byt
 
 ### Version and build identity
 
-Use the version in the exact candidate's `package.json`; this source is **2.40.75**. Set the version, lockfile metadata, notes and release request together in the integration lane before qualification. A working version does not establish that the corresponding release has been published or installed.
+Use the version in the exact candidate's `package.json`; this checkout is **2.40.75**, and its [release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75) is already published. Set the version, lockfile metadata, notes and release request together in the integration lane before qualification. A working version does not establish that the corresponding release has been published or installed.
 
 - Minor versions identify coherent backward-compatible feature/usability improvements. Patch versions identify fixes to a released product version, not each agent iteration or packaging attempt.
 - Keep internal attempts separate using a build record such as `buildId: 20261117.3`, with exact `sourceCommit`, application fingerprint, installer SHA-256 and `channel: internal`.
