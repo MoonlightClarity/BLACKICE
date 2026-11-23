@@ -4,7 +4,7 @@ Use to find, shortlist, or apply to open roles. Deliver the requested outcome: f
 
 ## Reconcile application history
 
-Before choosing an application target, discover and read available application history, trackers, and submission receipts in the user's existing records and prior task outcomes. Do this even when the current request does not mention earlier applications. A missing or stale index is not evidence that no application was made.
+Reuse application history and submission receipts already available from the current search or prior work. If necessary, load the relevant index once for a candidate batch, not a fresh broad file search for every role. A missing or stale index is not evidence that no application was made; it is also not a reason to stall other applications.
 
 Reconcile each candidate by employer and exact requisition/posting ID, using the authoritative URL and receipt evidence to resolve aliases. URL spelling and title alone do not establish duplicates; another requisition at the same employer is a separate candidate. Preserve positive earlier confirmation even when a newer summary omits it or labels it unchecked. Do not submit again to a confirmed requisition unless the user specifically requested reapplication. Earlier confirmations do not count toward this request's new applications.
 
@@ -16,15 +16,15 @@ For an uncertain earlier attempt, check the destination and available receipt be
 
 1. Read the user's desired work, required conditions, preferences, exclusions, count, and cutoff. Use work history as evidence of ability, not as a requirement to repeat old work.
 2. Start with the rolling last seven days unless the current request specifies a different window. Treat that default as a search and ranking preference; an older or unknown posting date alone does not exclude an otherwise suitable role unless the user requested a recency limit. Use the current search timestamp and available date filters.
-3. Search multiple relevant job boards and company career sites in parallel where practical. Run direct and adjacent searches from the first pass; rank primary matches first without waiting to exhaust them before checking adjacent work.
-4. Search by outputs and duties as well as titles. For intelligence work, look for investigations, evidence assessment, and decision briefs. Check each promising exact vacancy as it appears.
-5. If a route is unproductive, change the source or employer set. Rewording queries on one board is not a new source.
+3. Start with actual vacancies on relevant employers' careers pages and public ATS boards or current postings feeds (for example, Ashby, Greenhouse, Lever and Workday). Collect several distinct, plausible postings from a source before moving to another discovery route; prefer work that advances an application over another query variant.
+4. Search by outputs and duties as well as titles. For intelligence work, look for investigations, evidence assessment, and decision briefs. Check promising exact vacancies rather than exhausting broad searches first.
+5. Use general search engines, Indeed and aggregate job boards as supplementary discovery routes when direct employer sources do not yield enough useful leads. Those listings are leads, not proof of actual employment arrangement or an open requisition. Follow their links to employer-owned vacancy details when available. If a route is unproductive, change the source or employer set rather than repeatedly rewording queries on the same engine.
 
 Useful routes:
-- Search broad and specialist boards, then follow a lead to the exact employer listing.
-- Search public ATS listings, such as `site:job-boards.greenhouse.io "competitive intelligence" remote`, and try adjacent duties on other providers.
-- Check relevant employers, direct competitors, a venture firm's portfolio jobs page, or an investor funding announcement for discovery. A funding date or announcement does not establish a vacancy's age, pay, remote terms, or open status.
-- For a repeat search, deduplicate a supplied watchlist by employer and requisition. Record an alert's arrival as first seen, not first posted.
+- Inspect live employer career pages, current public ATS boards and employer postings feeds first. Reuse a credible lead already discovered rather than searching for it again.
+- Explore relevant employers, direct competitors, or a portfolio's hiring companies for further distinct openings.
+- Use specialist or broad boards and focused search-engine queries for discovery when useful, then follow a lead to its actual employer posting. A funding announcement or indexed snippet does not establish a vacancy's pay, remote terms, or current status.
+- For a repeat search, use a known requisition identity when readily available; another role at the same employer is not a duplicate.
 
 ## Verify the exact vacancy
 
@@ -34,7 +34,9 @@ Keep a compact record: employer, title, exact requisition/posting ID when availa
 
 **Open status.** Check age and whether applications are accepted separately. Follow the exact posting's application route far enough to establish that the same vacancy accepts applications, or confirm a current official email intake. An Apply label, archived mirror, or generic careers page alone is insufficient. Retire closed or expired postings; verify a replacement as a separate lead.
 
-**Material fit.** Read recurring duties, remote geography, travel, compensation basis, and genuine role gates. A remote badge or employer-wide pay range may not describe this role. Unknown nonessential details are not automatic disqualifiers. Honor the user's actual requirements; do not assume all contracts are gig work or exclude every AI role because the user excludes producing training data.
+**Material fit.** Read recurring duties, remote geography, travel, compensation basis, and genuine role gates. A remote badge or employer-wide pay range may not describe this role. Unknown nonessential details are not automatic disqualifiers. Honor the user's actual requirements without converting ordinary employer preferences into hard gates.
+
+**Employment arrangement.** Distinguish the candidate's actual role from the company's business model. A salaried full-time staff job at an AI-data or gig-platform company is not automatically gig work. When the user requires W-2, explicit 1099, freelance, independent-contractor, or per-task paid work is a mismatch for that specific vacancy; use another suitable role instead. A W-2 contract or a posting that offers a W-2 option is not the same as a 1099 gig. "Remote", "full-time", and an advertised salary alone do not establish payroll classification. Use role-specific employment, compensation, and benefits wording to make a reasonable best-effort inference when W-2 is not explicitly named; do not require a separate proof exercise, prompt the user for routine verification, or pause the broader search.
 
 **Experience.** Ignore every numerical years-of-experience requirement when evaluating fit. Do not use it to filter, rank, downlevel, or decide not to apply, including a director role listing 10+ years. Compare actual work, decisions, deliverables, and responsibilities. Credit comparable work under administrative, independent, or adjacent titles. Use actual results and user-supplied interview outcomes to prioritize levels. Answer direct tenure fields accurately; never claim a license, clearance, title, or tool experience the candidate does not have.
 

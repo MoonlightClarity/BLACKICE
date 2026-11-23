@@ -64,10 +64,10 @@ test('explicit no-W2, office, Florida ban, mandatory travel, and salary below fl
  assert(results.some(row=>row.reasons.includes('florida_excluded')));
 });
 
-test('salary band crossing minimum is verification, not a false definitive reject',async t=>{
+test('salary band crossing minimum stays actionable with a note, not a hold',async t=>{
  const dir=await fixture(t),index=await loadJobSearchHistory(dir);
  const [r]=triageJobSearchCandidates(index,[{...base(newUrl),baseSalaryMin:76000,baseSalaryMax:112000}]).candidates;
- assert.equal(r.disposition,'verify_constraints');
+ assert.equal(r.disposition,'candidate');
  assert(r.reasons.includes('base_band_crosses_floor'));
 });
 

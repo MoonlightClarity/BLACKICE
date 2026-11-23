@@ -200,7 +200,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "clarity-20261121"
+        "revision": "employer-first-w2-20261123"
       },
       "bodyFile": "job-search.md"
     },
