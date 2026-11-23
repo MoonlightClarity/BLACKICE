@@ -230,9 +230,15 @@
 /* Folder/tab outline: indentation carries hierarchy, not nested button cards. */
 .next-browser-folder-tree .next-browser-folder-heading{gap:2px;min-height:30px}
 .next-browser-folder-tree .next-browser-folder-heading button{background:transparent;border:0;box-shadow:none;border-radius:3px}
-.next-browser-folder-tree :is(.next-browser-folder-toggle,.next-browser-folder-child,.next-browser-folder-remove).next-browser-icon-button{flex:0 0 24px;width:24px;min-width:24px;padding:4px!important}
-.next-browser-folder-tree :is(.next-browser-folder-toggle,.next-browser-folder-child,.next-browser-folder-remove) svg{width:14px;height:14px}
+.next-browser-folder-tree :is(.next-browser-folder-toggle,.next-browser-folder-child,.next-browser-folder-move,.next-browser-folder-remove).next-browser-icon-button{flex:0 0 24px;width:24px;min-width:24px;padding:4px!important}
+.next-browser-folder-tree :is(.next-browser-folder-toggle,.next-browser-folder-child,.next-browser-folder-move,.next-browser-folder-remove) svg{width:14px;height:14px}
 .next-browser-folder-remove{color:var(--muted)}
+.next-browser-folder-move{color:var(--muted)}
+.next-browser-move-dialog .next-browser-folder-editor{display:flex;flex-direction:column;align-items:stretch;max-height:calc(85dvh - 60px);overflow:auto}
+.next-browser-move-dialog .next-browser-folder-editor :is(.next-browser-move-search,select){box-sizing:border-box;width:100%;max-width:100%;min-width:0;flex:none}
+.next-browser-move-dialog .next-browser-folder-editor select{max-height:35dvh;overflow:auto;font-size:12px;line-height:1.5}
+.next-browser-move-dialog .next-browser-folder-editor select option{padding:7px 9px;overflow-wrap:anywhere;white-space:normal}
+.next-browser-move-dialog .next-browser-folder-editor button{align-self:flex-end}
 .next-browser-folder-name{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .next-browser-folder-count{flex:none;padding:0 7px;color:var(--muted);font-size:10px}
 .next-browser-folder-tree .next-browser-folder-children{margin-left:11px;padding-left:12px;border:0;gap:1px}

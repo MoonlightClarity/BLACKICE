@@ -162,3 +162,88 @@ test('folder row creates a child under the chosen folder, reveals it, and leaves
  root.querySelector('input').value='Top folder';await root.dispatch('submit');
  assert.deepEqual(f.calls.at(-1),{browser:'relay',action:'collection_create',name:'Top folder',parentCollectionId:null});
 });
+
+test('folder Move SVG searches all nested paths and uses explicit collection_move without tab effects',async t=>{
+ const f=fixture(t);
+ f.data.collections.push({id:'z',name:'Zebra',parentId:null},{id:'d',name:'Delta',parentId:'z'},{id:'other',name:'Alpha',parentId:null});f.render();
+ await f.click('[data-folder-control="toggle:z"]');
+ const move=f.$('[data-folder-control="move:c"]');
+ assert.equal(move.getAttribute('aria-label'),'Move folder Projects / Research');
+ assert.ok(move.querySelector('svg'));
+ await move.dispatch('click');
+ const form=f.$('.next-browser-folder-editor'),dialog=form.parentElement;
+ assert.equal(dialog.tagName,'DIALOG');assert.equal(dialog.open,true);
+ assert.equal(form.getAttribute('aria-label'),'Move folder to folder');
+ const search=form.querySelector('.next-browser-move-search'),target=form.querySelector('select');
+ assert.equal(f.document.activeElement,search);
+ assert.equal(target.value,'p');
+ const labels=[...target.querySelectorAll('option')].map(n=>n.textContent);
+ assert.deepEqual(labels,['Top-level folders','Alpha','Projects','Zebra','Zebra / Delta']);
+ search.value='DELTA';await search.dispatch('input');
+ assert.deepEqual([...target.querySelectorAll('option')].map(n=>n.textContent),['Projects (selected)','Zebra / Delta']);
+ assert.equal(target.value,'p');
+ assert.equal(f.calls.length,0);
+ target.value='d';await target.dispatch('change');
+ await form.dispatch('submit');
+ assert.deepEqual(f.calls,[{browser:'relay',action:'collection_move',collectionId:'c',parentCollectionId:'d'}]);
+ assert.equal(f.$('.next-browser-folder-editor'),null);
+});
+test('Browser folder Move excludes cycles, current parent, and protects unsaved creation drafts',async t=>{
+ const f=fixture(t),move=f.$('[data-folder-control="move:p"]');
+ await move.dispatch('click');
+ const form=f.$('.next-browser-folder-editor'),target=form.querySelector('select');
+ assert.equal(target.querySelector('[value="p"]'),null);
+ assert.equal(target.querySelector('[value="c"]'),null);
+ assert.equal(target.value,'');
+ assert.equal(form.querySelector('[type="submit"]').disabled,true,'moving existing root folder to root is a no-op');
+ await f.key(form,'Escape');assert.equal(f.calls.length,0);
+ await f.click('.next-browser-folder-add');
+ const draft=f.$('.next-browser-folder-editor'),name=draft.querySelector('input');name.value='Keep draft';
+ await f.click('[data-folder-control="move:p"]');
+ assert.equal(f.$('.next-browser-folder-editor'),draft);
+ assert.equal(name.value,'Keep draft');assert.equal(f.calls.length,0);
+});
+test('Browser picker preserves chosen folder on live refresh and rejects vanished destinations',async t=>{
+ const f=fixture(t);f.data.collections.push({id:'other',name:'Other',parentId:null});f.render();
+ await f.click('[data-folder-control="move:c"]');
+ const form=f.$('.next-browser-folder-editor'),search=form.querySelector('.next-browser-move-search'),select=form.querySelector('select'),save=form.querySelector('[type="submit"]');
+ select.value='other';await select.dispatch('change');
+ search.value='other';await search.dispatch('input');
+ assert.equal(select.value,'other');
+ f.data.collections=f.data.collections.filter(n=>n.id!=='other');f.render();
+ assert.equal(select.value,'other');assert.equal(save.disabled,true);
+ assert.match(form.querySelector('[role="status"]').textContent,/no longer exists/i);
+ await form.dispatch('submit');assert.equal(f.calls.length,0);
+ search.value='';await search.dispatch('input');
+ select.value='';await select.dispatch('change');assert.equal(save.disabled,false);
+ await form.dispatch('submit');
+ assert.deepEqual(f.calls,[{browser:'relay',action:'collection_move',collectionId:'c',parentCollectionId:null}]);
+});
+test('Browser tab Move search scales across 80 collapsed folders without changing the selected destination',async t=>{
+ const f=fixture(t);
+ f.data.collections=Array.from({length:85},(_,i)=>({id:'folder-'+i,name:'Folder '+String(i).padStart(3,'0'),parentId:null}));
+ f.data.collections.push({id:'deep',name:'Exact target',parentId:'folder-80'});
+ f.data.tabs[0].collectionId='folder-0';f.render();
+ await f.click('.next-browser-tab-move');
+ const form=f.$('.next-browser-folder-editor'),select=form.querySelector('select'),query=form.querySelector('.next-browser-move-search');
+ assert.equal(select.querySelectorAll('option').length,87);
+ assert.equal(select.value,'folder-0');
+ query.value='target';await query.dispatch('input');
+ assert.deepEqual([...select.querySelectorAll('option')].map(o=>o.textContent),['Folder 000 (selected)','Folder 080 / Exact target']);
+ select.value='deep';await select.dispatch('change');
+ await form.dispatch('submit');
+ assert.deepEqual(f.calls,[{browser:'relay',action:'tab_collect',tabId:'a',collectionId:'deep'}]);
+});
+
+test('Folder Move refuses externally changed source parent instead of submitting a stale placement',async t=>{
+ const f=fixture(t);
+ await f.click('[data-folder-control="move:c"]');
+ const form=f.$('.next-browser-folder-editor'),select=form.querySelector('select'),save=form.querySelector('[type="submit"]');
+ select.value='';await select.dispatch('change');assert.equal(save.disabled,false);
+ f.data.collections.find(node=>node.id==='c').parentId=null;f.render();
+ assert.equal(save.disabled,true);
+ assert.match(form.querySelector('[role="status"]').textContent,/folder being moved changed/i);
+ await form.dispatch('submit');
+ assert.equal(f.calls.length,0);
+ await f.key(form,'Escape');assert.equal(f.$('.next-browser-folder-editor'),null);
+});

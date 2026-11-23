@@ -12,7 +12,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
   isBusy=()=>false,isActive=()=>true,onChanged=()=>{},onRefresh=()=>{},onError=()=>{}}) {
   let organization={revision:0,healthy:true,folders:[],counts:{byId:{},ungrouped:0,total:0}};
   let draft=null;
-  let localBusy=false, destroyed=false, formRevision=0, movingRoot=null, pendingAction=null, lastUndo=null;
+  let localBusy=false, destroyed=false, formRevision=0, movingRoot=null, movingRevision=null, pendingAction=null, lastUndo=null;
   const isWritable=()=>!destroyed&&!localBusy&&!isBusy()&&organization.healthy!==false;
   const folderById=id=>organization.folders.find(folder=>folder.id===id)||null;
   const nameOf=id=>folderById(id)?.name||'Unfiled';
@@ -33,6 +33,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     view.folderUndo.hidden=!lastUndo;
     view.folderUndo.disabled=disabled;
     if(organization.healthy===false)notice(organization.error||'Folder metadata cannot be read. Existing chats are safe.',true);
+    if(movingRoot!==null&&view.folderMoveDialog.open)renderMoveChoices();
   }
   function accept(snapshot) {
     if(!snapshot || !Array.isArray(snapshot.folders))return;
@@ -81,24 +82,46 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     view.folderName.value='';view.folderName.setAttribute('aria-label',parentId?'New subfolder in '+nameOf(parentId):'New top-level folder');
     view.folderDialogError.hidden=true;view.folderForm.hidden=false;refresh();onChanged();view.folderName.focus();
   }
+  const folderOrder=new Intl.Collator('en',{sensitivity:'base',numeric:true});
+  function renderMoveChoices(opening=false){
+    if(movingRoot===null)return;
+    const doc=view.folderMoveTarget.ownerDocument;
+    const item=getItem(movingRoot);
+    const selected=opening?(item?.folderId||''):view.folderMoveTarget.value;
+    const query=view.folderMoveSearch.value.trim().toLocaleLowerCase();
+    const rows=folderRows(visibleFolders()).sort((a,b)=>folderOrder.compare(a.path,b.path)||folderOrder.compare(a.id,b.id));
+    const all=[{id:'',path:'Unfiled'},...rows];
+    const matches=all.filter(row=>row.path.toLocaleLowerCase().includes(query));
+    const options=matches.map(row=>choice(doc,row.id,row.path));
+    if(!matches.some(row=>row.id===selected)){
+      const original=all.find(row=>row.id===selected);
+      const retained=choice(doc,selected,original?original.path+' (selected)':'Unavailable: selected folder');
+      retained.disabled=!original;
+      options.unshift(retained);
+    }
+    view.folderMoveTarget.replaceChildren(...options);
+    view.folderMoveTarget.value=selected;
+    const valid=selected===''||rows.some(row=>row.id===selected);
+    view.folderMoveSave.disabled=!isWritable()||!valid;
+    view.folderMoveCount.textContent=matches.length+' matching destinations.'+(valid?'':' Choose an available folder.');
+  }
   function moveOpen(item) {
     if(!item||!isWritable())return;
-    movingRoot=rootId(item);
+    movingRoot=rootId(item);movingRevision=organization.revision;
     view.folderMoveTitle.textContent='Organize: '+String(item.title||'Conversation').slice(0,80);
     view.folderMoveReason.textContent='Choose where to keep this chat. Moving it does not share context.';
-    const doc=view.folderMoveTarget.ownerDocument;
-    view.folderMoveTarget.replaceChildren(choice(doc,'','Unfiled'),
-      ...folderRows(organization.folders).map(folder=>choice(doc,folder.id,folder.path)));
-    view.folderMoveTarget.value=item.folderId||'';
-    view.folderMoveDialog.showModal();view.folderMoveTarget.focus();
+    view.folderMoveSearch.value='';
+    renderMoveChoices(true);
+    view.folderMoveDialog.showModal();view.folderMoveSearch.focus();
   }
-  async function moveChat(item,destination) {
+  async function moveChat(item,destination,expectedRevision) {
     const previous=item.folderSource?{folderId:item.folderId??null,source:item.folderSource,
       reason:String(item.folderReason||'').slice(0,240)}:
       {folderId:null,source:'manual',reason:'Undo move: manually kept Unfiled.'};
     const id=rootId(item);
     const ok=await save([{type:'assign',rootId:id,folderId:destination}],{
       success:'Chat moved to '+(destination?nameOf(destination):'Unfiled')+'.',
+      expectedRevision,retryConflict:false,
       after:()=>{lastUndo={rootId:id,previous};}
     });
     return ok;
@@ -110,7 +133,7 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
   }
   function stop() {
     for(const dialog of [view.folderMoveDialog,view.folderDeleteDialog])if(dialog.open)dialog.close();
-    movingRoot=null;pendingAction=null;
+    movingRoot=null;movingRevision=null;pendingAction=null;
   }
   function destroy() {destroyed=true;stop();}
   view.folderNew.addEventListener('click',()=>formOpen(null));
@@ -141,12 +164,18 @@ export function createConversationFolderUI({view,api,notify=()=>{},getItems,getB
     }catch(error){view.folderDeleteError.hidden=false;view.folderDeleteError.textContent=short(error);}
     finally{localBusy=false;view.folderDeleteConfirm.disabled=false;view.folderDeleteCancel.disabled=false;refresh();}
   });
-  view.folderMoveCancel.addEventListener('click',()=>{movingRoot=null;view.folderMoveDialog.close();});
+  view.folderMoveSearch.addEventListener('input',()=>renderMoveChoices());
+  view.folderMoveTarget.addEventListener('change',()=>renderMoveChoices());
+  view.folderMoveCancel.addEventListener('click',()=>{movingRoot=null;movingRevision=null;view.folderMoveDialog.close();});
+  view.folderMoveDialog.addEventListener('cancel',()=>{movingRoot=null;movingRevision=null;});
   view.folderMoveForm.addEventListener('submit',event=>{
     event.preventDefault();
     const item=getItem(movingRoot),destination=view.folderMoveTarget.value||null;
-    movingRoot=null;view.folderMoveDialog.close();
-    if(item)void moveChat(item,destination);
+    const selected=organization.folders.some(folder=>folder.id===destination&&(folder.state||'active')===getBucket())||destination===null;
+    if(!selected||!isWritable()){notice('The selected folder is no longer available. Choose another destination.',true);return;}
+    const expectedRevision=movingRevision;
+    movingRoot=null;movingRevision=null;view.folderMoveDialog.close();
+    if(item&&destination!==(item.folderId||null))void moveChat(item,destination,expectedRevision);
   });
   view.folderUndo.addEventListener('click',()=>{
     if(!lastUndo)return;

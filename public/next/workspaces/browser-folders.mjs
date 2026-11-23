@@ -70,42 +70,62 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
   });renameDrafts.set(folder.id,input);return input;
  }
  function dismiss(){editorDialog?.close?.();editorDialog?.remove();editorDialog=null;editor?.remove();editor=null;syncMoveDestination=null;onModalChange(false);paint();}
- function edit(tabId=null,parentId=null){
-  if(blocked())return;
+ function edit(tabId=null,parentId=null,folderMoveId=null){
+  if(blocked()||renaming||editor&&!editor.hidden){if(renaming||editor&&!editor.hidden)notice('Finish or cancel the current folder edit before moving another item.');return;}
+  const moving=Boolean(tabId||folderMoveId);
+  if(folderMoveId&&!collections.some(f=>f.id===folderMoveId))return;
   editorDialog?.close?.();editorDialog?.remove();editorDialog=null;editor?.remove();syncMoveDestination=null;const form=el('form',null,'next-browser-folder-editor');editor=form;
   const createLabel=parentId?'New subfolder in '+folderPath(collections,parentId):'New folder';
-  form.setAttribute('aria-label',tabId?'Move tab to folder':parentId?createLabel:'New tab folder');
-  const heading=el('strong',tabId?'Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab'):createLabel);form.append(heading);
-  if(tabId){editorDialog=el('dialog',null,'next-chat-management-dialog next-browser-move-dialog');editorDialog.setAttribute('aria-label','Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab')+' to folder');editorDialog.append(form);editorDialog.addEventListener('cancel',event=>{event.preventDefault();if(!pending)dismiss();});}
-  const input=el(tabId?'select':'input');
-  if(tabId)input.setAttribute('aria-label','Folder');
+  const movingFolder=collections.find(f=>f.id===folderMoveId);
+  if(folderMoveId&&!movingFolder)return;
+  const sourceParent=movingFolder?.parentId||null;
+  const moveLabel=folderMoveId?'Move folder '+folderPath(collections,folderMoveId):'Move '+(getTabs().find(tab=>tab.tabId===tabId)?.title||'tab');
+  form.setAttribute('aria-label',moving?folderMoveId?'Move folder to folder':'Move tab to folder':parentId?createLabel:'New tab folder');
+  const heading=el('strong',moving?moveLabel:createLabel);form.append(heading);
+  if(moving){editorDialog=el('dialog',null,'next-chat-management-dialog next-browser-move-dialog');editorDialog.setAttribute('aria-label',moveLabel+' to folder');editorDialog.append(form);editorDialog.addEventListener('cancel',event=>{event.preventDefault();if(!pending)dismiss();});}
+  const search=moving?el('input',null,'next-browser-move-search'):null;
+  if(search){search.type='search';search.maxLength=256;search.placeholder='Search folder paths';search.setAttribute('aria-label','Find destination folder');form.append(search);}
+  const input=el(moving?'select':'input');
+  if(moving){input.setAttribute('aria-label',folderMoveId?'Parent folder':'Folder');input.size=7;}
   else{input.placeholder='Folder name';input.maxLength=200;input.required=true;input.setAttribute('aria-label','Folder name');}
   form.append(input);
-  const save=button(tabId?'Move':'Save',()=>{});save.type='submit';form.append(save,button('Cancel',dismiss));
-  if(tabId){
+  const save=button(moving?'Move':'Save',()=>{});save.type='submit';form.append(save,button('Cancel',dismiss));
+  if(moving){
    const status=el('p','The selected folder no longer exists. Choose another destination.','next-browser-move-status');status.setAttribute('role','status');status.hidden=true;form.append(status);
-   let initial=getTabs().find(t=>t.tabId===tabId)?.collectionId||'',rendered='',previous=new Map(),missingLabel=null;
+   let initial=(folderMoveId?sourceParent:getTabs().find(t=>t.tabId===tabId)?.collectionId)||'',rendered='',previous=new Map(),missingLabel=null;
+   const order=new Intl.Collator('en',{sensitivity:'base',numeric:true});
    syncMoveDestination=()=>{
     const selected=initial??input.value;initial=null;
-    const options=new Map(collections.map(f=>[f.id,folderPath(collections,f.id)]));
+    const excluded=folderMoveId?descendants(collections,folderMoveId):new Set();
+    const options=new Map(collections.filter(f=>!excluded.has(f.id)).map(f=>[f.id,folderPath(collections,f.id)]));
     const missing=!!selected&&!options.has(selected);
+    const currentFolder=folderMoveId?collections.find(f=>f.id===folderMoveId):null;
+    const sourceChanged=Boolean(folderMoveId&&(!currentFolder||(currentFolder.parentId||null)!==sourceParent));
     missingLabel=missing?(previous.get(selected)??missingLabel??'selected folder'):null;
-    const choices=[['','Unfiled',false],...Array.from(options,([id,label])=>[id,label,false])];
-    if(missing)choices.push([selected,'Unavailable: '+missingLabel,true]);
+    const query=search.value.trim().toLocaleLowerCase();
+    const choices=[['',folderMoveId?'Top-level folders':'Unfiled',false],...Array.from(options,([id,label])=>[id,label,false]).sort((a,b)=>order.compare(a[1],b[1])||order.compare(a[0],b[0]))].filter(([,label])=>label.toLocaleLowerCase().includes(query));
+    if(!choices.some(([id])=>id===selected))choices.unshift([selected,missing?'Unavailable: '+missingLabel:((selected===''?(folderMoveId?'Top-level folders':'Unfiled'):options.get(selected))+' (selected)'),missing]);
     const next=JSON.stringify(choices);
     if(next!==rendered){
      input.replaceChildren(...choices.map(([id,label,unavailable])=>{const option=el('option',label);option.value=id;option.disabled=unavailable;return option;}));
      input.value=selected;rendered=next;
     }
     previous=options;
-    save.disabled=blocked()||missing;status.hidden=!missing;input.setAttribute('aria-invalid',String(missing));
-    return !missing;
+    save.disabled=blocked()||missing||sourceChanged||(folderMoveId&&(selected||'')===(sourceParent||''));
+    status.hidden=!missing&&!sourceChanged;
+    status.textContent=sourceChanged?'The folder being moved changed. Close and reopen Move.':'The selected folder no longer exists. Choose another destination.';
+    input.setAttribute('aria-invalid',String(missing||sourceChanged));
+    return !missing&&!sourceChanged;
    };
    input.addEventListener('change',syncMoveDestination);
+   search.addEventListener('input',syncMoveDestination);
   }
-  form.addEventListener('submit',async e=>{e.preventDefault();if(editor!==form||syncMoveDestination?.()===false)return;const action=tabId?'tab_collect':'collection_create';const args=tabId?{tabId,collectionId:input.value||null}:{name:input.value,parentCollectionId:parentId};if(await request(action,args)){if(!tabId)collapsed.delete(parentId);dismiss();}});
+  form.addEventListener('submit',async e=>{e.preventDefault();if(editor!==form||syncMoveDestination?.()===false||save.disabled)return;
+   const action=folderMoveId?'collection_move':tabId?'tab_collect':'collection_create';
+   const args=folderMoveId?{collectionId:folderMoveId,parentCollectionId:input.value||null}:tabId?{tabId,collectionId:input.value||null}:{name:input.value,parentCollectionId:parentId};
+   if(await request(action,args)){if(!moving)collapsed.delete(parentId);else if(input.value)collapsed.delete(input.value);dismiss();}});
   form.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(!pending)dismiss();}});
-  paint();form.scrollIntoView?.({block:'nearest'});input.focus();
+  paint();form.scrollIntoView?.({block:'nearest'});(search||input).focus();
  }
  function paint(){
   if(!host||destroyed)return;
@@ -135,9 +155,10 @@ export function createBrowserFolders({api,getTabs,getSelected,isBusy,refresh,not
    const icon=el('span',null,'next-browser-folder-icon');icon.setAttribute('aria-hidden','true');icon.innerHTML=browserIconMarkup('folderOutline');
    heading.append(toggle,icon,renaming===f.id?renameField(f):label,total);
    if(f.id){const child=button(null,()=>edit(null,f.id),'next-browser-folder-child');child.dataset.folderControl='create:'+f.id;browserIconButton(child,'folder','New subfolder in '+folderPath(collections,f.id));heading.append(child);
+    const move=button(null,()=>edit(null,null,f.id),'next-browser-folder-move');move.dataset.folderControl='move:'+f.id;browserIconButton(move,'move','Move folder '+folderPath(collections,f.id));heading.append(move);
     const remove=button(null,()=>void request('collection_remove',{collectionId:f.id}),'next-browser-folder-remove');remove.dataset.folderControl='remove:'+f.id;browserIconButton(remove,'close','Remove folder '+folderPath(collections,f.id),'Remove folder, keep tabs');heading.append(remove);}
-   group.append(heading,content);heading.title='Drag to move. Ctrl+Enter: indent. Ctrl+Shift+Enter: outdent.';
-   if(f.id){heading.draggable=!blocked();heading.addEventListener('dragstart',e=>{if(e.target.closest('input,select,textarea')){e.preventDefault();e.stopPropagation();return;}if(blocked()){e.preventDefault();return;}e.stopPropagation();e.dataTransfer.setData('application/x-blackice-folder',f.id);e.dataTransfer.effectAllowed='move';});heading.addEventListener('keydown',e=>void outlineKey(e,f.id,null));}
+   group.append(heading,content);heading.title='Use Move to choose any folder, or drag. Ctrl+Enter: indent. Ctrl+Shift+Enter: outdent.';
+   if(f.id){heading.draggable=!blocked();heading.addEventListener('dragstart',e=>{if(e.target.closest('button,input,select,textarea')){e.preventDefault();e.stopPropagation();return;}if(blocked()){e.preventDefault();return;}e.stopPropagation();e.dataTransfer.setData('application/x-blackice-folder',f.id);e.dataTransfer.effectAllowed='move';});heading.addEventListener('keydown',e=>void outlineKey(e,f.id,null));}
    dropTarget(heading,f.id);dropTarget(group,f.id);
    for(const child of f.children)content.append(branch(child));for(const tab of f.tabs){const row=tabRow(tab);if(row)content.append(row);}
    return group;

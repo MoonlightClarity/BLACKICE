@@ -24,6 +24,10 @@
 .next-chat-management-status[data-error=true]{color:#f0b8ae}
 .next-chat-management-dialog{width:min(430px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;color:var(--next-control-foreground,#e0e8f2);background:var(--next-control-menu-background,var(--panel));border:1px solid var(--line);border-radius:10px;padding:24px;box-shadow:0 20px 70px #0009}
 .next-chat-management-dialog::backdrop{background:#030812ba}
+#next-chat-folder-move-target{display:block;box-sizing:border-box;width:100%;max-height:min(34vh,260px);overflow:auto;font-size:12px;line-height:1.5}
+#next-chat-folder-move-target option{padding:7px 9px;white-space:normal;overflow-wrap:anywhere}
+#next-chat-folder-move-search{box-sizing:border-box;width:100%}
+#next-chat-folder-move-count{font-size:11px;margin:6px 0 0}
 .next-chat-management-dialog h2{margin:0 0 16px;font-size:19px}
 .next-chat-management-dialog p{line-height:1.6;color:var(--muted)}
 .next-chat-management-dialog input:not([type=checkbox]):not([type=radio]){width:100%}
