@@ -249,3 +249,73 @@ test('live provider catalog refresh replaces successful data, retains catalog on
   assert.deepEqual(f.runtime.store.get(config.id).models.map(m=>m.id),['saved']);
   assert.equal(f.runtime.store.defaultModel,null);
 });
+
+const pendingCatalogReply=()=>{let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve};};
+for(const slowMode of ['error','empty','old-success']) test('older '+slowMode+' refresh cannot replace a newer catalog',async t=>{
+  const model=id=>({id,context_length:65536,max_output_tokens:8192});
+  const models=ids=>response({data:ids.map(model)});
+  let handler=()=>models(['saved','old']);
+  const f=await fixture(t,()=>handler());
+  await f.runtime.saveProvider({...config,models:['saved']},{preserveDefault:true});
+  const initial=await f.runtime.discoverModels(config.id,{refresh:true});
+  assert.equal(initial.catalogAvailable,true);
+  const began=pendingCatalogReply(),held=pendingCatalogReply();let count=0;
+  handler=()=>{if(++count===1){began.resolve();return held.promise;}return models(['saved','new']);};
+  const older=f.runtime.discoverModels(config.id,{refresh:true});
+  await began.promise;
+  const newer=await f.runtime.discoverModels(config.id,{refresh:true});
+  assert.equal(newer.catalogAvailable,true);
+  held.resolve(slowMode==='error'?new Response('permission unavailable',{status:403}):models(slowMode==='empty'?[]:['saved','old']));
+  const late=await older;
+  const cached=await f.runtime.discoverModels(config.id);
+  for(const result of [newer,late,cached]){
+    assert.deepEqual(result.models.map(m=>m.id).sort(),['new','saved']);
+    assert.equal(result.catalogAvailable,true);
+    assert.equal(result.catalogStale,false);
+    assert.equal(result.fetchedAt,newer.fetchedAt);
+  }
+  assert.deepEqual(f.runtime.store.get(config.id).models.map(m=>m.id),['saved']);
+});
+
+test('newer failed refresh preserves a successful overlapping refresh rather than its admission snapshot',async t=>{
+  const model=id=>({id,context_length:65536,max_output_tokens:8192});
+  const models=ids=>response({data:ids.map(model)});
+  let handler=()=>models(['saved','old']);
+  const f=await fixture(t,()=>handler());
+  await f.runtime.saveProvider({...config,models:['saved']},{preserveDefault:true});
+  await f.runtime.discoverModels(config.id,{refresh:true});
+  const began=pendingCatalogReply(),held=pendingCatalogReply();let count=0;
+  handler=()=>{if(++count===1)return models(['saved','new']);began.resolve();return held.promise;};
+  const older=f.runtime.discoverModels(config.id,{refresh:true});
+  const newer=f.runtime.discoverModels(config.id,{refresh:true});
+  await began.promise;
+  const good=await older;
+  held.resolve(models([]));
+  const failure=await newer;
+  assert.equal(failure.catalogAvailable,false);
+  assert.equal(failure.catalogStale,true);
+  assert.equal(failure.fetchedAt,good.fetchedAt);
+  assert.deepEqual(failure.models.map(m=>m.id).sort(),['new','saved']);
+  assert.deepEqual((await f.runtime.discoverModels(config.id)).models.map(m=>m.id).sort(),['new','saved']);
+});
+
+test('an older failed connection test reports its own failure without poisoning a newer successful catalog',async t=>{
+  const model=id=>({id,context_length:65536,max_output_tokens:8192});
+  const models=ids=>response({data:ids.map(model)});
+  let handler=()=>models(['saved','old']);
+  const f=await fixture(t,()=>handler());
+  await f.runtime.saveProvider({...config,models:['saved']},{preserveDefault:true});
+  await f.runtime.discoverModels(config.id,{refresh:true});
+  const began=pendingCatalogReply(),held=pendingCatalogReply();let count=0;
+  handler=()=>{if(++count===1){began.resolve();return held.promise;}return models(['saved','new']);};
+  const earlier=f.runtime.testProvider(config.id);
+  await began.promise;
+  const newer=await f.runtime.testProvider(config.id);
+  assert.equal(newer.ok,true);
+  held.resolve(new Response('permission unavailable',{status:403}));
+  await assert.rejects(earlier);
+  const cached=await f.runtime.discoverModels(config.id);
+  assert.equal(cached.catalogAvailable,true);
+  assert.deepEqual(cached.models.map(m=>m.id).sort(),['new','saved']);
+  assert.equal(f.runtime.listProviders()[0].ok,true);
+});
