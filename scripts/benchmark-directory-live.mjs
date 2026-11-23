@@ -7,6 +7,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import {makeEventReplayTask,applyEventReplayGold} from './benchmark-fixture-event-replay.mjs';
+import {makeLongEvidence} from './benchmark-fixture-long-evidence.mjs';
+import {createBenchmarkChatWorkflow} from './benchmark-chat-workflow.mjs';
 
 const candidateRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const baselineRoot=process.env.BLACKICE_BENCH_CONTROL_ROOT||path.join(path.dirname(candidateRoot),'BLACKICE-context-control-20261123');
@@ -14,24 +16,33 @@ const providerDir=process.env.BLACKICE_BENCH_PROVIDER_DIR||path.join(process.env
 const variant=process.argv.find(x=>x.startsWith('--variant='))?.slice(10)||'candidate';
 const model=process.argv.find(x=>x.startsWith('--model='))?.slice(8)||'kilo_free::cohere/north-mini-code:free';
 const testId=process.argv.find(x=>x.startsWith('--case='))?.slice(7)||'async-cache';
+const longEvidenceCase=testId==='event-replay-long';
+const workflowKind=process.argv.find(arg=>arg.startsWith('--workflow='))?.slice(11)||'ordinary-chat';
+if(!['ordinary-chat','generic'].includes(workflowKind))throw Error('Use --workflow=ordinary-chat or --workflow=generic.');
 const directoryMode=process.argv.find(x=>x.startsWith('--directory='))?.slice(12)||'on';
 const pagingMode=process.argv.find(x=>x.startsWith('--paging='))?.slice(9)||'adaptive';
 if(!['on','off','eager','adaptive'].includes(pagingMode))throw Error('Use --paging=adaptive, eager, on (eager alias), or off.');
-const reportSuffix=(directoryMode==='off'?'-no-dir':'')+(pagingMode==='off'?'-no-paging':pagingMode==='adaptive'?'-adaptive':'');
+const reportSuffix=(directoryMode==='off'?'-no-dir':'')+(pagingMode==='off'?'-no-paging':pagingMode==='adaptive'?'-adaptive':'')+'-'+workflowKind;
 if(!['on','off'].includes(directoryMode))throw Error('Use --directory=on or --directory=off.');
 const reportRoot=process.env.BLACKICE_BENCH_REPORT_DIR||path.join(path.dirname(candidateRoot),'BLACKICE-context-benchmark-results-20261123');
 const sourceRoot=variant==='control'?baselineRoot:candidateRoot;
-if(!['control','candidate'].includes(variant)||!['async-cache','stream-scheduler','event-replay'].includes(testId))throw Error('Unsupported variant/case');
+if(!['control','candidate'].includes(variant)||!['async-cache','stream-scheduler','event-replay','event-replay-long'].includes(testId))throw Error('Unsupported variant/case');
 const nativeModel=/^gpt-[a-z0-9.-]{2,80}$/.test(model);
 if(!nativeModel&&(!model.startsWith('kilo_free::')||!model.endsWith(':free')))throw Error('Use a native ChatGPT-subscription model or a configured free Kilo model; paid API providers are not permitted.');
 const moduleImport=async file=>import(pathToFileURL(path.join(sourceRoot,'lib',file)).href);
-const [{HarnessEngine},{ProviderRuntime},{ProviderStore},{CodexRuntime}]=await Promise.all([
- moduleImport('engine.mjs'),moduleImport('providers.mjs'),moduleImport('provider-store.mjs'),moduleImport('codex.mjs')]);
-const results={variant,testId,model,directoryMode,pagingMode,effectivePaging:variant==='candidate'&&pagingMode!=='off',sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
+const [{HarnessEngine},{ProviderRuntime},{ProviderStore},{CodexRuntime},{ACTION_DIRECTORY_TOOL}]=await Promise.all([
+ moduleImport('engine.mjs'),moduleImport('providers.mjs'),moduleImport('provider-store.mjs'),moduleImport('codex.mjs'),moduleImport('task-action-directory.mjs')]);
+const results={variant,testId,model,directoryMode,pagingMode,workflowKind,effectivePaging:variant==='candidate'&&pagingMode!=='off',sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
+  directoryRecursionAdvertised:ACTION_DIRECTORY_TOOL.inputSchema.properties.action.enum.includes('decompose'),
+  directoryImplementationSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','task-action-directory.mjs'))).digest('hex'),
   harnessEngineSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','engine.mjs'))).digest('hex'),
   workspaceToolSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','workspace-tools.mjs'))).digest('hex'),
-  benchmarkFixtureSha256:testId==='event-replay'?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-event-replay.mjs'))).digest('hex'):null,
-  contextPolicy:variant==='candidate'?(pagingMode==='adaptive'?'adaptive-visible-96kb':pagingMode==='off'?'ablation-no-paging':'eager-context-v3'):'unmodified-2.40.75',
+  benchmarkFixtureSha256:testId.startsWith('event-replay')?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-event-replay.mjs'))).digest('hex'):null,
+  longEvidenceFixtureSha256:longEvidenceCase?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-long-evidence.mjs'))).digest('hex'):null,
+  benchmarkDriverSha256:createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-directory-live.mjs'))).digest('hex'),
+  benchmarkWorkflowSha256:createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-chat-workflow.mjs'))).digest('hex'),
+  finalReviewCalls:[],
+  contextPolicy:variant==='candidate'?(pagingMode==='adaptive'?'adaptive-visible-96kb':pagingMode==='off'?'ablation-no-paging':'eager-context-v3'):'unchanged-control-source',
   contextImplementationSha256:variant==='candidate'?
     createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','task-external-context.mjs'))).digest('hex'):null};
 const root=await mkdtemp(path.join(tmpdir(),'blackice-context-live-'+variant+'-'));
@@ -124,7 +135,8 @@ let eventReplayGrader=null;
 if(testId==='async-cache')await makeCacheTask();
 else if(testId==='stream-scheduler')await makeSchedulerTask();
 else eventReplayGrader=await makeEventReplayTask(write,taskRoot);
-if(testId!=='event-replay'){
+if(longEvidenceCase)results.evidenceManifest=await makeLongEvidence(write,taskRoot);
+if(!testId.startsWith('event-replay')){
 const incident=['2026-11-22T12:00:00Z INCIDENT TRACE '+testId];
 for(let i=0;i<240;i++)incident.push('2026-11-22T12:00:'+String(i%60).padStart(2,'0')+'Z trace request='+i+' key='+(['alpha','beta','gamma'][i%3])+' pending='+((i*7)%13)+' note=scheduled-repeat-observation');
 incident.push(testId==='async-cache'?'2026-11-22T12:59:59Z defect: a fulfilled promise was replaced by a stale value after invalidation; duplicate loader race confirmed.':'2026-11-22T12:59:59Z defect: root dependency checks skip every root and an all-of dependency was implemented as any-of.');
@@ -148,9 +160,9 @@ const acceptanceScheduler=[
  "test('all prerequisites are satisfied before a node runs',async()=>{let release;const slow=new Promise(r=>release=r);const task=runGraph([{id:'a',run:async()=>1},{id:'b',run:async()=>{await slow;return 2;}},{id:'c',dependsOn:['a','b'],run:async(x)=>x.join(',')}]);await new Promise(r=>setTimeout(r,20));release();assert.equal((await task).values.c,'1,2');});",
  "test('maxParallel=1 prevents overlap',async()=>{let active=0,peak=0;await runGraph(Array.from({length:6},(_,i)=>({id:'n'+i,run:async()=>{peak=Math.max(peak,++active);await new Promise(r=>setTimeout(r,5));active--;return i;}})),{maxParallel:1});assert.equal(peak,1);});",
 ];
-const grader=testId==='event-replay'?eventReplayGrader:(testId==='async-cache'?acceptanceCache:acceptanceScheduler).join('\n')+'\n';
+const grader=testId.startsWith('event-replay')?eventReplayGrader:(testId==='async-cache'?acceptanceCache:acceptanceScheduler).join('\n')+'\n';
 if (process.argv.includes('--verify-gold')) {
-  if (testId === 'event-replay') await applyEventReplayGold(write);
+  if (testId.startsWith('event-replay')) await applyEventReplayGold(write);
   else if (testId === 'async-cache') {
     await write('src/cache.mjs', [
       'export class AsyncCache {',
@@ -221,31 +233,97 @@ try{
     runtime.store=installed; // read-only provider settings; provider sessions stored in isolated root
   }
   const actual=runtime.runAgent.bind(runtime);
-  runtime.runAgent=options=>actual({...options,onToolCall:async(call,ctx)=>{
+  runtime.runAgent=options=>actual({...options,
+    ...(typeof options.onBeforeFinal==='function'?{onBeforeFinal:async candidate=>{
+      try{
+        const next=await options.onBeforeFinal(candidate);
+        if(results.finalReviewCalls.length<40)results.finalReviewCalls.push({
+          continued:next?.continue===true,
+          promptKind:typeof next?.prompt==='string'?(next.prompt.includes('CURRENT USER REQUEST')?'ordinary-chat-execution':next.prompt.includes('OUTCOME')?'outcome':'other'):null,
+          remainingSteps:Number.isInteger(candidate?.remainingSteps)?candidate.remainingSteps:null,
+        });
+        return next;
+      }catch(error){
+        if(results.finalReviewCalls.length<40)results.finalReviewCalls.push({threw:String(error?.code||error?.message||error).slice(0,200)});
+        throw error;
+      }
+    }}:{}),
+    onToolCall:async(call,ctx)=>{
     const supplied=typeof call.arguments==='string'?JSON.parse(call.arguments):call.arguments;
     const entry={name:call.name,action:supplied?.action,argumentsPreview:JSON.stringify(supplied).slice(0,900),at:Date.now()};
     results.toolCalls.push(entry);
     try{const value=await options.onToolCall(call,ctx);entry.success=value?.success;entry.code=value?.code||null;
-      const first=value?.contentItems?.find(item=>item?.type==='inputText'&&typeof item.text==='string')?.text;
-      entry.resultPreview=typeof first==='string'?first.slice(0,180):null;
+      const texts=(value?.contentItems||[]).filter(item=>item?.type==='inputText'&&typeof item.text==='string').map(item=>item.text);
+      entry.resultBytes=texts.reduce((sum,text)=>sum+Buffer.byteLength(text,'utf8'),0);
+      entry.archivedOriginalBytes=0;entry.archivedReferences=[];entry.resultOriginalEstimate=0;
+      for(const text of texts){
+       let parsed;try{parsed=JSON.parse(text);}catch{}
+       if(parsed?.externalContext===true&&typeof parsed.reference==='string'&&Number.isInteger(parsed.bytes)){
+        entry.archivedReferences.push(parsed.reference);
+        entry.archivedOriginalBytes+=parsed.bytes;
+        entry.resultOriginalEstimate+=parsed.bytes;
+       }else entry.resultOriginalEstimate+=Buffer.byteLength(text,'utf8');
+      }
+      const evidencePath=String(supplied?.path||supplied?.query||supplied?.command||'');
+      entry.traceShards=[...new Set([...evidencePath.matchAll(/trace-(0[1-8])\.log/gi)].map(match=>match[1]))];
+      entry.resultPreview=texts[0]?.slice(0,180)||null;
       return value;
     }catch(error){entry.threw=String(error.code||error.message||error).slice(0,180);throw error;}
   }});
   engine=await new HarnessEngine({runtime,dataDir:path.join(root,'engine'),defaultCwd:taskRoot,contextPagingEnabled:pagingMode!=='off',contextPagingPolicy:pagingMode==='adaptive'?'adaptive':'eager'}).init();
-  const graph={name:'Benchmark coding',nodes:[{id:'i',type:'input'},{id:'a',type:'agent',name:'Coding agent',model,prompt:'You are the coding agent. Fix the described software bugs. Inspect files and tests with your tools. Use only this isolated workspace. Verify the changes by running the test suite. Use current tool schemas.'},{id:'o',type:'output'}],edges:[{source:'i',target:'a'},{source:'a',target:'o'}],settings:{maxParallel:1,planningMode:'off',context:{outputReserveTokens:16384,headroomTokens:2048}}};
-  const task='In this isolated coding project ('+taskRoot+'), read README.md, incident.log and source files, fix the implementation until node --test passes. Preserve the public API, test files and user instructions. Be careful with false or stale outputs. Run tests to confirm. You may use the given workspace tools. This is a real coding benchmark; do not merely describe a fix.';
+  const graph=createBenchmarkChatWorkflow(model,{workflowKind});
+  const {ordinaryChatWorkflow:recognizedAsChat}=await import(pathToFileURL(path.join(sourceRoot,'public','chat-turn-defaults.mjs')).href);
+  if(workflowKind==='ordinary-chat'&&!recognizedAsChat(graph))throw Error('The benchmark graph did not activate BLACKICE ordinary Chat Mode.');
+  results.graphIdentity={id:graph.id||null,description:graph.description||null,recognizedAsOrdinaryChat:recognizedAsChat(graph)};
+  const task=longEvidenceCase
+    ? 'In this isolated coding project ('+taskRoot+'), repair the event-replay implementation. Read README.md and diagnostics/INDEX.md first, then audit all eight distinct diagnostics/trace-*.log evidence shards. Each contains a different relevant failure class and conflicting early hypotheses. Use the available planning tools to organize investigation, implementation and verification into executable workstreams; if a workstream remains complex, subdivide it further using the planning facilities actually available, then synthesize the evidence before concluding. Use any efficient read/search/programmatic strategy; do not skip the evidence audit or assume a first-page fragment contains the final conclusion. Implement and test both modules, including invalid inputs and failed-apply side effects. Preserve the public API and the provided tests. Run node --test on your final source and report what was actually verified. You have authorized workspace read/write tools. Avoid unnecessary repeated work and do not request routine approval.'
+    : 'In this isolated coding project ('+taskRoot+'), read README.md, incident.log and source files, fix the implementation until node --test passes. Preserve the public API, test files and user instructions. Be careful with false or stale outputs. Run tests to confirm. You may use the given workspace tools. This is a real coding benchmark; do not merely describe a fix.';
   const started=engine.startRun({workflow:graph,input:{task,directoryActions:directoryMode,directoryDiagnostics:'off'}});
   results.runId=started.id;
   await engine.executions.get(started.id);
   const run=engine.getRun(started.id); results.runStatus=run.status;results.runError=run.error||null;results.agentOutput=String(run.nodes?.a?.output||'').slice(0,1500);
   if(directoryMode==='on'){
     const directorySnapshot=(await engine.actionDirectories.get(started.id,task)).read();
-    results.directoryRecords=directorySnapshot.actions.map(a=>({id:a.id,state:a.state,objective:a.objective,notes:a.notes?.length||0,observation:a.observation?.claim||null}));
+    results.directoryRecords=directorySnapshot.actions.map(a=>({id:a.id,state:a.state,parentId:a.parentId||null,replaces:a.replaces||[],decompositions:a.decompositions?.length||0,objective:a.objective,notes:a.notes?.length||0,observation:a.observation?.claim||null}));
     results.directoryFinal={focus:directorySnapshot.focus,revision:directorySnapshot.revision,receiptCount:directorySnapshot.receipts.length,ready:directorySnapshot.ready};
   }else{results.directoryRecords=[];results.directoryFinal=null;}
   const state=engine.runs.get(started.id)?.nodes?.a||{};
-  results.nodeDiagnostics={directoryOutcome:state.directoryOutcome||null,runtimePhase:state.runtimePhase||null,toolNames:state.toolNames||[],usage:state.usage||state.tokenUsage||null};
+  results.nodeDiagnostics={directoryOutcome:state.directoryOutcome||null,runtimePhase:state.runtimePhase||null,toolNames:state.toolNames||[],usage:state.usage||state.tokenUsage||null,
+   outcomeAssessment:state.outcomeAssessment||null,outcomeReviewUsage:state.outcomeReviewUsage||null};
+  const parentsById=new Map(results.directoryRecords.map(row=>[row.id,row.parentId]));
+  const depth=id=>{let count=0,seen=new Set([id]);while(parentsById.get(id)){id=parentsById.get(id);if(seen.has(id))break;seen.add(id);count++;}return count;};
+  results.recursivePlanning={
+    advertised:results.directoryRecursionAdvertised,
+    attempted:results.toolCalls.filter(row=>row.name==='relay_directory_action'&&row.action==='decompose').length,
+    accepted:results.toolCalls.filter(row=>row.name==='relay_directory_action'&&row.action==='decompose'&&row.success===true).length,
+    parents:results.directoryRecords.filter(row=>row.decompositions>0).length,
+    deepestAction:Math.max(0,...results.directoryRecords.map(row=>depth(row.id))),
+    activeParents:results.directoryRecords.filter(row=>row.state==='decomposed').map(row=>row.id),
+    completedParents:results.directoryRecords.filter(row=>row.decompositions>0&&row.state==='observed').map(row=>row.id),
+  };
+  results.ordinaryReviewObserved=results.finalReviewCalls.some(review=>review.continued===true);
   results.completedAt=new Date().toISOString();
+  const eligibleToolOutput=results.toolCalls.filter(row=>row.success===true&&(
+   row.name==='relay_workspace'&&['read','find','search','list','run'].includes(row.action)||
+   row.name==='relay_find_files'||row.name==='relay_history'&&['read','search'].includes(row.action)
+  ));
+  const distinctTraceShards=[...new Set(results.toolCalls.filter(row=>row.success===true).flatMap(row=>row.traceShards||[]))].sort();
+  results.contextPressure={
+   originalEligibleReadBytes:eligibleToolOutput.reduce((sum,row)=>sum+(row.resultOriginalEstimate||0),0),
+   modelVisibleEligibleReadBytes:eligibleToolOutput.reduce((sum,row)=>sum+(row.resultBytes||0),0),
+   allModelFacingToolBytes:results.toolCalls.reduce((sum,row)=>sum+(row.resultBytes||0),0),
+   originalAllToolBytesEstimate:results.toolCalls.reduce((sum,row)=>sum+(row.resultOriginalEstimate||0),0),
+   archivedToolResults:results.toolCalls.filter(row=>(row.archivedReferences||[]).length>0).length,
+   archivedOriginalBytes:results.toolCalls.reduce((sum,row)=>sum+(row.archivedOriginalBytes||0),0),
+   retrievalCalls:results.toolCalls.filter(row=>row.name==='relay_context_page').length,
+   shellCommandOutputs:results.toolCalls.filter(row=>row.name==='relay_workspace'&&row.action==='run'&&row.success===true).length,
+   shellOriginalBytes:results.toolCalls.filter(row=>row.name==='relay_workspace'&&row.action==='run'&&row.success===true).reduce((sum,row)=>sum+(row.resultOriginalEstimate||0),0),
+   shellModelVisibleBytes:results.toolCalls.filter(row=>row.name==='relay_workspace'&&row.action==='run'&&row.success===true).reduce((sum,row)=>sum+(row.resultBytes||0),0),
+   shellArchivedOutputs:results.toolCalls.filter(row=>row.name==='relay_workspace'&&row.action==='run'&&(row.archivedReferences||[]).length>0).length,
+   traceShardsReferenced:distinctTraceShards,
+   traceShardReadCalls:results.toolCalls.filter(row=>row.success===true&&row.name==='relay_workspace'&&row.action==='read'&&(row.traceShards||[]).length>0).length,
+   reachedAdaptiveOutputThreshold:eligibleToolOutput.reduce((sum,row)=>sum+(row.resultOriginalEstimate||0),0)>96*1024,
+  };
   await writeFile(path.join(taskRoot,'test','hidden-acceptance.test.mjs'),grader);
   const hidden=spawnSync(process.execPath,['--test'],{cwd:taskRoot,encoding:'utf8',timeout:30000});
   results.hiddenGrade={exitCode:hidden.status,output:(hidden.stdout||'').slice(-5000),errors:(hidden.stderr||'').slice(-1500)};
@@ -267,6 +345,6 @@ finally{
   results.finishedAt=new Date().toISOString();
   const reportPath=path.join(reportRoot,testId+'-'+variant+reportSuffix+'-'+randomUUID().slice(0,8)+'.json');
   await writeFile(reportPath,JSON.stringify(results,null,2));
-  console.log(JSON.stringify({reportPath,variant,testId,model,directoryMode,pagingMode,contextPolicy:results.contextPolicy,runStatus:results.runStatus,trialValid:results.trialValid,codingCorrect:results.codingCorrect,workflowCompleted:results.workflowCompleted,codingSuccess:results.codingSuccess,toolCalls:results.toolCalls.length,externalArtifactCount:results.externalArtifactCount,infraError:results.infraError,runError:results.runError}));
+  console.log(JSON.stringify({reportPath,variant,testId,model,directoryMode,pagingMode,workflowKind,ordinaryReviewCalls:results.finalReviewCalls.length,contextPolicy:results.contextPolicy,runStatus:results.runStatus,trialValid:results.trialValid,codingCorrect:results.codingCorrect,workflowCompleted:results.workflowCompleted,codingSuccess:results.codingSuccess,toolCalls:results.toolCalls.length,externalArtifactCount:results.externalArtifactCount,infraError:results.infraError,runError:results.runError}));
   await rm(root,{recursive:true,force:true}).catch(()=>{});
 }

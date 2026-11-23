@@ -43,9 +43,9 @@ async function rejectsUnchanged(f,args,expected='DIRECTORY_TOOL_ARGUMENTS'){
 }
 
 test('published variants retain the existing action enum and accept each genuine minimal shape',()=>{
- assert.deepEqual(schema.properties.action.enum,['read','plan','focus','refine','note','observe','block']);
+ assert.deepEqual(schema.properties.action.enum,['read','plan','decompose','focus','refine','note','observe','block']);
  for(const args of minima)assert.equal(validDirectArguments(args,schema),true,JSON.stringify(args));
- assert.equal(schema.oneOf.length,10);
+ assert.equal(schema.oneOf.length,11);
 });
 test('actual model handler performs read, plan, focus and both valid refinement variants',async()=>{
  const f=setup();const initial=f.ledger.read();assert.deepEqual(await f.model(minima[0]),initial);assert.equal(f.persisted.length,0);
