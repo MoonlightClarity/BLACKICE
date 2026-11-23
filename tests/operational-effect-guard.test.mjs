@@ -259,3 +259,45 @@ test('browser stale-reference preflight settles Directory without replaying; a f
  const next=await ledger.execute(fresh,handle,scope);
  assert.equal(next.result.success,true);assert.equal(f.counts().dispatched,1);
 });
+
+test('near-full legacy receipts spill losslessly, retain unknown effects, and preserve exact-call replay',async t=>{
+ const f=await fixture(t),g=f.guard('legacy'),handle=g.wrap(f.raw);
+ const original={...args('click','legacy-original'),descriptor:descriptor('legacy-original'),
+   result:receipt({actionDispatched:true,body:'x'.repeat(44000)})};
+ const first=await handle(original),file=f.store.file(g.scopeId)+'.effects';
+ const legacy=JSON.parse(await readFile(file,'utf8')),base=legacy.records[0];
+ // Model an already installed pre-spill journal using valid old-schema rows.
+ base.result=first;delete base.resultRef;
+ const rowSize=Buffer.byteLength(JSON.stringify(base)),limit=8*1024*1024;
+ const replicas=Math.floor((limit-110000)/rowSize);
+ for(let i=0;i<replicas;i++)legacy.records.push({...structuredClone(base),operationId:'synthetic-'+i,callId:'synthetic-'+i,taskId:'historical-'+i});
+ while(Buffer.byteLength(JSON.stringify(legacy))>=limit-2000)legacy.records.pop();
+ const legacySize=Buffer.byteLength(JSON.stringify(legacy));
+ assert.ok(legacySize>7*1024*1024,'the fixture must reproduce the original 8 MiB ceiling');
+ await writeFile(file,JSON.stringify(legacy));
+ const fresh={...args('click','post-capacity-recovery'),descriptor:descriptor('new')};
+ assert.equal((await handle(fresh)).success,true);
+ const after=JSON.parse(await readFile(file,'utf8'));
+ assert.equal(after.records.length,legacy.records.length+1,'no prior unknown operations were deleted');
+ assert.equal(after.records.filter(row=>row.state==='unknown').length,legacy.records.length+1);
+ assert.ok(Buffer.byteLength(JSON.stringify(after))<2*1024*1024,'large results moved out of the bounded index');
+ const stored=after.records.find(row=>row.operationId===base.operationId);
+ assert.ok(stored.resultRef?.sha256);
+ assert.equal(stored.result,undefined);
+ assert.deepEqual(JSON.parse(await readFile(file+'.result-'+stored.resultRef.sha256+'.json','utf8')),first);
+ assert.deepEqual(await handle(original),first,'exact original call recovers without new dispatch');
+ assert.equal(f.counts().dispatched,2);
+});
+
+test('tampered result sidecars fail closed without replaying the original action',async t=>{
+ const f=await fixture(t),g=f.guard('sidecar'),handle=g.wrap(f.raw);
+ const original={...args('click','sidecar-original'),descriptor:descriptor('sidecar-original'),
+   result:receipt({actionDispatched:true,body:'a'.repeat(30000)})};
+ await handle(original);
+ const file=f.store.file(g.scopeId)+'.effects',journal=JSON.parse(await readFile(file,'utf8'));
+ const ref=journal.records[0].resultRef;
+ assert.ok(ref?.sha256,'large result should be a content-addressed sidecar');
+ await writeFile(file+'.result-'+ref.sha256+'.json','tampered');
+ await assert.rejects(handle(original),{code:'OPERATIONAL_RESULT_UNAVAILABLE'});
+ assert.equal(f.counts().dispatched,1,'corrupt evidence never authorizes a replay');
+});
