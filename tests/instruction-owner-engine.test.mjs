@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarnessEngine } from '../lib/engine.mjs';
+import {saveDeveloperLayer} from '../lib/developer-layer.mjs';
 import { DEFAULT_COMMON_INSTRUCTIONS } from '../lib/instruction-store.mjs';
 
 test('saved common Instructions are pinned across nodes and explicit empty applies to a resumed execution', { timeout: 20000 }, async t => {
@@ -74,6 +75,14 @@ test('saved common Instructions are pinned across nodes and explicit empty appli
   assert.equal(responseAudit.sections.find(item => item.id === 'core').revision, correctionCore.revision);
   assert.ok(responseAudit.sections.some(item => item.id === 'response-only-contract'));
   assert.equal(responseAudit.sections.filter(item => item.layer === 'developer').map(item => item.text).join(''), runtime.calls.at(-1).developerInstructions);
+  for(const content of ['Custom developer layer.', '']){
+    await saveDeveloperLayer(engine.dataDir,content);
+    const custom=engine.startRun({workflow:correctionWorkflow,input:{task:'Check custom instructions.',directoryMode:'off'}});
+    await engine.executions.get(custom.id);
+    assert.equal(engine.getRun(custom.id).status,'completed');
+    assert.equal(runtime.calls.at(-1).developerInstructions,content);
+  }
+  await saveDeveloperLayer(engine.dataDir,null);
   const emptyAgain = await engine.instructionSettings.update({ content: '', expectedRevision: correctionCore.revision, expectedHash: correctionCore.hash });
   const continuedStop = engine.continueRun(stopped.id, { nodeId: 'agent', message: 'Continue' });
   await engine.executions.get(continuedStop.id);

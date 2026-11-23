@@ -226,6 +226,12 @@ test('real audit HTTP routes return captured sources without returning task/prof
   const initial=await fetch(url),cookie=initial.headers.get('set-cookie')?.split(';')[0];
   assert.ok(cookie);
   const get=route=>fetch(new URL(route,url),{headers:{Cookie:cookie}});
+  const endpoint='/api/instructions/developer-layer';
+  for(const content of ['Owner layer', '', null]){
+    const response=await fetch(new URL(endpoint,url),{method:'PUT',headers:{Cookie:cookie,Origin:new URL(url).origin,'Content-Type':'application/json'},body:JSON.stringify({content})});
+    assert.equal(response.status,200,await response.text());
+    assert.equal((await (await get(endpoint)).json()).content,content);
+  }
   const current=await get('/api/instructions');assert.equal(current.status,200);
   const config=await current.json(),saved=await (await get('/api/instructions/core')).json();
   assert.deepEqual(config.core,saved);assert.equal(saved.text,saved.content);assert.equal(saved.revision,0);assert.equal(saved.source,'initial-default');
@@ -244,4 +250,27 @@ test('real audit HTTP routes return captured sources without returning task/prof
     const result=await get(route);assert.equal(result.status,200,route);assert.ok((await result.text()).length>30);
   }
   app.engine.runs.delete('fixture-instructions');
+});
+
+test('developer layer capture opens an editable draft and saves the complete replacement',async t=>{
+  const f=planningDOM(t), run=snapshot('layer-test','Task prompt'), requests=[];
+  run.nodes[0].audit.sections.push(...['First',' second'].map(text=>({role:'developer',layer:'developer',text})));
+  const settings=createInstructionSettings({mount:f.mount,api:async(route,method,body)=>{
+    if(route==='/api/instructions/core')return core();
+    if(route==='/api/instructions')return index([{id:run.runId,captured:true}]);
+    if(route==='/api/instructions/developer-layer'){
+      if(method==='PUT')requests.push(body);
+      return {path:'developer-layer.md',content:body?.content??null};
+    }
+    return run;
+  }});
+  t.after(()=>settings.destroy());settings.enter();await settle();
+  const button=label=>[...f.mount.querySelectorAll('button')].find(item=>item.textContent===label);
+  await f.click(button('Edit developer / system layer'));
+  const field=f.$('#next-developer-layer-text');
+  assert.equal(field.value,'First second');
+  await f.input('#next-developer-layer-text','My replacement');await f.click(button('Save developer layer'));await settle();
+  assert.deepEqual(requests,[{content:'My replacement'}]);
+  await f.click(button('Restore automatic instructions'));await settle();
+  assert.deepEqual(requests.at(-1),{content:null});
 });
