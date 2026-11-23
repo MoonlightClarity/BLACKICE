@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: published 2.40.75 documentation.** Package version is **2.40.75**. See the [published v2.40.75 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75) and [versioned notes](../RELEASE-NOTES-2.40.75.md). Post-release documentation fixes do not change the tagged installer.
+> **Status: 2.40.76 local integration source (not published).** Package version is **2.40.76**. See the [integration notes](../RELEASE-NOTES-2.40.76.md). The latest confirmed published version remains [2.40.75](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75).
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 

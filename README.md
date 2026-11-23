@@ -10,7 +10,7 @@ BLACKICE is being developed as an **agent execution and continuity system**, not
 
 ## Source version and Windows releases
 
-**BLACKICE 2.40.75 is published**, completing the browser, continuity, Directory and MiniCPM integration with connector-discovery and provider-persistence corrections. The [published release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75) targets commit [`3fc873c8`](https://github.com/MoonlightClarity/BLACKICE/commit/3fc873c8394fb8381456c305cd91068ce9b98eac); documentation corrections made afterward do not change its installer. See the [2.40.75 release notes](RELEASE-NOTES-2.40.75.md), [instruction clarity guide](docs/instruction-clarity.md), and [instruction audit guide](docs/instruction-audit.md) for the changes and their qualification limits.
+**BLACKICE 2.40.76 is a local integration source candidate, not a published Windows release.** The latest confirmed published version remains [2.40.75](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75), bound to commit [`3fc873c8`](https://github.com/MoonlightClarity/BLACKICE/commit/3fc873c8394fb8381456c305cd91068ce9b98eac). See the [2.40.76 integration notes](RELEASE-NOTES-2.40.76.md), the [published 2.40.75 notes](RELEASE-NOTES-2.40.75.md), and the [instruction audit guide](docs/instruction-audit.md).
 
 Published Windows installers, build manifests, and tagged source archives are listed on the [Releases page](https://github.com/MoonlightClarity/BLACKICE/releases). The [2.40.75 release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75) includes its installer, `SHA256SUMS.txt`, and separate Windows validation evidence; the [fresh Windows release workflow](https://github.com/MoonlightClarity/BLACKICE/actions/runs/45091943186) passed. A release tag identifies its source snapshot; the current branch and an installed version can differ. Match the installer checksum and application fingerprint to that release's evidence instead of selecting a build by filename or timestamp alone.
 
@@ -34,7 +34,7 @@ The central challenge is **reliable long-horizon delegation**: not just producin
 
 ## Current capability and evidence boundaries
 
-The distinction between an implemented tool, a verified integration, and a reliably completed real-world task matters. These boundaries describe the **2.40.75 source**; installed versions and provider capabilities can differ.
+The distinction between an implemented tool, a verified integration, and a reliably completed real-world task matters. These boundaries describe the **2.40.76 integration source**; installed versions and provider capabilities can differ.
 
 | Area | What the current source provides | What is **not** established |
 | --- | --- | --- |
