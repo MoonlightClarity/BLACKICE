@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskExternalContextStore, eligibleExternalContextCall, EXTERNAL_CONTEXT_TOOL } from '../lib/task-external-context.mjs';
+import { TaskExternalContextStore, eligibleExternalContextCall, EXTERNAL_CONTEXT_TOOL, EXTERNAL_CONTEXT_INSTRUCTIONS } from '../lib/task-external-context.mjs';
 import { readOnlyToolDenial } from '../lib/worker-permissions.mjs';
 
 async function fixture(t) {
@@ -97,6 +97,40 @@ test('literal search finds evidence across chunk boundaries without paging throu
   const noMore = parsed(await search({ startOffset: second + 1 }));
   assert.deepEqual(noMore.matches, []);
   assert.equal(noMore.complete, true);
+});
+
+test('archive searching precedes source continuation and unused read/search fields fail explicitly', async t => {
+  const {store}=await fixture(t);
+  const marker='ROOT_CAUSE_CODE: CACHE_EPOCH_STALE_42';
+  const raw=JSON.stringify({path:'incident.log',startLine:1,endLine:224,
+    truncated:true,nextStartLine:225,content:'START\\n'+'x'.repeat(1400)+marker+'y'.repeat(1400)+'\\nEND'});
+  const original=result(raw),archived=await store.archiveResult(readCall,original);
+  const pointer=parsed(archived);
+  assert.equal(pointer.externalContext,true);
+  assert.equal(pointer.sourceContinuation.startLine,225,'Do not discard legitimate source cursor.');
+  assert.equal(JSON.stringify(pointer.preview).includes(marker),false,'The diagnosis is in the omitted middle.');
+  assert.match(pointer.nextAction,/FIRST use relay_context_page search/);
+  assert.match(EXTERNAL_CONTEXT_INSTRUCTIONS,/FIRST use relay_context_page search/);
+  assert.equal(original.contentItems[0].text,raw,'Host evidence stays intact.');
+  const wrongRead=await store.handle({arguments:{
+    action:'read',reference:pointer.reference,offset:0,maxBytes:512,needle:'ROOT_CAUSE_CODE:'}});
+  assert.equal(wrongRead.success,false);
+  assert.equal(wrongRead.code,'CONTEXT_ARCHIVE_INVALID');
+  assert.match(wrongRead.contentItems[0].text,/Use action "search"/);
+  const wrongSearch=await store.handle({arguments:{
+    action:'search',reference:pointer.reference,needle:'ROOT_CAUSE_CODE:',offset:0}});
+  assert.equal(wrongSearch.success,false);
+  assert.equal(wrongSearch.code,'CONTEXT_ARCHIVE_INVALID');
+  assert.match(wrongSearch.contentItems[0].text,/Use startOffset/);
+  const found=parsed(await store.handle({arguments:{
+    action:'search',reference:pointer.reference,needle:'ROOT_CAUSE_CODE:'}}));
+  assert.equal(found.matches.length,1);
+  const page=parsed(await store.handle({arguments:{
+    action:'read',reference:pointer.reference,offset:found.matches[0].offset,maxBytes:512}}));
+  assert.ok(page.text.startsWith(marker),'The correct text is retrievable before the next source page.');
+  const wrongList=await store.handle({arguments:{action:'list',reference:pointer.reference}});
+  assert.equal(wrongList.success,false);
+  assert.equal(wrongList.code,'CONTEXT_ARCHIVE_INVALID');
 });
 
 test('large structured diagnostic results preserve both ends and actionable status in a bounded preview', async t => {
