@@ -265,7 +265,7 @@ try{
   results.nodeDiagnostics={directoryOutcome:state.directoryOutcome||null,runtimePhase:state.runtimePhase||null,toolNames:state.toolNames||[],usage:state.usage||state.tokenUsage||null};
   results.completedAt=new Date().toISOString();
   const eligibleToolOutput=results.toolCalls.filter(row=>row.success===true&&(
-   row.name==='relay_workspace'&&['read','find','search','list'].includes(row.action)||
+   row.name==='relay_workspace'&&['read','find','search','list','run'].includes(row.action)||
    row.name==='relay_find_files'||row.name==='relay_history'&&['read','search'].includes(row.action)
   ));
   const distinctTraceShards=[...new Set(results.toolCalls.filter(row=>row.success===true).flatMap(row=>row.traceShards||[]))].sort();
@@ -277,6 +277,10 @@ try{
    archivedToolResults:results.toolCalls.filter(row=>(row.archivedReferences||[]).length>0).length,
    archivedOriginalBytes:results.toolCalls.reduce((sum,row)=>sum+(row.archivedOriginalBytes||0),0),
    retrievalCalls:results.toolCalls.filter(row=>row.name==='relay_context_page').length,
+   shellCommandOutputs:results.toolCalls.filter(row=>row.name==='relay_workspace'&&row.action==='run'&&row.success===true).length,
+   shellOriginalBytes:results.toolCalls.filter(row=>row.name==='relay_workspace'&&row.action==='run'&&row.success===true).reduce((sum,row)=>sum+(row.resultOriginalEstimate||0),0),
+   shellModelVisibleBytes:results.toolCalls.filter(row=>row.name==='relay_workspace'&&row.action==='run'&&row.success===true).reduce((sum,row)=>sum+(row.resultBytes||0),0),
+   shellArchivedOutputs:results.toolCalls.filter(row=>row.name==='relay_workspace'&&row.action==='run'&&(row.archivedReferences||[]).length>0).length,
    traceShardsReferenced:distinctTraceShards,
    traceShardReadCalls:results.toolCalls.filter(row=>row.success===true&&row.name==='relay_workspace'&&row.action==='read'&&(row.traceShards||[]).length>0).length,
    reachedAdaptiveOutputThreshold:eligibleToolOutput.reduce((sum,row)=>sum+(row.resultOriginalEstimate||0),0)>96*1024,
