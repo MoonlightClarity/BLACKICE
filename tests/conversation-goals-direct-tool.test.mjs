@@ -66,3 +66,26 @@ test('starting a connector goal admits the objective atomically through the norm
   await tool.execute({ requestId: 'ordinary-chat', message: 'One response', planningMode: 'off', directoryMode: 'off' }, { client });
   assert.equal(Object.hasOwn(starts[1].input, 'goal'), false);
 });
+
+test('connector does not send an unqualified saved local model to native Codex', async () => {
+  const starts = [], localModel = 'MiniCPM-V-4.7-1B-heretic-Q4_K_S';
+  const engine = {
+    runtime: { listProviders: () => [
+      { id: 'local_llamacpp', models: [{ id: localModel }] },
+    ] },
+    startRun: request => { starts.push(request); return { id: 'local-fixture', taskId: 'local-fixture', status: 'queued' }; },
+  };
+  const tool = chatGPTStartChatTool({ engine, defaultCwd: tmpdir() });
+  const shared = { message: 'Read one file.', planningMode: 'off', directoryMode: 'off' };
+  await assert.rejects(
+    tool.execute({ ...shared, requestId: 'bare-local', model: localModel }, { client }),
+    { code: 'CHATGPT_CHAT_START_PROVIDER_REQUIRED', message: /local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S/ },
+  );
+  assert.equal(starts.length, 0, 'No Codex run was admitted by mistake.');
+  const qualified = 'local_llamacpp::' + localModel;
+  const accepted = await tool.execute({ ...shared, requestId: 'qualified-local', model: qualified }, { client });
+  assert.equal(JSON.parse(accepted.contentItems[0].text).selectedModel, qualified);
+  assert.equal(starts.length, 1, 'A qualified local provider model still admits normally.');
+  await tool.execute({ ...shared, requestId: 'bare-native', model: 'fixture-native-codex' }, { client });
+  assert.equal(starts.length, 2, 'A distinct native Codex model retains existing behavior.');
+});
