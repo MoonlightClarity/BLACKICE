@@ -2,7 +2,7 @@
 // Uses same model, prompt, fixture, context and provider steps. All mutable effects
 // stay in a unique temporary workspace/profile. This is exploratory, not a benchmark win-rate.
 import {EventEmitter} from 'node:events';
-import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,writeFile,rm,appendFile} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +12,18 @@ const args=process.argv.slice(2),variant=args.find(x=>x.startsWith('--variant=')
 const revision=args.find(x=>x.startsWith('--revision='))?.slice(11)||'v1';
 if(!['v1','v2'].includes(revision))throw Error('Expected --revision=v1 or v2.');
 if(!['control','paging'].includes(variant))throw Error('Choose --variant=control or --variant=paging');
+const valueOf = (name, fallback, min, max) => {
+  const value=args.find(x=>x.startsWith('--'+name+'='))?.split('=').at(-1);
+  if(value===undefined)return fallback;
+  const parsed=Number(value);
+  if(!Number.isSafeInteger(parsed)||parsed<min||parsed>max)throw Error('Invalid --'+name+' value.');
+  return parsed;
+};
+const maxSteps=valueOf('steps',revision==='v2'?10:8,1,64);
+const wallMs=valueOf('wall-ms',85000,1000,600000);
+const maxOutputTokens=valueOf('output-tokens',4096,1024,32768);
+const plannedBudgetRun=args.some(x=>x.startsWith('--steps=')||x.startsWith('--wall-ms=')||x.startsWith('--output-tokens='));
+const budgetSuffix=plannedBudgetRun?'-steps'+maxSteps+'-wall'+Math.floor(wallMs/1000)+'s'+(maxOutputTokens!==4096?'-out'+maxOutputTokens:''):'';
 const candidateRoot=path.resolve(fileURLToPath(new URL('..',import.meta.url)));
 const controlRoot='C:\\Users\\user\\Documents\\Codex\\BLACKICE-minicpm-post24075-fixes-20261122';
 const sourceRoot=variant==='control'?controlRoot:candidateRoot;
@@ -26,7 +38,8 @@ class NoNative extends EventEmitter{
   async runAgent(){throw Error('Native model fallback not permitted');}
 }
 const root=await mkdtemp(path.join(os.tmpdir(),'minicpm-directory-ab-'+variant+'-'));
-const cwd=path.join(root,'workspace'),report=path.join(candidateRoot,'verification','minicpm-directory-ab-'+variant+'-'+revision+'-20261123.json');
+const cwd=path.join(root,'workspace'),report=path.join(candidateRoot,'verification','minicpm-directory-ab-'+variant+'-'+revision+budgetSuffix+'-20261123.json');
+const progressPath=report.replace(/\.json$/,'.progress.jsonl');
 const expected='CACHE_EPOCH_STALE_42';
 const model='MiniCPM-V-4.7-1B-heretic-Q4_K_S',selection='local_llamacpp::'+model;
 const lines=Array.from({length:300},(_,i)=>{
@@ -35,6 +48,7 @@ const lines=Array.from({length:300},(_,i)=>{
 });
 const log=lines.join('\n')+'\n';
 let runtime,engine,runId,timeout=false,problem=null,reportData;
+const startedAt=Date.now();
 const toolInvocations=[];
 const task=revision==='v2'
  ? 'Inspect the log at EXACT path '+JSON.stringify(path.join(cwd,'incident.log'))+'. First call relay_workspace with {action:"read",path:'+JSON.stringify(path.join(cwd,'incident.log'))+',startLine:1,lineCount:300}; do not search other paths. Find line starting ROOT_CAUSE_CODE: and report its exact code. If the tool returns an EXTERNAL CONTEXT RECORD, call relay_context_page search with needle "ROOT_CAUSE_CODE:" and then read at the resulting byte offset; do not infer a middle line from the preview. No writes or outside actions.'
@@ -46,8 +60,8 @@ try{
    modelLimitResolver:{enrich:async(_config,models)=>models}}).init();
  await runtime.saveProvider({id:'local_llamacpp',type:'compatible',preset:'llamacpp',
    baseUrl:'http://127.0.0.1:8080/v1',
-   models:[{id:model,contextWindowTokens:262144,maxOutputTokens:4096,supportsTools:true}],
-   maxSteps:revision==='v2'?10:8},{preserveDefault:true});
+   models:[{id:model,contextWindowTokens:262144,maxOutputTokens,supportsTools:true}],
+   maxTokens:maxOutputTokens,maxSteps},{preserveDefault:true});
  const originalRun=runtime.runAgent.bind(runtime);
  runtime.runAgent=options=>originalRun({...options,
    ...(options.onToolCall?{onToolCall:async (...callArgs)=>{
@@ -59,10 +73,12 @@ try{
        pointer=first?.externalContext===true;
        partialText=JSON.stringify(first||{}).includes(expected);
      }catch{}
-     toolInvocations.push({tool:call.name,action:parsed.action||'call',
+     const trace={tool:call.name,action:parsed.action||'call',
        path:typeof parsed.path==='string'?parsed.path.slice(0,240):null,
        success:output?.success,code:output?.code||null,
-       externalContext:pointer,markerVisible:partialText});
+       externalContext:pointer,markerVisible:partialText};
+      toolInvocations.push(trace);
+      await appendFile(progressPath,JSON.stringify({at:new Date().toISOString(),step:toolInvocations.length,...trace})+'\n');
      return output;
    }}:{})
  });
@@ -71,7 +87,7 @@ try{
    task,model:selection,cwd,
    id:'chatgpt_mission_'+randomUUID().replaceAll('-',''),planningMode:'off',
    context:{preset:'custom',windowTokens:65536,autoCompact:false,
-     outputReserveTokens:4096,headroomTokens:4096}
+     outputReserveTokens:maxOutputTokens,headroomTokens:4096}
  });
  const start=engine.startRun({workflow,input:{task,cwd,directoryActions:'off',
    chatPlanning:'off',pastChats:'off',directoryMode:'off'}});
@@ -79,7 +95,7 @@ try{
  let timer;
  try{
   await Promise.race([engine.executions.get(runId),new Promise((_,reject)=>{
-    timer=setTimeout(()=>reject(Error('AB_BOUNDED_TIMEOUT')),85000);
+    timer=setTimeout(()=>reject(Error('AB_BOUNDED_TIMEOUT')),wallMs);
   })]);
  }catch(error){problem=error.message;timeout=problem==='AB_BOUNDED_TIMEOUT';
    if(timeout)engine.cancelRun(runId);
@@ -99,7 +115,7 @@ try{
  const finalEvidence=output||lastAssistant.at(-1)||'';
  const pageCalls=tools.filter(row=>row.tool==='relay_context_page').length;
  const originalHash=createHash('sha256').update(log).digest('hex');
- reportData={variant,revision,sourceRoot,model:selection,runId,runStatus:run.status,
+ reportData={variant,revision,maxSteps,wallMs,maxOutputTokens,elapsedMs:Date.now()-startedAt,sourceRoot,model:selection,runId,runStatus:run.status,
    errorCode:node.errorCode||run.errorCode||null,error:run.error||problem,
    outcomeAssessment:node.outcomeAssessment||null,toolSummary:node.toolSummary||null,
    toolCount:toolInvocations.length,tools:toolInvocations,pageCalls:toolInvocations.filter(x=>x.tool==='relay_context_page').length,task,sourceSha256:originalHash,
@@ -109,7 +125,7 @@ try{
    timeout,traceIssue,
    finishedAt:new Date().toISOString()};
  await writeFile(report,JSON.stringify(reportData,null,2)+'\n',{flag:'wx'});
- console.log('MINICPM_DIRECTORY_AB '+JSON.stringify({variant,status:reportData.runStatus,
+ console.log('MINICPM_DIRECTORY_AB '+JSON.stringify({variant,maxSteps,wallMs,maxOutputTokens,elapsedMs:reportData.elapsedMs,status:reportData.runStatus,
    fullSuccess:reportData.fullSuccess,match:reportData.independentCodeMatch,
    errorCode:reportData.errorCode,toolCount:reportData.toolCount,
    pageCalls:reportData.pageCalls,review:reportData.outcomeAssessment,output:reportData.output.slice(0,600),
