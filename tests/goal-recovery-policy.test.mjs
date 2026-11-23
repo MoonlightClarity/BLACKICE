@@ -250,3 +250,28 @@ test('local action changes actual state and independent readback, without equati
   assert.equal(readReceipt.kind,'observation');
   assert.equal(observed.checked,true);
 });
+test('an observed new form generation clears prior undispatched document errors for the bound fresh field only', async () => {
+  const manager=new ConversationGoals({engine:{runs:new Map()},conversations:{states:{fixture:{}}},autoStart:false});
+  manager.raw=()=>({lastToolEvidence:[]});
+  const run={taskId:'fixture',goal:{id:'goal'},goalEvidence:[]};
+  const url='https://example.test/form';
+  const form = (generation, args = {}) => call('relay_browser',{action:'fill',tabId:'form',expectedUrl:url,expectedDocumentId:'form:'+generation,text:'inert',ref:'field-a',...args});
+  const snapshot = call('relay_browser',{action:'snapshot',tabId:'form'});
+  let generation=1, adapterCalls=0;
+  const guarded=manager.wrapTools(run,'agent',async ({arguments:args}) => {
+    if(args.action==='snapshot') return result(true,null,{tabId:'form',url,documentId:'form:'+generation,frames:[{elements:[{ref:'field-a'},{ref:'field-b'}]}]});
+    adapterCalls++;
+    if(args.expectedDocumentId!=='form:'+generation) return {...result(false,'BROWSER_INPUT_DOCUMENT_CHANGED'),actionDispatched:false};
+    return result(true,null,{receipt:{filled:true}});
+  });
+  await guarded(snapshot);
+  generation=2;
+  for(let i=0;i<3;i++) assert.equal((await guarded(form(1,{requestId:'attempt-'+i}))).code,'BROWSER_INPUT_DOCUMENT_CHANGED');
+  assert.equal((await guarded(form(2))).code,'GOAL_REPLAN_REQUIRED','unobserved caller claim cannot reset the refusal');
+  await new Promise(resolve=>setTimeout(resolve,5));
+  await guarded(snapshot);
+  assert.equal((await guarded(form(1))).code,'GOAL_REPLAN_REQUIRED','obsolete generation still blocked');
+  assert.equal((await guarded(form(2,{ref:'guessed-field'}))).code,'GOAL_REPLAN_REQUIRED','unobserved ref still blocked');
+  assert.equal((await guarded(form(2,{ref:'field-b'}))).success,true,'fresh bound field must reach adapter');
+  assert.equal(adapterCalls,4);
+});
