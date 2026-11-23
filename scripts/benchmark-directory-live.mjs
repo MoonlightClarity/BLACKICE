@@ -14,6 +14,11 @@ const providerDir=process.env.BLACKICE_BENCH_PROVIDER_DIR||path.join(process.env
 const variant=process.argv.find(x=>x.startsWith('--variant='))?.slice(10)||'candidate';
 const model=process.argv.find(x=>x.startsWith('--model='))?.slice(8)||'kilo_free::cohere/north-mini-code:free';
 const testId=process.argv.find(x=>x.startsWith('--case='))?.slice(7)||'async-cache';
+const directoryMode=process.argv.find(x=>x.startsWith('--directory='))?.slice(12)||'on';
+const pagingMode=process.argv.find(x=>x.startsWith('--paging='))?.slice(9)||'on';
+if(!['on','off'].includes(pagingMode))throw Error('Use --paging=on or --paging=off.');
+const reportSuffix=(directoryMode==='off'?'-no-dir':'')+(pagingMode==='off'?'-no-paging':'');
+if(!['on','off'].includes(directoryMode))throw Error('Use --directory=on or --directory=off.');
 const reportRoot=process.env.BLACKICE_BENCH_REPORT_DIR||path.join(path.dirname(candidateRoot),'BLACKICE-context-benchmark-results-20261123');
 const sourceRoot=variant==='control'?baselineRoot:candidateRoot;
 if(!['control','candidate'].includes(variant)||!['async-cache','stream-scheduler','event-replay'].includes(testId))throw Error('Unsupported variant/case');
@@ -22,11 +27,11 @@ if(!nativeModel&&(!model.startsWith('kilo_free::')||!model.endsWith(':free')))th
 const moduleImport=async file=>import(pathToFileURL(path.join(sourceRoot,'lib',file)).href);
 const [{HarnessEngine},{ProviderRuntime},{ProviderStore},{CodexRuntime}]=await Promise.all([
  moduleImport('engine.mjs'),moduleImport('providers.mjs'),moduleImport('provider-store.mjs'),moduleImport('codex.mjs')]);
-const results={variant,testId,model,sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
+const results={variant,testId,model,directoryMode,pagingMode,effectivePaging:variant==='candidate'&&pagingMode==='on',sourceRoot,startedAt:new Date().toISOString(),toolCalls:[],trialValid:null,
   harnessEngineSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','engine.mjs'))).digest('hex'),
   workspaceToolSha256:createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','workspace-tools.mjs'))).digest('hex'),
   benchmarkFixtureSha256:testId==='event-replay'?createHash('sha256').update(await readFile(path.join(candidateRoot,'scripts','benchmark-fixture-event-replay.mjs'))).digest('hex'):null,
-  contextPolicy:variant==='candidate'?'source-continuation-v3':'unmodified-2.40.75',
+  contextPolicy:variant==='candidate'&&pagingMode==='on'?'source-continuation-v3':variant==='candidate'?'ablation-no-paging':'unmodified-2.40.75',
   contextImplementationSha256:variant==='candidate'?
     createHash('sha256').update(await readFile(path.join(sourceRoot,'lib','task-external-context.mjs'))).digest('hex'):null};
 const root=await mkdtemp(path.join(tmpdir(),'blackice-context-live-'+variant+'-'));
@@ -226,16 +231,18 @@ try{
       return value;
     }catch(error){entry.threw=String(error.code||error.message||error).slice(0,180);throw error;}
   }});
-  engine=await new HarnessEngine({runtime,dataDir:path.join(root,'engine'),defaultCwd:taskRoot}).init();
+  engine=await new HarnessEngine({runtime,dataDir:path.join(root,'engine'),defaultCwd:taskRoot,contextPagingEnabled:pagingMode==='on'}).init();
   const graph={name:'Benchmark coding',nodes:[{id:'i',type:'input'},{id:'a',type:'agent',name:'Coding agent',model,prompt:'You are the coding agent. Fix the described software bugs. Inspect files and tests with your tools. Use only this isolated workspace. Verify the changes by running the test suite. Use current tool schemas.'},{id:'o',type:'output'}],edges:[{source:'i',target:'a'},{source:'a',target:'o'}],settings:{maxParallel:1,planningMode:'off',context:{outputReserveTokens:16384,headroomTokens:2048}}};
   const task='In this isolated coding project ('+taskRoot+'), read README.md, incident.log and source files, fix the implementation until node --test passes. Preserve the public API, test files and user instructions. Be careful with false or stale outputs. Run tests to confirm. You may use the given workspace tools. This is a real coding benchmark; do not merely describe a fix.';
-  const started=engine.startRun({workflow:graph,input:{task,directoryActions:'on',directoryDiagnostics:'off'}});
+  const started=engine.startRun({workflow:graph,input:{task,directoryActions:directoryMode,directoryDiagnostics:'off'}});
   results.runId=started.id;
   await engine.executions.get(started.id);
   const run=engine.getRun(started.id); results.runStatus=run.status;results.runError=run.error||null;results.agentOutput=String(run.nodes?.a?.output||'').slice(0,1500);
-  const directorySnapshot=(await engine.actionDirectories.get(started.id,task)).read();
-  results.directoryRecords=directorySnapshot.actions.map(a=>({id:a.id,state:a.state,objective:a.objective,notes:a.notes?.length||0,observation:a.observation?.claim||null}));
-  results.directoryFinal={focus:directorySnapshot.focus,revision:directorySnapshot.revision,receiptCount:directorySnapshot.receipts.length,ready:directorySnapshot.ready};
+  if(directoryMode==='on'){
+    const directorySnapshot=(await engine.actionDirectories.get(started.id,task)).read();
+    results.directoryRecords=directorySnapshot.actions.map(a=>({id:a.id,state:a.state,objective:a.objective,notes:a.notes?.length||0,observation:a.observation?.claim||null}));
+    results.directoryFinal={focus:directorySnapshot.focus,revision:directorySnapshot.revision,receiptCount:directorySnapshot.receipts.length,ready:directorySnapshot.ready};
+  }else{results.directoryRecords=[];results.directoryFinal=null;}
   const state=engine.runs.get(started.id)?.nodes?.a||{};
   results.nodeDiagnostics={directoryOutcome:state.directoryOutcome||null,runtimePhase:state.runtimePhase||null,toolNames:state.toolNames||[],usage:state.usage||state.tokenUsage||null};
   results.completedAt=new Date().toISOString();
@@ -253,13 +260,13 @@ finally{
   await engine?.close().catch(()=>{});
   await runtime?.close?.().catch(()=>{});
   await mkdir(reportRoot,{recursive:true});
-  const solutionDir=path.join(reportRoot,'solutions',testId+'-'+variant+'-'+randomUUID().slice(0,8));
+  const solutionDir=path.join(reportRoot,'solutions',testId+'-'+variant+reportSuffix+'-'+randomUUID().slice(0,8));
   await mkdir(solutionDir,{recursive:true});
   await cp(path.join(taskRoot,'src'),path.join(solutionDir,'src'),{recursive:true}).catch(()=>{});
   results.solutionDir=solutionDir;
   results.finishedAt=new Date().toISOString();
-  const reportPath=path.join(reportRoot,testId+'-'+variant+'-'+randomUUID().slice(0,8)+'.json');
+  const reportPath=path.join(reportRoot,testId+'-'+variant+reportSuffix+'-'+randomUUID().slice(0,8)+'.json');
   await writeFile(reportPath,JSON.stringify(results,null,2));
-  console.log(JSON.stringify({reportPath,variant,testId,model,contextPolicy:results.contextPolicy,runStatus:results.runStatus,trialValid:results.trialValid,codingCorrect:results.codingCorrect,workflowCompleted:results.workflowCompleted,codingSuccess:results.codingSuccess,toolCalls:results.toolCalls.length,externalArtifactCount:results.externalArtifactCount,infraError:results.infraError,runError:results.runError}));
+  console.log(JSON.stringify({reportPath,variant,testId,model,directoryMode,pagingMode,contextPolicy:results.contextPolicy,runStatus:results.runStatus,trialValid:results.trialValid,codingCorrect:results.codingCorrect,workflowCompleted:results.workflowCompleted,codingSuccess:results.codingSuccess,toolCalls:results.toolCalls.length,externalArtifactCount:results.externalArtifactCount,infraError:results.infraError,runError:results.runError}));
   await rm(root,{recursive:true,force:true}).catch(()=>{});
 }
