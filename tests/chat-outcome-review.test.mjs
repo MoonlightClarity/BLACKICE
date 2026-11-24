@@ -360,3 +360,14 @@ test('ordinary reviewer presents canonical structured receipts losslessly withou
   assert.deepEqual(result.evidenceRefs,['match']);
   assert.deepEqual(records,original);
 });
+
+
+test('self-contained answer with incidental admitted reads does not acquire an artificial operational citation obligation',async t=>{
+ const record={...row('incidental',{text:'Unrelated workspace listing'}),callId:'incidental'};
+ const f=await fixture(t,options=>{
+   assert.ok(options.outputSchema.properties.supportBasis.enum.includes('request-and-candidate-only'));
+   return response({supportBasis:'request-and-candidate-only',summary:'The candidate answers the hypothetical question without claiming an observed result.',evidenceRefs:['user-request','candidate']});
+ },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+ const result=await f.reviewer.assess(request('Explain what a cache epoch is.',[record]));
+ assert.equal(result.decision,'respond');assert.equal(f.calls.length,1);
+});
