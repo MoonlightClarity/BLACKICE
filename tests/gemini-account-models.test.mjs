@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { queryGeminiSession } from '../lib/gemini-account-models.mjs';
+import { parseAntigravityModels, queryGeminiSession } from '../lib/gemini-account-models.mjs';
 
 function discover(reply) {
   const script = `const lines=require('node:readline').createInterface({ input:process.stdin });
@@ -21,4 +21,12 @@ test('reads and deduplicates only the returned session choices', async () => {
 test('reports authentication and empty catalog failures', async () => {
   await assert.rejects(discover({error:{code:-32000}}), /sign in with Google/);
   await assert.rejects(discover({result:{models:{availableModels:[]}}}), /no account model choices/);
+});
+test('retired individual-account client has a migration diagnostic', async () => {
+  await assert.rejects(discover({error:{code:-32000,message:'This client is no longer supported for Gemini Code Assist for individuals.'}}), /Google retired.*Antigravity/);
+});
+test('Antigravity catalog preserves upstream IDs and rejects unrecognized output', () => {
+  assert.deepEqual(parseAntigravityModels('claude-example\tClaude Example\r\n'), [{id:'claude-example',name:'Claude Example'}]);
+  assert.throws(() => parseAntigravityModels('Sign in'), /format/);
+  assert.throws(() => parseAntigravityModels(''), /no model choices/);
 });

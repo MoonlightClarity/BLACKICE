@@ -50,7 +50,7 @@ export function createClaudeConnectorSettings({ mount, api, notify = () => {} } 
 
     mount.innerHTML = '<div class="next-stack claude-connector-settings">'
       + '<section class="next-card"><h2>Claude account models</h2>'
-      + '<p class="next-help">Sign in through Claude Code to see the choices its model picker advertises. A listed model may still have usage limits.</p><p class="next-help">Anthropic restricts third-party use of subscription credentials and says it may enforce those restrictions without notice. Whether it restricts this model lookup is unknown. <a href="https://code.claude.com/docs/en/legal-and-compliance" target="_blank" rel="noopener noreferrer">Read the Anthropic policy</a>.</p>'
+      + '<p class="next-help">Sign in through Claude Code to see the choices its model picker advertises. The signed-in Claude Code lookup is untested. A listed model may still have usage limits.</p><p class="next-help">Anthropic restricts third-party use of subscription credentials and says it may enforce those restrictions without notice. Whether it restricts this model lookup is unknown. <a href="https://code.claude.com/docs/en/legal-and-compliance" target="_blank" rel="noopener noreferrer">Read the Anthropic policy</a>.</p>'
       + '<button type="button" data-claude-action="models"' + (busy ? ' disabled' : '') + '>Refresh account models</button>'
       + (modelError ? '<p role="alert">' + escape(modelError) + '</p>' : '')
       + (models.length ? '<ul>' + models.map(model => '<li>' + escape(model.name) + ' <code>' + escape(model.id) + '</code></li>').join('') + '</ul>' : '')
