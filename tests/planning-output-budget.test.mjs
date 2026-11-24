@@ -31,7 +31,7 @@ async function fixture(t,{type='compatible',configured=16384,modelLimit=131072,w
   await runtime.saveProvider({id:'budget',type,baseUrl:'http://127.0.0.1:1/v1',apiKey:'synthetic-fixture-key',maxTokens:configured,models:[{id:'budget-model',contextWindowTokens:window,maxOutputTokens:modelLimit}]});
   return {requests,events,run:overrides=>runtime.runAgent({cwd:directory,prompt:'Return the requested public JSON response.',model:'budget::budget-model',effort:'default',responseOnly:true,outputSchema:schema,dynamicTools:[],onEvent:event=>events.push(event),...overrides})};
 }
-async function check(t,setup,overrides,expected){
+async function check(t,setup,overrides,expected,expectedReserve=expected){
   const f=await fixture(t,setup),result=await f.run(overrides);
   assert.equal(result.output,answer);
   assert.equal(f.requests.length,1,'Budget selection never repeats the provider request.');
@@ -39,7 +39,7 @@ async function check(t,setup,overrides,expected){
   assert.equal(setup?.type==='openai'?body.max_output_tokens:body.max_tokens,expected,'The actual outgoing request uses the available configured planning budget.');
   const context=f.events.filter(event=>event.type==='context').at(-1)?.context;
   assert.ok(context,'The effective context budget is observable.');
-  assert.equal(context.outputReserveTokens,expected);
+  assert.equal(context.outputReserveTokens,expectedReserve,'Context admission reserve is independent of the requested generation ceiling.');
   assert.equal(context.inputBudgetTokens+context.outputReserveTokens+context.headroomTokens,context.effectiveWindowTokens);
   assert.ok(context.inputBudgetTokens>=256);
   return {f,body,context};
@@ -50,17 +50,17 @@ for(const type of ['compatible','openai','anthropic']){
   });
 }
 test('an explicit planning context output reserve remains authoritative',async t=>{
-  await check(t,{}, {context:{outputReserveTokens:4096}},4096);
+  await check(t,{}, {context:{outputReserveTokens:4096}},16384,4096);
 });
 test('a planning response respects the selected model output limit',async t=>{
   await check(t,{modelLimit:12000},{},12000);
 });
 test('a planning response reserves at most one fifth of the selected context window by default',async t=>{
-  await check(t,{}, {context:{preset:'custom',windowTokens:20000}},4000);
+  await check(t,{}, {context:{preset:'custom',windowTokens:20000}},16384,4000);
 });
 test('a planning response respects a lower configured provider output budget',async t=>{
   await check(t,{configured:4096},{},4096);
 });
 test('ordinary Chat retains its existing inferred 8K reserve',async t=>{
-  await check(t,{}, {responseOnly:false,outputSchema:undefined},8192);
+  await check(t,{}, {responseOnly:false,outputSchema:undefined},16384,8192);
 });
