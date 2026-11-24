@@ -108,6 +108,7 @@ test('explicit operational workflow commands select Job Search without selecting
   'Restart the real BLACKICE job-search/application workflow as a diagnostic endurance test in Chat Mode.',
   'Run my job search workflow and only shortlist roles.',
   'Resume the job application workflow.',
+   'Continue my real overnight remote job search and submit genuine applications until 6 AM EST.',
  ]) {
   assert.equal(wantsJobSearchExecutionSkill(input),true,input);
   assert.equal(wantsJobSearchSkill(input),false,"the legacy selector is unchanged: "+input);

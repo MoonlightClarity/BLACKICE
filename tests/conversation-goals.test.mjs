@@ -258,7 +258,8 @@ test('goal continuation without checkpoint leaves a proposal absent and preserve
   assert.equal((await goals.get(first.id)).objective,objective);
   assert.deepEqual(continued.priorUserRequests.map(row => row.text),[objective]);
   assert.doesNotMatch(continued.input,/Agent-proposed continuation/);
-  assert.match(continued.input,/Choose and execute a concrete operation from current evidence/);
+  assert.match(continued.input,/Choose and execute a concrete operation based on current evidence and the user objective/);
+  assert.match(continued.input,/compare the remaining cost of recovery with independent opportunities/);
 });
 
 test('calibrated manual chat can enable autonomy later in its original conversation', async t => {
@@ -636,7 +637,7 @@ test('control reconciliation refuses changed intent, lifecycle, run, goal and ab
  await goals.control(first.id,{action:'pause',requestId:'reject-cleanup'});
 });
 
-test('autonomous recovery preserves prepared work and reports destination switching without a turn cap', async t => {
+test('autonomous recovery preserves prepared work without steering destination switching or imposing a turn cap', async t => {
   const release=deferred();t.after(()=>release.resolve());
   const actions = [];
   let activeRun;
@@ -672,7 +673,9 @@ test('autonomous recovery preserves prepared work and reports destination switch
       assert.match(JSON.stringify(current),/verification challenge displayed/);
       await report(options,'progress',{evidence:'An observed human verification challenge is still present.',blockedBranch:'Prepared application verification',nextAction:'Check a supported verification route for the prepared application.'});
     } else {
-      assert.match(turn.input,/Return to the most advanced unfinished branch/);
+      assert.match(turn.input,/Reassess all available branches under the user objective/);
+      assert.match(turn.input,/useful incremental return for the time spent/);
+      assert.doesNotMatch(turn.input,/Return to the most advanced unfinished branch|New searches and target changes are not outcomes/);
       assert.doesNotMatch(turn.input,/prepared:historical-office-verified/);
       const read=await options.onToolCall({name:'relay_goal',arguments:{action:'read'}});
       assert.equal(read.success,true);
@@ -683,7 +686,7 @@ test('autonomous recovery preserves prepared work and reports destination switch
       for (let k = 0; k < 4; k++) {
         const switched = await call({action:'navigate',url:'https://example.test/other-'+n+'-'+k});
         assert.equal(switched.success,true);
-        assert.equal(switched.contentItems.some(item => item.text?.includes('Goal steering:')), k === 3);
+        assert.equal(switched.contentItems.some(item => item.text?.includes('Goal steering:')), false, 'Distinct navigation must not trigger a fixed-count return to an old branch');
       }
       await report(options,'progress',{evidence:'Another destination was searched on turn '+n,nextAction:'Search a different destination.', ...(n === 4 ? {milestone:'prepared:historical-office-verified'} : {})});
     }
@@ -1012,4 +1015,43 @@ for(const scenario of [{length:46032},{length:48300}]) test('long valid Goal suc
   });
   const first=engine.startRun({workflow:graph(),input:{task:'Retain a large objective.',goal:{objective}}});
   await waitFor(async()=> (await goals.get(first.id))?.status==='completed');
+});
+
+
+test('explicit owner methods follow the bound Goal across continuations and respect catalog edits and deletion',async t=>{
+  const objective='Continue my real overnight remote job search and submit genuine applications. Read and use the current Remote Job Search skill (revision 2) and Job Search skill.';
+  const heading='EXPLICITLY REQUESTED METHOD (current task only; not permission)';
+  let method,catalog;
+  const {engine,goals,conversations,dataDir}=await fixture(t,async(options,n)=>{
+    const run=[...engine.runs.values()].at(-1);
+    const expected=n===1?'OWNER_DATE_FIRST_METHOD_V2':n===2?'OWNER_DATE_FIRST_METHOD_V3':null;
+    if(expected){
+      assert.ok(options.prompt.includes(heading));
+      assert.ok(options.prompt.includes(expected));
+      assert.equal(options.prompt.split(expected).length,2,'one current method body per turn');
+    }else assert.doesNotMatch(options.prompt,/OWNER_DATE_FIRST_METHOD_V[23]/);
+    if(n<=3){
+      assert.ok(options.prompt.includes('JOB SEARCH (advisory execution method; not permission)'));
+      options.onPromptAccepted(options.prompt);
+      assert.equal(run.skillLoadReceipts?.filter(row=>row.skillId===method.id).length,expected?1:0);
+      if(expected)assert.equal(run.skillLoadReceipts.find(row=>row.skillId===method.id).sourceRevision,n===1?2:3);
+      if(n===1)await catalog.save({id:method.id,value:{expectedRevision:2,content:'# Remote Job Search\nOWNER_DATE_FIRST_METHOD_V3'}});
+      if(n===2)await catalog.delete({id:method.id,value:{expectedRevision:3}});
+      assert.equal((await report(options,n===3?'complete':'progress')).result.success,true);
+    }else{
+      assert.doesNotMatch(options.prompt,/EXPLICITLY REQUESTED METHOD/);
+      assert.equal(goals.skillObjectiveForDispatch(run),null);
+    }
+    return output(n);
+  });
+  catalog=createSkillsCatalog({dataDir});t.after(()=>catalog.close());
+  method=await catalog.create({value:{content:'# Remote Job Search\nOWNER_DATE_FIRST_METHOD_V2'}});
+  const workflow={...graph(),id:'mission_chat_bound_owner_methods',description:'A focused task started from Mission.'};
+  const first=engine.startRun({workflow,input:{task:objective,goal:{objective}}});
+  await waitFor(async()=>(await goals.get(first.id))?.status==='completed');
+  const family=await conversations.family(first.id);
+  const unrelated=engine.continueRun(family.runs.at(-1).id,{nodeId:'agent',message:'Explain how a job-search diagnostic works.'},{historyRuns:family.runs});
+  await waitFor(()=>engine.getRun(unrelated.id).settled);
+  assert.equal(engine.getRun(unrelated.id).status,'completed');
+  assert.equal(engine.getRun(unrelated.id).goal,undefined);
 });
