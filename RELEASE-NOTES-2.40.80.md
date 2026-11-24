@@ -23,3 +23,9 @@ A narrow supervised local-model inference/streaming smoke check is not an end-to
 The public workflow binds the source version, complete source-test inventory, exact application fingerprint, Windows installer, installation checks, profile backup/restore evidence, diagnostics-redaction check, release tag, and SHA-256 assets. An unsigned installer does not imply a verified Windows publisher. Install the verified published `Blackice-2.40.80-Setup.exe` only after checking its checksum against `SHA256SUMS.txt` and preserving any running goals and local profile state.
 
 For detailed repair provenance and original test limitations, see [MiniCPM full-suite repair](docs/MINICPM-FULL-SUITE-REPAIR-20261124.md). For broader current usage, see [README](README.md) and [release instructions](SIGNING-AND-RELEASE.md).
+
+## Published verification — November 24, 2026
+
+[BLACKICE v2.40.80](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.80) was published from source commit `1040de1e` after [Windows workflow 45374218647](https://github.com/MoonlightClarity/BLACKICE/actions/runs/45374218647) passed. The public `Blackice-2.40.80-Setup.exe` SHA-256 is `d2c57fb0159a2eb2a241afc79646a6539ea9ce0abec64b9876a780e63cb17e3b`; this unsigned installer is distinct from any locally built candidate.
+
+The exact source suite passed **10,549 tests with zero failures** and recorded **12 optional, unexecuted skips** (including three missing original historical MiniCPM benchmark inputs). The public hosted Windows install, runtime-integrity, startup/restart/shutdown, profile/diagnostics validation, and uninstall cleanup passed. These observations are not proof of a completed owner-machine upgrade or of successful long-horizon job-search workflows. See the [version-specific verification record](docs/RELEASE-2.40.80-VERIFICATION.md).

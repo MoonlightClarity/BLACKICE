@@ -177,7 +177,7 @@ An explicit dispatch still checks the exact source, test evidence, candidate byt
 
 ### Version and build identity
 
-Use the version in the exact candidate's `package.json`; this checkout is **2.40.75**, and its [release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75) is already published. Set the version, lockfile metadata, notes and release request together in the integration lane before qualification. A working version does not establish that the corresponding release has been published or installed.
+Use the version in the exact candidate's `package.json`. The [2.40.80 public release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.80) was published on November 24, 2026 with verified installer and source-test evidence; the current branch may move independently of that immutable tag. Set the version, lockfile metadata, notes and release request together before qualification. A working version or published GitHub tag alone does not establish that the owner-machine installation was completed.
 
 - Minor versions identify coherent backward-compatible feature/usability improvements. Patch versions identify fixes to a released product version, not each agent iteration or packaging attempt.
 - Keep internal attempts separate using a build record such as `buildId: 20261117.3`, with exact `sourceCommit`, application fingerprint, installer SHA-256 and `channel: internal`.

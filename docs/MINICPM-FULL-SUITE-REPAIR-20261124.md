@@ -58,3 +58,9 @@ This is a **narrow live local inference smoke pass**, not a successful coding ta
 1. Recover and independently SHA-256-verify the original historical benchmark inputs, then rerun the three frozen-fixture suites and the whole suite.
 2. Reconcile the unfiltered non-streaming timeout with the supervisor-parity streaming success under matched generation settings; then validate a real MiniCPM task and Directory workflow using independently observed tool and final-result receipts before model-quality claims.
 3. Submit this isolated repair branch and its immutable TAP digests to the integration owner; do not merge, install, or publish on incomplete evidence.
+
+## Later integration and publication outcome — November 24, 2026
+
+The 2.40.80 integration retained the original historical benchmark checks, but moved each unchanged test body into a named `.historical.mjs` module. A separate wrapper reports an explicit unexecuted skip **only when the entire externally pinned historical snapshot is absent**; when the snapshot is present but incomplete, original SHA-256 checks still fail. The three resulting skipped suite entries did not become passes or qualify the historical MiniCPM benchmarks.
+
+The combined source suite subsequently passed 10,549 tests, failed zero, and reported 12 optional skips. GitHub [public release v2.40.80](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.80) and its [hosted Windows verification workflow](https://github.com/MoonlightClarity/BLACKICE/actions/runs/45374218647) succeeded. A separate isolated native browser-capacity smoke also passed. See the [release verification record](RELEASE-2.40.80-VERIFICATION.md) for exact source, artifact digests, executed checks, and continued limitations. This does not retroactively certify the original missing 20 assertions, full MiniCPM coding benchmarks, or actual job-search submissions.

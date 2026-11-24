@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: 2.40.80 release candidate (publication not yet confirmed).** Package version is **2.40.80**. See the [current notes](../RELEASE-NOTES-2.40.80.md). The latest confirmed published version remains [2.40.75](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75).
+> **Status: BLACKICE 2.40.80 publicly released November 24, 2026.** Package version is **2.40.80**. See the [published notes](../RELEASE-NOTES-2.40.80.md), [GitHub release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.80), and [exact-source verification](RELEASE-2.40.80-VERIFICATION.md).
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
@@ -15,7 +15,7 @@ Start with the [project README](../README.md). A named document's date, original
 | Remote access and connection scope | [Remote access](../REMOTE-ACCESS.md) |
 | Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md), [stopped-task tab adoption](stopped-task-tab-adoption.md) |
 | Keep work moving within a conversation | [Goal mode](GOAL-MODE.md) |
-| Current architecture and verification limits | [2.40.75 release scope](../RELEASE-NOTES-2.40.75.md) |
+| Current architecture and verification limits | [2.40.80 verification and limitations](RELEASE-2.40.80-VERIFICATION.md), [historical 2.40.75 release scope](../RELEASE-NOTES-2.40.75.md) |
 | Organize work | Conversation folders, nested Skills and Browser folders, Cronjobs and [Goal mode](GOAL-MODE.md). No automatic Swarm dispatch. |
 | Build or publish a Windows release | [Signing and release](../SIGNING-AND-RELEASE.md), [release qualification tooling](../SIGNING-AND-RELEASE.md#release-qualification-and-the-availability-responder), and [third-party notices](../THIRD-PARTY-NOTICES.md) |
 
