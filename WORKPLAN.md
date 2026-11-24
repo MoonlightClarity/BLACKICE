@@ -84,3 +84,8 @@ Verification: Original two-page PDF replay returned 1967 and 1806 characters. Li
 ID SAT-1124. Active. Input is a detected interpretive document task. Use effective Structured Analytic Techniques guidance and its existing instruction audit. Honor edits and deletions. One writer owns engine and engine fixture. Verify actual prompt delivery, a plain read control, and live original-PDF assessments on this isolated branch.
 
 SAT-1124 verified on the isolated branch. The complete current skill body reached both live model prompts with planning off. Luna distinguished advisory from final decision authority. MiniCPM attributed Outlier evidence to HP on the same page before the section check; the regression rejects that exact attribution and accepts the correct one. Final live MiniCPM run reported an unverified assessment. 51 focused tests passed, zero skipped.
+
+## General action reasoning and failure reporting
+ID all-actions. Active. One writer owns engine, outcome reporting and focused tests. All standard execution tasks and delegated workers receive the effective analytic method. Preserve owner changes, exact-operation recovery and uncertainty. Verify unrelated operational tasks, deceptive completion, retry and document regressions on the isolated branch.
+
+Verified shared guidance without attachments on a live build-failure analysis, current effective skill body present for both providers. Luna reported the missing comparison data and identified a within-region test. MiniCPM exhausted its tool-step budget; the final error identified failed reads and error codes. Existing document controls and general browser, file, connected-tool, native-command, and worker tests: 88 pass, zero skips. No release or installation.
