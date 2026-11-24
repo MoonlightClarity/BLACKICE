@@ -40,8 +40,9 @@ async function report(options, action, fields = {}) {
 }
 const output = n => ({output:'Fixture progress '+n,threadId:'goal-test-thread'});
 
-for(const isolatedHistory of [false,true])test('an explicitly restarted job-search Goal delivers the effective skill to initial and exactly bound successor providers only (isolated history '+isolatedHistory+')',async t=>{
-  const objective='Restart the real BLACKICE job-search/application workflow as a diagnostic endurance test in Chat Mode. '+(isolatedHistory?'Shortlist suitable roles only.':'You are authorized to search for and submit real applications that meet my constraints.');
+for(const isolatedHistory of [false,true])for(const remote of [false,true])test('an operational job-search Goal delivers effective skills to initial and exactly bound successor providers only (isolated history '+isolatedHistory+', remote '+remote+')',async t=>{
+  const objective=remote?'Conduct my real overnight remote job search and submit genuine applications. Discover broad current postings date-first; reconcile existing application and outreach records. Do not stop at an arbitrary application count.':'Restart the real BLACKICE job-search/application workflow as a diagnostic endurance test in Chat Mode. '+(isolatedHistory?'Shortlist suitable roles only.':'You are authorized to search for and submit real applications that meet my constraints.');
+  let remoteSkill;
   const heading='JOB SEARCH (advisory execution method; not permission)';
   const skillId='library-job-search';
   const {engine,goals,conversations,dataDir,runtime}=await fixture(t,async(options,n)=>{
@@ -50,7 +51,8 @@ for(const isolatedHistory of [false,true])test('an explicitly restarted job-sear
       assert.doesNotMatch(options.prompt,/JOB SEARCH \(advisory execution method/);
       assert.equal(goals.skillObjectiveForDispatch(run),null);
       options.onPromptAccepted(options.prompt);
-      assert.ok(!run.skillLoadReceipts?.some(row=>row.skillId===skillId));
+      assert.ok(!run.skillLoadReceipts?.some(row=>row.skillId===skillId||row.skillId===remoteSkill?.id));
+      assert.doesNotMatch(options.prompt,/REMOTE_METHOD_BODY_SENTINEL/);
       return output(n);
     }
     assert.ok(options.prompt.includes(heading));
@@ -62,6 +64,13 @@ for(const isolatedHistory of [false,true])test('an explicitly restarted job-sear
       {type:'skill_context_submitted',skillId,title:'Job Search',source:'user',sourceRevision:2},
     ]);
     assert.equal(run.nodes.agent.instructionAudit.sections.find(row=>row.id==='skill-'+skillId)?.status,'accepted');
+    if(remote){
+      assert.match(options.prompt,/REMOTE_METHOD_BODY_SENTINEL/);
+      assert.deepEqual(run.skillLoadReceipts.filter(row=>row.skillId===remoteSkill.id),[
+        {type:'skill_context_submitted',skillId:remoteSkill.id,title:'Remote Job Search',source:'user',sourceRevision:remoteSkill.revision},
+      ]);
+      assert.equal(run.nodes.agent.instructionAudit.sections.find(row=>row.id==='skill-'+remoteSkill.id)?.status,'accepted');
+    }else assert.doesNotMatch(options.prompt,/REMOTE_METHOD_BODY_SENTINEL/);
     if(n===2){
       assert.equal(goals.skillObjectiveForDispatch(run),objective);
       const bound=run.goalDispatch;
@@ -78,11 +87,15 @@ for(const isolatedHistory of [false,true])test('an explicitly restarted job-sear
   const status=runtime.status.bind(runtime);
   runtime.status=()=>({...status(),isolatedHistory});
   const skills=createSkillsCatalog({dataDir});
-  try{await skills.save({id:skillId,value:{expectedRevision:1,content:'# Job Search\nCheck the last completed week on multiple independent sources.'}});}
+  try{
+    await skills.save({id:skillId,value:{expectedRevision:1,content:'# Job Search\nCheck the last completed week on multiple independent sources.'}});
+    remoteSkill=await skills.create({value:{content:'# Remote Job Search\n\nFind and pursue remote employment using current postings.\n\nREMOTE_METHOD_BODY_SENTINEL'}});
+  }
   finally{await skills.close();}
   const workflow={...graph(),id:'mission_chat_bound_job_skill',description:'A focused task started from Mission.'};
-  const first=engine.startRun({workflow,input:{task:objective,goal:{objective}}});
-  await waitFor(async()=>(await goals.get(first.id))?.status==='completed');
+  const first=engine.startRun({workflow,input:{task:objective,goal:{objective,...(remote?{deadlineAt:new Date(Date.now()+3600000).toISOString(),deadlineTimeZone:"UTC"}:{})}}});
+  try{await waitFor(async()=>(await goals.get(first.id))?.status==='completed');}
+  catch(error){console.error(JSON.stringify({goal:await goals.get(first.id),runs:[...engine.runs.values()].map(r=>({id:r.id,status:r.status,error:r.error,nodes:Object.values(r.nodes||{}).map(n=>({status:n.status,error:n.error})),skillLoadReceipts:r.skillLoadReceipts}))}));throw error;}
   const family=await conversations.family(first.id);
   const successor=family.runs.at(-1);
   assert.equal(successor.goalDispatch.conversationId,first.id);

@@ -326,3 +326,19 @@ test('the Goal effect projection preserves the .75 Goal tool catalog fingerprint
   const {catalogHash}=createProviderExecutionContract({dynamicTools:[GOAL_TOOL],planningContractVersion:1});
   assert.equal(catalogHash,'22d3ee1da8210555bf0c2f946626d2a02badac6a87a40b4d270703cbeb57418f');
 });
+
+test('native select pre-input refusal does not create an unknown external effect', () => {
+  const operation = call('relay_browser', {action:'select', tabId:'form', ref:'control', value:'yes'});
+  const code = 'BROWSER_ELEMENT_ACTION_FAILED';
+  const receipt = result(false, code, {code, inputDispatched:false});
+  const row = observeGoalToolOutcome(operation, receipt);
+  assert.equal(row.kind, 'recoverable_no_input');
+  assert.equal(row.inputDispatched, false);
+  assert.equal(row.actionDispatched, null);
+  assert.equal(detectUnknownEffectReplay([row], operation), null);
+  assert.match(row.guidance, /native select/);
+  for (const response of [result(false, code, {code}), result(false, code, {code,inputDispatched:true}), {...receipt,inputDispatched:true}, result(false,code,{code,inputDispatched:false,actionDispatched:true}), result(false,'BROWSER_ACTION_FAILED',{code,inputDispatched:false})]) {
+    assert.equal(observeGoalToolOutcome(operation,response).kind,'uncertain_external_effect');
+  }
+  assert.equal(observeGoalToolOutcome(call('relay_browser',{action:'click',tabId:'form',ref:'control'}),receipt).kind,'uncertain_external_effect');
+});

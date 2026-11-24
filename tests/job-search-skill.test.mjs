@@ -108,6 +108,11 @@ test('explicit operational workflow commands select Job Search without selecting
   'Restart the real BLACKICE job-search/application workflow as a diagnostic endurance test in Chat Mode.',
   'Run my job search workflow and only shortlist roles.',
   'Resume the job application workflow.',
+  'Conduct my real overnight remote job search and submit genuine applications until 6 AM EST.',
+  'Carry out my remote job search and submit applications.',
+  'Please perform the job search workflow.',
+  'Could you conduct my remote job search?',
+  'Begin the remote job search.',
    'Continue my real overnight remote job search and submit genuine applications until 6 AM EST.',
  ]) {
   assert.equal(wantsJobSearchExecutionSkill(input),true,input);
@@ -124,6 +129,12 @@ test('explicit operational workflow commands select Job Search without selecting
   'Run the job-search skill tests.',
   'Run the job-search workflow tests.',
   'Run the job-search workflow as a simulation.',
+  'Conduct the remote job search workflow as a dry run.',
+  'Perform the job search workflow tests.',
+  'Carry out the remote job search skill audit.',
+  'Explain how to conduct a remote job search.',
+  '> Conduct my real overnight remote job search.',
+  'Conduct the job search workflow, but only diagnose it; do not take any actions.',
   ...diagnosisOnlyWorkflows,
  ]) assert.equal(wantsJobSearchExecutionSkill(input),false,input);
 });
