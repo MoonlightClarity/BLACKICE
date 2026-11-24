@@ -215,3 +215,33 @@ test('large receipts have host-only exact-reference reads and model JSON cannot 
   assert.ok(accepted.evidenceInspection.reads.some(read=>read.evidenceIds.includes(record.id)&&read.field==='result'));
   assert.equal(g.calls.length,1);assert.ok(g.events.every(event=>event.verified===false));
 });
+
+
+test('contradictory local respond verdict is repaired in the reviewer, not coerced into operational continuation',async t=>{
+  const receipt=row('exact-match',{text:'The observed result is available.'});
+  const f=await fixture(t,(options,index)=>{
+    if(index===1)return response({decision:'respond',summary:'The evidence supports the result.',
+      remaining:['Identify the result already returned by the tool'],nextAction:'Respond with the verified result.',evidenceRefs:['evidence-0001']});
+    assert.match(options.prompt,/respond requires remaining/);
+    assert.match(options.prompt,/Do not list satisfied requirements as remaining/);
+    return response({decision:'respond',summary:'The result is supported.',evidenceRefs:['evidence-0001']});
+  },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+  const result=await f.reviewer.assess(request('Report the observed result.',[receipt]));
+  assert.equal(result.decision,'respond');
+  assert.deepEqual(result.remaining,[]);
+  assert.equal(result.nextAction,'');
+  assert.equal(f.calls.length,2);
+  assert.equal(f.events.filter(event=>event.status==='repairing').length,1);
+  assert.equal(f.events.filter(event=>event.status==='validated').length,1);
+  assert.ok(f.calls.every(call=>call.hostOnlyTools&&call.sandbox==='read-only'&&!call.onBeforeFinal));
+});
+
+test('persistent contradictory respond verdict is unreviewed, not a fabricated task-action instruction',async t=>{
+  const f=await fixture(t,()=>response({decision:'respond',remaining:[],nextAction:'Repeat the existing read.',evidenceRefs:['evidence-0001']}),
+    {model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+  const result=await f.reviewer.assess(request('Report the observed result.',[row('read',{text:'Existing result'})]));
+  assert.equal(result.decision,'unreviewed');
+  assert.equal(result.reason,'MODULAR_REVIEW_INVALID');
+  assert.equal(f.calls.length,3);
+  assert.equal(f.events.filter(event=>event.status==='validated').length,0);
+});
