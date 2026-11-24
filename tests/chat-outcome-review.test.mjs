@@ -245,3 +245,30 @@ test('persistent contradictory respond verdict is unreviewed, not a fabricated t
   assert.equal(f.calls.length,3);
   assert.equal(f.events.filter(event=>event.status==='validated').length,0);
 });
+
+
+test('review distinguishes authorship from transport role and retains owner constraints while omitting redundant worker methods',async t=>{
+  const authority={developerInstructions:'Exact developer constraints.',sections:[
+    {id:'owner',role:'user',origin:'owner-skill',source:'Owner skill: custom',text:'OWNER_EXACT_REQUIREMENT'},
+    {id:'workflow',role:'user',origin:'workflow',source:'workflow node',text:'WORKFLOW_DEFAULT'},
+    {id:'runtime',role:'user',origin:'host-runtime',source:'lib/engine.mjs',text:'HOST_CAPABILITY_BOUNDARY'},
+    {id:'bundled',role:'user',origin:'bundled-skill',reviewAudience:'worker',source:'Bundled skill: method',text:'WORKER_ONLY_BUNDLED_METHOD'},
+    {id:'duplicate',role:'user',origin:'host-runtime',reviewAudience:'worker',source:'lib/engine.mjs',text:'WORKER_ONLY_DUPLICATE'}
+  ]};
+  const f=await fixture(t,options=>{
+    assert.ok(options.prompt.indexOf('CURRENT TASK REQUEST')<options.prompt.indexOf('OWNER_EXACT_REQUIREMENT'));
+    assert.match(options.prompt,/DELIVERED USER INSTRUCTION .*"origin":"owner-skill"/);
+    assert.match(options.prompt,/OWNER_EXACT_REQUIREMENT/);
+    assert.match(options.prompt,/DELIVERED WORKFLOW INSTRUCTIONS .*"origin":"workflow"/);
+    assert.match(options.prompt,/DELIVERED HOST RUNTIME GUIDANCE .*"origin":"host-runtime"/);
+    assert.match(options.prompt,/HOST_CAPABILITY_BOUNDARY/);
+    assert.doesNotMatch(options.prompt,/WORKER_ONLY_BUNDLED_METHOD|WORKER_ONLY_DUPLICATE/);
+    assert.equal(options.developerInstructions,authority.developerInstructions);
+    return response();
+  },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S',authority});
+  const result=await f.reviewer.assess(request('Exact current task.'));
+  assert.equal(result.decision,'respond');
+  const start=f.events.find(e=>e.status==='started');
+  assert.equal(start.authorityIdentities.length,5,'Audit preserves all delivered instruction sources.');
+  assert.ok(start.authorityIdentities.some(s=>s.origin==='bundled-skill'&&s.reviewAudience==='worker'));
+});
