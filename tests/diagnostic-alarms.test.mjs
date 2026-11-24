@@ -89,6 +89,17 @@ test('workspace alarms report observed missing path or access code without retai
  }
 });
 
+test('workspace gate alarms retain proven no-dispatch without inventing it for unknown outcomes',()=>{
+ const failure={type:'tool.result',tool:'relay_workspace',action:'run',success:false,code:'DIRECTORY_FOCUS'};
+ const unknown=recordDiagnosticAlarm(null,failure);
+ const confirmed=recordDiagnosticAlarm(unknown,{...failure,actionDispatched:false});
+ assert.equal(confirmed.rows.length,2,'proven no-dispatch and unknown effects must not coalesce');
+ assert.equal(confirmed.rows[0].knownNotDispatched,true);
+ assert.equal(confirmed.rows[1].knownNotDispatched,false);
+ assert.deepEqual(projectDiagnosticAlarms(confirmed).rows,confirmed.rows);
+ assert.match(diagnosticAlarmCopy(confirmed.rows[0]).observed,/before the tool ran/);
+});
+
 test('Agents alarms distinguish nonexistent actions from Directory rejecting dispatch',()=>{
  const event={type:'tool.result',tool:'relay_agents',action:'read',success:false};
  const gate=recordDiagnosticAlarm(null,{...event,code:'DIRECTORY_FOCUS'});

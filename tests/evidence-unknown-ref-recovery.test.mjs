@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {createEvidenceStore} from '../lib/evidence-context.mjs';
+
+test('unknown review ref is rejected with bounded current refs, not source text or cross-session authorization',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'blackice-evidence-unknown-'));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ const store=createEvidenceStore({root:path.join(root,'one')});
+ const refs=[];
+ for(let i=0;i<20;i++)refs.push((await store.save({privateText:'never reveal secret '+i},{kind:'admitted-evidence-record'})).ref);
+ const unknown=await store.handle({action:'read',ref:'saved-'+'f'.repeat(64)},{tokenBudget:3000});
+ assert.equal(unknown.success,false);
+ assert.equal(unknown.code,'EVIDENCE_REFERENCE_UNKNOWN');
+ const detail=JSON.parse(unknown.contentItems[0].text);
+ assert.deepEqual(detail.availableRefs,refs.slice(-16));
+ assert.equal(detail.availableRefsTruncated,true);
+ assert.doesNotMatch(JSON.stringify(detail),/never reveal secret|privateText/);
+ assert.match(detail.meaning,/not evidence inspection/);
+ const valid=await store.handle({action:'read',ref:detail.availableRefs.at(-1)},{tokenBudget:3000});
+ assert.equal(valid.success,true);
+ assert.match(JSON.parse(valid.contentItems[0].text).text,/never reveal secret 19/);
+ const other=createEvidenceStore({root:path.join(root,'two')});
+ const denied=await other.handle({action:'read',ref:refs[19]},{tokenBudget:3000});
+ assert.equal(denied.success,false);
+ assert.deepEqual(JSON.parse(denied.contentItems[0].text).availableRefs,[]);
+ assert.equal(JSON.parse(denied.contentItems[0].text).availableRefsTruncated,false);
+});

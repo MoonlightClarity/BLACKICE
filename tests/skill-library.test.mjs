@@ -67,6 +67,18 @@ test('pack rejects duplicate identities and external body references before disc
  const dupe=await fixture(t,[skill('same'),skill('same',{bodyFile:'other.md'})]);
  await assert.rejects(()=>dupe.library.list(),/Invalid or duplicate/);
 });
+test('modular-development method covers stateful contracts without hidden score labels or new gates',async()=>{
+ const body=await fs.readFile(new URL('../lib/skill-library/modular-development.md',import.meta.url),'utf8');
+ assert.match(body,/required collaborator methods at construction\/entry/);
+ assert.match(body,/restored-state uniqueness and order/);
+ assert.match(body,/uncertain/);
+ assert.match(body,/success-implying operation must reject/);
+ assert.match(body,/only observed reconciliation may resolve/);
+ assert.match(body,/absence of unintended effects/);
+ assert.match(body,/do not guess hidden labels or expand this into a mandatory review gate/);
+ assert.doesNotMatch(body,/CHECKPOINT_GAP|COORDINATOR_INVALID|RECONCILIATION_INVALID/);
+});
+
 test('the default first-party pack is selectable by real format and task queries',async()=>{
  const root=new URL('../lib/skill-library/',import.meta.url);
  const manifest=JSON.parse(await fs.readFile(new URL('index.json',root),'utf8'));
