@@ -74,6 +74,13 @@ async function exercise(t, { profile = BENCHMARK_AGENT_TOOLS_PROFILE, passes = t
       assert.deepEqual(body.tools.map(item => item.function.name), isV2
         ? ['relay_directory_action', 'relay_workspace', 'relay_code', 'relay_skills']
         : ['relay_directory_action', 'relay_workspace']);
+      if(!qualifies&&stage===script.length){
+        // Current Directory recovery may ask once more after a failed check.
+        // The model still has no new observed effects and cannot claim success.
+        stage++;
+        respond({role:'assistant',content:'The public check did not verify completion. Repair remains necessary.'});
+        return;
+      }
       assert.ok(stage < script.length, 'Unexpected main-provider request ' + stage);
       const next = script[stage++]();
       respond(typeof next === 'string' ? { role: 'assistant', content: next }
@@ -139,7 +146,8 @@ async function exercise(t, { profile = BENCHMARK_AGENT_TOOLS_PROFILE, passes = t
   const deadline = structuredClone(engine.getRun(runId).benchmarkDeadline);
   await engine.executions.get(runId);
   const run = engine.getRun(runId), ledger = (await engine.actionDirectories.get(runId, 'Fixture')).read();
-  assert.equal(protocolError, null, protocolError?.stack); assert.equal(stage, script.length);
+  assert.equal(protocolError, null, protocolError?.stack);
+  assert.equal(stage, script.length+(qualifies?0:1),'No unbounded recovery and no fabricated tool execution.');
   assert.equal(run.settled, true); assert.deepEqual(run.benchmarkDeadline, deadline);
   assert.deepEqual(provider(), budgets, 'The repair must not change provider budgets or capabilities');
   assert.deepEqual(readHashes(f), immutable); assert.deepEqual(fs.readFileSync(f.canary), canary);
@@ -189,7 +197,7 @@ test('trusted Workspace public check earns the same source-progress follow-up th
 test('failed real Workspace public check cannot authorize source-progress continuation', { timeout: 40000 }, async t => {
   const f = await exercise(t, { passes: false });
   assert.equal(f.run.status, 'failed'); assert.match(f.run.error, /Directory still has/);
-  assert.equal(f.reviews.length, 2); assert.equal(f.reviews[1].code, 'DIRECTORY_ACTION_UNFINISHED');
+  assert.equal(f.reviews.length, 3); assert.equal(f.reviews[2].code, 'DIRECTORY_ACTION_UNFINISHED');
   assert.equal(f.ledger.actions[0].state, 'active'); assert.equal(f.executed.has('observe'), false);
   assert.equal(f.run.events.filter(event => event.data?.phase === 'continue-after-source-check').length, 0);
 });
@@ -198,7 +206,7 @@ test('legacy two-tool benchmark does not gain an unrequested Workspace progress 
   const f = await exercise(t, { profile: 'minicpm-code-v1' });
   assert.equal(f.report.semanticPass, true);
   assert.equal(f.run.status, 'failed'); assert.match(f.run.error, /Directory still has/);
-  assert.equal(f.reviews.length, 2); assert.equal(f.reviews[1].code, 'DIRECTORY_ACTION_UNFINISHED');
+  assert.equal(f.reviews.length, 3); assert.equal(f.reviews[2].code, 'DIRECTORY_ACTION_UNFINISHED');
   assert.equal(f.ledger.actions[0].state, 'active'); assert.equal(f.executed.has('observe'), false);
   assert.equal(f.run.events.filter(event => event.data?.phase === 'continue-after-source-check').length, 0);
 });
