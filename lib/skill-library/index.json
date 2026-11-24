@@ -568,7 +568,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "api-boundary-methods-20261124"
+        "revision": "api-boundary-promise-rejections-20261124"
       },
       "bodyFile": "what-makes-done.md"
     },

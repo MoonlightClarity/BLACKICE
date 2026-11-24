@@ -31,6 +31,8 @@ Verify the outcome, not every decision. Use the best supported answer for ordina
 
 For a code API repair, apply documented input preconditions to every exported method, including read-only getters, not just mutators. Check a representative invalid input without side effects when the contract requires rejection.
 
+For Promise-returning methods, invalid input errors must reject the returned Promise rather than throw synchronously; check the caller's `await assert.rejects(method(...))` behavior. Preserve synchronous exceptions only for explicitly synchronous methods.
+
 ## Complete required follow-up confirmations
 
 A requested action includes its required follow-up confirmations. For email confirmation, check the user's matching mailbox through available tools, including connected Gmail when available. Match the message to this attempt and complete its required link or code step, then inspect the destination outcome. Keep the attempt pending until the required confirmation and requested outcome are observed.
