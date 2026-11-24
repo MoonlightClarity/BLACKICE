@@ -354,6 +354,9 @@ test('ordinary reviewer presents canonical structured receipts losslessly withou
       assert.equal(Object.hasOwn(item,'text'),false);
     }
     assert.equal(seen[1].result.contentItems[0].decodedJSON.firstMatchEvidence.text,'status=READY; more text');
+    assert.equal(seen[1].result.contentItems[0].contextPageSearchAnnotation._source,'search-internal-helper-read');
+    assert.match(seen[1].result.contentItems[0].contextPageSearchAnnotation._note,/not a separate model-dispatched read/);
+    assert.deepEqual(seen[1].result.contentItems[0].contextPageSearchAnnotation.matchedReadCallTemplate,returned.matchedReadCallTemplate);
     assert.deepEqual(seen[2].result,original[2].result);
     assert.deepEqual(seen[3].result,original[3].result);
     return response({decision:'continue',summary:'The search returned the status; a separate requested read is still missing.',remaining:['Separate read'],nextAction:'Use the matched read template.',evidenceRefs:['evidence-0002']});
