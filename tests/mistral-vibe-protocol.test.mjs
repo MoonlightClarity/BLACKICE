@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { VibeAcpConnection, safeVibeError } from '../lib/mistral-vibe-protocol.mjs';
+import { AccountAcpConnection, safeAcpError } from '../lib/account-acp-protocol.mjs';
 
 function transport(handler, options = {}) {
   const child = new EventEmitter();
@@ -20,7 +20,7 @@ function transport(handler, options = {}) {
       received.push(message); handler?.(message, send, child);
     }
   });
-  const connection = new VibeAcpConnection({
+  const connection = new AccountAcpConnection({
     command: 'owned-vibe-acp', cwd: process.cwd(), env: {},
     spawnImpl: () => { queueMicrotask(() => child.emit('spawn')); return child; }, ...options,
   });
@@ -63,7 +63,7 @@ test('unadvertised native client requests are denied instead of running host act
 test('invalid ACP frames fail pending requests and close the owned process', async t => {
   const f = transport((message, send, child) => child.stdout.write('not-json\n'));
   t.after(() => f.connection.close());
-  await assert.rejects(f.connection.request('initialize'), { code: 'MISTRAL_VIBE_PROTOCOL' });
+  await assert.rejects(f.connection.request('initialize'), { code: 'ACCOUNT_ACP_PROTOCOL' });
   assert.equal(f.connection.pending.size, 0);
 });
 
@@ -75,12 +75,12 @@ test('an ACP timeout is explicit and a late response cannot satisfy another requ
     send({ jsonrpc: '2.0', id: message.id, result: { correct: true } });
   });
   t.after(() => f.connection.close());
-  await assert.rejects(f.connection.request('slow', {}, { timeoutMs: 10 }), { code: 'MISTRAL_VIBE_TIMEOUT' });
+  await assert.rejects(f.connection.request('slow', {}, { timeoutMs: 10 }), { code: 'ACCOUNT_ACP_TIMEOUT' });
   assert.deepEqual(await f.connection.request('next'), { correct: true });
 });
 
 test('safe errors remove auth bearer values and delegated sign-in tokens', () => {
-  const safe = safeVibeError('Bearer private-secret https://console.mistral.ai/auth?complete_token=one-time&token=other-token api_key=private-key');
+  const safe = safeAcpError('Bearer private-secret https://console.mistral.ai/auth?complete_token=one-time&token=other-token api_key=private-key');
   for (const value of ['private-secret', 'one-time', 'other-token', 'private-key']) assert.equal(safe.includes(value), false);
   assert.match(safe, /\[redacted\]/);
 });
@@ -91,7 +91,7 @@ function shutdownFixture({ startError = null, closeGraceMs = 5, closeKillTimeout
   let killed, killCount = 0, exitSent = false;
   const killRequested = new Promise(resolve => { killed = resolve; });
   child.kill = () => { killCount++; killed(); return true; };
-  const connection = new VibeAcpConnection({
+  const connection = new AccountAcpConnection({
     command: 'synthetic-shutdown-only', cwd: process.cwd(), env: {},
     closeGraceMs, closeKillTimeoutMs,
     spawnImpl: () => { queueMicrotask(() => child.emit(startError ? 'error' : 'spawn', startError)); return child; },
@@ -130,7 +130,7 @@ test('ACP unconfirmed termination rejects instead of claiming the process has cl
   t.after(() => f.exit(1, 'SIGTERM'));
   await f.connection.started;
   const closing = f.connection.close();
-  await assert.rejects(closing, { code: 'MISTRAL_VIBE_CLOSE_UNCONFIRMED' });
+  await assert.rejects(closing, { code: 'ACCOUNT_ACP_CLOSE_UNCONFIRMED' });
   assert.equal(f.connection.closed, false);
   assert.equal(f.killCount, 1);
   assert.strictEqual(f.connection.close(), closing);
@@ -140,7 +140,7 @@ test('ACP shutdown preserves a pending request cancellation and the first protoc
   for (const kind of ['cancel', 'failure']) {
     const f = shutdownFixture(), controller = new AbortController();
     t.after(async () => { f.exit(); await f.connection.close().catch(() => {}); });
-    const cause = Object.assign(Error(kind === 'cancel' ? 'User stopped the operation' : 'Original protocol failure'), { code: kind === 'cancel' ? 'ABORTED' : 'MISTRAL_VIBE_PROTOCOL' });
+    const cause = Object.assign(Error(kind === 'cancel' ? 'User stopped the operation' : 'Original protocol failure'), { code: kind === 'cancel' ? 'ABORTED' : 'ACCOUNT_ACP_PROTOCOL' });
     const pending = f.connection.request('pending', {}, { signal: controller.signal, timeoutMs: null });
     const rejected = assert.rejects(pending, error => error === cause);
     await f.connection.started;
@@ -162,5 +162,5 @@ test('ACP startup failure has no owned process to kill and cannot claim graceful
   await assert.rejects(f.connection.started, cause => cause === error);
   assert.deepEqual(await f.connection.close(), { closed: true, graceful: false, forced: false, exitCode: null, signal: null, notStarted: true });
   assert.equal(f.killCount, 0);
-  assert.equal(f.connection.failure.code, 'MISTRAL_VIBE_START_FAILED');
+  assert.equal(f.connection.failure.code, 'ACCOUNT_ACP_START_FAILED');
 });

@@ -28,8 +28,6 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { HarnessEngine } from './lib/engine.mjs';
 import { startupPhase } from './lib/startup-timing.mjs';
 import { CodexRuntime } from './lib/codex.mjs';
-import { MistralVibeRuntime } from './lib/mistral-vibe.mjs';
-import { createMistralVibeHttp } from './lib/mistral-vibe-http.mjs';
 import { RetiredDesktopController, DESKTOP_RETIRED_MESSAGE } from './lib/desktop-retired.mjs';
 import { NativeWindowManager } from './lib/native-window-tools.mjs';
 import {SkillFolderStore} from './lib/skill-folders.mjs';
@@ -42,7 +40,7 @@ import { handlePlanningBrowserHttp, planningBrowserCatalog } from './lib/plannin
 import { ResponseCycleService } from './lib/response-cycle.mjs';
 import { assertExecutablePlanningMode } from './public/response-cycle-model.mjs';
 import { createDirectProviderSetupTools } from './lib/provider-setup-tools.mjs';
-import { googleAccountCatalog } from './lib/gemini-account-models.mjs';
+
 import { providerSetupHTTP, providerPreviewHTTP } from './lib/provider-setup-http.mjs';
 import { LocalModelManager } from './lib/local-model-manager.mjs';
 import { createMiniCPMLocalProfileSetup } from './lib/minicpm-local-profile.mjs';
@@ -128,7 +126,7 @@ export async function createHarnessServer(options = {}) {
   const runtimeSettings = options.runtimeSettings || await new RuntimeSettingsStore({ dataDir,
     nativeHistoryOwner:!options.runtime||options.runtime.status().isolatedHistory===true?'relay':'codex' }).init();
   const showBrowserOS = options.showBrowserOS || revealBrowserOS;
-  const runtime = options.runtime || new ProviderRuntime({ codex: new CodexRuntime({ isolatedHistory: true, getConnectedGmail: () => runtimeSettings.get().connectedGmail }), mistralVibe: options.mistralVibe === false ? null : options.mistralVibe || new MistralVibeRuntime({ dataDir, workspaceDir: defaultCwd }), dataDir, ...options.secretStorage });
+  const runtime = options.runtime || new ProviderRuntime({ codex: new CodexRuntime({ isolatedHistory: true, getConnectedGmail: () => runtimeSettings.get().connectedGmail }), dataDir, ...options.secretStorage });
   await runtime.init?.();
   const localModels = options.localModels || new LocalModelManager({dataDir});
   await localModels.init?.();
@@ -138,7 +136,6 @@ export async function createHarnessServer(options = {}) {
   const desktop = new RetiredDesktopController();
   const nativeWindows = options.nativeWindowManager || (options.nativeWindows ? new NativeWindowManager({ ...options.nativeWindows, dataDir }) : null);
   const browser = options.browser || new BrowserWorkspace();
-  const mistralVibeHttp = createMistralVibeHttp({ runtime, browser, defaultCwd, readBody: body, sendJSON: json, getStatus: () => status(), onStatus: () => runtimeUpdate() });
   const applicationWorkspace=options.applicationWorkspace||await new ApplicationWorkspace({dataDir,runtime:options.applicationRuntime,catalog:options.applicationCatalog}).init();
   const skillsCatalog=createSkillsCatalog({dataDir});
   const skillFolders=new SkillFolderStore({dataDir});
@@ -739,7 +736,7 @@ export async function createHarnessServer(options = {}) {
       if(pathname==='/api/method-types'&&req.method==='POST')return json(res,201,await methods.createType(await body(req)));
       const methodTypeMatch=pathname.match(/^\/api\/method-types\/([a-zA-Z0-9_-]+)$/);
       if(methodTypeMatch&&req.method==='PUT')return json(res,200,await methods.updateType(methodTypeMatch[1],await body(req)));
-      if (await mistralVibeHttp(req, res, pathname)) return;
+      if (/^\/api\/subscriptions\/mistral-vibe(?:\/|$)/.test(pathname)) return json(res,410,{code:'SUBSCRIPTION_PROVIDER_RETIRED',error:'The Mistral Vibe Code integration has been retired.'});
       if (pathname === '/api/codex/native-write-recovery') { await handleNativeWriteRecoveryHttp({req,res,pathname,runtime,engine,body,json}); return; }
       if(pathname==='/api/codex/models/check'&&req.method==='POST'){
         const value=await body(req);
@@ -1143,7 +1140,7 @@ export async function createHarnessServer(options = {}) {
       if (pathname === '/api/providers/gemini-account/models') {
         if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Local account access required.' });
         if (req.method !== 'POST') return json(res, 405, { error: 'Use POST to refresh account models.' });
-        try { return json(res, 200, await googleAccountCatalog()); }
+        try { return json(res, 200, await runtime.refreshGoogleAccount()); }
         catch (error) { return json(res, 503, { error: error.message }); }
       }
       if (pathname === '/api/providers/preview') {

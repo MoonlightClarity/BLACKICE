@@ -7,7 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { TaskStateStore, createTaskToolHandler, TASK_TOOL, TASK_WORKER_TOOL } from '../lib/task-state.mjs';
-import { createVibeToolBridge } from '../lib/mistral-vibe-tools.mjs';
+import { createAccountToolBridge } from '../lib/account-acp-tools.mjs';
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const parsed = reply => JSON.parse(reply.content.find(item => item.type === 'text').text);
@@ -44,7 +44,7 @@ async function fixture(t) {
   const taskId = 'action-schema-task', runId = 'action-schema-run', nodeId = 'coordinator';
   await tasks.ensure({ taskId, runId, nodeId, cwd: root, goal: 'Review supplied material.', schemaVersion: 14, defaultPlan: true });
   const handler = createTaskToolHandler({ store: tasks, taskId, runId, nodeId, schemaVersion: 14, planningMode: 'on', executionGuardrails: true });
-  const bridge = await createVibeToolBridge({ tools: [TASK_TOOL], onToolCall: handler });
+  const bridge = await createAccountToolBridge({ tools: [TASK_TOOL], onToolCall: handler });
   t.after(async () => { await bridge.close(); await tasks.close?.(); await fs.rm(root, { recursive: true, force: true }); });
   const initialized = await request(bridge, null, { jsonrpc: '2.0', id: 0, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
   assert.equal(initialized.status, 200);

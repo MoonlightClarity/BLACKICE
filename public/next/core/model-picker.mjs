@@ -30,7 +30,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
     if(!api||pendingAction||destroyed||activating||!opened||select.disabled)return;const visibilityAtStart=visibilityRevision;pendingAction=true;actionMessage=action==='refresh'?'Refreshing '+providerLabel(id)+' catalog…':'Updating provider visibility…';render();
     try{
       if(action==='refresh'){
-        const result=id==='codex'?await api('/api/codex/models?refresh=true','GET',undefined,{deadlineMs:120000}):await api('/api/providers/'+encodeURIComponent(id)+'/models','POST',{refresh:true,limit:1},{deadlineMs:120000});
+        const result=id==='google-account'?await api('/api/providers/gemini-account/models','POST',{}):id==='codex'?await api('/api/codex/models?refresh=true','GET',undefined,{deadlineMs:120000}):await api('/api/providers/'+encodeURIComponent(id)+'/models','POST',{refresh:true,limit:1},{deadlineMs:120000});
         if(result?.catalogAvailable===false||result?.modelCatalog?.stale){actionMessage=providerLabel(id)+' refresh incomplete. Previous catalog retained if available.';notify(actionMessage,true);}
         else{actionMessage=providerLabel(id)+' catalog refreshed. Saved selections unchanged.';notify(actionMessage);}
       }else{
@@ -53,7 +53,6 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
   const available=model=>Boolean(model)&&!localReason(model)&&model.disabled!==true&&model.available!==false;
   const canEnable=model=>!localReason(model)&&!model?.historical&&typeof onEnableProvider==='function'&&Boolean(readyDisabledProvider(status,model?.id));
   const setupProviders=()=>typeof onSetupProvider==='function'?[
-    ...(status.subscriptionProviders||[]).filter(provider=>provider?.id==='mistral-vibe'&&provider.type==='subscription-cli'&&!hiddenProviders().includes(provider.id)&&(provider.authenticated!==true||provider.available!==true||!provider.models?.length)),
     ...(status.localModelProfile?.available&&status.localModelProfile.offerSetup&&!hiddenProviders().includes(status.localModelProfile.providerId||'local_llamacpp')?[{id:'local',name:'MiniCPM for Local',localSetup:true}]:[]),
   ]:[];
   async function setupProvider(id){

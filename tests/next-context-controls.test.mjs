@@ -110,7 +110,7 @@ test('Vibe context hides unsupported controls and guards compression by the save
   assert.equal(f.document.activeElement,f.$('#fixture-context-toggle'));
   const savedVibe={key:'vibe:agent',runId:'vibe',nodeId:'agent',model:vibeSelection,reason:''};
   f.control.update({model:'gpt-6-luna',target:savedVibe});
-  assert.deepEqual(f.control.compress(),{accepted:false,reason:'Mistral Vibe Code manages context automatically. Manual compression and custom context settings are unavailable; saved history is preserved.'});
+  assert.deepEqual(f.control.compress(),{accepted:false,reason:'The native client manages context automatically. Manual compression and custom context settings are unavailable; saved history is preserved.'});
   assert.equal(f.calls.length,0,'No compaction request is sent for a saved Vibe thread.');
   f.control.update({model:vibeSelection,target:{key:'api:agent',runId:'api',nodeId:'agent',model:'first::gpt-6-luna',reason:''}});
   assert.equal(f.control.compress().accepted,true,'Selecting Vibe for the next response does not change the saved API target.');

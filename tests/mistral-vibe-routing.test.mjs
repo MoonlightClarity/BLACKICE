@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProviderRuntime } from '../lib/providers.mjs';
@@ -34,79 +34,12 @@ async function fixture(t,{vibe=new FakeVibe(),beforeInit}={}){
   return {runtime,vibe,codex,codexCalls,dataDir};
 }
 
-test('Vibe appears separately from optional APIs with only CLI-reported exact model choices',async t=>{
-  const {runtime,vibe}=await fixture(t);
-  await runtime.store.setDefaultModel('native-original');
-  const status=runtime.status(),id='mistral-vibe::actual-cli-alias';
-  assert.equal(status.defaultModel,'native-original');
-  assert.equal(status.providers.length,0);
-  assert.deepEqual(status.subscriptionProviders.map(p=>p.id),['mistral-vibe']);
-  assert.equal(status.models.filter(m=>m.providerId==='mistral-vibe').length,1);
-  const model=status.models.find(m=>m.id===id);
-  assert.equal(model.providerName,'Mistral Vibe Code');assert.equal(model.providerType,'subscription-cli');assert.equal(model.available,true);
-  assert.equal(model.displayName,'Actual CLI model');
-  assert.equal(chatOptionChoices(status,{model:id}).selected.model,id);
-  assert.doesNotThrow(()=>validateChatOptions(status,{model:id,effort:'default'}));
-  await runtime.refreshMistralVibe({cwd:process.cwd()});
-  assert.equal(runtime.store.defaultModel,'native-original');
-  assert.equal(vibe.calls.filter(c=>c.kind==='refresh').length,1);
-});
-
-test('explicit Vibe selection reaches the native adapter with exact alias and preserves qualified attribution',async t=>{
-  const {runtime,vibe,codexCalls}=await fixture(t);const events=[];
-  const result=await runtime.runAgent({model:'mistral-vibe::actual-cli-alias',cwd:process.cwd(),prompt:'fixture',onEvent:e=>events.push(e)});
-  assert.equal(vibe.calls.find(c=>c.kind==='run').options.model,'actual-cli-alias');
-  assert.equal(result.model,'mistral-vibe::actual-cli-alias');
-  assert.equal(events[0].model,result.model);
-  assert.equal(await runtime.savedThreadModel(result.threadId),result.model);
-  assert.deepEqual(codexCalls,[]);
-});
-
-test('saved Vibe threads retain their provider and model after the app default changes',async t=>{
-  const {runtime,vibe,codexCalls}=await fixture(t);
-  vibe.saved.set('vibe_saved','mistral-vibe::actual-cli-alias');
-  await runtime.setDefaultModel('native-original');
-  const result=await runtime.runAgent({threadId:'vibe_saved',model:'default',cwd:process.cwd(),prompt:'continue'});
-  assert.equal(result.model,'mistral-vibe::actual-cli-alias');
-  assert.equal(vibe.calls.find(c=>c.kind==='run').options.threadId,'vibe_saved');
-  await assert.rejects(runtime.runAgent({threadId:'vibe_saved',model:'native-original',cwd:process.cwd(),prompt:'wrong provider'}),{code:'THREAD_MISMATCH'});
-  await assert.rejects(runtime.runAgent({threadId:'vibe_saved',model:'mistral-vibe::guessed-model',cwd:process.cwd(),prompt:'wrong model'}),{code:'THREAD_MISMATCH'});
-  await assert.rejects(runtime.runAgent({threadId:'vibe_missing',cwd:process.cwd(),prompt:'missing saved mapping'}),{code:'THREAD_MISMATCH'});
-  assert.deepEqual(codexCalls,[]);
-});
-
-test('missing authentication and removed catalog models remain actionable and never fall back to another provider',async t=>{
-  const {runtime,vibe,codexCalls}=await fixture(t);
-  assert.equal(runtime.resolveModel('mistral-vibe::invented-model').available,false);
-  await assert.rejects(runtime.setDefaultModel('mistral-vibe::invented-model'),{code:'INVALID_DEFAULT_MODEL'});
-  vibe.info.authenticated=false;vibe.info.available=false;vibe.info.lastError='Sign in to Mistral Vibe Code.';
-  assert.equal(runtime.status().models.find(m=>m.providerId==='mistral-vibe').available,false);
-  await assert.rejects(runtime.runAgent({model:'mistral-vibe::actual-cli-alias',cwd:process.cwd(),prompt:'fixture'}),/Sign in/);
-  assert.equal(vibe.calls.some(c=>c.kind==='run'),false);assert.deepEqual(codexCalls,[]);
-});
-
-test('Vibe steering, compaction, startup, and shutdown stay on the native Vibe runtime',async t=>{
-  const {runtime,vibe,codexCalls}=await fixture(t);
-  await runtime.setDefaultModel('mistral-vibe::actual-cli-alias');
-  await runtime.start();
-  await runtime.steerAgent('vibe_active','next direction');
-  await runtime.compactThread('vibe_saved',{});
-  assert.equal(vibe.calls.filter(c=>c.kind==='refresh').length,1);
-  assert.equal(vibe.calls.filter(c=>c.kind==='steer').length,1);
-  assert.equal(vibe.calls.filter(c=>c.kind==='compact').length,1);
-  assert.deepEqual(codexCalls,[]);
-  await runtime.close();
-  assert.equal(vibe.calls.filter(c=>c.kind==='close').length,1);
-});
-
 test('native provider ID cannot be newly claimed by an API preset and legacy saved API identity is retained',async t=>{
   assert.throws(()=>normalizeProvider({id:'mistral-vibe',preset:'mistral'}),/reserved/);
   const legacy=normalizeProvider({id:'legacy-fixture',type:'compatible',name:'Legacy API',baseUrl:'http://127.0.0.1:1234/v1',requiresApiKey:false,models:['legacy-model']});
   legacy.id='mistral-vibe';
   const {runtime,vibe}=await fixture(t,{beforeInit:dir=>writeFile(path.join(dir,'providers.json'),JSON.stringify({version:1,defaultModel:'mistral-vibe::legacy-model',providers:[legacy]}))});
   assert.equal(runtime.status().providers[0].name,'Legacy API');
-  assert.equal(runtime.mistralVibeStatus().available,false);
-  assert.deepEqual(runtime.mistralVibeStatus().models,[]);
   assert.equal(runtime.resolveModel('mistral-vibe::legacy-model').available,true);
   const requests=[];
   runtime.fetchImpl=async(url,options)=>{
@@ -120,17 +53,29 @@ test('native provider ID cannot be newly claimed by an API preset and legacy sav
   assert.equal(runtime.store.defaultModel,'mistral-vibe::legacy-model');
   assert.deepEqual(runtime.store.get('mistral-vibe').models.map(model=>model.id),['legacy-model']);
   assert.equal(runtime.resolveModel('mistral-vibe::legacy-model').available,true);
-  await assert.rejects(runtime.refreshMistralVibe(),{code:'NATIVE_PROVIDER_ID_CONFLICT'});
   assert.equal(vibe.calls.length,0);
 });
 
-test('a synchronous Codex shutdown failure still waits for and closes Vibe',async t=>{
-  const {runtime,vibe,codex}=await fixture(t);
-  let complete;let closed=false;
-  codex.close=()=>{throw Error('fixture shutdown failure');};
-  vibe.close=()=>new Promise(resolve=>{complete=()=>{closed=true;resolve();};});
-  const closing=runtime.close();let settled=false;closing.catch(()=>{settled=true;});
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(typeof complete,'function');assert.equal(settled,false);
-  complete();await assert.rejects(closing,/fixture shutdown failure/);assert.equal(closed,true);
+
+test('retired Mistral account cannot be selected or resumed even with an installed adapter',async t=>{
+  const {runtime,vibe,codexCalls}=await fixture(t);
+  const id='mistral-vibe::actual-cli-alias';
+  assert.equal(runtime.status().subscriptionProviders.some(p=>p.id==='mistral-vibe'),false);
+  assert.equal(runtime.resolveModel(id).code,'SUBSCRIPTION_PROVIDER_RETIRED');
+  await assert.rejects(runtime.runAgent({model:id,prompt:'hello'}),/retired/);
+  await assert.rejects(runtime.runAgent({threadId:'vibe_old',prompt:'hello'}),/retired/);
+  const choices=chatOptionChoices(runtime.status(),{model:id});
+  assert.equal(choices.models.find(m=>m.id===id).disabled,true);
+  assert.deepEqual(vibe.calls,[]);
+  assert.deepEqual(codexCalls,[]);
+});
+test('historical Vibe model is readable after retirement without changing its saved JSON',async t=>{
+  const {runtime,dataDir}=await fixture(t);
+  const id='vibe_12345678-1234-1234-1234-123456789abc';
+  const dir=path.join(dataDir,'mistral-vibe','threads',id);
+  await mkdir(dir,{recursive:true});
+  const saved=JSON.stringify({version:1,id,model:'mistral-vibe::old',nativeSessionId:'old-session'});
+  await writeFile(path.join(dir,'thread.json'),saved);
+  assert.equal(await runtime.savedThreadModel(id),'mistral-vibe::old');
+  assert.equal(await readFile(path.join(dir,'thread.json'),'utf8'),saved);
 });
