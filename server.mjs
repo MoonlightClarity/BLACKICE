@@ -42,6 +42,7 @@ import { handlePlanningBrowserHttp, planningBrowserCatalog } from './lib/plannin
 import { ResponseCycleService } from './lib/response-cycle.mjs';
 import { assertExecutablePlanningMode } from './public/response-cycle-model.mjs';
 import { createDirectProviderSetupTools } from './lib/provider-setup-tools.mjs';
+import { claudeAccountModels } from './lib/claude-account-models.mjs';
 import { geminiAccountModels } from './lib/gemini-account-models.mjs';
 import { providerSetupHTTP, providerPreviewHTTP } from './lib/provider-setup-http.mjs';
 import { LocalModelManager } from './lib/local-model-manager.mjs';
@@ -1140,10 +1141,10 @@ export async function createHarnessServer(options = {}) {
         });
         return json(res, result.status, result.body);
       }
-      if (pathname === '/api/providers/gemini-account/models') {
+      if (pathname === '/api/providers/gemini-account/models' || pathname === '/api/providers/claude-account/models') {
         if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Local account access required.' });
         if (req.method !== 'POST') return json(res, 405, { error: 'Use POST to refresh account models.' });
-        try { return json(res, 200, { models: await geminiAccountModels() }); }
+        try { return json(res, 200, { models: pathname === '/api/providers/claude-account/models' ? await claudeAccountModels() : await geminiAccountModels() }); }
         catch (error) { return json(res, 503, { error: error.message }); }
       }
       if (pathname === '/api/providers/preview') {
