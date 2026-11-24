@@ -214,6 +214,28 @@ test('contained browser reads use real serialized handler and reject external br
   assert.equal(done.status, 'succeeded'); assert.equal(calls[0].browser, 'relay'); assert.match(done.result.text.text, /Actual browser receipt/);
 });
 
+test('direct browser fill repairs value-only spelling once while preserving the durable original request',async t=>{
+  const dispatched=[];
+  const browser=new BrowserWorkspace({driver:{
+    status:()=>({available:true,contained:true,tabs:[{tabId:'one',url:'https://forms.example.test/apply'}],activeTab:'one'}),
+    perform:async args=>{dispatched.push({...args});return {tabId:'one',url:'https://forms.example.test/apply',documentId:'one:1',frames:[{elements:[]}],receipt:{filled:true}};},
+    close:async()=>{}
+  }});t.after(()=>browser.close());
+  const {api}=await harness(t,{browser});
+  const original=Object.freeze({requestId:'direct-fill-value-alias',action:'fill',tabId:'one',ref:'field',value:'Grounded draft'});
+  const first=await api.call('blackice_browser_action',original,client),done=await waitJob(api,first.jobId);
+  assert.equal(done.status,'succeeded',JSON.stringify(done.error||{}));
+  assert.equal(dispatched.length,1);
+  assert.equal(dispatched[0].text,'Grounded draft');
+  assert.equal(Object.hasOwn(dispatched[0],'value'),false);
+  assert.equal(original.value,'Grounded draft');
+  const replay=await api.call('blackice_browser_action',original,client);
+  assert.equal(replay.existing,true);assert.equal(replay.jobId,first.jobId);
+  assert.equal(dispatched.length,1,'Durable request replay never resends the fill.');
+  await assert.rejects(api.call('blackice_browser_action',{...original,requestId:'direct-fill-conflict',text:'contradiction'},client));
+  assert.equal(dispatched.length,1,'Ambiguous input must not dispatch.');
+});
+
 test('browser failures keep actionable durable messages, uncertainty and exact replay across reload', async t => {
   const stale = 'This element ref is stale. Take a new snapshot and choose its current ref.', calls = [];
   const browser = new BrowserWorkspace({ driver: {

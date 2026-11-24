@@ -9,7 +9,7 @@ import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserUploadRequest, validateBrowserFillRequest } from '../lib/browser.mjs';
+import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserUploadRequest, validateBrowserFillRequest, normalizeBrowserFillRequest } from '../lib/browser.mjs';
 import { captureHiddenPage } from './browser-capture.mjs';
 import { NativePasswordManager, passwordManagerURL, passwordManagerPreload } from './native-password-manager.mjs';
 import { prepareBrowserCompatibility } from './browser-compatibility.mjs';
@@ -2224,6 +2224,7 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async perform(args, { signal, source = 'agent', owner: context, destinationOwner, validateUploadPath, suppressResultSnapshot = false, operationDescriptor, operationId, recoveryInput, cleanupGuard, cleanupReviewed = false, protectInUse = false, settleRecoveryRead = false, onClickPopup } = {}) {
     cancel(signal);
+    args = normalizeBrowserFillRequest(args);
     const fillText = args.action === 'fill' ? validateBrowserFillRequest(args) : undefined;
     if (args.action === 'upload') validateBrowserUploadRequest(args);
     if (recoveryInput) await recoveryInput({ signal });

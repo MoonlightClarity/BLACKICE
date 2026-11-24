@@ -3,13 +3,86 @@ import assert from 'node:assert/strict';
 import {mkdtemp, readFile, writeFile, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
 import {observeGoalToolOutcome, repeatedUnproductiveOperations, assessGoalProgress, detectNoProgressDispatchLoop, detectUnknownEffectReplay, inFlightEffectSignature} from '../lib/goal-recovery-policy.mjs';
 import {ConversationGoals, GOAL_TOOL} from '../lib/conversation-goals.mjs';
 import {createProviderExecutionContract} from '../lib/provider-execution-contract.mjs';
 
 const call = (name, args) => ({name, arguments: args});
+
+test('an uncertain external effect exposes its exact receipt identity without replaying or assuming an outcome', () => {
+  const navigation = call('relay_browser', {action:'navigate',tabId:'owned-tab',url:'https://example.test/portal'});
+  const signature = inFlightEffectSignature(navigation);
+  const pending = {id:'receipt-identified',signature,at:'2026-11-24T10:30:00.000Z',kind:'uncertain_external_effect',
+    code:'BROWSER_NAVIGATION_FAILED',resolutions:[{outcome:'unknown'}]};
+  const refusal=detectUnknownEffectReplay([pending],navigation);
+  assert.equal(refusal.code,'GOAL_EFFECT_UNRESOLVED');
+  assert.equal(refusal.actionDispatched,false);
+  assert.deepEqual(refusal.reconcileIdentity,{receiptId:'receipt-identified',signature,
+    observedAt:pending.at,expectedResolutionCount:1});
+  assert.match(refusal.guidance,/relay_goal effects/);
+  assert.match(refusal.guidance,/expectedResolutionCount/);
+  assert.equal(detectUnknownEffectReplay([pending],call('relay_browser',{action:'read',tabId:'owned-tab'})),null);
+  assert.equal(detectUnknownEffectReplay([pending],call('relay_browser',{action:'navigate',tabId:'owned-tab',url:'https://example.test/other'})),null);
+  const legacy={...pending,at:undefined};
+  const caution=detectUnknownEffectReplay([legacy],navigation);
+  assert.equal(caution.code,'GOAL_EFFECT_UNRESOLVED');
+  assert.equal(caution.reconcileIdentity,undefined,'A missing saved identity must not be fabricated.');
+});
+
 const result = (success, code = null, data = null) => ({
   success, ...(code ? {code} : {}), contentItems: data == null ? [] : [{type:'inputText',text:JSON.stringify(data)}],
+});
+
+test('equivalent browser fill spellings share one effect identity across failure and retry',()=>{
+  const valueOnly=call('relay_browser',{action:'fill',browser:'relay',tabId:'owned-tab',ref:'field-3',value:'Evidence grounded answer'});
+  const canonical=call('relay_browser',{action:'fill',browser:'relay',tabId:'owned-tab',ref:'field-3',text:'Evidence grounded answer'});
+  const incompatible=call('relay_browser',{action:'fill',browser:'relay',tabId:'owned-tab',ref:'field-3',text:'different',value:'Evidence grounded answer'});
+  const selected=call('relay_browser',{action:'select',browser:'relay',tabId:'owned-tab',ref:'field-3',value:'Evidence grounded answer'});
+  assert.equal(inFlightEffectSignature(valueOnly),inFlightEffectSignature(canonical),
+    'An argument alias must never defeat in-flight or unknown-effect replay protection.');
+  assert.notEqual(inFlightEffectSignature(incompatible),inFlightEffectSignature(canonical));
+  assert.notEqual(inFlightEffectSignature(selected),inFlightEffectSignature(canonical));
+  const failed=observeGoalToolOutcome(valueOnly,{success:false,code:'BROWSER_ACTION_FAILED'});
+  assert.equal(failed.kind,'uncertain_external_effect');
+  const pending={...failed,id:'persisted-unresolved',at:'2026-11-24T10:30:00.000Z'};
+  const refusal=detectUnknownEffectReplay([pending],canonical);
+  assert.equal(refusal.code,'GOAL_EFFECT_UNRESOLVED');
+  assert.equal(refusal.reconcileIdentity.receiptId,pending.id);
+});
+
+test('legacy persisted value-only fill receipts remain blocked after semantic normalization upgrade',()=>{
+  const oldArgs={action:'fill',browser:'relay',tabId:'owned-tab',ref:'field',value:'Supported answer'};
+  const oldCall=call('relay_browser',oldArgs);
+  const sorted=Object.fromEntries(Object.entries(oldArgs).sort(([a],[b])=>a.localeCompare(b)));
+  const legacySignature=createHash('sha256').update(JSON.stringify([oldCall.name,sorted])).digest('hex');
+  const canonical=call('relay_browser',{action:'fill',browser:'relay',tabId:'owned-tab',ref:'field',text:'Supported answer'});
+  assert.notEqual(legacySignature,inFlightEffectSignature(oldCall),
+    'This case must exercise an actual pre-upgrade signature, not the new canonical signature.');
+  const record={id:'legacy-saved-row',signature:legacySignature,at:'2026-11-24T09:00:00.000Z',
+    kind:'uncertain_external_effect',code:'BROWSER_ACTION_FAILED'};
+  for(const candidate of [canonical,oldCall]){
+    const block=detectUnknownEffectReplay([record],candidate);
+    assert.equal(block?.code,'GOAL_EFFECT_UNRESOLVED','An unknown historical write must not be replayed via either spelling.');
+    assert.equal(block.reconcileIdentity.signature,legacySignature,'Reconciliation must use the original saved receipt identity.');
+  }
+  assert.equal(detectUnknownEffectReplay([{...record,resolution:{outcome:'occurred'}}],canonical).code,'GOAL_EFFECT_RECORDED_OCCURRED');
+  assert.equal(detectUnknownEffectReplay([{...record,resolution:{outcome:'not_occurred'}}],canonical),null);
+  assert.equal(detectUnknownEffectReplay([record],call('relay_browser',{...canonical.arguments,text:'Other answer'})),null);
+  assert.equal(detectUnknownEffectReplay([record],call('relay_browser',{...oldArgs,action:'select'})),null);
+});
+
+test('recorded occurred effects prevent replay without suggesting another reconciliation',()=>{
+  const target=call('relay_browser',{action:'click',tabId:'owned-page',ref:'submit'});
+  const row={id:'known-row',at:'2026-11-24T10:30:00.000Z',signature:inFlightEffectSignature(target),
+    kind:'uncertain_external_effect',code:'BROWSER_ACTION_FAILED'};
+  const occurred=detectUnknownEffectReplay([{...row,resolution:{outcome:'occurred',evidence:'Destination receipt observed.'}}],target);
+  assert.equal(occurred.code,'GOAL_EFFECT_RECORDED_OCCURRED');
+  assert.equal(occurred.actionDispatched,false);
+  assert.match(occurred.guidance,/do not replay/i);
+  assert.doesNotMatch(occurred.guidance,/use relay_goal reconcile/i);
+  assert.equal(detectUnknownEffectReplay([{...row,resolution:{outcome:'not_occurred',evidence:'Destination checked.'}}],target),null);
+  assert.equal(detectUnknownEffectReplay([row],target).code,'GOAL_EFFECT_UNRESOLVED');
 });
 
 test('the fixed covered-target receipt distinguishes unissued pointer input from preparation effects', () => {

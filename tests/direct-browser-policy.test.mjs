@@ -109,16 +109,24 @@ test('authorized direct organization and filtering dispatch once without new gra
   await assert.rejects(api.call('blackice_browser_action', { requestId: 'missing-write', action: 'protection', operation: 'global', enabled: false }, reader), { code: 'DIRECT_SCOPE_REQUIRED' });
 });
 
-test('direct bridge rejects missing or non-string fill text before job admission and allows intentional empty replacement', async t => {
+test('direct browser bridge rejects malformed fills, normalizes value-only fills and preserves empty clears', async t => {
   const { api, calls } = await fixture(t);
   const target = { action: 'fill', browser: 'relay', tabId: 'one', ref: 'name-field' };
-  for (const [index, payload] of [{}, { value: 'Sample Operator' }, { text: '', value: 'Sample Operator' }, { text: 'Intended Operator', value: 'Different Operator' }, { text: null }, { text: 0 }, { text: false }, { text: [] }, { text: {} }].entries()) {
+  for (const [index, payload] of [{}, { value: 9 }, { value: null }, { text: '', value: 'Sample Operator' }, { text: 'Intended Operator', value: 'Different Operator' }, { text: null }, { text: 0 }, { text: false }, { text: [] }, { text: {} }].entries()) {
     await assert.rejects(api.call('blackice_browser_action', { requestId: 'invalid-fill-' + index, ...target, ...payload }, client), { code: 'DIRECT_REQUEST_INVALID' });
   }
   assert.deepEqual(calls, []); assert.equal((await api.listJobs(client)).total, 0);
+  const aliasedRequest = { requestId: 'valid-value-fill', ...target, value: 'Sample Operator' };
+  const aliased = await api.call('blackice_browser_action', aliasedRequest, client);
+  const aliasedResult = await waitJob(api, aliased.jobId);
+  assert.equal(aliasedResult.status, 'succeeded');
+  assert.deepEqual(calls, [{ ...target, text: 'Sample Operator' }]);
+  const replay = await api.call('blackice_browser_action', aliasedRequest, client);
+  assert.equal(replay.existing, true); assert.equal(replay.jobId, aliased.jobId);
+  assert.equal(calls.length, 1, 'Replaying the original durable request must not dispatch another fill.');
   const job = await api.call('blackice_browser_action', { requestId: 'intentional-empty-fill', ...target, text: '' }, client);
   const result = await waitJob(api, job.jobId);
-  assert.equal(result.status, 'succeeded'); assert.deepEqual(calls, [{ ...target, text: '' }]);
+  assert.equal(result.status, 'succeeded'); assert.deepEqual(calls, [{ ...target, text: 'Sample Operator' }, { ...target, text: '' }]);
 });
 
 test('direct form fills, selections and hover retain complete optional guards and deduplicate execution', async t => {

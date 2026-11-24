@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserFillRequest } from '../lib/browser.mjs';
+import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserFillRequest, normalizeBrowserFillRequest } from '../lib/browser.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { BrowserTabDiagnostics, diagnosticText } from '../lib/browser-tab-diagnostics.mjs';
 import { ownershipAction, ownershipChange } from '../lib/browser-ownership.mjs';
@@ -67,7 +67,7 @@ function fixture({ writeFile = async () => {}, loadURL = async () => {} } = {}) 
   protection.status = protection.tabStatus = () => ({});
   protection.forgetTab = () => {};
   const context = vm.createContext({ tabMarkChange,restoredTabMark,assertTabNotInUse, BrowserWindow: Window, session: { fromPartition: () => session }, EventEmitter,
-    NativePasswordManager, passwordManagerURL, passwordManagerPreload, decorateStoppedTabAdoption, returnTerminalBrowserTab, createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserFillRequest, BrowserDiagnostics, BrowserTabDiagnostics, diagnosticText, ownershipAction, ownershipChange, sameBrowserOwner, conversationBrowserNode, prepareBrowserCompatibility,
+    NativePasswordManager, passwordManagerURL, passwordManagerPreload, decorateStoppedTabAdoption, returnTerminalBrowserTab, createHash, randomUUID, path, browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, browserWheelScroll, validateBrowserWheelScroll, validateBrowserPreview, validateBrowserFillRequest, normalizeBrowserFillRequest, BrowserDiagnostics, BrowserTabDiagnostics, diagnosticText, ownershipAction, ownershipChange, sameBrowserOwner, conversationBrowserNode, prepareBrowserCompatibility,
     fs: { writeFile: async (file, value) => { writes.push(JSON.parse(value)); await writeFile(file, value); }, rename: async (...args) => { renames.push(args); } },
     setTimeout, clearTimeout, AbortSignal, structuredClone, URL,
   });

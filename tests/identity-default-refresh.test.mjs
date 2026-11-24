@@ -19,7 +19,7 @@ async function fixture(t, content = old, provenance = { source: 'seed' }) {
 }
 test('identity default and prior seed are exact', () => {
   assert.equal(createHash('sha256').update(old).digest('hex'), '18658fa7e02228a5288c9e66c73e08991b192b4735f344ae7e7988ab92928039');
-  assert.equal(createHash('sha256').update(DEFAULT_SOUL).digest('hex'), 'ac47ab80d581d3aa67acb4891d3764363b50b00bc6160d82473740c1bc474da8');
+  assert.equal(createHash('sha256').update(DEFAULT_SOUL).digest('hex'), '7e2c12155de9db35361286e613452adb4804c053a3a8c23c2601b50fb165adce');
   assert.equal(DEFAULT_SOUL, approved);
 });
 for (const provenance of [{source:'seed'}, {source:'development', reason:'Updated the unchanged starter identity to the fixed BLACKICE identity.'}]) {

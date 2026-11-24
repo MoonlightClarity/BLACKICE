@@ -13,6 +13,12 @@ test('operator effect outcomes are exact, durable, distinguishable and never rep
   const route=async(method,value={},headers={})=>{let output;await handleConversationGoalsHttp({req:{method,headers},res:{},pathname:'/api/conversations/root/goal-effects',goals,body:async()=>value,json:(_res,status,data)=>{output={status,data};}});return output;};
   assert.equal((await route('GET',{}, {'x-blackice-remote':'1'})).status,403);
   assert.equal((await route('GET')).data.receipts[0].id,'receipt-1');
+  const guardedBeforeReconciliation=goals.wrapTools({id:'pending-turn',taskId:'root',goal:{id:'g'},goalEvidence:[]},'agent',async()=>{dispatches++;return {success:true,contentItems:[]};});
+  const stillUnknown=await guardedBeforeReconciliation(call);
+  assert.equal(stillUnknown.code,'GOAL_EFFECT_UNRESOLVED');
+  assert.deepEqual(stillUnknown.reconcileIdentity,{receiptId:row.id,signature,observedAt:row.at,expectedResolutionCount:0});
+  assert.deepEqual(stillUnknown.recovery,{nextCall:{name:'relay_goal',arguments:{action:'effects'}},replayOriginal:false});
+  assert.equal(dispatches,0);
   const input={receiptId:row.id,signature,observedAt:row.at,expectedResolutionCount:0,outcome:'occurred',evidence:'Operator found the destination receipt.'};
   assert.equal((await route('POST',{...input,receiptId:'stale'})).data.code,'GOAL_EFFECT_STALE');
   engine.runs.set('active',{id:'active',taskId:'root',status:'running',settled:false});
@@ -23,6 +29,12 @@ test('operator effect outcomes are exact, durable, distinguishable and never rep
   failWrite=false;const response=await route('POST',input);assert.equal(response.status,200);assert.equal(response.data.receipt.resolution.outcome,'occurred');assert.equal(response.data.replayed,false);
   assert.equal(conversations.states.root.goalUnresolvedEffects[0].resolutions[0].evidence,input.evidence);
   const guarded=goals.wrapTools({id:'turn',taskId:'root',goal:{id:'g'},goalEvidence:[]},'agent',async()=>{dispatches++;return {success:true,contentItems:[]};});
-  assert.equal((await guarded(call)).code,'GOAL_EFFECT_UNRESOLVED');
+  const refused=await guarded(call);
+  assert.equal(refused.code,'GOAL_EFFECT_RECORDED_OCCURRED');
+  assert.deepEqual(refused.reconcileIdentity,{receiptId:row.id,signature,observedAt:row.at,expectedResolutionCount:1},
+    'The actual Goal tool refusal must retain the exact durable receipt identity.');
+  assert.match(refused.contentItems[0].text,/receipt-1/);
+  assert.equal(refused.actionDispatched,false);
+  assert.equal(refused.recovery,undefined,'Recorded occurred effects should not demand another reconciliation read.');
   assert.equal((await route('POST',input)).data.code,'GOAL_EFFECT_STALE');assert.equal(dispatches,0);assert.equal(writes,2);
 });

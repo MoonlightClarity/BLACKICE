@@ -221,10 +221,11 @@ test('routine fields use known answers without added friction and behavioral ess
   /Read the question, make the best supported call, and enter it/,
   /Do not demand documents or corroboration merely to defend a routine answer/,
   /Hold competing answers to the same standard/,
-  /Use known answers about relatives/,
-  /leave only that field unresolved and finish independent steps/,
-  /pursue another eligible route or role allowed by the request without asking for information needed only by the blocked option/,
-  /Keep working toward the requested application count/,
+  /Use known facts about relatives/,
+  /isolate the exact unresolved assertion/,
+  /same requisition/,
+  /continue independent authorized work/,
+  /Preserve the application as pending/,
   /reasonable inferences/,
   /lengthy essays, take-homes, and extensive tailoring/,
   /an effort decision, not a verdict on fit/,
@@ -369,7 +370,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.doesNotMatch(job.input,/sponsor|arbitrat/i,'the ordinary user request contains no form-answer coaching');
  assert.ok(job.receipts.some(r=>r.skillId===alignmentId&&r.title==='Anti-Overalignment'&&r.type==='skill_context_submitted'));
  assert.ok(job.prompt.includes(heading));assert.ok(job.prompt.includes('rolling last seven days'));assert.ok(job.prompt.includes('## Verify the exact vacancy'));
- assert.ok(job.prompt.includes('pursue another eligible route or role allowed by the request without asking for information needed only by the blocked option'));
+ assert.ok(job.prompt.includes('seek another legitimate intake or truthful response route for the'));
  assert.deepEqual(job.receipts.filter(r=>r.skillId===id),[accepted]);
  assert.ok(job.receipts.every(r=>r.skillId!=='library-intent-inference'));
 

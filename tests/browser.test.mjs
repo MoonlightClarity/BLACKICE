@@ -14,13 +14,13 @@ function fixtureWorkspace({ driver, ...options }) {
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 
-test('fill requires explicit string text before tool or workspace dispatch and preserves intentional empty clears', async t => {
+test('fill rejects malformed input, normalizes an unambiguous value alias and preserves empty clears', async t => {
   const calls = []; let field = 'Existing Operator';
   const browser = fixtureWorkspace({ driver: { status: () => ({ available: true, contained: true }), perform: async args => { calls.push(args); field = String(args.text ?? ''); return { tabId: args.tabId, receipt: { filled: true, characters: field.length } }; } } });
   t.after(() => browser.close());
   const handler = createBrowserToolHandler({ browser });
   const target = { action: 'fill', browser: 'relay', tabId: 'owned-tab', ref: 'name-field' };
-  for (const payload of [{}, { value: 'Sample Operator' }, { text: '', value: 'Sample Operator' }, { text: 'Intended Operator', value: 'Different Operator' }, { text: null }, { text: 0 }, { text: false }, { text: [] }, { text: {} }]) {
+  for (const payload of [{}, { value: 17 }, { value: null }, { text: '', value: 'Sample Operator' }, { text: 'Intended Operator', value: 'Different Operator' }, { text: null }, { text: 0 }, { text: false }, { text: [] }, { text: {} }]) {
     const call = { name: 'relay_browser', arguments: { ...target, ...payload } };
     const result = await handler(call, { onOperationDispatch: () => assert.fail('Malformed fill must not dispatch an operation') });
     assert.equal(result.success, false); assert.equal(result.code, 'BROWSER_VALIDATION');
@@ -31,12 +31,22 @@ test('fill requires explicit string text before tool or workspace dispatch and p
     await assert.rejects(browser.perform(call.arguments, { source: 'user', beforeDispatch: () => assert.fail('Malformed local fill must not dispatch') }), { code: 'BROWSER_VALIDATION', actionDispatched: false, inputDispatched: false });
     assert.equal(field, 'Existing Operator'); assert.deepEqual(calls, []);
   }
+  const alias = { ...target, value: 'Alias Operator' };
+  const aliasResult = await handler({ name: 'relay_browser', arguments: alias });
+  assert.equal(aliasResult.success, true);
+  assert.equal(field, 'Alias Operator');
+  assert.deepEqual(calls.at(-1), { ...target, text: 'Alias Operator' });
+  assert.equal(alias.value, 'Alias Operator', 'The caller request must remain inspectable.');
+  const localAliasResult = await browser.perform({ ...target, value: 'Local Alias' }, { source: 'user' });
+  assert.equal(localAliasResult.receipt.filled, true);
+  assert.equal(field, 'Local Alias');
+  assert.deepEqual(calls.at(-1), { ...target, text: 'Local Alias' });
   for (const text of ['Sample Operator', '']) {
     const result = await handler({ name: 'relay_browser', arguments: { ...target, text } });
     assert.equal(result.success, true); assert.equal(field, text);
     assert.equal(JSON.parse(result.contentItems[0].text).receipt.characters, text.length);
   }
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 4);
   assert.match(BROWSER_TOOL.inputSchema.properties.text.description, /Required for fill/);
   assert.match(BROWSER_TOOL.inputSchema.properties.value.description, /Selection-only/);
 });
