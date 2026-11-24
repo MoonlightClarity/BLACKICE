@@ -150,7 +150,7 @@ for (const providerDefault of [false, true]) test('compatible runtime replays ex
     await rm(dataDir, { recursive: true, force: true });
   });
   const runtime = await createRuntime();
-  await runtime.saveProvider({ id: providerId, preset: providerDefault ? 'llamacpp' : 'compatible', type: 'compatible', baseUrl: providerDefault ? 'http://127.0.0.1:8080/v1' : 'http://127.0.0.1:1/v1', models: ['fixture-model'], maxSteps: 4, ...(providerDefault ? { outputTokenPolicy: 'provider-default' } : {}) });
+  await runtime.saveProvider({ id: providerId, preset: providerDefault ? 'llamacpp' : 'compatible', type: 'compatible', baseUrl: providerDefault ? 'http://127.0.0.1:8080/v1' : 'http://127.0.0.1:1/v1', models: ['fixture-model'], maxSteps: 4, ...(providerDefault ? { outputTokenPolicy: 'provider-default' } : { outputTokenPolicy: 'configured-limit', maxTokens: 8192 }) });
   const result = await runtime.runAgent({
     cwd: dataDir, prompt: 'Read both facts, then confirm the next step.', model: providerId + '::fixture-model', dynamicTools: [tool],
     onEvent: event => events.push(event),
