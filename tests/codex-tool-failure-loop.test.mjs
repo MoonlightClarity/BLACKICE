@@ -192,3 +192,21 @@ test('workspace reads without a proven progress epoch retain the strict stop', (
   for (let i = 0; i < CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure - 1; i++) assert.equal(codexRepeatedToolFailure(state, {name:'relay_workspace', arguments:{action:'read', path:`missing-${i}`}}, errorReceipt), null);
   assert.equal(codexRepeatedToolFailure(state, {name:'relay_workspace', arguments:{action:'read',path:'missing-last'}}, errorReceipt)?.code, 'CODEX_TOOL_FAILURE_LOOP');
 });
+
+test('native dynamic-tool exceptions retain explicit pre-dispatch evidence for every tool, not only browser', async () => {
+  for (const [tool, dispatched] of [['relay_workspace', false], ['relay_directory_action', false], ['relay_workspace', undefined]]) {
+    const f = fixture(async () => {
+      const error = Object.assign(new Error('The gate rejected this action before dispatch.'), {code: 'DIRECTORY_FOCUS'});
+      if (dispatched === false) { error.actionDispatched = false; error.hostHandlerEntered = true; }
+      throw error;
+    }, tool);
+    await f.invoke(1, 'run');
+    const receipt = f.events.find(event => event.type === 'tool.result');
+    assert.equal(receipt?.success, false);
+    assert.equal(receipt?.code, 'DIRECTORY_FOCUS');
+    assert.equal(receipt?.actionDispatched, dispatched, `${tool}: preserve only host-established dispatch evidence`);
+    assert.equal(receipt?.hostHandlerEntered, dispatched === false ? true : undefined);
+    assert.equal(f.replies[0]?.result?.actionDispatched, dispatched);
+    assert.equal(f.replies[0]?.result?.hostHandlerEntered, dispatched === false ? true : undefined);
+  }
+});

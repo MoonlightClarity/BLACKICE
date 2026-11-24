@@ -23,6 +23,16 @@ test('ordinary tool addenda remain a compact supplement to their exported schema
   }
 });
 
+test('stateful coding guidance checks negative contracts without a new approval or verification gate',()=>{
+  assert.match(WORKSPACE_INSTRUCTIONS,/substantial multi-module or stateful repairs/);
+  assert.match(WORKSPACE_INSTRUCTIONS,/invalid inputs and specified error semantics/);
+  assert.match(WORKSPACE_INSTRUCTIONS,/unchanged state on rejection/);
+  assert.match(WORKSPACE_INSTRUCTIONS,/snapshot\/restore integrity/);
+  assert.match(WORKSPACE_INSTRUCTIONS,/uncertain effects/);
+  assert.match(WORKSPACE_INSTRUCTIONS,/Do not guess undocumented error labels/);
+  assert.match(WORKSPACE_INSTRUCTIONS,/Do not.*exhaustive matrix for a small change/);
+});
+
 test('ordinary addenda do not resurrect conflicting global policies or connector-only protocols',()=>{
   const text=addenda.join('\n');
   assert.doesNotMatch(text,/full quantitative planning contract|only the user may apply|quoted user statement|do not operate existing user windows/i);
