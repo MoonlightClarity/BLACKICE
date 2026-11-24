@@ -30,6 +30,9 @@ test('stateful coding guidance checks negative contracts without a new approval 
   assert.match(WORKSPACE_INSTRUCTIONS,/snapshot\/restore integrity/);
   assert.match(WORKSPACE_INSTRUCTIONS,/uncertain effects/);
   assert.match(WORKSPACE_INSTRUCTIONS,/Do not guess undocumented error labels/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/verify saved bytes using the actual consumer\/parser/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/PowerShell 5\.1, Set-Content -Encoding utf8 adds a BOM/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/Node JSON\.parse rejects/);
   assert.match(WORKSPACE_INSTRUCTIONS,/Do not.*exhaustive matrix for a small change/);
 });
 
