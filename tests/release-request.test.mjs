@@ -390,11 +390,11 @@ test('exact source verification rejects matching-index partial receipts and prov
   assert.equal((await verifyReleaseSource(value, directory)).tests.passed, 2);
 });
 
-test('Windows publication is explicitly dispatched, never triggered by ordinary source pushes', async () => {
+test('Windows publication automatically starts on explicit release-request pushes, not ordinary source pushes', async () => {
   const workflow = await fs.readFile(new URL('../.github/workflows/publish-windows-release.yml', import.meta.url), 'utf8');
   const trigger = workflow.match(/^on:\r?\n([\s\S]*?)(?=^\S)/m)?.[1];
   assert.ok(trigger, 'workflow must declare its trigger');
-  assert.equal(trigger.trim(), 'workflow_dispatch:');
+  assert.deepEqual(trigger.trim().split(/\r?\n/).map(line => line.trim()), ['push:', 'branches: [main]', "paths: ['.github/release-request.json']", 'workflow_dispatch:']);
   assert.match(workflow, /if: github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /--source-commit \$env:GITHUB_SHA --source \./);
   assert.match(workflow, /if: success\(\) && env\.PUBLISH_RELEASE == 'true'/);

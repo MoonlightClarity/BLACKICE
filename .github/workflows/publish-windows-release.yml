@@ -1,6 +1,9 @@
 name: Build and publish requested Windows release
 
 on:
+  push:
+    branches: [main]
+    paths: ['.github/release-request.json']
   workflow_dispatch:
 
 permissions:
