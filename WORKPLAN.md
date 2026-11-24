@@ -74,3 +74,8 @@ Text-only changes use explicit content inspection plus existing behavior checks.
 - Seven saved overrides and common revision 1 still match after installation.
 - The external calling conversation still has cached older connector metadata; a supported host refresh control was not exposed.
 - Public verification: verification/instruction-clarity-activation.json.
+
+## MiniCPM attachment read and failure disclosure
+ID resume-read-1124. Active. One writer owns lib/attachments.mjs, lib/providers.mjs and focused regression tests on fix/minicpm-attachment-grounding. Resolve a unique task-scoped filename in a read request. Preserve explicit IDs and reject ambiguous names. For compatible chat, expose tool failure status and suppress an unsupported final after unresolved attachment reads. Dependencies are AttachmentStore and the compatible chat adapter at 1b00b400. Verify original PDF replay, failure followed by unrelated success, recovery and provider streaming.
+
+Verification: Original two-page PDF replay returned 1967 and 1806 characters. Live engine Luna produced source-linked hiring judgments. Live MiniCPM can still misattribute facts after a successful read. The final check rejected an ungrounded draft and surfaced an explicit verification error. Injected read failure produced a named tool error and empty assessment. Focused suites: 49 passed, zero skips. Source branch only.
