@@ -1,9 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: 2.40.79 local installation candidate (not published).** Source package version is **2.40.79**. See [2.40.79 notes](RELEASE-NOTES-2.40.79.md). The latest confirmed published release remains [2.40.75](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75).
+> **Status: 2.40.80 release candidate (public publication not yet verified).** Source package version is **2.40.80**. See [2.40.80 notes](RELEASE-NOTES-2.40.80.md). The latest confirmed published release remains [2.40.75](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.75).
 
 ## Recent published and versioned source notes
 
+- [2.40.80](RELEASE-NOTES-2.40.80.md) - MiniCPM and harness-recovery integration, source-qualification gates, Windows candidate
 - [2.40.79](RELEASE-NOTES-2.40.79.md) - Searchable Move controls for Chat and Browser organization; local candidate
 
 - [2.40.78](RELEASE-NOTES-2.40.78.md) - Searchable Move controls for Cronjobs and nested folders; local candidate
