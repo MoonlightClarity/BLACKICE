@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: source package version 2.40.81 is an integrated candidate, not yet published or installed.** Source version **2.40.81** is described in [2.40.81 source notes](../RELEASE-NOTES-2.40.81.md). BLACKICE 2.40.80 remains the [last verified public Windows release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.80), with its own [exact-source verification](RELEASE-2.40.80-VERIFICATION.md).
+> **Status: source package version 2.40.82 is a local retrieval-accuracy candidate.** Source version **2.40.82** is described in [2.40.82 source notes](../RELEASE-NOTES-2.40.82.md). BLACKICE 2.40.80 remains the [last verified public Windows release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.80), with its own [exact-source verification](RELEASE-2.40.80-VERIFICATION.md).
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 

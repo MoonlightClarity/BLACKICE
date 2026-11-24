@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: BLACKICE 2.40.80 is publicly released.** Published November 24, 2026: [release and installer](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.80), [notes](RELEASE-NOTES-2.40.80.md), and [Windows verification](docs/RELEASE-2.40.80-VERIFICATION.md). Latest public version remains 2.40.80. Integrated source candidate: **2.40.81**, not yet published or installed.
+> **Status: BLACKICE 2.40.80 is publicly released.** Published November 24, 2026: [release and installer](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.80), [notes](RELEASE-NOTES-2.40.80.md), and [Windows verification](docs/RELEASE-2.40.80-VERIFICATION.md). Latest verified public version remains 2.40.80. Current local source candidate: **2.40.82**, not publicly published.
 
 ## Recent published and versioned source notes
+
+- [2.40.82](RELEASE-NOTES-2.40.82.md) - Local hybrid skill retrieval accuracy and revision-sensitive index
 
 - [2.40.81](RELEASE-NOTES-2.40.81.md) - Source-only cross-branch reliability consolidation; not yet published or installed
 
