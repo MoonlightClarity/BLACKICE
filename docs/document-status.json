@@ -19,12 +19,17 @@
     "docs/README.md",
     "docs/local-models.md",
     "docs/visual-reasoning.md",
-    "docs/mistral-acp-compatibility.md",
     "docs/sqlite-receipts.md",
     "docs/persistence-diagnostics.md",
     "docs/instruction-audit.md"
   ],
   "reference": [
+    "docs/mistral-acp-compatibility.md",
+    "docs/DIRECTORY-BENCHMARK-EVIDENCE-RECOVERY-20261123.md",
+    "docs/DIRECTORY-PLANNING-UNBOUNDED-BENCHMARK-20261123.md",
+    "docs/MINICPM-BUDGET-REASSESSMENT-20261123.md",
+    "docs/MINICPM-DIRECTORY-AB-FINDINGS-20261123.md",
+    "docs/OPERATIONAL-EFFECT-LEDGER.md",
     "docs/ADAPTIVE-CONTEXT-PAGING-EXPERIMENT-20261123.md",
     "docs/CONTEXT-PAGING-ABLATION-20261123.md",
     "docs/DIRECTORY-CONTEXT-LONGHORIZON-BENCHMARK.md",

@@ -1,6 +1,6 @@
 # BLACKICE documentation
 
-> **Status: BLACKICE 2.40.80 publicly released November 24, 2026.** Package version is **2.40.80**. See the [published notes](../RELEASE-NOTES-2.40.80.md), [GitHub release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.80), and [exact-source verification](RELEASE-2.40.80-VERIFICATION.md).
+> **Status: source package version 2.40.81 is an integrated candidate, not yet published or installed.** Source version **2.40.81** is described in [2.40.81 source notes](../RELEASE-NOTES-2.40.81.md). BLACKICE 2.40.80 remains the [last verified public Windows release](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.80), with its own [exact-source verification](RELEASE-2.40.80-VERIFICATION.md).
 
 Start with the [project README](../README.md). A named document's date, original deployment note, test result, or branch name does not override this index or the code in the version you actually run.
 
@@ -10,7 +10,7 @@ Start with the [project README](../README.md). A named document's date, original
 | --- | --- |
 | Inspect active instruction sources and saved execution snapshots | [Instruction audit](instruction-audit.md), [instruction clarity](instruction-clarity.md), and [tool responsibilities](tool-responsibilities.md) |
 | Product overview, setup, navigation, recurring work | [Project README](../README.md) |
-| Choose models and API connections | [API providers](API-PROVIDERS.md), [local models](local-models.md), and [optional Mistral account compatibility](mistral-acp-compatibility.md) |
+| Choose models and API connections | [API providers](API-PROVIDERS.md), [local models](local-models.md),  |
 | Connect an external assistant to BLACKICE's direct tools | [ChatGPT](../CHATGPT-CONNECTOR.md), [Gemini](GEMINI-CONNECTOR.md), [Claude](CLAUDE-CONNECTOR.md) |
 | Remote access and connection scope | [Remote access](../REMOTE-ACCESS.md) |
 | Use the browser and imported profiles | [Browser import](../BROWSER-IMPORT.md), [password handling](../BROWSER-PASSWORDS.md), [request filtering](../BROWSER-PROTECTION.md), [stopped-task tab adoption](stopped-task-tab-adoption.md) |
@@ -31,7 +31,7 @@ These explain implementation boundaries or invariants. They are valuable to main
 
 - [Planning contract v2 implementation reference](planning-contract-v2-20261105.md), [operation protection](OPERATIONAL-EFFECT-PROTECTIONS.md), [application-history gate](application-history-gate.md), [planning tool exposure](planning-tool-exposure.md), and [Planning activity UI](PLANNING-ACTIVITY-UI.md).
 - [Agent advocacy](agent-advocacy.md), [metacognition](METACOGNITION.md), [direct caller guidance](direct-caller-guidance.md), and [Directory execution](directory-chat-mode.md).
-- [Credential authentication](credential-authentication.md), [frontend development](frontend-development.md), [frontend UI control semantics](FRONTEND-UI-CONTROLS.md), [storage management](STORAGE-MANAGEMENT.md), and [Codex history isolation](CODEX-HISTORY-ISOLATION.md).
+- [Retired Mistral account-model compatibility](mistral-acp-compatibility.md), [current SQLite operational-effect ledger design](OPERATIONAL-EFFECT-LEDGER.md), and [credential authentication](credential-authentication.md), [frontend development](frontend-development.md), [frontend UI control semantics](FRONTEND-UI-CONTROLS.md), [storage management](STORAGE-MANAGEMENT.md), and [Codex history isolation](CODEX-HISTORY-ISOLATION.md).
 - [Retained plan organization and earlier UI](../PLANNING-ORGANIZATION.md), [shared editing awareness](../PLANNING-AWARENESS.md) and the other files classified as engineering references in the [document status register](document-status.json).
 
 ## Historical / retired / version-bound records

@@ -1,8 +1,10 @@
 # BLACKICE release notes index
 
-> **Status: BLACKICE 2.40.80 is publicly released.** Published November 24, 2026: [release and installer](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.80), [notes](RELEASE-NOTES-2.40.80.md), and [Windows verification](docs/RELEASE-2.40.80-VERIFICATION.md). Source package version: **2.40.80**.
+> **Status: BLACKICE 2.40.80 is publicly released.** Published November 24, 2026: [release and installer](https://github.com/MoonlightClarity/BLACKICE/releases/tag/v2.40.80), [notes](RELEASE-NOTES-2.40.80.md), and [Windows verification](docs/RELEASE-2.40.80-VERIFICATION.md). Latest public version remains 2.40.80. Integrated source candidate: **2.40.81**, not yet published or installed.
 
 ## Recent published and versioned source notes
+
+- [2.40.81](RELEASE-NOTES-2.40.81.md) - Source-only cross-branch reliability consolidation; not yet published or installed
 
 - [2.40.80](RELEASE-NOTES-2.40.80.md) - Published MiniCPM/harness-recovery integration with exact-source suite, Windows installer validation, and SHA-256 assets
 - [2.40.79](RELEASE-NOTES-2.40.79.md) - Searchable Move controls for Chat and Browser organization; local candidate
