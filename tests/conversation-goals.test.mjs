@@ -1097,3 +1097,62 @@ test('automatically discovered owner method follows an unnamed remote job Goal a
   await waitFor(()=>engine.getRun(unrelated.id).settled);
   assert.equal(engine.getRun(unrelated.id).status,'completed');
 });
+
+
+test('pause-after-turn preserves exact in-flight recovery and progress, not successor authority',async t=>{
+ const entered=deferred(),release=deferred();
+ const {engine,goals,runtime,conversations}=await fixture(t,async options=>{
+   entered.resolve(options);await release.promise;return output(1);
+ });
+ t.after(()=>release.resolve());
+ const first=engine.startRun({workflow:graph(),input:{task:'Finish the observed local check',goal:{objective:'Finish the observed local check'}}});
+ const options=await entered.promise,run=engine.runs.get(first.id);
+ const original=goals.raw(first.id);
+ const effect={id:'fixture-command-unknown',tool:'relay_workspace',action:'run',kind:'uncertain_external_effect',
+   signature:'a'.repeat(64),at:new Date().toISOString(),runId:first.id};
+ await conversations.changeState(first.id,{goalUnresolvedEffects:[effect]});
+ const paused=await goals.control(first.id,{action:'pause_after_turn'});
+ assert.equal(paused.goal.status,'paused');assert.equal(goals.recoveryRunCurrent(run),true);
+ assert.deepEqual(goals.raw(first.id).finishRecoveryBinding,{runId:first.id,runGeneration:original.generation,goalGeneration:paused.goal.generation});
+ const req={action:'reconcile',goalId:original.id,receiptId:effect.id,signature:effect.signature,observedAt:effect.at,expectedResolutionCount:0,
+   outcome:'unknown',evidence:'The completed command receipt did not establish all resulting file effects.'};
+ const r=await goals.handle(run,'agent',{name:'relay_goal',arguments:req});
+ assert.equal(r.success,true);assert.equal(JSON.parse(r.contentItems[0].text).replayed,false);
+ assert.equal(conversations.states[first.id].goalUnresolvedEffects[0].resolution.outcome,'unknown');
+ const progress=await report(options,'progress',{nextAction:'Inspect the saved test output.'});
+ assert.equal(progress.result.success,true);
+ assert.equal(goals.raw(first.id).lastEvidence.runId,first.id);
+ assert.equal(goals.raw(first.id).status,'paused');
+ assert.match(goals.raw(first.id).lastReason,/Automatic continuation paused/);
+ assert.equal((await report(options,'complete')).result.code,'GOAL_CHANGED');
+ assert.equal((await report(options,'wait',{waitUntil:new Date(Date.now()+60000).toISOString()})).result.code,'GOAL_CHANGED');
+ const again=await goals.control(first.id,{action:'pause_after_turn'});
+ assert.equal(again.goal.status,'paused');assert.equal(goals.recoveryRunCurrent(run),true);
+ const unrelated={...run,id:'unrelated-run'};
+ assert.equal(goals.recoveryRunCurrent(unrelated),false);
+ release.resolve();
+ await waitFor(()=>engine.getRun(first.id).settled);
+ await waitFor(()=>goals.raw(first.id).finishCurrentRunId===null);
+ assert.equal(goals.raw(first.id).finishRecoveryBinding,null);
+ assert.equal(goals.recoveryRunCurrent(run),false);
+ assert.equal(runtime.calls.length,1);
+ assert.equal(goals.raw(first.id).status,'paused');
+});
+test('a newer owner objective revokes finishing-turn recovery without giving old turns new authority',async t=>{
+ const entered=deferred(),release=deferred();
+ const {engine,goals,runtime}=await fixture(t,async options=>{entered.resolve(options);await release.promise;return output(1);});
+ t.after(()=>release.resolve());
+ const first=engine.startRun({workflow:graph(),input:{task:'Original objective',goal:{objective:'Original objective'}}});
+ const options=await entered.promise,run=engine.runs.get(first.id);
+ await goals.control(first.id,{action:'pause_after_turn'});
+ assert.equal(goals.recoveryRunCurrent(run),true);
+ await goals.control(first.id,{action:'update',objective:'A different owner objective'});
+ assert.equal(goals.raw(first.id).finishRecoveryBinding,null);
+ assert.equal(goals.recoveryRunCurrent(run),false);
+ assert.equal((await report(options,'progress')).result.code,'GOAL_CHANGED');
+ await goals.control(first.id,{action:'pause_after_turn'});
+ assert.equal(goals.recoveryRunCurrent(run),false,'a second pause must not rebind a superseded turn');
+ release.resolve();
+ await waitFor(()=>engine.getRun(first.id).settled);
+ assert.equal(runtime.calls.length,1);
+});
