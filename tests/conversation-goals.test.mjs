@@ -251,11 +251,23 @@ test('progress without model-authored goal ID uses the bound generation but reje
   assert.match(engine.getRun(first.id).goalProgress.summary,/Document export/);
 });
 
+test('Goal instruction text preserves counterparty reasoning across non-job-search Goals', () => {
+  const goal={id:'vendor-goal',status:'active',objective:'Complete authorized vendor onboarding',turns:0};
+  const goals=new ConversationGoals({engine:{runs:new Map()},conversations:{states:{root:{goal}}},autoStart:false});
+  const instructions=goals.instructions({id:'initial-turn',taskId:'root',goal:{id:goal.id}});
+  assert.match(instructions,/Evaluate counterparty requirements and preferences rather than treating them as automatic vetoes\./);
+  assert.match(instructions,/Distinguish routine delegated assent from truth-constrained factual statements/);
+  assert.doesNotMatch(instructions,/Treat counterparties When handing off/);
+});
+
 test('one goal continues for three turns in the same conversation and finishes with evidence', async t => {
   const {engine,goals,runtime,conversations} = await fixture(t, async (options,n) => {
     assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_goal'));
     assert.ok(options.dynamicTools.every(tool => tool.type === 'function'), 'Native dynamic tool catalog must be consistently canonical, including relay_goal');
     assert.match(options.developerInstructions,/PERSISTENT CONVERSATION GOAL/);
+    assert.match(options.developerInstructions,/Evaluate counterparty requirements and preferences rather than treating them as automatic vetoes\./,
+      'Initial and continued Goals must receive usable delegated-agency guidance, not an incomplete instruction.');
+    assert.doesNotMatch(options.developerInstructions,/Treat counterparties When handing off/);
     if (n > 1) {
       const turn = [...engine.runs.values()].at(-1);
       assert.match(turn.input, /relay_goal read/);
