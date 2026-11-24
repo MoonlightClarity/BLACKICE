@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {createChatOutcomeReviewer} from '../lib/chat-outcome-review.mjs';
+import {createChatOutcomeReviewer,ordinaryOutcomePrompt} from '../lib/chat-outcome-review.mjs';
 import {modularOutcomeRequiredSchema,decodeOrdinaryVerdictWire} from '../lib/modular-completion.mjs';
 import {strictProviderSchema} from '../lib/provider-output-schema.mjs';
 
@@ -29,6 +29,12 @@ async function fixture(t,answer){
   const runtime={status:()=>({models:[{id:model,contextWindowTokens:262144,maxOutputTokens:1800}]}),
     async runAgent(opts){
       const schema=opts.outputSchema;
+      const view=JSON.parse(opts.prompt.split('\nREVIEW DATA (JSON):\n').at(-1));
+      assert.equal(view.sourceGroundedTestStatus.exitCode,1);
+      assert.equal(view.sourceGroundedTestStatus.tests,2);
+      assert.equal(view.sourceGroundedTestStatus.passed,1);
+      assert.equal(view.sourceGroundedTestStatus.failed,1);
+      assert.equal(view.sourceGroundedTestStatus.citationRef,'evidence-0001');
       assert.equal(strictProviderSchema(schema),true);
       const phase=opts.prompt.includes('READ-ONLY REPORT SYNTHESIS')?'synthesis':
         phases.length>0?'reassessment':'initial';
@@ -58,6 +64,13 @@ test('report synthesis has a single draft branch but corrected output must survi
   assert.equal(result.replacementOutput,corrected);
   assert.deepEqual(result.evidenceRefs,['receipt-1']);
   assert.deepEqual(f.phases,['initial','synthesis','reassessment']);
+});
+
+test('ambiguous receipts do not generate a projected machine-status fact',()=>{
+  const many={...snapshot,evidence:{records:[...snapshot.evidence.records,{...snapshot.evidence.records[0],id:'receipt-2',callId:'receipt-2'}]}};
+  const prompt=ordinaryOutcomePrompt(many,request.candidate);
+  const view=JSON.parse(prompt.split('\nREVIEW DATA (JSON):\n').at(-1));
+  assert.equal(view.sourceGroundedTestStatus,undefined);
 });
 
 test('synthesis-only grammar still rejects a model that attempts another review verdict',()=>{
@@ -92,6 +105,27 @@ test('an operational repair cannot be accepted based on contradictory machine st
   const f=await fixture(t,()=>respond('The report is supported.'));
   const result=await f.reviewer.assess({...request,
     input:'Repair the implementation and state whether the tests passed.'});
+  assert.equal(result.decision,'unreviewed');
+  assert.equal(result.reason,'CHAT_OUTCOME_EVIDENCE_CONTRADICTION');
+  assert.deepEqual(f.phases,['initial']);
+});
+
+test('an explanatory MiniCPM draft with wrong counts or no exact exit code is rejected, not certified',async t=>{
+  const f=await fixture(t,phase=>phase==='initial'?revise():phase==='synthesis'
+    ?respond('The command failed with WORKSPACE_COMMAND_EXIT_NONZERO; 2 passed and 1 failed.'):
+     respond('The report is supported.'));
+  const input='Explain the discrepancy and report the exact exit code and pass/fail counts.';
+  const result=await f.reviewer.assess({...request,input});
+  assert.equal(result.decision,'unreviewed');
+  assert.equal(result.reason,'CHAT_OUTCOME_EVIDENCE_CONTRADICTION');
+  assert.deepEqual(f.phases,['initial','synthesis']);
+});
+
+test('an optimistic independent assessment with invented counts cannot certify a candidate',async t=>{
+  const f=await fixture(t,()=>respond('Evidence shows 2 passed and 1 failed, so the report is correct.'));
+  const input='Explain the test failure and report the exact exit code and pass/fail counts.';
+  const result=await f.reviewer.assess({...request,input,
+    candidate:{output:'The command exited with code 1; one test passed and one failed.'}});
   assert.equal(result.decision,'unreviewed');
   assert.equal(result.reason,'CHAT_OUTCOME_EVIDENCE_CONTRADICTION');
   assert.deepEqual(f.phases,['initial']);

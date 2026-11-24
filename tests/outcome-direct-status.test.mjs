@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {directlyObservedTestStatus,exactStatusReport,contradictedTestPassClaim} from '../lib/outcome-direct-status.mjs';
+import {directlyObservedTestStatus,exactStatusReport,contradictedTestPassClaim,missingRequestedTestNumbers} from '../lib/outcome-direct-status.mjs';
 
 const makeReceipt=(id='verified-1',patch={})=>({id,callId:id,source:'admitted-tool-delivery',
   tool:'relay_workspace',action:'run',success:false,
@@ -42,6 +42,18 @@ test('no false host proof with missing, unsettled, ambiguous, forged or non-TAP 
     assert.equal(exactStatusReport(s),null);
     assert.equal(contradictedTestPassClaim(s,'All checks passed.'),null);
   }
+});
+test('wrong numeric pass count is rejected even when the report correctly says the command failed',()=>{
+  const s=snapshot();
+  assert.equal(contradictedTestPassClaim(s,'The test run failed; 2 passed and 1 failed.')?.receiptId,'verified-1');
+  assert.equal(contradictedTestPassClaim(s,'One test passed and one failed.'),null);
+  assert.equal(contradictedTestPassClaim(s,'The candidate incorrectly claimed 2 passed; the receipt shows 1 passed and 1 failed.'),null);
+});
+test('an error label is not a requested numeric exit code, and count omissions are not complete results',()=>{
+  const s=snapshot(undefined,'Explain the contradiction. Report the exact exit code and pass/fail counts.');
+  assert.equal(missingRequestedTestNumbers(s,'Evidence shows test failure WORKSPACE_COMMAND_EXIT_NONZERO; 2 passed, 1 failed.')?.receiptId,'verified-1');
+  assert.equal(missingRequestedTestNumbers(s,'Exit code 1, but no counts available.')?.receiptId,'verified-1');
+  assert.equal(missingRequestedTestNumbers(s,'Exit code 1. The test summary reported 1 passed and 1 failed.'),null);
 });
 test('ordinary Chat reports a single exact machine status without asking the model to reinterpret it',async()=>{
   const {createChatOutcomeReviewer}=await import('../lib/chat-outcome-review.mjs');
