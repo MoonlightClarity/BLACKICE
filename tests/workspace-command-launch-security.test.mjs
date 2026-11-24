@@ -6,6 +6,7 @@ import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 import vm from 'node:vm';
 import {FIND_FILES_TOOL,validateFileSearchCall} from '../lib/file-search-contract.mjs';
+import {attachWorkspaceCommandOutcome} from '../lib/workspace-command-outcome.mjs';
 import { PDF_LIMITS } from '../lib/pdf-documents.mjs';
 import { XLSX_ROWS, XLSX_COLUMNS } from '../lib/spreadsheet-documents.mjs';
 
@@ -27,8 +28,8 @@ function fixture({ platform = 'win32', failure, observed = false, synchronous = 
     });
     return child;
   };
-  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall, PDF_LIMITS, XLSX_ROWS, XLSX_COLUMNS, spawn, fs: { stat: async () => ({ isDirectory: () => true }), readdir: async () => [] }, path, StringDecoder,
-    process: { platform, env: { BLACKICE_RESTART_ORIGIN: 'stale', KEEP: 'value' } },
+  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall, attachWorkspaceCommandOutcome, PDF_LIMITS, XLSX_ROWS, XLSX_COLUMNS, spawn, fs: { stat: async () => ({ isDirectory: () => true }), readdir: async () => [] }, path, StringDecoder,
+    process: { platform, env: { BLACKICE_RESTART_ORIGIN: 'stale', NODE_TEST_CONTEXT: 'child-v8', KEEP: 'value' } },
     DESKTOP_RESTART_ORIGIN_ENV: 'BLACKICE_RESTART_ORIGIN', setTimeout, clearTimeout, AbortSignal, Buffer, TextDecoder };
   // Strip complete ESM re-exports before declaration keywords; imported contracts are injected above.
   const transformed = source.replace(/^import .*;\n/gm, '').replace(/^export \{[^\r\n]*\} from [^\r\n]*;\r?\n/gm, '').replace(/^export /gm, '');
@@ -54,6 +55,7 @@ test('PowerShell receives ordinary inline command without hidden/policy switches
   assert.ok(!launch.args.some(arg => /Bypass|EncodedCommand|WindowStyle|ExecutionPolicy/i.test(arg)));
   assert.equal(launch.options.windowsHide, true); // Only suppress console-window creation; captured output is retained.
   assert.equal(launch.options.env.BLACKICE_RESTART_ORIGIN, undefined);
+  assert.equal(launch.options.env.NODE_TEST_CONTEXT, undefined, 'Nested commands must not inherit Node test-runner worker state.');
   assert.equal(launch.options.env.KEEP, 'value'); assert.equal(r.stdout, 'ok'); assert.equal(r.stderr, 'diagnostic');
 });
 test('POSIX shell receives original command and Unicode output is retained', async () => {
