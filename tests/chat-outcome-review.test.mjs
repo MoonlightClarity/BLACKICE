@@ -5,7 +5,8 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {createChatOutcomeReviewer} from '../lib/chat-outcome-review.mjs';
-import {strictProviderSchema} from '../lib/provider-output-schema.mjs';
+import {strictProviderSchema,compatibleWireOutputSchema} from '../lib/provider-output-schema.mjs';
+import {modularOutcomeRequiredSchema,decodeOrdinaryVerdictWire} from '../lib/modular-completion.mjs';
 
 const boundary='\nREVIEW DATA (JSON):\n';
 const data=options=>JSON.parse(options.prompt.split(boundary).at(-1));
@@ -52,19 +53,20 @@ test('ordinary assessment preserves exact authority, model, effort, tier and cur
   assert.doesNotMatch(JSON.stringify(f.events),/EXACT_WORKER_DEVELOPER|OWNER_STANDING_LIMIT/);
 });
 
-test('local MiniCPM reviewer uses a closed six-field wire grammar and still binds host evidence',async t=>{
+test('local MiniCPM reviewer uses a closed verdict-specific wire grammar and still binds host evidence',async t=>{
   const receipt=row('local-source-read',{text:'The export is null.'});
   const f=await fixture(t,options=>{
     assert.equal(options.responseOnly,true);
     assert.equal(strictProviderSchema(options.outputSchema),true,'Local reviewer output must be grammar compatible.');
-    assert.deepEqual(options.outputSchema.required,
-      ['decision','summary','remaining','nextAction','evidenceRefs','blockers']);
+    assert.deepEqual(options.outputSchema.required,['assessment']);
+    assert.deepEqual(options.outputSchema.properties.assessment.anyOf.map(branch=>branch.properties.decision.const),['respond','continue','revise_response','blocked']);
+    assert.deepEqual(compatibleWireOutputSchema(options.outputSchema),options.outputSchema);
     assert.equal(options.outputSchema.properties.concerns,undefined);
     assert.equal(options.outputSchema.properties.outcomeChecks,undefined);
     assert.match(options.prompt,/BLACKICE LOCAL OUTCOME REVIEW/);
     assert.match(options.prompt,/A syntax check is not a file read/);
     assert.doesNotMatch(options.prompt,/BLACKICE ORDINARY TASK OUTCOME REVIEW/);
-    return response({summary:'The saved read showed that the export is null.',evidenceRefs:['evidence-0001']});
+    return {assessment:{decision:'respond',summary:'The saved read showed that the export is null.',evidenceRefs:['evidence-0001']}};
   },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
   const result=await f.reviewer.assess(request('Report the export value.',[receipt]));
   assert.equal(result.decision,'respond');
@@ -317,9 +319,10 @@ test('strict local review sends concise field guidance and a finite set of citat
   const f=await fixture(t,options=>{
     assert.match(options.prompt,/The exact structured output schema is supplied separately by the host/);
     assert.doesNotMatch(options.prompt,/Use only these exact fields: \{"type":"object"/);
-    assert.equal(options.outputSchema.properties.evidenceRefs.maxItems,3);
-    assert.equal(options.outputSchema.properties.blockers.items.properties.evidenceRefs.maxItems,3);
-    assert.equal(options.outputSchema.properties.summary.maxLength,undefined);
+    const branches=options.outputSchema.properties.assessment.anyOf;
+    assert.equal(branches[0].properties.evidenceRefs.maxItems,3);
+    assert.equal(branches[1].properties.blockers.items.properties.evidenceRefs.maxItems,3);
+    assert.equal(branches[0].properties.summary.maxLength,undefined);
     return response({evidenceRefs:['evidence-0001']});
   },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
   assert.equal((await f.reviewer.assess(request('Report the observed result.',[receipt]))).decision,'respond');
@@ -365,9 +368,50 @@ test('ordinary reviewer presents canonical structured receipts losslessly withou
 test('self-contained answer with incidental admitted reads does not acquire an artificial operational citation obligation',async t=>{
  const record={...row('incidental',{text:'Unrelated workspace listing'}),callId:'incidental'};
  const f=await fixture(t,options=>{
-   assert.ok(options.outputSchema.properties.supportBasis.enum.includes('request-and-candidate-only'));
+   assert.ok(options.outputSchema.properties.assessment.anyOf[0].properties.supportBasis.enum.includes('request-and-candidate-only'));
    return response({supportBasis:'request-and-candidate-only',summary:'The candidate answers the hypothetical question without claiming an observed result.',evidenceRefs:['user-request','candidate']});
  },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
  const result=await f.reviewer.assess(request('Explain what a cache epoch is.',[record]));
  assert.equal(result.decision,'respond');assert.equal(f.calls.length,1);
+});
+
+
+test('verdict-specific branches eliminate inapplicable fields without changing the authoritative verdict',()=>{
+ const snapshot={scope:{kind:'ordinary-chat'},evidence:{records:[{...row('read',{text:'Observed status.'}),callId:'read'}]}};
+ const schema=modularOutcomeRequiredSchema(snapshot);
+ assert.equal(strictProviderSchema(schema),true);assert.ok(compatibleWireOutputSchema(schema));
+ const base={summary:'Observed status',evidenceRefs:['evidence-0001']};
+ const wrap=(decision,fields={})=>({assessment:{decision,...base,...fields}});
+ const cases=[
+  ['respond',{supportBasis:'observed-results'},[],'',[]],
+  ['continue',{remaining:['Read next page'],nextAction:'Read the next page.',blockers:[]},['Read next page'],'Read the next page.',[]],
+  ['revise_response',{nextAction:'Report only the value.'},[],'Report only the value.',[]],
+  ['blocked',{remaining:['Read source'],blockers:[{scope:'source',evidenceRefs:['evidence-0001'],whyNotRepairable:'Observed irreversible absence.'}]},['Read source'],'',null],
+ ];
+ for(const [decision,fields,remaining,nextAction,blockers]of cases){
+   const v=decodeOrdinaryVerdictWire(wrap(decision,fields),schema);
+   assert.equal(v.decision,decision);assert.deepEqual(v.remaining,remaining);assert.equal(v.nextAction,nextAction);
+   assert.deepEqual(v.blockers,blockers??fields.blockers);
+ }
+ for(const invalid of [
+  wrap('respond',{supportBasis:'observed-results',nextAction:'Read again'}),
+  wrap('continue',{remaining:[],nextAction:'Read next page.',blockers:[]}),
+  wrap('continue',{remaining:['Read next page'],nextAction:'null',blockers:[]}),
+  wrap('continue',{remaining:['Read next page'],nextAction:'finish',blockers:[]}),
+  wrap('revise_response',{nextAction:'Correct report.',remaining:['New work']}),
+  wrap('blocked',{remaining:['Read source'],blockers:[]}),
+  {assessment:{decision:'respond',summary:'Observed',evidenceRefs:['candidate','candidate'],supportBasis:'observed-results'}},
+ ]) assert.throws(()=>decodeOrdinaryVerdictWire(invalid,schema),{code:'MODULAR_REVIEW_WIRE_INVALID'});
+});
+
+test('malformed nested verdict is repaired only within the independent assessment',async t=>{
+ const receipt={...row('source',{text:'Observed source.'}),callId:'source'};
+ const f=await fixture(t,(options,index)=>{
+  if(index===1)return {assessment:{decision:'continue',summary:'Need another read',evidenceRefs:['evidence-0001'],remaining:['Separate read'],nextAction:'null',blockers:[]}};
+  assert.match(options.prompt,/requires a concrete next action/);
+  return {assessment:{decision:'continue',summary:'Separate read remains',evidenceRefs:['evidence-0001'],remaining:['Separate requested read'],nextAction:'Read the matching archive page.',blockers:[]}};
+ },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+ const result=await f.reviewer.assess(request('Search and separately read the matching page.',[receipt]));
+ assert.equal(result.decision,'continue');assert.equal(result.nextAction,'Read the matching archive page.');assert.equal(f.calls.length,2);
+ assert.ok(f.calls.every(options=>options.hostOnlyTools&&options.responseOnly));
 });
