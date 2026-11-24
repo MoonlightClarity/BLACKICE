@@ -30,9 +30,9 @@ async function fixture(t,{execute,readinessFailure,modelStatus,modelResolver,run
       const index=calls.push(options);
       if(execute)return execute(options,index);
       options.onEvent({type:'thread',threadId:options.threadId||'http-fixture-thread',model:options.model||'http-fixture-model'});
-      const content=`Verified operation side effect ${index}.\n`,write=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:'operation-proof.txt',text:content}});
+      const content=`Verified operation side effect ${index}.\n`,write=await options.onToolCall({name:'relay_workspace',arguments:{action:'write',path:(index===1?'operation-proof.txt':'operation-proof-'+index+'.txt'),text:content}});
       assert.equal(write.success,true);
-      const read=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:'operation-proof.txt'}});
+      const read=await options.onToolCall({name:'relay_workspace',arguments:{action:'read',path:(index===1?'operation-proof.txt':'operation-proof-'+index+'.txt')}});
       assert.equal(read.success,true);assert.match(read.contentItems[0].text,/Verified operation side effect/);
       assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_task'),expectCheckpoint,
         'Only a schedule explicitly requesting the planning catalog can use checkpoints.');
