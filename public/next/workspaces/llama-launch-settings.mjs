@@ -65,7 +65,7 @@ export function createLlamaCppLaunchSettings({mount, advancedMount, api, onChang
  const overrides=make('textarea','','next-field');overrides.id='next-llama-overrides';overrides.rows=4;
  const advanced=make('details','','next-provider-advanced');
  advanced.append(make('summary','Per-model configuration (JSON)'),label('Model file paths (JSON)',paths),label('Model-specific overrides (JSON)',overrides),
-  make('p','Optional tuning keys: threads, threadsBatch, batchSize, ubatchSize, cacheTypeK and cacheTypeV. Vision keys: mmprojPath and mmprojOffload. Remove a key to inherit the global or runtime default.','next-help'));
+  make('p','Optional tuning keys: threads, threadsBatch, batchSize, ubatchSize, cacheTypeK and cacheTypeV. Vision keys: mmprojPath and mmprojOffload. For local strict structured responses (including outcome review), structuredDryMultiplier controls sequence repetition suppression: omit for automatic 0.8, or set 0 to disable. It is applied per response, does not change ordinary generation, and does not limit output tokens. Remove other keys to inherit the global or runtime default.','next-help'));
  const save=button('Save launch defaults'),reset=button('Restore recommended values');
  save.id='next-llama-default-save';reset.id='next-llama-default-reset';save.className='next-primary';
  const commands=make('div','','next-row');commands.append(save,reset);

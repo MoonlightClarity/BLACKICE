@@ -212,3 +212,22 @@ test('tool result access does not approve a changed report or weaken unavailable
  assert.equal(JSON.parse(r.contentItems[0].text).decision,'unreviewed');g.review.delivered({call:c,result:r});
  await assert.rejects(g.review.beforeFinal(candidate),{code:'CHAT_OUTCOME_UNREVIEWED'});
 });
+
+
+test('host feedback handoff is a scoped read-only receipt, not a new user instruction or evidence',async()=>{
+ const events=[],f=fixture(()=>({...assessment,decision:'continue',remaining:['Read the requested source'],nextAction:'Read the exact source.'}),{feedbackTransport:'tool-result',onFeedback:e=>events.push(e)});
+ const direct={...candidate,hostFeedbackDelivery:true};
+ f.review.beforeFinal(direct);
+ const next=await f.review.beforeFinal(direct);
+ assert.match(next.hostFeedback.feedbackId,/^[a-f0-9]{64}$/);
+ assert.doesNotMatch(next.prompt,/Read the exact source|Call relay_outcome_feedback/);
+ const before=f.review.evidenceSnapshot(),call=feedbackCall(next.hostFeedback.feedbackId,'host-owned-read');
+ const result=f.review.readOutcomeFeedback(call,{hostInitiated:true});
+ assert.equal(result.success,true);assert.equal(result.actionDispatched,false);
+ assert.equal(JSON.parse(result.contentItems[0].text).nextAction,'Read the exact source.');
+ f.review.delivered({call,result,delivery:'accepted-provider-request'});
+ assert.equal(events.at(-1).origin,'host-initiated-read');
+ assert.deepEqual(f.review.evidenceSnapshot(),before);
+ addRead(f.review,'new-receipt','New source evidence.');
+ assert.equal(f.review.readOutcomeFeedback(call,{hostInitiated:true}).code,'OUTCOME_FEEDBACK_STALE');
+});

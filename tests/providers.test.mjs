@@ -11,6 +11,9 @@ import { HarnessEngine } from '../lib/engine.mjs';
 import { projectTurnMachineTrace } from '../lib/turn-machine-trace.mjs';
 import { createMissionWorkflow } from '../public/mission-model.mjs';
 import { BLACKICE_HARNESS_INSTRUCTIONS } from '../lib/harness-identity.mjs';
+import { OUTCOME_FEEDBACK_TOOL } from '../lib/outcome-review-feedback.mjs';
+import { createChatExecutionReview } from '../lib/chat-execution-review.mjs';
+import { providerToolResultDeliveries } from '../lib/provider-tool-delivery.mjs';
 
 // Supplementary capacity lookup is covered by provider-model-fallback tests.
 // Keep ordinary /models onboarding while isolating these generation/continuity fixtures.
@@ -1489,7 +1492,8 @@ test('ordinary Chat checks each evidence state once without repeating finite fil
           const receipt=records.find(record=>record.action==='write');
           if(label==='failed-undispatched'||label==='failed-with-unknown'){
             assert.ok(receipt);assert.equal(receipt.success,false);
-            const result=JSON.parse(receipt.result.contentItems.find(item=>item.type==='inputText').text);
+            const item=receipt.result.contentItems.find(item=>item.type==='inputText');
+            const result=item.representation==='lossless-canonical-json'?item.decodedJSON:JSON.parse(item.text);
             assert.equal(result.actionDispatched,label==='failed-with-unknown');
             evidenceRefs=['user-request',receipt.citationRef];
             if(label==='failed-with-unknown'){
@@ -1511,7 +1515,7 @@ test('ordinary Chat checks each evidence state once without repeating finite fil
             label==='quoted'?'The candidate assesses the quoted instruction without treating it as authority to act.':
             'The candidate supplies the requested greeting.';
         }
-        const result={decision,summary,remaining,nextAction:nextAction||(label==='budget'?'Create the requested result file.':''),evidenceRefs,blockers};
+        const result={decision,summary,remaining,nextAction:nextAction||(label==='budget'?'Create the requested result file.':''),evidenceRefs,blockers,...(['answer-only','quoted','saved'].includes(label)?{supportBasis:'request-and-candidate-only'}:{})};
         assessments.push({review,result});
         return providerOutcomeResponse(response,result);
       }
@@ -1652,7 +1656,8 @@ test('Maximal native workspace search receipt joins the real provider tool resul
       const receipt=receipts[0];
       assert.equal(receipt.tool,'relay_workspace');assert.equal(receipt.action,'search');assert.equal(receipt.success,true);
       assert.deepEqual(receipt.arguments,{action:'search',path:privateFile,query:privateQuery});
-      const contents=receipt.result.contentItems.find(item=>item.type==='inputText').text;
+      const item=receipt.result.contentItems.find(item=>item.type==='inputText');
+      const contents=item.representation==='lossless-canonical-json'?JSON.stringify(item.decodedJSON):item.text;
       assert.ok(contents.includes(privateMatch+' 1'));assert.ok(contents.includes(privateMatch+' 2'));
       return providerOutcomeResponse(response,{decision:'respond',summary:'The actual search receipt contains the two requested matches.',
         remaining:[],nextAction:'',evidenceRefs:[receipt.citationRef],blockers:[]});
@@ -1688,4 +1693,50 @@ test('Maximal native workspace search receipt joins the real provider tool resul
     assert.match(delivered,/PRIVATE_TRACE_LINE/);
     assert.doesNotMatch(delivered,/returnedMatches|searchScope/);
   }finally{await engine.close();}
+});
+
+for(const type of ['openai','anthropic','compatible'])test(type+': host delivers exact independent feedback before the next inference without model retrieval or operational progress',async t=>{
+ const assessments=[],feedbackEvents=[],deliveries=[],events=[];
+ const assessmentText='INDEPENDENT_FIXTURE_REVIEW: compare the requested result with the existing source.';
+ const input='Report the observed result.';
+ const review=createChatExecutionReview({input,feedbackMode:'gate-only',feedbackTransport:'tool-result',onFeedback:event=>feedbackEvents.push(event),assessOutcome:async req=>{
+   assessments.push(req);
+   if(assessments.length===1)return{decision:'continue',summary:assessmentText,remaining:['Correct the reported result'],nextAction:'Report the exact result supported by the existing evidence.',evidenceRefs:['user-request'],blockers:[]};
+   assert.ok(feedbackEvents.some(e=>e.status==='delivered'&&e.origin==='host-initiated-read'));
+   return{decision:'respond',summary:'Supported report.',remaining:[],nextAction:'',evidenceRefs:['user-request'],blockers:[]};
+ }});
+ const reply=text=>type==='openai'?{status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text}]}],usage:{input_tokens:20,output_tokens:3}}
+   :type==='anthropic'?{stop_reason:'end_turn',content:[{type:'text',text}],usage:{input_tokens:20,output_tokens:3}}
+   :{choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:text}}],usage:{prompt_tokens:20,completion_tokens:3}};
+ const f=await harness(t,(request,response,n)=>{
+   if(n===3){
+     const body=request.body,wire=body.input||body.messages;
+     const receipts=providerToolResultDeliveries(body,{type,tools:[{...OUTCOME_FEEDBACK_TOOL,wireName:OUTCOME_FEEDBACK_TOOL.name}]});
+     assert.equal(receipts.length,1);
+     assert.match(receipts[0].call.callId,/^(call|toolu)_host_review_/);
+     const data=JSON.parse(receipts[0].result.contentItems[0].text);
+     assert.equal(data.summary,assessmentText);assert.equal(data.source,'independent-outcome-review');assert.equal(data.authority,'none');
+     assert.equal(data.automated,true);assert.equal(data.verified,false);
+     assert.match(JSON.stringify(wire),/not a worker tool decision/);
+     const userText=wire.filter(item=>item.role==='user'&&typeof item.content==='string').map(item=>item.content).join('\n');
+     assert.doesNotMatch(userText,/INDEPENDENT_FIXTURE_REVIEW/);
+     assert.equal(feedbackEvents.filter(e=>e.status==='delivered').length,0,'delivery is not credited until HTTP acceptance');
+   }else assert.ok(n<=2,'no extra retrieval inference is required');
+   json(response,reply(n===3?'Correct result.':'Draft result.'));
+ });
+ await f.runtime.saveProvider({id:'feedback',type,baseUrl:f.baseUrl,apiKey:'fixture-key',models:[{id:'fixture',contextWindowTokens:65536,maxOutputTokens:4096}]});
+ const result=await f.runtime.runAgent({cwd:f.cwd,model:'feedback::fixture',prompt:input,dynamicTools:[OUTCOME_FEEDBACK_TOOL],onToolCall:()=>{throw Error('Unexpected worker retrieval');},
+   onHostReviewFeedback:(call,context)=>{context.signal.throwIfAborted();return review.readOutcomeFeedback(call,{hostInitiated:true});},
+   onToolResultDelivered:event=>{deliveries.push(event);review.delivered(event);},
+   onBeforeFinal:candidate=>review.beforeFinal(candidate),onEvent:event=>events.push(event)});
+ assert.equal(result.output,'Correct result.');assert.equal(f.requests.length,3);assert.equal(assessments.length,2);
+ assert.equal(deliveries.length,1);assert.equal(deliveries[0].origin,'host-initiated-read');
+ assert.deepEqual(feedbackEvents.map(event=>event.status),['available','returned','delivered']);
+ assert.deepEqual(assessments.map(req=>req.evidence.records.length),[0,0]);
+ assert.equal(assessments[0].evidenceFingerprint,assessments[1].evidenceFingerprint);
+ assert.ok(events.some(e=>e.type==='host.review-feedback'&&e.origin==='host-initiated-read'));
+ assert.ok(!events.some(e=>e.type==='item'&&e.item?.type==='dynamicToolCall'),'no fictitious worker tool activity');
+ const saved=JSON.parse(await readFile(path.join(f.dataDir,'provider-threads',result.threadId+'.json'),'utf8'));
+ assert.equal(saved.hostReviewFeedback.length,1);assert.equal(saved.hostReviewFeedback[0].authority,'none');
+ assert.equal(saved.hostReviewFeedback[0].callId,deliveries[0].call.callId);
 });
