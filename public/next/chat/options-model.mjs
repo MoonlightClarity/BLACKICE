@@ -28,10 +28,20 @@ export function resolvedDefaultModel(status={}) {
   const label=name?'Default · '+name:status.defaultModelInitializing?'Default · resolving…':'Default · not configured';
   return {id:saved,name,label,available:status.defaultModelAvailable!==false};
 }
+function effectiveOptions(status, raw) {
+  const options = normalizeChatOptions(raw);
+  const id = options.model === 'default' ? status.defaultModel : options.model;
+  const model = status.models?.find(row => row.id === id);
+  if (model?.providerId === 'google-account' && model.supportsReasoningSelection === false) {
+    options.effort = 'default';
+    options.serviceTier = 'default';
+  }
+  return options;
+}
 export function chatOptionChoices(status={},raw={}){
-  const selected=normalizeChatOptions(raw);
+  const selected=effectiveOptions(status,raw);
   const defaultInfo=resolvedDefaultModel(status),localDefault=status.localDefaultModelStatus;
-  const isRetired=id=>/^(?:antigravity|qwen_code)::/.test(id||'');
+  const isRetired=id=>/^(?:antigravity|qwen_code)::/.test(id||'') || (id?.startsWith('mistral-vibe::') && !status.providers?.some(p=>p.id==='mistral-vibe'));
   const models=[{id:'default',label:defaultInfo.label,disabled:defaultInfo.connectionRemoved===true}];
   for(const item of status.models||[]){
     const id=item?.id||item?.model;
@@ -44,7 +54,7 @@ export function chatOptionChoices(status={},raw={}){
   if(selected.model!=='default'&&!models.some(item=>item.id===selected.model)){
     const old=isRetired(selected.model),removed=missingApiModelConnection(status,selected.model);
     const removedLocal=(status.providers||[]).some(provider=>['llamacpp','ollama','lmstudio'].includes(provider.preset)&&selected.model.startsWith(provider.id+'::'));
-    const provider=selected.model.startsWith('antigravity::')?'Antigravity':selected.model.startsWith('qwen_code::')?'Qwen Code':'';
+    const provider=selected.model.startsWith('antigravity::')?'Antigravity':selected.model.startsWith('qwen_code::')?'Qwen Code':selected.model.startsWith('mistral-vibe::')?'Mistral Vibe Code':'';
     // A selected *historical* model is retained in the control for an exact
     // label, but is never offered as a new selectable model.
     models.push({id:selected.model,label:old
@@ -62,7 +72,7 @@ export function chatOptionChoices(status={},raw={}){
 }
 export function validateChatOptions(status={},raw={}){
   assertExecutablePlanningMode(raw?.planningExecutionMode);
-  const selection=normalizeChatOptions(raw);
+  const selection=effectiveOptions(status,raw);
   if(selection.model===UNKNOWN_CHAT_MODEL)throw Error('This chat has no saved model evidence. Choose a model to continue.');
   const route=selection.model==='default'?status.defaultModel:selection.model;
   if(missingApiModelConnection(status,route))throw Error('The API connection was removed. Choose another model.');

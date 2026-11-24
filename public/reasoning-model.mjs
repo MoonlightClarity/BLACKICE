@@ -18,6 +18,8 @@ export function reasoningSupport(status = {}, selection = 'default', effort = 'd
   return supported.includes(effort) ? {available:true,verified:true,error:''} : {available:false,verified:true,error:`${model.displayName || model.id || model.model} does not offer ${reasoningLabel(effort)} reasoning. Choose another level or model.`};
 }
 export function reasoningChoices(status = {}, selection = 'default', selected = 'default') {
+  const fixed = reasoningModel(status,selection)?.fixedEffort;
+  if (fixed && reasoningModel(status,selection)?.providerId === 'google-account') return [{value:'default',label:reasoningLabel(fixed)+' (selected model)',available:true,verified:true,error:''}];
   if (!reasoningSelectionSupported(status, selection)) return [{ value: 'default', label: 'Model default', available: true, verified: true, error: '' }];
   const model=reasoningModel(status,selection),advertised=(model?.supportedReasoningEfforts || []).map(item=>typeof item==='string'?item:item.reasoningEffort).filter(value=>REASONING_LEVELS.includes(value));
   const levels=advertised.length?advertised:REASONING_LEVELS;

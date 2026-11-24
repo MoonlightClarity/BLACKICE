@@ -53,7 +53,6 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
   const available=model=>Boolean(model)&&!localReason(model)&&model.disabled!==true&&model.available!==false;
   const canEnable=model=>!localReason(model)&&!model?.historical&&typeof onEnableProvider==='function'&&Boolean(readyDisabledProvider(status,model?.id));
   const setupProviders=()=>typeof onSetupProvider==='function'?[
-    ...(status.subscriptionProviders||[]).filter(provider=>provider?.id==='mistral-vibe'&&provider.type==='subscription-cli'&&!hiddenProviders().includes(provider.id)&&(provider.authenticated!==true||provider.available!==true||!provider.models?.length)),
     ...(status.localModelProfile?.available&&status.localModelProfile.offerSetup&&!hiddenProviders().includes(status.localModelProfile.providerId||'local_llamacpp')?[{id:'local',name:'MiniCPM for Local',localSetup:true}]:[]),
   ]:[];
   async function setupProvider(id){

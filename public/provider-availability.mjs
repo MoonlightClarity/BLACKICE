@@ -34,6 +34,6 @@ export function missingApiModelConnection(status, modelId) {
   const delimiter = modelId.indexOf('::');
   if (delimiter < 1) return false;
   const id = modelId.slice(0, delimiter);
-  if (['codex', 'mistral-vibe', 'antigravity', 'qwen_code'].includes(id)) return false;
+  if (['codex', 'google-account', 'mistral-vibe', 'antigravity', 'qwen_code'].includes(id)) return false;
   return !status.providers.some(provider => provider.id === id);
 }

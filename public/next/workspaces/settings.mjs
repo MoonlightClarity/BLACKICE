@@ -175,7 +175,7 @@ export function createSettingsWorkspace({mount,api,events,getStatus,notify=()=>{
     if(active&&section===name&&token===sectionRevision){panel.instance?.updateStatus?.(status);panel.instance?.enter?.();}
   }
   async function openModelProvider(id){
-    if(id!=='mistral-vibe'||destroyed||!active)return;
+    if(id!=='local'||destroyed||!active)return;
     await selectSection('models');
     if(active&&!destroyed&&section==='models')panels.get('models')?.instance?.focusProvider?.(id);
   }

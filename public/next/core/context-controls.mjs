@@ -9,7 +9,7 @@ const presets=new Set(['model','extended','custom','900k']);
 const compactionStates=new Set(['running','compacted','skipped','failed']);
 const bounds={outputReserveTokens:[256,Number.MAX_SAFE_INTEGER],headroomTokens:[128,Number.MAX_SAFE_INTEGER],compactAtTokens:[256,Number.MAX_SAFE_INTEGER],keepRecentTokens:[256,Number.MAX_SAFE_INTEGER]};
 const fieldLabels={outputReserveTokens:'Output reserve',headroomTokens:'Safety headroom',compactAtTokens:'Compression trigger',keepRecentTokens:'Recent context to keep'};
-const nativeContextReason='Mistral Vibe Code manages context automatically. Manual compression and custom context settings are unavailable; saved history is preserved.';
+const nativeContextReason='The native client manages context automatically. Manual compression and custom context settings are unavailable; saved history is preserved.';
 const unsupportedNativeContext=value=>value.preset!=='model'||value.autoCompact!==true||Object.keys(bounds).some(key=>value[key]!==undefined);
 
 /** The catalog describes capacity; a recorded context snapshot describes one turn. */
@@ -17,7 +17,7 @@ export function contextModelInfo(status={},selection='default'){
   const selected=selection==='default'?status.defaultModel:selection==='codex'?(status.codex?.defaultModel||status.codex?.models?.find(model=>model.isDefault)?.model||status.models?.find(model=>model.isDefault&&!String(model.id||model.model).includes('::'))?.model):selection;
   const id=typeof selected==='string'?selected:'';
   const model=[...(status.models||[]),...(status.codex?.models||[])].find(item=>(item.id||item.model)===id)||{};
-  const automaticOnly=model.providerType==='subscription-cli'&&model.providerId==='mistral-vibe'||!model.providerType&&id.startsWith('mistral-vibe::')&&!(status.providers||[]).some(provider=>provider.id==='mistral-vibe');
+  const automaticOnly=model.providerId==='google-account'&&model.providerType==='subscription-cli'||model.providerType==='subscription-cli'&&model.providerId==='mistral-vibe'||!model.providerType&&id.startsWith('mistral-vibe::')&&!(status.providers||[]).some(provider=>provider.id==='mistral-vibe');
   const native=automaticOnly||(id?!id.includes('::'):!String(selection).includes('::'));
   const defaultWindow=model.contextWindowSource==='user-configured'&&positive(model.contextWindowTokens)?model.contextWindowTokens:positive(model.runtimeDefaultContextWindowTokens)||positive(model.contextWindowTokens);
   const maxWindow=automaticOnly?null:native?positive(model.maxContextWindowTokens):defaultWindow;

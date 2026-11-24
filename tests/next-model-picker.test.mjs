@@ -175,83 +175,14 @@ test('missing API credentials remain diagnosed without enabling a connection or 
 
 const vibeProvider=extra=>({id:'mistral-vibe',name:'Mistral Vibe Code',type:'subscription-cli',installed:true,authenticated:false,available:false,models:[],...extra});
 
-test('all three account catalog choices remain selectable with distinct model metadata and reasoning',async t=>{
-  // These exact public identities and reasoning lists come from the account
-  // catalog. Medium retains the already-saved alias proven by that catalog.
-  const reported=[
-    model('mistral-vibe::mistral-large-4-0',{displayName:'Mistral Large 4',providerType:'subscription-cli',supportsTools:true,inputModalities:['text','image'],supportedReasoningEfforts:[{reasoningEffort:'low'},{reasoningEffort:'medium'},{reasoningEffort:'high'}]}),
-    model('mistral-vibe::mistral-medium-3.5',{displayName:'Mistral Medium 3.5',providerType:'subscription-cli',supportsTools:true,inputModalities:['text','image'],supportedReasoningEfforts:[{reasoningEffort:'none'},{reasoningEffort:'high'}]}),
-    model('mistral-vibe::zai-glm-5-3-flash',{displayName:'GLM 5.3 Flash (Mistral Hosted)',providerType:'subscription-cli',supportsTools:true,inputModalities:['text','image'],supportedReasoningEfforts:[{reasoningEffort:'low'},{reasoningEffort:'high'},{reasoningEffort:'max'}]}),
-  ];
-  const provider=vibeProvider({authenticated:true,available:true,defaultModel:'mistral-large-4-0',models:reported.map(item=>({...item,id:item.id.slice('mistral-vibe::'.length)}))});
-  const status={models:reported,subscriptionProviders:[provider],defaultModel:'gpt-6-luna',defaultModelSelection:'gpt-6-luna'},before=structuredClone(status);
-  const f=fixture(t,{models:reported,selected:reported[1].id,subscriptionProviders:[provider],onSetupProvider:()=>assert.fail('Ready native catalog must not become setup.')});
-  f.update(status);await f.open();await f.query('Mistral');
-  assert.equal(f.groups().length,1);assert.match(f.groups()[0].querySelector('summary').textContent,/Mistral Vibe Code.*3 models/);
-  assert.deepEqual(new Set(f.rows().map(row=>row.dataset.modelValue)),new Set(reported.map(item=>item.id)));
-  assert.equal(f.rows().every(row=>row.disabled===false),true);
-  assert.equal(f.panel().querySelector('[data-model-more]'),null);assert.equal(f.panel().querySelector('[data-model-setup-provider]'),null);
-  assert.equal(f.select.value,'mistral-vibe::mistral-medium-3.5','A catalog refresh keeps the saved Medium alias even when the native default is Large.');assert.deepEqual(f.changes,[]);
-  const expectedEfforts=[['default','low','medium','high'],['default','none','high'],['default','low','high','max']];
-  for(let index=0;index<reported.length;index++){
-    const item=reported[index],choices=chatOptionChoices(status,{model:item.id});
-    assert.deepEqual(choices.models.filter(choice=>choice.id.startsWith('mistral-vibe::')).map(choice=>choice.id),reported.map(model=>model.id));
-    assert.equal(choices.models.find(choice=>choice.id===item.id).disabled,false);
-    assert.deepEqual(choices.efforts.map(choice=>choice.id),expectedEfforts[index]);
-    assert.equal(choices.efforts.every(choice=>choice.disabled===false&&choice.verified===true),true);
-    if(f.panel().hidden)await f.open();await f.query('Mistral');
-    const row=f.rows().find(row=>row.dataset.modelValue===item.id);await row.dispatch('click',{},true);
-    assert.equal(f.select.value,item.id);assert.equal(f.changes.at(-1),item.id);
-    assert.equal(f.trigger().querySelector('.next-model-picker-title').textContent,item.displayName);
-    assert.equal(f.trigger().querySelector('.next-model-picker-subtitle').textContent,'Mistral Vibe Code');
-  }
-  const unsupported=chatOptionChoices(status,{model:reported[1].id,effort:'max'}).efforts.find(choice=>choice.id==='max');
-  assert.equal(unsupported.disabled,true,'Medium does not inherit the hosted model’s reasoning choices.');
-  // Deliberately varied synthetic capabilities ensure availability is not
-  // filtered or inferred from tools, vision, or an absent reasoning control.
-  const varied=reported.map((item,index)=>index===0?{...item,supportsTools:false,inputModalities:['text']}:index===2?{...item,supportsReasoningSelection:false}:item);
-  assert.deepEqual(chatOptionChoices({...status,models:varied},{model:reported[2].id}).efforts.map(choice=>choice.id),['default']);
-  f.update({models:varied});await f.open();await f.query('Mistral');
-  assert.equal(f.rows().length,3);assert.equal(f.rows().every(row=>row.disabled===false),true);
-  f.update({...status,models:[...reported].reverse()});assert.equal(f.select.value,reported[2].id);
-  assert.deepEqual(f.changes,reported.map(item=>item.id));assert.deepEqual(status,before,'Selection and metadata paints do not mutate the default or catalog.');
-});
-
-
-
-test('Mistral setup is a keyboard reachable native connection action, never a model choice',async t=>{
-  const setup=[],f=fixture(t,{selected:'alpha::free-low',subscriptionProviders:[vibeProvider()],onSetupProvider:id=>setup.push(id)});
+test('Google account rows select exact variants and stale Mistral setup is absent',async t=>{
+  const id='google-account::gemini-3.8-flash-';
+  const rows=['high','medium','low'].map(level=>model(id+level,{providerId:'google-account',displayName:'Gemini '+level,providerType:'subscription-cli',supportsReasoningSelection:false,fixedEffort:level}));
+  const account={id:'google-account',name:'Google account',type:'subscription-cli',available:true,models:rows};
+  const f=fixture(t,{models:rows,selected:rows[0].id,subscriptionProviders:[account,vibeProvider()],onSetupProvider:()=>assert.fail('Retired setup action.')});
+  for(const item of rows){await f.open();await f.query('Gemini');const row=f.rows().find(r=>r.dataset.modelValue===item.id);assert.ok(row);await row.dispatch('click',{},true);assert.equal(f.select.value,item.id);}
   await f.open();await f.query('Mistral');
-  const action=f.panel().querySelector('[data-model-setup-provider="mistral-vibe"]');
-  assert.ok(action);assert.match(action.textContent,/Set up Mistral Vibe Code/);assert.match(action.textContent,/Native account connection/);
-  assert.deepEqual(f.rows(),[]);assert.equal(f.select.children.some(option=>option.value==='mistral-vibe'),false);
-  const search=f.panel().querySelector('input[type="search"]');search.focus();
-  await f.panel().dispatch('keydown',{key:'ArrowDown',target:search},true);assert.equal(f.document.activeElement,action);
-  await action.dispatch('click',{},true);assert.deepEqual(setup,['mistral-vibe']);
-  assert.equal(f.select.value,'alpha::free-low');assert.deepEqual(f.changes,[]);assert.equal(f.panel().hidden,true);
-});
-
-test('an authenticated Vibe catalog has exact selectable model identities and its native provider name',async t=>{
-  const exact=model('mistral-vibe::fixture/model-2026:exact',{displayName:'Fixture Vibe model'});
-  const f=fixture(t,{models:[exact],subscriptionProviders:[vibeProvider({authenticated:true,available:true,models:[{id:'fixture/model-2026:exact'}]})],onSetupProvider:()=>assert.fail('Connected model is not a setup action.')});
-  await f.open();await f.query('Mistral');
-  assert.equal(f.panel().querySelector('[data-model-setup-provider]'),null);
-  assert.match(f.groups()[0].querySelector('summary').textContent,/Mistral Vibe Code/);
-  assert.deepEqual(f.rows().map(row=>row.dataset.modelValue),[exact.id]);
-  await f.rows()[0].dispatch('click',{},true);
-  assert.equal(f.select.value,exact.id);assert.deepEqual(f.changes,[exact.id]);assert.equal(f.trigger().querySelector('.next-model-picker-subtitle').textContent,'Mistral Vibe Code');
-});
-
-test('native setup actions respect hidden providers and failed navigation preserves the saved model',async t=>{
-  const f=fixture(t,{selected:'alpha::free-low',hidden:['mistral-vibe'],subscriptionProviders:[vibeProvider()],onSetupProvider:()=>{throw Error('Settings could not open.');}});
-  await f.open();assert.equal(f.panel().querySelector('[data-model-setup-provider]'),null);
-  f.update({runtimeSettings:{hiddenModelProviders:[]}});await f.query('Mistral');
-  const action=f.panel().querySelector('[data-model-setup-provider]');action.focus();
-  f.update({subscriptionProviders:[vibeProvider({loginState:'waiting'})]});
-  assert.equal(f.document.activeElement.dataset.modelSetupProvider,'mistral-vibe');
-  await f.document.activeElement.dispatch('click',{},true);
-  assert.match(f.panel().querySelector('[role="status"]').textContent,/Settings could not open/);
-  assert.equal(f.panel().hidden,false);assert.equal(f.select.value,'alpha::free-low');assert.deepEqual(f.changes,[]);
+  assert.equal(f.panel().querySelector('[data-model-setup-provider="mistral-vibe"]'),null);
 });
 
 test('a deleted API does not appear as a raw-ID group, default or historical model label', async t => {

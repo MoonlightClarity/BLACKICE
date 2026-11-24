@@ -146,19 +146,15 @@ test('ordinary saved Codex without benchmark context keeps its native thread', a
 });
 
 for (const saved of [false, true]) {
-  test('ordinary ' + (saved ? 'saved' : 'fresh') + ' Vibe without benchmark context preserves native dispatch', async t => {
+  test('ordinary ' + (saved ? 'saved' : 'fresh') + ' retired Vibe without benchmark context prevents native dispatch', async t => {
     const h = await fixture(t);
     const { benchmarkTrace, ...base } = h.options;
     const options = {
       ...base, model: 'mistral-vibe::vibe-fixture', hostOnlyTools: false,
       ...(saved ? { threadId: 'vibe_existing' } : {}),
     };
-    const result = await h.runtime.runAgent(options);
-    assert.equal(result.output, 'stub Vibe result');
-    assert.deepEqual(counters(h), { codexDispatches: 0, codexPreflights: 0, vibeDispatches: 1, vibeSavedLookups: saved ? 1 : 0, httpDispatches: 0 });
-    assert.equal(h.vibe.runs[0].model, 'vibe-fixture', 'The native adapter receives the existing unprefixed model ID.');
-    assert.equal(h.vibe.runs[0].threadId, options.threadId);
-    assert.equal(Object.hasOwn(h.vibe.runs[0], 'benchmarkTrace'), false);
+    await assert.rejects(h.runtime.runAgent(options), /retired/);
+    assert.deepEqual(counters(h), {codexDispatches:0,codexPreflights:0,vibeDispatches:0,vibeSavedLookups:0,httpDispatches:0});
     assert.equal(fs.existsSync(h.directory), false);
   });
 }

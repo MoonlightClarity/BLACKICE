@@ -5,7 +5,6 @@ import { BROWSER_TOOL } from '../lib/browser.mjs';
 import { WORKSPACE_TOOL } from '../lib/workspace-tools.mjs';
 import path from 'node:path';
 import { CodexRuntime } from '../lib/codex.mjs';
-import { MistralVibeRuntime } from '../lib/mistral-vibe.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
 
 const tools = () => structuredClone([BROWSER_TOOL, WORKSPACE_TOOL]);
@@ -67,6 +66,6 @@ test('a later caller mutation changes its contract without changing the earlier 
 test('each real provider entry rejects catalog substitution before transport or process startup', async () => {
   const options = { prompt: 'Inspect the task.', cwd: path.resolve('.'), dynamicTools: [], providerExecutionContract: contract() };
   const noStartup = new Proxy({}, { get(_target, key) { throw new Error('Unexpected runtime access before contract validation: ' + String(key)); } });
-  for (const entry of [CodexRuntime.prototype._runAgent, MistralVibeRuntime.prototype.runAgent, ProviderRuntime.prototype.runAgent])
+  for (const entry of [CodexRuntime.prototype._runAgent, ProviderRuntime.prototype.runAgent])
     await assert.rejects(entry.call(noStartup, options), { code: 'PROVIDER_EXECUTION_CONTRACT_INVALID' });
 });

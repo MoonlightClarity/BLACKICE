@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { createVibeToolBridge } from '../lib/mistral-vibe-tools.mjs';
+import { createAccountToolBridge } from '../lib/account-acp-tools.mjs';
 
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -30,7 +30,7 @@ async function mcpClient(bridge) {
 }
 async function fixture(t, options = {}) {
   const events = [], calls = [];
-  const owner = await createVibeToolBridge({ tools: [tool], onToolCall: async call => { calls.push(call); return success('ok'); }, onEvent: event => events.push(event), ...options });
+  const owner = await createAccountToolBridge({ tools: [tool], onToolCall: async call => { calls.push(call); return success('ok'); }, onEvent: event => events.push(event), ...options });
   t.after(() => owner.close());
   const bridge = await mcpClient(owner);
   const catalog = (await rpc(bridge, 1, 'tools/list')).body.result.tools;
@@ -242,9 +242,9 @@ test('invalid, unknown and notification-only tool requests never call the handle
 
 test('an already cancelled owner and invalid tool catalogs fail before a listener is created', async () => {
   const controller = new AbortController(); controller.abort();
-  await assert.rejects(createVibeToolBridge({ signal: controller.signal }));
-  await assert.rejects(createVibeToolBridge({ tools: [tool, tool], onToolCall: async () => success('unused') }), { code: 'VIBE_TOOL_SCHEMA' });
-  await assert.rejects(createVibeToolBridge({ tools: [tool] }), { code: 'VIBE_TOOL_CALLBACK' });
+  await assert.rejects(createAccountToolBridge({ signal: controller.signal }));
+  await assert.rejects(createAccountToolBridge({ tools: [tool, tool], onToolCall: async () => success('unused') }), { code: 'VIBE_TOOL_SCHEMA' });
+  await assert.rejects(createAccountToolBridge({ tools: [tool] }), { code: 'VIBE_TOOL_CALLBACK' });
 });
 
 
@@ -311,7 +311,7 @@ test('MCP cancellation and DELETE are scoped to the owning session while real pe
 });
 
 test('active MCP sessions are bounded and deleting one releases its slot', async t => {
-  const bridge = await createVibeToolBridge();
+  const bridge = await createAccountToolBridge();
   t.after(() => bridge.close());
   const ids = [];
   for (let i = 0; i < 512; i++) {
