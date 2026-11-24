@@ -25,7 +25,6 @@ export function createClaudeConnectorSettings({ mount, api, notify = () => {} } 
   if (!mount || typeof api !== 'function') throw Error('Claude connector needs its settings mount and API.');
   let active = false, destroyed = false, fetching = false, busy = false;
   let current = null, error = '', receipt = '', confirmRevoke = null, timer = null;
-  let models = [], modelError = '';
   const selected = new Map();
 
   function saveSelections() {
@@ -49,12 +48,6 @@ export function createClaudeConnectorSettings({ mount, api, notify = () => {} } 
       : !available ? 'Unavailable' : grants.length ? 'Access approved; verify tools in the app' : requests.length ? 'Approval needed' : 'Not connected';
 
     mount.innerHTML = '<div class="next-stack claude-connector-settings">'
-      + '<section class="next-card"><h2>Claude account models</h2>'
-      + '<p class="next-help">Sign in through Claude Code to see the choices its model picker advertises. The signed-in Claude Code lookup is untested. A listed model may still have usage limits.</p><p class="next-help">Anthropic restricts third-party use of subscription credentials and says it may enforce those restrictions without notice. Whether it restricts this model lookup is unknown. <a href="https://code.claude.com/docs/en/legal-and-compliance" target="_blank" rel="noopener noreferrer">Read the Anthropic policy</a>.</p>'
-      + '<button type="button" data-claude-action="models"' + (busy ? ' disabled' : '') + '>Refresh account models</button>'
-      + (modelError ? '<p role="alert">' + escape(modelError) + '</p>' : '')
-      + (models.length ? '<ul>' + models.map(model => '<li>' + escape(model.name) + ' <code>' + escape(model.id) + '</code></li>').join('') + '</ul>' : '')
-      + '</section>'
       + '<section class="next-card"><h2>Claude connector</h2>'
       + '<p class="next-help">Claude has a separate connection. ChatGPT stays connected.</p>'
       + '<div class="next-row"><strong>Claude: ' + escape(status) + '</strong>'
@@ -109,16 +102,6 @@ export function createClaudeConnectorSettings({ mount, api, notify = () => {} } 
   async function execute(action, id = null, scopes = null) {
     if (busy || destroyed || !active) return;
     if (action === 'refresh') return refresh();
-    if (action === 'models') {
-      busy = true; models = []; modelError = ''; render();
-      try {
-        const result = await api('/api/providers/claude-account/models', 'POST', {}, { deadlineMs: 35000 });
-        if (!Array.isArray(result?.models) || !result.models.length) throw Error('Claude returned no account models.');
-        models = result.models;
-      } catch (failure) { modelError = failure.message || 'Unable to read Claude account models.'; }
-      finally { busy = false; render(); }
-      return;
-    }
     if (action === 'browser') {
       window.location.hash = '#browser';
       return;
