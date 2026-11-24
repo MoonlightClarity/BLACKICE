@@ -16,6 +16,24 @@ test('source suite uses current canonical opt-in classification rather than a hi
   assert.match(source,/skipDetails:skips\.map\(s=>\(\{\.\.\.s,assertionsRan:false\}\)\)/);
 });
 
+test('frozen MiniCPM benchmark skip requires exact absent-source disclosure and no assertions', () => {
+  const names = [
+    'Historical MiniCPM native-control benchmark requires original pinned 2026-11-20 snapshot',
+    'Historical MiniCPM execution-delivery benchmark requires original pinned 2026-11-20 snapshot',
+    'Historical MiniCPM execution-evidence benchmark requires original pinned 2026-11-20 snapshot',
+  ];
+  const reason = 'Historical frozen source absent; no benchmark assertions executed or credited.';
+  const skips = names.map(name => ({name,reason,assertionsRan:false}));
+  assert.deepEqual(classifySourceSkips(skips), {capability:[],unexpectedSkips:[]});
+  for (const item of [
+    {...skips[0],reason:'Benchmarks passed'},
+    {...skips[0],assertionsRan:true},
+    {...skips[0],name:skips[0].name+' (changed)'},
+    {...skips[0],reason:undefined},
+  ]) assert.deepEqual(classifySourceSkips([item]).unexpectedSkips,[item]);
+  assert.deepEqual(classifySourceSkips([skips[0],skips[0]]).unexpectedSkips,[skips[0],skips[0]]);
+});
+
 test('source skip classifier preserves exact Windows file-symlink capability evidence', () => {
   for(const [name,file] of [
     ['symlinked source is rejected where file symlink creation is available','tests/application-history.test.mjs'],
