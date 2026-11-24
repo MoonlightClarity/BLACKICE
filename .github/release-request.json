@@ -1,7 +1,7 @@
 {
     "format":  1,
     "version":  "2.40.81",
-    "publish":  false,
+    "publish":  true,
     "appFingerprint":  "41e13f7ea789d6795acc0360feae9345676e58595f8632cbb7ef0e570418340d",
     "sourceTestReceipt":  "verification/windows-source-publication-2.40.81.json"
 }
