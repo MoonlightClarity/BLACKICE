@@ -25,6 +25,7 @@ export function createGeminiConnectorSettings({ mount, api, notify = () => {} } 
   if (!mount || typeof api !== 'function') throw Error('Gemini connector needs its settings mount and API.');
   let active = false, destroyed = false, fetching = false, busy = false;
   let current = null, error = '', receipt = '', confirmRevoke = null, timer = null;
+  let models = [], modelError = '';
   const selected = new Map();
 
   function saveSelections() {
@@ -48,6 +49,12 @@ export function createGeminiConnectorSettings({ mount, api, notify = () => {} } 
       : !available ? 'Unavailable' : grants.length ? 'Access approved; verify tools in the app' : requests.length ? 'Approval needed' : 'Not connected';
 
     mount.innerHTML = '<div class="next-stack gemini-connector-settings">'
+      + '<section class="next-card"><h2>Gemini account models</h2>'
+      + '<p class="next-help">Sign in with Google in Gemini CLI to see its model choices.</p>'
+      + '<button type="button" data-gemini-action="models"' + (busy ? ' disabled' : '') + '>Refresh account models</button>'
+      + (modelError ? '<p role="alert">' + escape(modelError) + '</p>' : '')
+      + (models.length ? '<ul>' + models.map(model => '<li>' + escape(model.name) + ' <code>' + escape(model.id) + '</code></li>').join('') + '</ul>' : '')
+      + '</section>'
       + '<section class="next-card"><h2>Gemini connector</h2>'
       + '<p class="next-help">Gemini has a separate connection. ChatGPT stays connected.</p>'
       + '<div class="next-row"><strong>Google: ' + escape(status) + '</strong>'
@@ -102,6 +109,16 @@ export function createGeminiConnectorSettings({ mount, api, notify = () => {} } 
   async function execute(action, id = null, scopes = null) {
     if (busy || destroyed || !active) return;
     if (action === 'refresh') return refresh();
+    if (action === 'models') {
+      busy = true; models = []; modelError = ''; render();
+      try {
+        const result = await api('/api/providers/gemini-account/models', 'POST', {}, { deadlineMs: 35000 });
+        if (!Array.isArray(result?.models) || !result.models.length) throw Error('Gemini returned no account models.');
+        models = result.models;
+      } catch (failure) { modelError = failure.message || 'Unable to read Gemini account models.'; }
+      finally { busy = false; render(); }
+      return;
+    }
     if (action === 'browser') {
       window.location.hash = '#browser';
       return;
