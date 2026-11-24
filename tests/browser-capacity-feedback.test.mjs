@@ -82,7 +82,12 @@ test('limit errors preserve no-dispatch semantics and lead to usable tabs, navig
   assert.equal(rejected.success, false); assert.equal(rejected.code, 'BROWSER_TASK_TAB_LIMIT'); assert.equal(error.actionDispatched, false);
   assert.match(error.error, /tabs action on the attached browser inspection tool/); assert.doesNotMatch(error.error, /relay_browser|\{"action":/); assert.match(error.error, /navigate/); assert.match(error.error, /suspend/); assert.match(error.error, /finished.*owned/);
   assert.ok(error.error.length <= 1500, 'Recovery guidance stays within the existing bounded diagnostic size.');
-  assert.deepEqual(Object.keys(error).sort(), ['actionDispatched', 'code', 'error']); assert.doesNotMatch(JSON.stringify(error), /DO-NOT-ECHO|private-id/);
+  assert.deepEqual(error.recovery, { nextCall: {action:'tabs',browser:'relay'},
+    choose:'navigate an owned page, or suspend a finished owned page after checking its effects',
+    replayOriginal:false,automaticCleanup:false });
+  assert.deepEqual(error.taskCapacity,{live:3,limit:3,remaining:0});
+  assert.deepEqual(Object.keys(error).sort(), ['actionDispatched', 'code', 'error', 'recovery', 'taskCapacity']);
+  assert.doesNotMatch(JSON.stringify(error), /DO-NOT-ECHO|private-id/);
   assert.equal(f.tabs.some(tab => tab.url === 'https://example.invalid/not-opened'), false);
   const example = { action: "tabs" };
   const inventory = parsed(await f.call(example)); assert.deepEqual(inventory.tabs.map(tab => tab.tabId), ['saved-owned', 'opened-1', 'opened-2']);

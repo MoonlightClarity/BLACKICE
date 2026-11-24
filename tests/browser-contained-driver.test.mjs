@@ -2486,7 +2486,7 @@ test('contained driver rejects absent fill text before recovery, focus or input 
   const elements = [];
   driver.element = async (_tab, args, action) => { elements.push(action); return { result: action === 'fill' ? { needsTrustedTextInput: true } : { focused: true } }; };
   const target = { action: 'fill', tabId: tab.id, ref: 'name-field' }, before = windows[0].protocol.length, pinned = tab.userPinned;
-  for (const payload of [{}, { value: 'Sample Operator' }, { text: '', value: 'Sample Operator' }, { text: 'Intended Operator', value: 'Different Operator' }, { text: null }, { text: 0 }, { text: false }, { text: [] }, { text: {} }]) {
+  for (const payload of [{}, { value: 42 }, { value: null }, { text: '', value: 'Sample Operator' }, { text: 'Intended Operator', value: 'Different Operator' }, { text: null }, { text: 0 }, { text: false }, { text: [] }, { text: {} }]) {
     await assert.rejects(driver.perform({ ...target, ...payload }, { source: 'user', recoveryInput: () => assert.fail('Invalid fill must fail before recovery or page preparation') }), { code: 'BROWSER_VALIDATION', actionDispatched: false, inputDispatched: false });
     assert.equal(field, 'Existing Operator'); assert.equal(tab.userPinned, pinned);
     assert.equal(windows[0].protocol.length, before); assert.deepEqual(elements, []);
@@ -2497,6 +2497,11 @@ test('contained driver rejects absent fill text before recovery, focus or input 
   assert.equal(field, ''); assert.equal(cleared.receipt.filled, true); assert.equal(cleared.receipt.characters, 0);
   assert.deepEqual(elements, ['fill', 'fill-ready', 'fill', 'fill-ready']);
   assert.equal(windows[0].protocol.filter(call => call.method === 'Input.dispatchKeyEvent' && call.params.key === 'Backspace').length, 2);
+  const aliased = await driver.perform({ ...target, value: 'Evidence from context' });
+  assert.equal(field, 'Evidence from context', 'One unambiguous spelling repair must reach the native field.');
+  assert.equal(aliased.receipt.filled, true);
+  assert.equal(windows[0].protocol.filter(call => call.method === 'Input.insertText').at(-1).params.text, 'Evidence from context');
+  assert.deepEqual(elements.slice(-2), ['fill', 'fill-ready']);
 });
 
 test('owner recovery reaches native fill-ready without rejecting its own focus preparation', async t => {

@@ -8,6 +8,27 @@ import {ConversationGoals, GOAL_TOOL} from '../lib/conversation-goals.mjs';
 import {createProviderExecutionContract} from '../lib/provider-execution-contract.mjs';
 
 const call = (name, args) => ({name, arguments: args});
+
+test('an uncertain external effect exposes its exact receipt identity without replaying or assuming an outcome', () => {
+  const navigation = call('relay_browser', {action:'navigate',tabId:'owned-tab',url:'https://example.test/portal'});
+  const signature = inFlightEffectSignature(navigation);
+  const pending = {id:'receipt-identified',signature,at:'2026-11-24T10:30:00.000Z',kind:'uncertain_external_effect',
+    code:'BROWSER_NAVIGATION_FAILED',resolutions:[{outcome:'unknown'}]};
+  const refusal=detectUnknownEffectReplay([pending],navigation);
+  assert.equal(refusal.code,'GOAL_EFFECT_UNRESOLVED');
+  assert.equal(refusal.actionDispatched,false);
+  assert.deepEqual(refusal.reconcileIdentity,{receiptId:'receipt-identified',signature,
+    observedAt:pending.at,expectedResolutionCount:1});
+  assert.match(refusal.guidance,/relay_goal effects/);
+  assert.match(refusal.guidance,/expectedResolutionCount/);
+  assert.equal(detectUnknownEffectReplay([pending],call('relay_browser',{action:'read',tabId:'owned-tab'})),null);
+  assert.equal(detectUnknownEffectReplay([pending],call('relay_browser',{action:'navigate',tabId:'owned-tab',url:'https://example.test/other'})),null);
+  const legacy={...pending,at:undefined};
+  const caution=detectUnknownEffectReplay([legacy],navigation);
+  assert.equal(caution.code,'GOAL_EFFECT_UNRESOLVED');
+  assert.equal(caution.reconcileIdentity,undefined,'A missing saved identity must not be fabricated.');
+});
+
 const result = (success, code = null, data = null) => ({
   success, ...(code ? {code} : {}), contentItems: data == null ? [] : [{type:'inputText',text:JSON.stringify(data)}],
 });
