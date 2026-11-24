@@ -337,3 +337,79 @@ test('lost append receipt reconciles through exact stat without adding the chunk
   assert.equal(next.success,true,JSON.stringify(next));
   assert.equal(await readFile(target,'utf8'),original+chunk+'final section\n');
 });
+
+
+test('stale patch precondition is absent, not a cross-task reservation',async t=>{
+  const f=await fixture(t);
+  const {createWorkspaceToolHandler}=await import('../lib/workspace-tools.mjs');
+  const {FilePatchStore}=await import('../lib/file-patches.mjs');
+  const patchStore=new FilePatchStore({dataDir:f.dataDir});t.after(()=>patchStore.close());
+  const target=path.join(f.cwd,'history.json');
+  await writeFile(target,'{"stage":1}');
+  const raw=createWorkspaceToolHandler({cwd:f.cwd,patchStore});
+  const guard=f.guard('old-search'),run=guard.wrap(raw);
+  const rejected=await run({name:'relay_workspace',callId:'stale-patch',arguments:{action:'patch',path:target,oldText:'1',newText:'2',expectedHash:'0'.repeat(64)}});
+  assert.equal(rejected.success,false);
+  assert.equal(JSON.parse(rejected.contentItems[0].text).actionDispatched,false);
+  assert.equal((await guard.records()).find(row=>row.callId==='stale-patch').state,'absent');
+  assert.equal(await readFile(target,'utf8'),'{"stage":1}');
+  const next=f.guard('new-search').wrap(raw);
+  const current=JSON.parse((await next({name:'relay_workspace',callId:'read-current',arguments:{action:'read',path:target}})).contentItems[0].text);
+  const changed=await next({name:'relay_workspace',callId:'valid-patch',arguments:{action:'patch',path:target,oldText:'1',newText:'3',expectedHash:current.sha256}});
+  assert.equal(changed.success,true,JSON.stringify(changed));
+  assert.equal(await readFile(target,'utf8'),'{"stage":3}');
+});
+
+for(const kind of ['exact','interrupted','different-error','invalid-digest'])test('historical patch rejection recovery: '+kind,async t=>{
+  const f=await fixture(t);
+  const {createWorkspaceToolHandler}=await import('../lib/workspace-tools.mjs');
+  const {FilePatchStore}=await import('../lib/file-patches.mjs');
+  const patchStore=new FilePatchStore({dataDir:f.dataDir});t.after(()=>patchStore.close());
+  const target=path.join(f.cwd,'history.json');
+  await writeFile(target,'{"stage":1}');
+  const raw=createWorkspaceToolHandler({cwd:f.cwd,patchStore});
+  const guard=f.guard('old-search');
+  // Reproduce the earlier adapter's actual returned failure, without the new
+  // pre-dispatch flag, and allow the production guard to persist the receipt.
+  const legacy=async(call,context)=>{
+    const result=await raw(call,context);
+    assert.equal(result.success,false);
+    const body=JSON.parse(result.contentItems[0].text);
+    delete body.actionDispatched;
+    if(kind==='different-error')body.error='A different patch conflict';
+    return {...result,contentItems:[{type:'inputText',text:JSON.stringify(body)}]};
+  };
+  legacy.describeOperation=raw.describeOperation;
+  legacy.operationAdapter=raw.operationAdapter;
+  const call={name:'relay_workspace',callId:'old-patch',arguments:{action:'patch',path:target,oldText:'1',newText:'2',expectedHash:'0'.repeat(64)}};
+  const old=await guard.wrap(legacy)(call);
+  assert.equal(old.success,false);
+  const journalFile=f.store.file(guard.scopeId)+'.effects';
+  const journal=JSON.parse(await readFile(journalFile,'utf8'));
+  const prior=journal.records.find(row=>row.callId==='old-patch');
+  assert.equal(prior.state,'unknown');
+  const originalResult=JSON.stringify(prior.result);
+  if(kind==='interrupted')prior.deliveryState='interrupted';
+  if(kind==='invalid-digest')prior.resultDigest='0'.repeat(64);
+  await writeFile(journalFile,JSON.stringify(journal));
+  const nextGuard=f.guard('new-search',await f.makeStore());
+  const next=nextGuard.wrap(raw);
+  const read=await next({name:'relay_workspace',callId:'new-read',arguments:{action:'read',path:target}});
+  const current=JSON.parse(read.contentItems[0].text);
+  const changed=await next({name:'relay_workspace',callId:'new-patch',arguments:{action:'patch',path:target,oldText:'1',newText:'3',expectedHash:current.sha256}});
+  const recovered=(await nextGuard.records()).find(row=>row.operationId===prior.operationId);
+  const stored=(JSON.parse(await readFile(journalFile,'utf8'))).records.find(row=>row.operationId===prior.operationId);
+  assert.equal(JSON.stringify(stored.result),originalResult,'original receipt remains intact');
+  if(kind==='exact'){
+    assert.equal(changed.success,true,JSON.stringify(changed));
+    assert.equal(recovered.state,'absent');
+    assert.equal(recovered.evidence.at(-1).validation.source,'legacy-native-patch-precondition');
+    assert.equal(recovered.deliveryState,'returned');
+    assert.equal(await readFile(target,'utf8'),'{"stage":3}');
+  }else{
+    assert.equal(changed.success,false);
+    assert.equal(JSON.parse(changed.contentItems[0].text).code,'OPERATIONAL_EFFECT_UNCERTAIN');
+    assert.equal(recovered.state,'unknown');
+    assert.equal(await readFile(target,'utf8'),'{"stage":1}');
+  }
+});

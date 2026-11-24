@@ -312,7 +312,23 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
     return { verified: true };
   }
   if (action === 'prepare') {
-    el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+    // A visible menu option, autocomplete result or similar transient control
+    // can disappear merely because centering it scrolls the document. If its
+    // center already hits the observed node, use nearest scrolling (also
+    // retains native ancestor/iframe visibility handling). Offscreen or
+    // covered targets retain the original centering and final hit checks.
+    let alignment = 'center';
+    try {
+      const before = el.getBoundingClientRect();
+      const x = before.x + before.width / 2, y = before.y + before.height / 2;
+      if (before.width > 0 && before.height > 0 && x >= 0 && y >= 0 && x < innerWidth && y < innerHeight) {
+        const hit = document.elementFromPoint(x, y);
+        let host = el, shadowMatch = false;
+        while (host?.getRootNode()?.host) { host = host.getRootNode().host; if (host === hit) shadowMatch = true; }
+        if (hit && (hit === el || el.contains(hit) || shadowMatch)) alignment = 'nearest';
+      }
+    } catch { /* Preserve the established preparation path and its error handling. */ }
+    el.scrollIntoView({ block: alignment, inline: alignment, behavior: 'instant' });
     const r = el.getBoundingClientRect();
     const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     let host = el, shadowMatch = false;

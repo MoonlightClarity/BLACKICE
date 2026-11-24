@@ -431,6 +431,7 @@ test('a detached renderer ref preserves its message across a boundary that loses
 
 async function goalPointerFixture(t, { covered = true, inputError, embeddedCandidates, frameOwnerError } = {}) {
   let ref, scrolls = 0, captures = 0, overlay = covered, candidates = embeddedCandidates;
+  const scrollAlignments = [];
   const childURL = 'https://identity.example.test/control', quad = [150, 80, 450, 80, 450, 230, 150, 230];
   const childViewport = { width: 300, height: 150 };
   const f = await fixture(t, { command: async (method, params, window, sessionId) => {
@@ -463,7 +464,7 @@ async function goalPointerFixture(t, { covered = true, inputError, embeddedCandi
     getAttribute: name => name === 'aria-label' ? 'Continue' : null,
     getBoundingClientRect: () => ({ x: 10, y: 10, width: 100, height: 20 }),
     getRootNode: () => document, contains: other => other === control, closest: () => null,
-    scrollIntoView: () => { scrolls++; },
+    scrollIntoView: options => { scrolls++; scrollAlignments.push(options); },
   };
   const covering = { contains: () => false };
   const document = {
@@ -505,7 +506,7 @@ async function goalPointerFixture(t, { covered = true, inputError, embeddedCandi
   const original = { name: 'relay_browser', arguments: { action: 'click', tabId: tab.id, ref,
     expectedDocumentId: first.documentId, expectedUrl: first.url } };
   return { ...f, tab, control, conversations, run, wrapped, observe, original,
-    scrolls: () => scrolls, captures: () => captures, uncover: () => { overlay = false; }, resolveFrame: () => { candidates = 1; } };
+    scrolls: () => scrolls, scrollAlignments, captures: () => captures, uncover: () => { overlay = false; }, resolveFrame: () => { candidates = 1; } };
 }
 
 for (const candidates of [0, 2]) for (const action of ['click', 'hover']) {
@@ -3291,4 +3292,17 @@ test('input binding diagnostics distinguish bad shape, URL, obsolete document an
   assert.ok(tab.revision>before);
   assert.equal(elementCalls,0);
   assert.equal(windows[0].protocol.filter(call=>call.method.startsWith('Input.')).length,0);
+});
+
+
+test('pointer preparation avoids unnecessary centering for a currently visible control but preserves covered-target handling',async t=>{
+  const visible=await goalPointerFixture(t,{covered:false});
+  const clicked=await visible.wrapped(visible.original);
+  assert.equal(clicked.success,true,JSON.stringify(clicked));
+  assert.deepEqual(JSON.parse(JSON.stringify(visible.scrollAlignments)),[{block:'nearest',inline:'nearest',behavior:'instant'}]);
+  const covered=await goalPointerFixture(t);
+  const denied=await covered.wrapped(covered.original);
+  assert.equal(denied.success,false);
+  assert.equal(denied.code,'BROWSER_TARGET_COVERED');
+  assert.deepEqual(JSON.parse(JSON.stringify(covered.scrollAlignments)),[{block:'center',inline:'center',behavior:'instant'}]);
 });
