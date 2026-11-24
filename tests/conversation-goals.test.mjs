@@ -49,6 +49,8 @@ for(const isolatedHistory of [false,true])for(const remote of [false,true])test(
   const {engine,goals,conversations,dataDir,runtime}=await fixture(t,async(options,n)=>{
     const run=[...engine.runs.values()].at(-1);
     if(n===3){
+      assert.doesNotMatch(options.prompt,/ANTI-OVERALIGNMENT \(advisory execution method/,
+        'An unrelated non-Goal chat turn must not inherit a Goal-only method.');
       assert.doesNotMatch(options.prompt,/JOB SEARCH \(advisory execution method/);
       assert.equal(goals.skillObjectiveForDispatch(run),null);
       options.onPromptAccepted(options.prompt);
@@ -134,6 +136,12 @@ test('Goal successor uses its immutable bound objective for methods even when mu
   let engine,goals,seen=0,lookupCalls=0;
   const fixtureState=await fixture(t,async(options,n)=>{
     const run=[...engine.runs.values()].at(-1);
+    if(n===1){
+      assert.ok(run.goal && !run.goalDispatch, 'First provider turn must be the initial admitted Goal.');
+      assert.match(options.prompt,/JOB SEARCH \(advisory execution method; not permission\)/);
+      assert.match(options.prompt,/ANTI-OVERALIGNMENT \(advisory execution method; not permission\)/,
+        'An initial operational Goal must receive generic agency guidance, not only its successor.');
+    }
     if(n===2){
       seen++;
       assert.ok(run.parentRunId,'The inspected provider call must be a Goal successor, not the original run.');
@@ -183,6 +191,12 @@ test('an unrelated factual Goal also delivers generic delegated-agency guidance 
   let engine,goals,seen=0;
   const fixtureState=await fixture(t,async(options,n)=>{
     const run=[...engine.runs.values()].at(-1);
+    if(n===1){
+      assert.ok(run.goal && !run.goalDispatch);
+      assert.match(options.prompt,/ANTI-OVERALIGNMENT \(advisory execution method; not permission\)/,
+        'The initial unrelated Goal must receive shared agency guidance.');
+      assert.doesNotMatch(options.prompt,/JOB SEARCH \(advisory execution method/);
+    }
     if(n===2){
       seen++;
       assert.ok(run.parentRunId,'This must inspect an actual Goal successor turn.');
