@@ -1,7 +1,7 @@
 {
     "format":  1,
-    "version":  "2.40.76",
+    "version":  "2.40.80",
     "publish":  true,
-    "appFingerprint":  "85993755f05a7d8f64cc16e7ffe894d44187892f5cadeee4d73ed3d485aac5b9",
-    "sourceTestReceipt":  "verification/integration-source-publication-2.40.76.json"
+    "appFingerprint":  "20e4479a0cbd1752eac020bf890f2b82d9b6c558fa8df9f2c6f74190b7b18e98",
+    "sourceTestReceipt":  "verification/windows-source-publication-2.40.80.json"
 }
