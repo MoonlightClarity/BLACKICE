@@ -272,3 +272,30 @@ test('review distinguishes authorship from transport role and retains owner cons
   assert.equal(start.authorityIdentities.length,5,'Audit preserves all delivered instruction sources.');
   assert.ok(start.authorityIdentities.some(s=>s.origin==='bundled-skill'&&s.reviewAudience==='worker'));
 });
+
+
+test('affirmative ordinary review cannot use the request alone as proof of an admitted tool result',async t=>{
+  const receipt={...row('current-read',{text:'Observed source content.'}),callId:'current-read'};
+  const f=await fixture(t,(options,index)=>{
+    if(index===1)return response({summary:'The source was inspected.',evidenceRefs:['user-request']});
+    assert.match(options.prompt,/missingResultCitation/);
+    assert.match(options.prompt,/Correct the review using the existing receipts/);
+    return response({summary:'The admitted receipt records the observation.',evidenceRefs:['evidence-0001']});
+  },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+  const result=await f.reviewer.assess(request('Report the observed source content.',[receipt]));
+  assert.equal(result.decision,'respond');
+  assert.deepEqual(result.evidenceRefs,['current-read']);
+  assert.equal(f.calls.length,2);
+  assert.ok(f.events.some(event=>event.status==='repairing'&&event.validation?.missingResultCitation));
+});
+
+test('an affirmative assessment with unresolved blockers is repaired rather than accepted',async t=>{
+  const f=await fixture(t,(options,index)=>{
+    if(index===1)return response({blockers:[{scope:'current result',evidenceRefs:['user-request'],whyNotRepairable:'Still missing'}]});
+    assert.match(options.prompt,/respond requires remaining/);
+    assert.match(options.prompt,/blockers: \[\]/);
+    return response();
+  });
+  assert.equal((await f.reviewer.assess(request('Answer the supplied question.'))).decision,'respond');
+  assert.equal(f.calls.length,2);
+});
