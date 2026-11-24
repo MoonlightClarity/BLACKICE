@@ -156,3 +156,15 @@ test('API/local tools omit the attachment reader until the current task has an a
   assert.equal(f.runtime.calls[1].threadId,undefined);
   assert.equal(f.runtime.calls.length,2);
 });
+
+test('interpretive assessment receives the effective analytic method while plain retrieval does not', async t => {
+  const {readReleaseSkill} = await import('../lib/release-skills.mjs');
+  const body = readReleaseSkill('builtin-structured-analysis').content.trim();
+  const f = await fixture(t, async options => ({output:'Fixture response.', threadId:'native-attachment-thread'}));
+  f.attachments.entries.get(ids.pdf).name = 'candidate-resume.pdf';
+  for (const [task, expected] of [['analyze the following resume as employer', true], ['Read page one of the attached PDF.', false]]) {
+    const run = await f.settled(f.engine.startRun({workflow:f.workflow, input:{task, attachmentIds:[ids.pdf]}}).id);
+    completed(run);
+    assert.equal(f.runtime.calls.at(-1).prompt.includes(body), expected);
+  }
+});
