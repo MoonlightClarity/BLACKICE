@@ -34,6 +34,8 @@ Use the current Directory action when Directory is active. Record observations t
 5. Repair the observed defect and rerun the affected check. Keep the required behavior fixed.
 6. Check the affected caller or combined workflow after the small changes are composed. For a prose-only edit, inspect the final wording instead of inventing a test.
 
+For multi-module stateful code, check critical boundaries against the **written contract**: invalid input before mutation; required collaborator methods at construction/entry rather than a late partial-effect failure; restored-state uniqueness and order; and failure/retry paths. When an external outcome is uncertain, a success-implying operation must reject rather than return an apparently normal result; only observed reconciliation may resolve it. Check an adjacent valid case and the absence of unintended effects. Use only error-code names specified by the public contract; do not guess hidden labels or expand this into a mandatory review gate.
+
 When a tool response is lost, inspect its existing job and file state before another write. A pending job is still pending. Continue independent work while resolving it.
 
 ## Finish with the actual result
