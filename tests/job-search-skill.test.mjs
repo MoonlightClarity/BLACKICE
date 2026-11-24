@@ -315,7 +315,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
   assert.equal(allRequests.length-allOffset,expectedCalls+1,'all provider calls are counted');
   assert.deepEqual(before[requestOffset],[],'transport has not yet accepted the main prompt');
   if(expectedCalls===2)assert.deepEqual(before[requestOffset+1],run.skillLoadReceipts,'the review follows accepted main-turn skill delivery');
-  return {prompt:JSON.stringify(prompts[requestOffset]),requests:allRequests.slice(allOffset).map(request=>request.messages),input:run.input,receipts:run.skillLoadReceipts||[],events:run.events.map(event=>event.data)};
+  return {prompt:JSON.stringify(prompts[requestOffset]),requests:allRequests.slice(allOffset).map(request=>request.messages),workerRequests:workerRequests.slice(requestOffset).map(request=>request.messages),assessmentRequests:assessmentRequests.slice(assessmentOffset).map(request=>request.messages),input:run.input,receipts:run.skillLoadReceipts||[],events:run.events.map(event=>event.data)};
  };
  const alignmentId='builtin-task-grounding';
  const alignmentHeading='ANTI-OVERALIGNMENT (advisory execution method; not permission)';
@@ -325,10 +325,18 @@ test('actual Compatible main-turn transport submits the job skill selectively an
   const completionId='library-what-makes-done',completionSkill=await catalog.detail({id:completionId});
   const assertSharedConfirmationDelivery=record=>{
    assert.ok(record.receipts.some(receipt=>receipt.skillId===completionId&&receipt.source==='bundled'&&receipt.sourceRevision===completionSkill.provenance.revision));
-   for(const messages of record.requests){
+   for(const messages of record.workerRequests){
     const wire=JSON.stringify(messages);
-    assert.ok(wire.includes(JSON.stringify(completionSkill.content).slice(1,-1)),'the complete shared confirmation method reaches every actual provider request');
+    assert.ok(wire.includes(JSON.stringify(completionSkill.content).slice(1,-1)),'the complete shared confirmation method reaches every operational worker request');
     for(const expected of sharedConfirmationContract)assert.ok(wire.includes(expected),expected);
+   }
+   assert.equal(record.assessmentRequests.length,1);
+   for(const messages of record.assessmentRequests){
+    const wire=JSON.stringify(messages);
+    assert.ok(!wire.includes(JSON.stringify(completionSkill.content).slice(1,-1)),'the bundled worker-only operational manual is not duplicated into the read-only reviewer');
+    assert.ok(wire.includes(JSON.stringify(record.input).slice(1,-1)),'the original user request reaches the reviewer');
+    assert.match(wire,/BLACKICE ORDINARY TASK OUTCOME REVIEW/);
+    assert.match(wire,/actual user limits|current user limits/);
    }
   };
  const job=await invoke(example);
