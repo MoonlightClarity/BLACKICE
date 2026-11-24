@@ -324,3 +324,23 @@ test('a missing saved model cannot block cold start or idle switch to another mo
   assert.ok(f.config.modelPaths.stale,'saved mapping remains available for a disconnected drive');
   assert.equal(f.config.modelOverrides.stale.ctxSize,8192);
 });
+
+
+test('owned cold-start readiness tolerates precise loading 503 without tearing down its child',async()=>{
+ const f=mockSupervisor(),probe=f.supervisor.probe.bind(f.supervisor);let loading=2;
+ f.supervisor.probe=async()=>{if(f.launches.length&&loading-->0)throw Object.assign(Error('Loading model'),{code:'LOCAL_LLAMA_LOADING',status:503});return probe();};
+ const lease=await f.supervisor.acquire(f.config,1);
+ assert.equal(lease.owned,true);assert.equal(f.launches.length,1);assert.equal(f.kills,0);
+ lease.release();await f.supervisor.close();
+});
+test('existing loading endpoint is borrowed after readiness and never duplicated',async()=>{
+ const f=mockSupervisor({external:true}),probe=f.supervisor.probe.bind(f.supervisor);let loading=2;
+ f.supervisor.probe=async()=>{if(loading-->0)throw Object.assign(Error('Loading model'),{code:'LOCAL_LLAMA_LOADING',status:503});return probe();};
+ const lease=await f.supervisor.acquire(f.config,1);assert.equal(lease.owned,false);assert.equal(f.launches.length,0);assert.equal(f.kills,0);
+ lease.release();await f.supervisor.close();
+});
+test('unrelated 503 remains terminal and never starts a second process',async()=>{
+ const f=mockSupervisor({external:true});f.supervisor.probe=async()=>{throw Object.assign(Error('Service unavailable'),{code:'LOCAL_ENGINE_REQUEST_FAILED',status:503});};
+ await assert.rejects(f.supervisor.acquire(f.config,1),{code:'LOCAL_ENGINE_REQUEST_FAILED'});
+ assert.equal(f.launches.length,0);assert.equal(f.kills,0);await f.supervisor.close();
+});

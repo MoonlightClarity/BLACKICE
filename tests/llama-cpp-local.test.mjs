@@ -321,3 +321,17 @@ test('actual child failure propagates through manager and HTTP, releases shared 
   assert.equal(active, 0); assert.equal(released, 3); assert.equal(registered, 0);
   assert.equal(routes.every(route => ['/props', '/models', '/models/load'].includes(route)), true);
 });
+
+
+test('loading HTTP responses during confirmation only retry catalog reads',async()=>{
+ const {loadLlamaCpp}=await import('../lib/llama-cpp-local.mjs');let loads=0,reads=0,clock=0;
+ const request=async (_engine,route)=>{
+  if(route==='/props')return{role:'router'};
+  if(route==='/models/load'){loads++;return {success:true};}
+  assert.equal(route,'/models');reads++;
+  if(reads===2||reads===3)throw Object.assign(Error('Loading model'),{code:'LOCAL_LLAMA_LOADING',status:503});
+  return{data:[{id:'fixture',status:{value:reads===1?'unloaded':'loaded'}}]};
+ };
+ assert.equal((await loadLlamaCpp(request,{model:'fixture'},{now:()=>clock,wait:async ms=>{clock+=ms},confirmationTimeoutMs:1000})).loaded,true);
+ assert.equal(loads,1);assert.equal(reads,4);assert.equal(clock,500);
+});

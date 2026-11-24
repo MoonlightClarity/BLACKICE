@@ -288,3 +288,14 @@ test('new suffixed llama providers use native output defaults while other local 
   assert.equal(f.calls.find(call => call.value.id === 'local_llamacpp_2').value.outputTokenPolicy, 'provider-default');
   assert.ok(f.calls.filter(call => call.value.id !== 'local_llamacpp_2').every(call => !Object.hasOwn(call.value, 'outputTokenPolicy')));
 });
+
+
+test('only read-only llama.cpp loading responses have the transient readiness classification',async()=>{
+ const manager=new LocalModelManager({fetchImpl:async()=>reply({error:{message:'Loading model'}},503)});
+ await assert.rejects(manager.request('llamacpp','/props'),{code:'LOCAL_LLAMA_LOADING',status:503});
+ await assert.rejects(manager.request('llamacpp','/models'),{code:'LOCAL_LLAMA_LOADING',status:503});
+ await assert.rejects(manager.request('llamacpp','/models/load',{body:{model:'fixture'}}),{code:'LOCAL_ENGINE_REQUEST_FAILED',status:503});
+ await assert.rejects(manager.request('ollama','/props'),{code:'LOCAL_ENGINE_REQUEST_FAILED',status:503});
+ const unrelated=new LocalModelManager({fetchImpl:async()=>reply({error:{message:'Service unavailable'}},503)});
+ await assert.rejects(unrelated.request('llamacpp','/props'),{code:'LOCAL_ENGINE_REQUEST_FAILED',status:503});
+});
