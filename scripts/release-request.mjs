@@ -26,6 +26,12 @@ export function validateReleaseRequest(value, context = {}) {
 }
 
 const optionalWindowsSourceTests = new Set([
+  // Optional only when the historical external root is wholly absent. When present,
+  // original assertions run and their immutable SHA pins still reject drift.
+  'Historical MiniCPM native-control benchmark requires original pinned 2026-11-20 snapshot',
+  'Historical MiniCPM execution-delivery benchmark requires original pinned 2026-11-20 snapshot',
+  'Historical MiniCPM execution-evidence benchmark requires original pinned 2026-11-20 snapshot',
+
   // Explicit opt-in native fixtures; skipped assertions remain unexecuted.
   'native live informational alert releases without focus or effect replay',
   'native offscreen informational alert releases without focus or effect replay',
@@ -45,6 +51,15 @@ const optionalWindowsSourceTests = new Set([
   'same-directory native replacement is also exercised on an explicitly supplied existing SMB share',
 ]);
 
+// Frozen historical MiniCPM benchmarks are external pinned source, not a public
+// checkout fixture. An absent snapshot is explicitly unexecuted, never a pass.
+// These are also checked against the exact TAP reason in the source receipt.
+const historicalBenchmarkSkips = new Set([
+  'Historical MiniCPM native-control benchmark requires original pinned 2026-11-20 snapshot',
+  'Historical MiniCPM execution-delivery benchmark requires original pinned 2026-11-20 snapshot',
+  'Historical MiniCPM execution-evidence benchmark requires original pinned 2026-11-20 snapshot',
+]);
+const historicalBenchmarkReason = 'Historical frozen source absent; no benchmark assertions executed or credited.';
 // These skips report unexecuted containment assertions, not successful checks.
 const fileSymlinkCapabilityTests = new Map([
   ['symlinked source is rejected where file symlink creation is available', 'tests/application-history.test.mjs'],
@@ -54,6 +69,11 @@ const fileSymlinkCapabilityTests = new Map([
 function validSourceSkips(prior, count) {
   const skips = prior.optionalSkips, capability = prior.fileSymlinkCapabilitySkips ?? [];
   if (!Array.isArray(skips) || skips.length !== count || new Set(skips).size !== skips.length || !Array.isArray(capability)) return false;
+  // A renamed, copied, or fabricated skip reason must not qualify this exception.
+  const historical = skips.filter(name => historicalBenchmarkSkips.has(name));
+  if (historical.length && (!Array.isArray(prior.skipDetails) || historical.some(name =>
+    prior.skipDetails.filter(item => item?.name === name && item?.reason === historicalBenchmarkReason
+      && item?.assertionsRan === false).length !== 1))) return false;
   const byName = new Map();
   for (const item of capability) {
     if (!item || typeof item !== 'object' || Array.isArray(item) || byName.has(item.name) ||
@@ -76,7 +96,7 @@ export function classifySourceSkips(skips) {
   }));
   const names = skips.map(item => item?.name);
   const unexpectedSkips = skips.filter(item => names.filter(name => name === item?.name).length !== 1 ||
-    !validSourceSkips({ optionalSkips: [item?.name],
+    !validSourceSkips({ optionalSkips: [item?.name], skipDetails:[item],
       fileSymlinkCapabilitySkips: capability.filter(record => record.name === item?.name) }, 1));
   return { capability, unexpectedSkips };
 }
