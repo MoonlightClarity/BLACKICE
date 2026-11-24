@@ -568,7 +568,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "stateful-contract-coverage-20261124"
+        "revision": "method-reassessment-20261122"
       },
       "bodyFile": "what-makes-done.md"
     },

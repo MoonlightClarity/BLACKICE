@@ -13,6 +13,10 @@ test('current workspace guidance routes discovery and local document reads witho
  assert.match(WORKSPACE_TOOL.description,/filenames or paths use relay_find_files/);
  for (const format of ['PDF','DOCX','XLSX']) assert.ok(WORKSPACE_TOOL.description.includes(format), format);
  assert.match(WORKSPACE_INSTRUCTIONS,/relay_files[^.]*chat attachment ID/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/one path per call/, 'Scalar file actions must be explicit');
+ assert.match(WORKSPACE_INSTRUCTIONS,/folder-scoped search|one read-only run command/, 'Multi-file extraction should not cause a large repeated-read loop');
+ assert.match(WORKSPACE_INSTRUCTIONS,/bounded matching lines/, 'Prefer compact evidence over entire logs');
+ assert.match(WORKSPACE_TOOL.inputSchema.properties.path.description,/bulk extraction across files/, 'Tool schema must not contradict multi-file extraction guidance');
  assert.match(ATTACHMENT_TOOL.inputSchema.properties.pageCount.description,/only one page is read and pageCount is ignored/);
  assert.match(ATTACHMENT_TOOL.inputSchema.properties.charCount.description,/reads only startPage/);
 });
