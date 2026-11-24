@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "policy": "Classification is for repository main, not proof of the installed binary or publication of a release. History is retained for audit; reference notes require source verification before operational use.",
   "current": [
+    "AGENTS.md",
     "docs/stopped-task-tab-adoption.md",
     "BROWSER-IMPORT.md",
     "BROWSER-PASSWORDS.md",

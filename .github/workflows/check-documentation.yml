@@ -8,6 +8,10 @@ on:
       - 'package.json'
       - 'scripts/check-documentation.mjs'
       - '.github/workflows/check-documentation.yml'
+      - '.github/workflows/publish-windows-release.yml'
+      - '.github/release-request.json'
+      - 'tests/release-publication-contract.test.mjs'
+      - 'tests/release-request.test.mjs'
   push:
     branches: [main]
     paths:
@@ -16,6 +20,10 @@ on:
       - 'package.json'
       - 'scripts/check-documentation.mjs'
       - '.github/workflows/check-documentation.yml'
+      - '.github/workflows/publish-windows-release.yml'
+      - '.github/release-request.json'
+      - 'tests/release-publication-contract.test.mjs'
+      - 'tests/release-request.test.mjs'
 
 jobs:
   docs:
@@ -26,3 +34,5 @@ jobs:
         with:
           node-version: '22'
       - run: npm run docs:check
+      - name: Preserve the requested automatic release behavior
+        run: node --test tests/release-publication-contract.test.mjs

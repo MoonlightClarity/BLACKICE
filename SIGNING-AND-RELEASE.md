@@ -83,7 +83,7 @@ Passing that suite establishes the orchestration contract. Record actual native 
 
 ## Requested release automation
 
-The **Build and publish requested Windows release** workflow provides the complete hosted build path. It runs only through **Run workflow** (`workflow_dispatch`) on `main`. Editing `.github/release-request.json` or pushing ordinary source commits does not start publication. The request file supplies the exact version, fingerprint, source-test receipt and publication choice for that explicit dispatch.
+The **Build and publish requested Windows release** workflow provides the complete hosted build path. It runs automatically when a push to `main` changes `.github/release-request.json`. `workflow_dispatch` remains available as an optional manual path, not a required extra step. An ordinary source push that does not change the release-request file does not start publication. The request file supplies the exact version, fingerprint, source-test receipt and publication choice; `publish: true` publishes after the existing qualification, while `publish: false` prepares a draft. This is the maintainer-directed workflow, not a discretionary security setting. Do not replace it with manual-only publication or add approval requirements without an explicit maintainer instruction.
 
 Finish the current source tests and installed application acceptance first, then commit the sanitized Windows source-test receipt. To request the release, add or update this file with the real fingerprint from that tested source:
 
@@ -171,9 +171,9 @@ The historical helper supports same-version redeployment, refuses accidental dow
 
 ## Explicit publication and product/build versioning
 
-The Windows publisher is started only with **Run workflow** (`workflow_dispatch`) on `main`. Ordinary source pushes, including edits to `.github/release-request.json`, do not run the publisher. This does not hide or reclassify earlier failed runs. The separate documentation and attribution workflows keep their own triggers.
+The Windows publisher starts automatically when `.github/release-request.json` changes on `main`. Ordinary source pushes without a change to that file do not run the publisher. The **Run workflow** (`workflow_dispatch`) option remains available for manual recovery, not as an approval requirement. This does not hide or reclassify earlier failed runs. The separate documentation and attribution workflows keep their own triggers.
 
-An explicit dispatch still checks the exact source, test evidence, candidate bytes and tag identity. `publish: false` requests draft preparation, not a validation bypass; `publish: true` permits the final publication step only after all existing checks pass. A request without passing qualification evidence must still fail when deliberately dispatched. Do not manufacture a passing receipt or promote a different artifact to make a check green.
+Automatic and manually dispatched requests both check the exact source, test evidence, candidate bytes and tag identity. `publish: false` requests draft preparation; `publish: true` permits final publication after all existing checks pass. Do not manufacture a passing receipt or promote a different artifact to make a check green. A future agent must not disable the automatic release-request trigger or rewrite the tests to legitimize that regression without an explicit maintainer directive.
 
 ### Version and build identity
 
