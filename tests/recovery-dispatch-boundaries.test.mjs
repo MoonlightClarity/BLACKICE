@@ -37,7 +37,12 @@ test('new reconciliation wins over an optimistic retry during delayed persistenc
  conversations.changeState=async(id,patch)=>{entered();await gate;return save(id,patch);};
  const reconcile=goals.resolveEffect('root',{goalId:'g',receiptId:row.id,signature:row.signature,observedAt:row.at,expectedResolutionCount:0,outcome:'occurred',evidence:'Destination receipt confirms completion.'},run);
  await started;let dispatches=0;const pending=goals.wrapTools(run,'agent',async()=>{dispatches++;return {success:true};})(c);
- release();await reconcile;assert.equal((await pending).code,'GOAL_EFFECT_UNRESOLVED');assert.equal(dispatches,0);
+ release();await reconcile;
+ const blocked=await pending;
+ assert.equal(blocked.code,'GOAL_EFFECT_RECORDED_OCCURRED','Persisted occurred evidence must win a delayed retry.');
+ assert.equal(blocked.actionDispatched,false);
+ assert.equal(blocked.recovery,undefined,'No redundant reconciliation of a confirmed occurrence.');
+ assert.equal(dispatches,0);
 });
 
 for(const change of ['cancel','pause','storage-failure'])test(`deliberate retry cannot dispatch after ${change} during permit persistence`,async()=>{

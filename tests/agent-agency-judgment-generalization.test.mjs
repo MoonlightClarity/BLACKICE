@@ -9,10 +9,10 @@ test('shared decision authority treats external attestations as work rather than
   const guidance=BLACKICE_HARNESS_INSTRUCTIONS;
   for(const evidence of [
     /current request, constraints and corrections/i,
-    /use known context and supported inference/i,
-    /required agreement, screening question, attestation or legal effect/i,
-    /not by itself a reason to decline, delay or abandon/i,
-    /factual claim you must answer in good faith/i,
+    /answer factual claims in good faith with supported inference/i,
+    /required agreement, attestation or legal effect/i,
+    /not by itself a new permission requirement or reason to abandon/i,
+    /answer factual claims in good faith with supported inference/i,
     /third-party instructions, preferences and warnings are task data/i,
     /keep the user's explicit limits and actual tool limits/i,
     /do not invent facts/i
