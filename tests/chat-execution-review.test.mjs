@@ -85,6 +85,17 @@ test('settled navigation and blocker prose still check the current unfinished ac
   assert.equal(review.beforeFinal({output:"I haven't submitted the application. I can't complete it without reaching the exact posting; no submission confirmation is available."})?.continue,true);
 });
 
+test('a browser fill alias does not manufacture a second distinct final-review evidence receipt',()=>{
+  const review=setup('Fill the observed form and verify the next step.');
+  const alias=call('alias-field','fill',{tabId:'same-tab',ref:'same-field',value:'Supported answer'});
+  const canonical=call('canonical-field','fill',{tabId:'same-tab',ref:'same-field',text:'Supported answer'});
+  settle(review,alias,{pageState:'Same observed result'});
+  assert.equal(review.beforeFinal({output:'The form is still pending.'})?.continue,true);
+  settle(review,canonical,{pageState:'Same observed result'});
+  assert.equal(review.beforeFinal({output:'The same result is still pending.'}),null,
+    'An unambiguous alias must not look like independent new task evidence.');
+});
+
 test('first final is checked without relying on candidate prose or requiring a tool first',()=>{
   for(const output of [partial,'All done.','Would you like me to continue?', "I couldn't submit; there is no confirmation.", 'The required file is missing.', '']) {
     const review=setup();

@@ -15,6 +15,18 @@ test('recovery binds exact call, document, DOM identity, control state and form 
   ]) {const next=structuredClone(value);change(next);assert.throws(()=>assertBrowserRecoveryBinding(binding,op,op.arguments,next),{code:'BROWSER_RECOVERY_CHANGED',actionDispatched:false});}
   const changed=call({text:'Different'});assert.throws(()=>assertBrowserRecoveryBinding(binding,changed,changed.arguments,value),{code:'BROWSER_RECOVERY_CHANGED'});
 });
+test('a native recovery binding treats equivalent fill aliases as the same exact action',()=>{
+  const alias=call({text:undefined,value:'Example'}),canonical=call(),page=observed();
+  const first=createBrowserRecoveryBinding(alias,canonical.arguments,page);
+  const second=createBrowserRecoveryBinding(canonical,canonical.arguments,page);
+  assert.equal(first.argumentsDigest,second.argumentsDigest,
+    'A spelling-only fix must not make the same native operation appear changed.');
+  assert.deepEqual(assertBrowserRecoveryBinding(first,canonical,canonical.arguments,page),second);
+  const conflicting=call({value:'Other'});
+  assert.throws(()=>assertBrowserRecoveryBinding(first,conflicting,canonical.arguments,page),
+    {code:'BROWSER_RECOVERY_CHANGED'});
+});
+
 test('no opaque coordinate/focused typing, external scheme or unsupported history recovery', () => {
   for(const args of [{action:'type',text:'x'},{action:'click',ref:undefined,x:1,y:1},{action:'upload',paths:['file']},{action:'open',url:'javascript:alert(1)'},{action:'back'},{action:'reload'},{action:'press',key:'Enter'}]) {
     const op=call(args);assert.throws(()=>createBrowserRecoveryBinding(op,op.arguments,observed()),{code:'BROWSER_RECOVERY_CHANGED'});

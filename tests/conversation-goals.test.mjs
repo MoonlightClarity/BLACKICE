@@ -8,6 +8,7 @@ import {HarnessEngine} from '../lib/engine.mjs';
 import {ConversationArchive} from '../lib/conversations.mjs';
 import {ConversationGoals, validateGoalInput} from '../lib/conversation-goals.mjs';
 import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
+import {boundGoalMethodObjective} from '../lib/chat-intent-inference.mjs';
 
 const deferred = () => { let resolve; const promise = new Promise(done => {resolve = done;}); return {promise, resolve}; };
 const waitFor = async (fn, message = 'condition') => {
@@ -107,6 +108,111 @@ for(const isolatedHistory of [false,true])for(const remote of [false,true])test(
   assert.equal(engine.getRun(unrelated.id).status,'completed');
   assert.equal(engine.getRun(unrelated.id).goal,undefined);
   assert.ok(!engine.getRun(unrelated.id).skillLoadReceipts?.some(row=>row.skillId===skillId));
+});
+
+test('bound Goal method selection accepts only the immutable exact source identity',()=>{
+  const goal={id:'goal-1',generation:2,objective:'Verify invoices using the declared user constraints.'};
+  const goalDispatch={conversationId:'conversation-1',goalId:goal.id,generation:2,epoch:4};
+  const current={id:'run-2',taskId:'conversation-1',goal,goalDispatch,input:'Resume autonomous execution for the saved conversation goal.'};
+  assert.equal(boundGoalMethodObjective(current),goal.objective);
+  for(const invalid of [
+    {...current,taskId:'unrelated'},
+    {...current,goalDispatch:{...goalDispatch,goalId:'different'}},
+    {...current,goalDispatch:{...goalDispatch,generation:3}},
+    {...current,goalDispatch:{...goalDispatch,epoch:'4'}},
+    {...current,goalDispatch:{...goalDispatch,epoch:-1}},
+    {...current,goalDispatch:undefined},
+    {...current,goal:{...goal,generation:3}},
+    {...current,goal:{...goal,objective:'  '}},
+    {...current,goal:undefined},
+  ])assert.equal(boundGoalMethodObjective(invalid),null);
+});
+
+test('Goal successor uses its immutable bound objective for methods even when mutable current-run lookup is unavailable', async t => {
+  const objective='Conduct my real overnight remote job search and submit genuine applications. '+
+    'Browse actual job sites, represent the applicant, and resolve forms using truthful answers.';
+  let engine,goals,seen=0,lookupCalls=0;
+  const fixtureState=await fixture(t,async(options,n)=>{
+    const run=[...engine.runs.values()].at(-1);
+    if(n===2){
+      seen++;
+      assert.ok(run.parentRunId,'The inspected provider call must be a Goal successor, not the original run.');
+      assert.match(run.input,/^Resume autonomous execution for the saved conversation goal:/);
+      assert.equal(run.workflow.id,'chatgpt_mission_goal-skill-proof');
+      assert.equal(run.goalDispatch.goalId,run.goal.id);
+      assert.equal((run.skillLoadReceipts||[]).filter(row=>['library-job-search','builtin-task-grounding'].includes(row.skillId)).length,0,
+        'This is not a fresh delivery if skill receipts already existed before the current provider prompt.');
+      assert.match(options.prompt,/JOB SEARCH \(advisory execution method; not permission\)/,
+        'The exact bound objective must load the operational method.');
+      assert.match(options.prompt,/ANTI-OVERALIGNMENT \(advisory execution method; not permission\)/,
+        'A continuing Goal must receive general agency guidance.');
+    }
+    options.onPromptAccepted(options.prompt);
+    if(n===2){
+      const methodIds=(run.skillLoadReceipts||[]).map(row=>row.skillId);
+      assert.ok(methodIds.includes('library-job-search'),'The current Goal turn must independently accept its effective job-search method.');
+      assert.ok(methodIds.includes('builtin-task-grounding'),'The current Goal turn must independently accept general agency guidance.');
+      const accepted=(run.nodes?.agent?.instructionAudit?.sections||[]).filter(row=>row.status==='accepted').map(row=>row.id);
+      assert.ok(accepted.includes('skill-library-job-search'));
+      assert.ok(accepted.includes('skill-builtin-task-grounding'));
+    }
+    if(n===1)assert.equal((await report(options,'progress',{nextAction:'Continue the authorized application workflow.'})).result.success,true);
+    else assert.equal((await report(options,'complete')).result.success,true);
+    return output(n);
+  });
+  ({engine,goals}=fixtureState);
+  // The immutable run snapshot is available even if a mutable controller
+  // generation/current-run lookup has not synchronized at method preparation.
+  assert.strictEqual(engine.goals,goals,'The mock must intercept the controller actually used by the engine.');
+  goals.skillObjectiveForDispatch=()=>{lookupCalls++;return null;};
+  const workflow={...graph(),id:'chatgpt_mission_goal-skill-proof',description:'A focused task started from Mission.'};
+  const first=engine.startRun({workflow,input:{task:objective,goal:{objective}}});
+  await waitFor(async()=>(await goals.get(first.id))?.status==='completed','goal succeeded');
+  assert.equal(seen,1,'The second, bound Goal turn must actually reach provider validation.');
+  assert.equal(lookupCalls,0,'Method preparation must use the exact run snapshot, not the mutable controller lookup.');
+  const runStates=[...engine.runs.values()].filter(item=>item.id===first.id||item.taskId===first.id)
+    .map(item=>({id:item.id,status:item.status,error:item.error?.code||item.errorCode}));
+  assert.equal(fixtureState.runtime.calls.length,2,
+    'The test must not pass by recovering silently from an earlier provider assertion: '+JSON.stringify(runStates));
+  assert.ok(runStates.every(item=>item.status==='completed'),
+    'No hidden failed or cancelled Goal turns: '+JSON.stringify(runStates));
+});
+
+test('an unrelated factual Goal also delivers generic delegated-agency guidance to its exact successor',async t=>{
+  const objective='Verify the exported invoice and finish independent steps if an outside form asks for a declaration.';
+  let engine,goals,seen=0;
+  const fixtureState=await fixture(t,async(options,n)=>{
+    const run=[...engine.runs.values()].at(-1);
+    if(n===2){
+      seen++;
+      assert.ok(run.parentRunId,'This must inspect an actual Goal successor turn.');
+      assert.match(run.input,/^Resume autonomous execution for the saved conversation goal:/);
+      assert.equal((run.skillLoadReceipts||[]).filter(row=>row.skillId==='builtin-task-grounding').length,0,
+        'The unrelated Goal must not inherit an old method receipt as fresh evidence.');
+      assert.match(options.prompt,/ANTI-OVERALIGNMENT \(advisory execution method; not permission\)/);
+      assert.doesNotMatch(options.prompt,/JOB SEARCH \(advisory execution method/);
+    }
+    options.onPromptAccepted(options.prompt);
+    if(n===2){
+      const methodIds=(run.skillLoadReceipts||[]).map(row=>row.skillId);
+      assert.ok(methodIds.includes('builtin-task-grounding'),'The unrelated Goal must independently accept its generic agency method.');
+      assert.ok(!methodIds.includes('library-job-search'),'An unrelated Goal must not receive a job-search-specific method.');
+    }
+    if(n===1)assert.equal((await report(options,'progress',{nextAction:'Inspect the remaining fields.'})).result.success,true);
+    else assert.equal((await report(options,'complete')).result.success,true);
+    return output(n);
+  });
+  ({engine,goals}=fixtureState);
+  goals.skillObjectiveForDispatch=()=>null;
+  const workflow={...graph(),id:'chatgpt_mission_unrelated-goal',description:'A focused task started from Mission.'};
+  const first=engine.startRun({workflow,input:{task:objective,goal:{objective}}});
+  await waitFor(async()=>(await goals.get(first.id))?.status==='completed','unrelated goal');
+  assert.equal(seen,1);
+  const runStates=[...engine.runs.values()].filter(item=>item.id===first.id||item.taskId===first.id)
+    .map(item=>({id:item.id,status:item.status,error:item.error?.code||item.errorCode}));
+  assert.equal(fixtureState.runtime.calls.length,2,
+    'This unrelated Goal must not pass through recovery after a method assertion failure: '+JSON.stringify(runStates));
+  assert.ok(runStates.every(item=>item.status==='completed'));
 });
 
 test('goals have no implicit budget and reject invalid authored limits', () => {
