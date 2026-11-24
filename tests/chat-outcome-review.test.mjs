@@ -324,3 +324,39 @@ test('strict local review sends concise field guidance and a finite set of citat
   },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
   assert.equal((await f.reviewer.assess(request('Report the observed result.',[receipt]))).decision,'respond');
 });
+
+
+test('ordinary reviewer presents canonical structured receipts losslessly without confusing archive search results with preview or requested arguments',async t=>{
+  const reference='fixture-archive-reference';
+  const preview={externalContext:true,reference,preview:{head:'first lines',omittedMiddle:5000},nextAction:'Search the archive.'};
+  const returned={reference,needle:'status=',matches:[{offset:2048}],firstMatchEvidence:{reference,offset:2048,text:'status=READY; more text'},matchedReadCallTemplate:{tool:'relay_context_page',arguments:{action:'read',reference,offset:2048}}};
+  const wrap=value=>({contentItems:[{type:'inputText',text:JSON.stringify(value)}]});
+  const records=[
+    {...row('preview',wrap(preview)),callId:'preview',arguments:{action:'read',path:'status.log'}},
+    {...row('match',wrap(returned)),callId:'match',tool:'relay_context_page',action:'search',arguments:{action:'search',reference,needle:'status='}},
+    {...row('noncanonical',{contentItems:[{type:'inputText',text:'{"a":1, "a":2}'}]}),callId:'noncanonical'},
+    {...row('literal',{contentItems:[{type:'inputText',text:'Unstructured text'}]}),callId:'literal'},
+  ];
+  const original=structuredClone(records);
+  const f=await fixture(t,options=>{
+    const seen=data(options).snapshot.evidence.records;
+    assert.match(options.prompt,/Read receipts in delivery order/);
+    assert.match(options.prompt,/result describes what was actually returned/);
+    assert.deepEqual(seen.map(r=>r.citationRef),['evidence-0001','evidence-0002','evidence-0003','evidence-0004']);
+    for(let i=0;i<2;i++){
+      const item=seen[i].result.contentItems[0];
+      assert.equal(item.representation,'lossless-canonical-json');
+      assert.equal(JSON.stringify(item.decodedJSON),original[i].result.contentItems[0].text);
+      assert.equal(seen[i].fullResultSha256,original[i].fullResultSha256);
+      assert.equal(Object.hasOwn(item,'text'),false);
+    }
+    assert.equal(seen[1].result.contentItems[0].decodedJSON.firstMatchEvidence.text,'status=READY; more text');
+    assert.deepEqual(seen[2].result,original[2].result);
+    assert.deepEqual(seen[3].result,original[3].result);
+    return response({decision:'continue',summary:'The search returned the status; a separate requested read is still missing.',remaining:['Separate read'],nextAction:'Use the matched read template.',evidenceRefs:['evidence-0002']});
+  },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+  const result=await f.reviewer.assess(request('Find the status and separately read the matching archive page.',records));
+  assert.equal(result.decision,'continue');
+  assert.deepEqual(result.evidenceRefs,['match']);
+  assert.deepEqual(records,original);
+});
