@@ -15,6 +15,11 @@ test('a confirmed edit followed by confirmed test permits one bounded review, wi
  assert.match(first,/receipt-1/);
  assert.match(first,/receipt-2/);
  assert.match(first,/boundary inputs/);
+ assert.match(first,/missing collaborator methods/);
+ assert.match(first,/restored-state uniqueness and ordering/);
+ assert.match(first,/success-implying operations/);
+ assert.match(first,/no conflicting retry occurs/);
+ assert.match(first,/without guessing hidden code labels/);
  assert.match(first,/do not edit the provided tests/i);
  assert.equal(tracker.review({directoryReady:true}),null,'The review is one-time even if the model returns immediately.');
  assert.equal(tracker.summary().issued,true);
