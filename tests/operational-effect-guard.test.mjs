@@ -292,3 +292,48 @@ test('pre-pointer capture diagnostic preserves operationally unknown effect',asy
   assert.equal(f.events.at(-1).state,'unknown');
   assert.equal((await guard.records()).at(-1).state,'unknown');
 });
+
+
+test('lost append receipt reconciles through exact stat without adding the chunk twice',async t=>{
+  const f=await fixture(t);
+  const {createWorkspaceToolHandler}=await import('../lib/workspace-tools.mjs');
+  const target=path.join(f.cwd,'deliverable.txt');
+  const original='first section\n',chunk='next section\n';
+  const raw=createWorkspaceToolHandler({cwd:f.cwd});
+  const written=await raw({name:'relay_workspace',arguments:{action:'write',path:target,text:original}});
+  assert.equal(written.success,true);
+  const initial=JSON.parse(written.contentItems[0].text);
+  let dispatched=0;
+  const interrupted=async(call,context)=>{
+    const result=await raw(call,context);
+    if(call.arguments.action==='append'&&result.success){
+      dispatched++;
+      throw Object.assign(Error('synthetic lost append return'),{code:'LOST_APPEND_RETURN'});
+    }
+    return result;
+  };
+  interrupted.describeOperation=raw.describeOperation;
+  interrupted.normalizeOperationalResult=raw.normalizeOperationalResult;
+  interrupted.operationAdapter=raw.operationAdapter;
+  const guard=f.guard(),run=guard.wrap(interrupted);
+  const call={name:'relay_workspace',callId:'append-lost',arguments:{action:'append',path:target,text:chunk,expectedHash:initial.sha256}};
+  await assert.rejects(run(call),{code:'LOST_APPEND_RETURN'});
+  assert.equal(dispatched,1);
+  assert.equal(await readFile(target,'utf8'),original+chunk);
+  const pending=(await guard.records()).find(row=>row.callId==='append-lost');
+  assert.equal(pending.state,'unknown');
+  assert.match(pending.expectation.sha256,/^[a-f0-9]{64}$/);
+  const reopened=f.guard('task-A',await f.makeStore()),resume=reopened.wrap(raw);
+  const observed=await resume({name:'relay_workspace',callId:'append-stat',arguments:{action:'stat',path:target}});
+  assert.equal(observed.success,true);
+  const stat=JSON.parse(observed.contentItems[0].text);
+  assert.equal(stat.sha256,pending.expectation.sha256);
+  const settled=(await reopened.records()).find(row=>row.callId==='append-lost');
+  assert.equal(settled.state,'confirmed');
+  const duplicate=await resume({...call,callId:'stale-append'});
+  assert.equal(duplicate.success,false);
+  assert.equal(await readFile(target,'utf8'),original+chunk);
+  const next=await resume({name:'relay_workspace',callId:'next-append',arguments:{action:'append',path:target,text:'final section\n',expectedHash:stat.sha256}});
+  assert.equal(next.success,true,JSON.stringify(next));
+  assert.equal(await readFile(target,'utf8'),original+chunk+'final section\n');
+});
