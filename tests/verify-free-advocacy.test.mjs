@@ -86,7 +86,7 @@ test('direct execution preserves the isolated configured budget and actual wire 
   assert.equal(bodies.length, 1, 'One direct call reaches only the injected provider transport without an analytical or repair pass.');
   for (const body of bodies) {
     assert.equal(body.model, FREE_MODEL_ID);
-    assert.equal(body.max_tokens, 8192, 'The direct execution wire reserve remains distinct from the configured 32768-token ceiling.');
+    assert.equal(body.max_tokens, 32768, 'The wire budget honors the configured ceiling independently of the context reserve.');
     assert.equal(body.response_format, undefined);
     assert.ok(body.tools.some(tool => tool.function.name === 'relay_browser'));
     const workspaceTool=body.tools.find(tool=>tool.function.name==='relay_workspace').function;
@@ -96,7 +96,7 @@ test('direct execution preserves the isolated configured budget and actual wire 
     assert.ok(!body.messages.filter(message=>['system','developer'].includes(message.role)).some(message=>/BLACKICE PLANNING MODULES/.test(message.content||'')));
   }
   assert.equal(setup.budgets.providerMaxTokens, 32768);
-  assert.deepEqual(observedFreeEvaluationBudgets(setup.requests).observedWireMaxTokens, { withTools: [8192], withoutTools: [] });
+  assert.deepEqual(observedFreeEvaluationBudgets(setup.requests).observedWireMaxTokens, { withTools: [32768], withoutTools: [] });
   assert.equal(result.calls.length, 1); assert.ok(result.calls.every(call => call.responseOnly === false));
   assert.deepEqual(setup.native, { startCalls: 0, runCalls: 0 });
   assert.equal(result.form.calls.length, 0);
@@ -108,7 +108,7 @@ test('isolated 64-step provider completes more than 16 mocked execution turns wi
   const setup = await createFreeEvaluationRuntime({ root, fetchImpl: async (_url, options) => {
     if ((options.method || 'GET') === 'GET') return new Response(JSON.stringify(catalog({ prompt: '0', completion: '0' })), { headers: { 'content-type': 'application/json' } });
     const body = JSON.parse(options.body), final = ++turns === 18;
-    assert.equal(body.max_tokens, 8192, 'Execution keeps its existing effective output reserve.');
+    assert.equal(body.max_tokens, 32768, 'Execution uses its configured generation budget.');
     const message = final ? { role: 'assistant', content: 'Synthetic execution completed.' }
       : { role: 'assistant', content: '', tool_calls: [{ id: 'fixture-' + turns, type: 'function',
         function: { name: body.tools[0].function.name, arguments: '{}' } }] };
@@ -128,7 +128,7 @@ test('isolated 64-step provider completes more than 16 mocked execution turns wi
   assert.equal(result.output, 'Synthetic execution completed.');
   assert.deepEqual(observedFreeEvaluationBudgets(setup.requests), {
     providerMaxTokens: 32768, runTimeoutMs: 600000, caseTimeoutMs: 900000, maxSteps: 64,
-    observedWireMaxTokens: { withTools: [8192], withoutTools: [] },
+    observedWireMaxTokens: { withTools: [32768], withoutTools: [] },
   });
   assert.deepEqual(setup.native, { startCalls: 0, runCalls: 0 });
 });
@@ -199,7 +199,7 @@ test('actual workspace read reaches isolated transport without retired policy be
   assert.equal(delivered,undefined,'Retired policy is absent in actual serialized tool results.');
   for (const body of bodies) {
     assert.equal(body.model, FREE_MODEL_ID);
-    assert.equal(body.max_tokens, 8192, 'The direct execution wire reserve remains distinct from the configured 32768-token ceiling.');
+    assert.equal(body.max_tokens, 32768, 'The wire budget honors the configured ceiling independently of the context reserve.');
     assert.equal(body.response_format, undefined);
     assert.ok(body.tools.some(tool => tool.function.name === 'relay_browser'));
     const workspaceTool=body.tools.find(tool=>tool.function.name==='relay_workspace').function;
@@ -209,7 +209,7 @@ test('actual workspace read reaches isolated transport without retired policy be
     assert.ok(!body.messages.filter(message=>['system','developer'].includes(message.role)).some(message=>/BLACKICE PLANNING MODULES/.test(message.content||'')));
   }
   assert.equal(setup.budgets.providerMaxTokens, 32768);
-  assert.deepEqual(observedFreeEvaluationBudgets(setup.requests).observedWireMaxTokens, { withTools: [8192], withoutTools: [] });
+  assert.deepEqual(observedFreeEvaluationBudgets(setup.requests).observedWireMaxTokens, { withTools: [32768], withoutTools: [] });
   assert.equal(result.calls.length, 1); assert.ok(result.calls.every(call => call.responseOnly === false));
   assert.deepEqual(setup.native, { startCalls: 0, runCalls: 0 });
   assert.equal(result.form.calls.length, 0);

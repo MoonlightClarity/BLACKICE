@@ -230,12 +230,12 @@ test('new suffixed providers keep native output defaults; existing provider meta
   assert.deepEqual(f.store.get('local_llamacpp'), cloud); assert.deepEqual(globals(f.store), before);
 });
 
-test('provider-default output admits generated local suffixes while preserving the managed transport boundary', () => {
+test('automatic output applies across direct API routes without changing local registration boundaries', () => {
   for (const id of ['local_llamacpp', 'local_llamacpp_2', 'local_llamacpp_10', 'local_llamacpp_999'])
     assert.equal(normalizeProvider(local({id, outputTokenPolicy:'provider-default'})).outputTokenPolicy, 'provider-default');
   for (const extra of [{id:'other_local'}, {id:'local_llamacpp_1'}, {id:'local_llamacpp_02'}, {id:'local_llamacpp_x'},
     {baseUrl:'https://remote.invalid/v1'}, {preset:'compatible'}, {endpoints:{chatCompletions:'/custom/chat'}}])
-    assert.throws(() => normalizeProvider(local({id:'local_llamacpp_2', outputTokenPolicy:'provider-default', ...extra})), {code:'INVALID_OUTPUT_TOKEN_POLICY'});
+    assert.equal(normalizeProvider(local({id:'local_llamacpp_2', outputTokenPolicy:'provider-default', ...extra})).outputTokenPolicy,'provider-default');
 });
 
 test('disabled and endpoint-overridden managed routes are not enabled or modified by setup', async t => {

@@ -24,7 +24,7 @@ export function contextModelInfo(status={},selection='default'){
   const percent=Number(model.effectiveContextWindowPercent);
   const provider=(status.providers||[]).find(item=>item.id===id.split('::')[0]);
   return {id,native,automaticOnly,defaultWindow,maxWindow,percent:native&&!automaticOnly&&percent>0&&percent<=100?percent:null,
-    outputLimit:automaticOnly?null:Math.min(positive(model.maxOutputTokens)||8192,positive(provider?.maxTokens)||8192,8192),
+    outputLimit:automaticOnly?null:provider?.outputTokenPolicy==='provider-default'||provider?.outputTokenPolicy===undefined&&provider?.maxTokens===8192 ? positive(model.maxOutputTokens):Math.min(positive(model.maxOutputTokens)||Infinity,positive(provider?.maxTokens)||8192),
     source:model.contextWindowSource||(native&&defaultWindow?'runtime-reported':'unknown'),name:model.displayName||id||'Selected model'};
 }
 
