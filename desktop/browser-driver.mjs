@@ -37,6 +37,19 @@ const TOP_NAVIGATION_QUIET_MS = 300;
 const TOP_NAVIGATION_MAX_MS = 1500;
 const savedPageURL = value => /^(?:https?|file|about|chrome|data|blob):/.test(value || '');
 const blankPageURL = value => /^about:blank(?:[?#]|$)/.test(value || '');
+// A data document is eligible for automatic renderer reclamation only with
+// host open/read provenance, exact live document identity and native MIME
+// evidence. Never treat a generic HTML or limited DOM scan as proof of safety.
+const reloadableDataTypes = new Set(['text/plain','application/json','text/xml','application/xml','application/rss+xml','application/atom+xml']);
+function inspectReloadableDataDocument() {
+  try {
+    const type = document.contentType;
+    const walker = document.createTreeWalker(document, NodeFilter.SHOW_PROCESSING_INSTRUCTION);
+    for (let node; (node = walker.nextNode());) if (node.target?.toLowerCase() === 'xml-stylesheet') return {eligible:false};
+    if (document.readyState !== 'complete' || document.querySelector('script,iframe,frame,object,embed,portal,svg,form,input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]')) return {eligible:false};
+    return {eligible:true,type};
+  } catch { return {eligible:false}; }
+}
 const externalProtocol = value => !['http:', 'https:', 'file:', 'about:', 'chrome:', 'data:', 'blob:', 'javascript:'].includes(new URL(value).protocol);
 const validId = value => typeof value === 'string' && /^[a-zA-Z0-9_.:-]{1,200}$/.test(value);
 const ownerRecord = owner => owner ? { taskId: owner.taskId, runId: owner.runId, nodeId: owner.nodeId, ...(owner.conversationId ? { conversationId: owner.conversationId } : {}) } : null;
@@ -708,6 +721,60 @@ export class ElectronBrowserDriver extends EventEmitter {
     // Human-created or claimed pages share the total browser budget. Worker
     // admission remains bounded without limiting a person's browser to eight tabs.
     if (!tab.humanCreated && tab.owner && live.filter(item => item.owner?.taskId === tab.owner.taskId).length >= this.maxTaskTabs) throw capacityError(`This task has ${this.maxTaskTabs} live pages. Reuse or close one of its own pages before opening another.`, 'BROWSER_TASK_TAB_LIMIT');
+  }
+  // The live renderer budget is a cache, not a limit on distinct observed
+  // data resources. Reclaim only a same-worker, untouched data document.
+  // This is deliberately narrower than declaring a dynamic page "finished."
+  capacityCandidate(tab, owner, excluded) {
+    if (!owner || !tab?.capacityReadOnlyOpen || !sameWorkerOwner(tab.owner, owner)
+      || excluded.has(tab.id) || tab.parentTabId || [...this.tabs.values()].some(child => child.parentTabId === tab.id)
+      || this.surface?.current === tab || this.surface?.pending === tab || tab.humanSurface || tab.protectedContent
+      || tab.inheritedEffects || tab.adoptionUncertainEffects || tab.externalHandoff || tab.submissionObservations
+      || this.downloads.some(item => item.tabId === tab.id)
+      || this.cleanupRuntimeReason(tab) || this.persistenceError) return false;
+    return tab.capacityReadOnlyOpen.documentId === inputDocumentId(tab)
+      && tab.capacityReadOnlyOpen.url === this.tabURL(tab)
+      && /^https?:\/\//i.test(tab.capacityReadOnlyOpen.url);
+  }
+  async reclaimLiveSlot(owner, { signal, excluded = new Set() } = {}) {
+    if (!owner || this.closed || this.persistenceError) return null;
+    const deadline = Date.now() + 2500;
+    for (const tab of this.liveTabs()) {
+      cancel(signal);
+      if (Date.now() >= deadline) break;
+      if (!this.capacityCandidate(tab, owner, excluded)) continue;
+      const window = tab.window, wc = window.webContents, documentId = inputDocumentId(tab), url = this.tabURL(tab);
+      const current = () => tab.window === window && inputDocumentId(tab) === documentId && this.tabURL(tab) === url
+        && this.capacityCandidate(tab, owner, excluded);
+      try {
+        // No navigation, focus, input or debugger reattachment for this probe.
+        if (!wc.debugger.isAttached()) continue;
+        const history = wc.navigationHistory;
+        const entries = history?.getAllEntries?.();
+        if (!Array.isArray(entries) || !entries.length || entries.length > 2
+          || entries.at(-1)?.url !== url || entries.slice(0,-1).some(entry => !blankPageURL(entry?.url))
+          || history.canGoForward?.()) continue;
+        const tree = await bounded(wc.debugger.sendCommand('Page.getFrameTree'), signal, Math.max(1, Math.min(600,deadline-Date.now())));
+        cancel(signal);
+        const frame = tree?.frameTree?.frame;
+        if (!current() || !frame?.loaderId || frame.url !== url || !reloadableDataTypes.has(frame.mimeType)
+          || tree.frameTree.childFrames?.length) continue;
+        const probe = await bounded(wc.executeJavaScript('(' + inspectReloadableDataDocument.toString() + ')()'), signal, Math.max(1,Math.min(600,deadline-Date.now())));
+        cancel(signal);
+        if (!current() || probe?.eligible !== true || !reloadableDataTypes.has(probe.type)) continue;
+        // Do not suspend based on an old check: all state/ownership checks
+        // are repeated after asynchronous reads, with no intervening await.
+        const result = this.suspendTab(tab,{automatic:true});
+        if (!result.suspended || tab.window) continue;
+        await this.savedStatus();
+        return {tabId:tab.id,url,documentId,retainedDocumentId:inputDocumentId(tab),suspended:true,reason:'idle-read-only-data-renderer'};
+      } catch (cause) {
+        cancel(signal);
+        if (this.persistenceError) throw cause;
+        // Incomplete native evidence is not an eligibility decision.
+      }
+    }
+    return null;
   }
   setOwnerAdmission(check) { this.ownerAdmission = check; }
   setPasswordManager(options) { this.passwordManager = new NativePasswordManager(this, options); }
@@ -1581,6 +1648,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     const unavailable = () => Object.assign(error('The protected password target changed or could not be verified.'), { code: 'BROWSER_CREDENTIAL_TARGET_CHANGED' });
     if (source !== 'agent' || tab.purpose === 'chat-mode' || owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner)) throw unavailable();
     if (owner && tab.owner) tab.owner.runId = owner.runId;
+    tab.capacityReadOnlyOpen = null;
     await this.activate(tab, signal); this.assertInputDocument(tab, args); cancel(signal);
     const refs = [args.passwordRef, args.confirmationRef, args.usernameRef].filter(Boolean), frame = tab.refs.get(args.passwordRef);
     if (!frame || refs.some(ref => tab.refs.get(ref) !== frame) || new URL(frame.url).origin !== args.origin) throw unavailable();
@@ -2184,9 +2252,25 @@ export class ElectronBrowserDriver extends EventEmitter {
         return { external: true, url, receipt: { handedToOperatingSystem: true } };
       }
     }
-    let tab = args.action === 'open' ? this.newTab(browserURL(args.url), { owner, humanCreated: source === 'user', folderId: args.folderId, parentTabId: args.parentTabId }) : this.tab(selected);
+    let tab, capacityReclamation = null;
+    if (args.action === 'open') {
+      const create = () => this.newTab(browserURL(args.url), { owner, humanCreated: source === 'user', folderId: args.folderId, parentTabId: args.parentTabId });
+      try { tab = create(); }
+      catch (cause) {
+        if (source !== 'agent' || !owner || cause?.[capacityAdmissionRejected] !== true
+          || !['BROWSER_TASK_TAB_LIMIT','BROWSER_LIVE_LIMIT'].includes(cause.code)) throw cause;
+        capacityReclamation = await this.reclaimLiveSlot(owner,{signal,excluded:new Set([args.parentTabId])});
+        if (!capacityReclamation) throw cause;
+        cancel(signal);
+        tab = create();
+      }
+    } else tab = this.tab(selected);
     const externalBefore = tab.externalHandoff;
     if (owner && !sameOwner(tab.owner, owner) && !(owner.allowUserTabs && !tab.owner)) throw capacityError('This browser tab belongs to another task.', 'BROWSER_TAB_OWNERSHIP');
+    // Any non-observational action retires the untouched-open provenance,
+    // even if later input is rejected. A failed action is not permission to
+    // discard a document that may contain prepared or uncertain work.
+    if (!['open','read','snapshot','screenshot','wait'].includes(args.action)) tab.capacityReadOnlyOpen = null;
     if (source === 'host-cleanup' && args.action === 'close') {
       if (!args.expectedUrl || !args.expectedDocumentId || this.tabURL(tab) !== args.expectedUrl
         || inputDocumentId(tab) !== args.expectedDocumentId)
@@ -2269,6 +2353,15 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (args.chooserId !== undefined) this.currentInteraction(tab, args);
     let activationMayAffectPage = false, fillPreparationCompleted = false;
     try {
+    if (!tab.window && source === 'agent' && owner && sameWorkerOwner(tab.owner,owner)) {
+      try { this.assertLiveCapacity(tab); }
+      catch (cause) {
+        if (cause?.[capacityAdmissionRejected] !== true || !['BROWSER_TASK_TAB_LIMIT','BROWSER_LIVE_LIMIT'].includes(cause.code)) throw cause;
+        capacityReclamation = await this.reclaimLiveSlot(owner,{signal,excluded:new Set([tab.id])});
+        if (!capacityReclamation) throw cause;
+        cancel(signal);
+      }
+    }
     const resumed = !!tab.pendingURL && args.action !== 'navigate';
     activationMayAffectPage = resumed || Boolean(tab.popupViewport || tab.surfaceNeedsSync) || !tab.window;
     if (args.action !== 'navigate') await this.activate(tab, signal);
@@ -2566,7 +2659,14 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (quietRequired && !result.navigationUnsettled && !result.pendingInteraction
       && (wc.isDestroyed() || wc.isLoadingMainFrame() || result.url !== this.tabURL(tab)
         || observedMainRevision !== tab.mainRevision)) result = navigationUnsettled();
-    return { ...result, ...(receipt ? { receipt } : {}), tabs: this.status().tabs };
+    if (source === 'agent' && owner && sameWorkerOwner(tab.owner,owner)
+      && (args.action === 'open' || (tab.capacityReadOnlyOpen && ['read','snapshot'].includes(args.action) && tab.capacityReadOnlyOpen.url === result.url))
+      && !result.navigationUnsettled && !result.pendingInteraction && !result.frameErrors?.length
+      && result.frames?.length === 1 && result.frames[0].readyState === 'complete'
+      && result.documentId === inputDocumentId(tab) && result.url === this.tabURL(tab)) {
+      tab.capacityReadOnlyOpen = {documentId:result.documentId,url:result.url};
+    }
+    return { ...result, ...(receipt ? { receipt } : {}), ...(capacityReclamation ? {capacityReclamation} : {}), tabs: this.status().tabs };
     } finally { navigation?.dispose(); await releaseInputFocus?.(); }
     } catch (reason) {
       // A leaf helper may prove its input was not sent. That cannot erase an
