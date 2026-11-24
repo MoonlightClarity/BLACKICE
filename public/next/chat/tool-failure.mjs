@@ -67,7 +67,7 @@ const safeAlarmRow=row=>{
  const tool=own(alarmTools,row?.tool)?row.tool:'Connected tool';
  const reason=alarmCode(tool,row?.code);
  const action=typeof row?.action==='string'&&alarmActions.has(row.action)?row.action:null;
- return {tool,action,code:reason,knownNotDispatched:tool==='relay_browser'&&row?.knownNotDispatched===true,
+ return {tool,action,code:reason,knownNotDispatched:tool!=='Connected tool'&&row?.knownNotDispatched===true,
   count:Number.isSafeInteger(row?.count)&&row.count>0?Math.min(row.count,999999):1};
 };
 

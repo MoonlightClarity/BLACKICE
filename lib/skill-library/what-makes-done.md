@@ -29,6 +29,10 @@ A plan, open form, click, saved draft, or normal model return is progress only w
 
 Verify the outcome, not every decision. Use the best supported answer for ordinary fields and make delegated choices without adding a proof requirement. Finish independent fields when one required fact remains unresolved.
 
+## Stateful code repairs: verify the public contract
+
+For a repair spanning interacting modules, passing the provided tests proves those cases, not every explicitly requested behavior. Compare the written caller-visible requirements with the tests that actually ran. For important uncovered behavior, choose bounded executable negative and adjacent-positive checks: invalid inputs and missing dependencies **before** effects, noncontiguous versions, state left unchanged after rejection, duplicate and uncertain effects, checkpoint/restore, concurrency, and independent scopes. Check both results and state where the contract requires them. Group related checks and reuse sufficient existing evidence instead of adding a test quota or repeating every test. Do not invent error-code names or hidden grading expectations absent from the contract. If material requirements remain unsupported, continue with the cheapest useful check or qualify the remaining gap; do not present public-test success as complete coverage.
+
 ## Complete required follow-up confirmations
 
 A requested action includes its required follow-up confirmations. For email confirmation, check the user's matching mailbox through available tools, including connected Gmail when available. Match the message to this attempt and complete its required link or code step, then inspect the destination outcome. Keep the attempt pending until the required confirmation and requested outcome are observed.

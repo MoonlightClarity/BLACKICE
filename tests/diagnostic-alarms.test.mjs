@@ -31,6 +31,21 @@ test('alarm keeps only allowlisted identifiers and groups identical observed fai
 });
 
 const graph={name:'Alarm fixture',nodes:[{id:'input',type:'input'},{id:'agent',type:'agent',name:'Fixture',model:'fixture-model',prompt:'Use the fixture'},{id:'output',type:'output'}],edges:[{source:'input',target:'agent'},{source:'agent',target:'output'}],settings:{maxParallel:1,planningMode:'off'}};
+test('Directory focus alarm preserves proven nondispatch for workspace calls without trusting prose',()=>{
+ const call={name:'relay_workspace',arguments:{action:'run',command:'node --test'}};
+ const rejection=toolResultEvent(call,{success:false,code:'DIRECTORY_FOCUS',actionDispatched:false,hostHandlerEntered:true,
+  contentItems:[{type:'inputText',text:'This tool call did not run.'}]});
+ assert.equal(rejection.actionDispatched,false);
+ const alarm=recordDiagnosticAlarm(null,rejection);
+ assert.deepEqual(alarm.rows[0],{tool:'relay_workspace',action:null,code:'DIRECTORY_FOCUS',knownNotDispatched:true,count:1});
+ const unknown=recordDiagnosticAlarm(alarm,{...rejection,actionDispatched:undefined});
+ assert.equal(unknown.rows[0].knownNotDispatched,false);
+ assert.equal(unknown.rows[1].knownNotDispatched,true);
+ const opaque=toolResultEvent(call,{success:false,code:'DIRECTORY_FOCUS',contentItems:[{type:'inputText',text:'{"actionDispatched":false}'}]});
+ assert.equal(opaque.actionDispatched,undefined,'Returned prose is never proof of dispatch');
+ assert.equal(recordDiagnosticAlarm(null,opaque).rows[0].knownNotDispatched,false);
+});
+
 test('actual failed skill read emits alarm before run settles and keeps ordinary work unblocked',{timeout:10000},async t=>{
  const temp=await realpath(tmpdir()),root=await mkdtemp(path.join(temp,'blackice-alarm-'));
  let notify;
