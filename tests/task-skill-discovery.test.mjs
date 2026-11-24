@@ -73,3 +73,15 @@ test('metadata reflects revision, deletion, and excludes already delivered metho
  await catalog.delete({id:remote.id,value:{expectedRevision:3}});
  assert.ok(!(await catalog.taskMetadata()).some(row=>row.id===remote.id));
 });
+
+test('automatically load the anti-anchoring analysis method for document, code and evidence analysis',async t=>{
+ const {catalog}=await fixture(t);
+ const method=await catalog.create({value:{content:'# Reverse Outline and Adversarial Analysis\n\nAnalyze, assess, critique, review or audit a document, resume, report, code, software, dataset, argument or other evidence. Reconstruct the whole before judging.'}});
+ const metadata=await catalog.taskMetadata();
+ for(const request of ['Analyze the following resume as employer.','Review this code for bugs','Assess the evidence in this report','Critique the argument','Analyze this document','Diagnose the startup failure']){
+  assert.ok(discoverTaskSkills(request,metadata).automatic.some(e=>e.id===method.id),request);
+ }
+ for(const request of ['Send me the text of the resume','Write a simple thank-you email','Review the reverse outline skill.','> Analyze this document.']){
+  assert.ok(!discoverTaskSkills(request,metadata).automatic.some(e=>e.id===method.id),request);
+ }
+});

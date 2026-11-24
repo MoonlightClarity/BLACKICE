@@ -156,3 +156,24 @@ test('API/local tools omit the attachment reader until the current task has an a
   assert.equal(f.runtime.calls[1].threadId,undefined);
   assert.equal(f.runtime.calls.length,2);
 });
+
+test('explicit same-conversation original text follow-up bypasses the model and earlier summary even without newly attached IDs',async t=>{
+ const threadId='provider_exact-source-fixture';
+ const f=await fixture(t,async()=>({output:'A selected summary, not the original document.',threadId}),{model:'local_llamacpp::fixture',threadId});
+ f.workflow.id='mission_chat_exact-source-fixture';
+ const entry={...f.attachments.entries.get(ids.pdf),name:'Candidate_Resume.pdf',pageCount:2};
+ f.attachments.entries.set(ids.pdf,entry);
+ const originals=['Original first page.\nConcrete source detail.','Original second page with qualifications.'];
+ f.attachments.read=async(id,options)=>{
+  assert.equal(id,ids.pdf);
+  return {attachment:entry,totalPages:2,pages:originals.map((text,i)=>({page:i+1,startChar:0,text,totalChars:text.length,nextChar:null,textAvailable:true})),nextPage:null,nextChar:null};
+ };
+ const first=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Use the attached resume for context.',attachmentIds:[ids.pdf]}}).id);completed(first);
+ const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'send me the text of the resume',attachmentIds:[]}).id);completed(next);
+ assert.equal(f.runtime.calls.length,1,'Extraction must not call a model');
+ assert.equal(next.nodes.agent.documentExtraction.complete,true);
+ assert.equal(next.nodes.agent.documentExtraction.sourceRunId,first.id);
+ assert.equal(next.nodes.agent.documentExtraction.attachmentId,ids.pdf);
+ assert.ok(originals.every(text=>next.output.includes(text)));
+ assert.doesNotMatch(next.output,/selected summary/);
+});

@@ -212,3 +212,21 @@ test('malformed or signalled native results cannot become successful checks', as
     if (index < 2) assert.equal(value.performed, 'unconfirmed');
   }
 });
+
+test('document and unsupported-language checks reject before workspace reads',async t=>{
+ const f=ordinary(t);
+ for(const request of [call('SOUL.md','javascript'),call('USER.md','text')]){
+  const result=await f.tool(request),value=read(result);
+  assert.equal(result.success,false);assert.equal(value.actionDispatched,false);
+  assert.ok(['CODE_CHECK_NOT_SOURCE','CODE_CHECK_UNAVAILABLE'].includes(result.code),JSON.stringify(value));
+  assert.match(value.error,/relay_(?:identity|workspace|files)/);
+ }
+ assert.equal(f.calls.length,0);
+});
+test('missing legitimate source exposes underlying ENOENT with no checker dispatch',async t=>{
+ const f=ordinary(t),request=call(path.join(f.cwd,'absent.js'),'javascript');
+ const result=await f.tool(request),value=read(result);
+ assert.equal(result.code,'CODE_READBACK_FAILED');assert.equal(value.actionDispatched,false);
+ assert.equal(value.readbackFailure.code,'ENOENT');assert.match(value.error,/Locate the actual file path/);
+ assert.equal(runs(f).length,0);
+});
