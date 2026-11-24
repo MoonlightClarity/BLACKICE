@@ -568,7 +568,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "method-reassessment-20261122"
+        "revision": "api-boundary-methods-20261124"
       },
       "bodyFile": "what-makes-done.md"
     },

@@ -29,6 +29,8 @@ A plan, open form, click, saved draft, or normal model return is progress only w
 
 Verify the outcome, not every decision. Use the best supported answer for ordinary fields and make delegated choices without adding a proof requirement. Finish independent fields when one required fact remains unresolved.
 
+For a code API repair, apply documented input preconditions to every exported method, including read-only getters, not just mutators. Check a representative invalid input without side effects when the contract requires rejection.
+
 ## Complete required follow-up confirmations
 
 A requested action includes its required follow-up confirmations. For email confirmation, check the user's matching mailbox through available tools, including connected Gmail when available. Match the message to this attempt and complete its required link or code step, then inspect the destination outcome. Keep the attempt pending until the required confirmation and requested outcome are observed.
