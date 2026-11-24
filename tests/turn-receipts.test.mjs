@@ -13,3 +13,17 @@ import {projectFamily} from '../public/next/chat/reader-model.mjs';
 test('Chat has no receipt-depth selector and the reader still projects all saved depths',async()=>{const source=await readFile(new URL('../public/next/chat/render.mjs',import.meta.url),'utf8');assert.doesNotMatch(source,/next-chat-directory-diagnostics/);const value=run();for(const depth of ['off','on','maximal']){value.directoryDiagnostics=depth;assert.equal(projectFamily({runs:[value]}).runs[0].directoryDiagnostics,depth);}});
 test('only current-run known-node events project; raw payload is never read or hashed',()=>{const value=run(),event=value.events[0];Object.defineProperty(event.data,'result',{get(){throw Error('raw accessed');}});value.events.push({...event,runId:'foreign'},{...event,nodeId:'foreign'},{...event,runId:undefined});assert.equal(projectTurnReceipts(value,{view:'tools'}).actions.length,1);Object.defineProperty(event,'data',{get(){throw Error('Context scanned action');}});assert.equal(projectTurnReceipts(value).actions.length,0);});
 test('saved terminal state and optional host counters distinguish unknown from zero',()=>{const value=run();value.status='completed';value.settled=true;value.finishedAt='2026-11-19T12:00:00Z';value.nodes.agent.directoryContext.hostTools={received:0,returned:-1,threw:'0'};const result=projectTurnReceipts(value);assert.deepEqual(result.terminal,{status:'completed',settled:true,finishedAt:value.finishedAt,code:null});assert.deepEqual(result.receipts[0].context.hostTools,{received:0,returned:null,threw:null});delete value.nodes.agent.directoryContext.hostTools;assert.equal(projectTurnReceipts(value).receipts[0].context.hostTools,undefined);});
+
+import {nativeToolResultEvent,toolResultEvent} from '../lib/tool-outcomes.mjs';
+test('failure search retains native error codes and failed attempts after recovery',()=>{
+ const value=run();
+ const event=data=>({...value.events[0],data});
+ const native=nativeToolResultEvent({type:'mcpToolCall',id:'call1',server:'example',tool:'inspect',status:'failed',error:{code:'DOCUMENT_CHANGED',message:'PRIVATE'}});
+ const returned=toolResultEvent({name:'example',callId:'call2'},{success:true,isError:true});
+ value.events.push(event(native),event(returned),event({type:'item',item:{type:'dynamicToolCall',id:'old',status:'completed',success:false}}),event({...native,callId:'retry',success:true,outcome:undefined,status:'completed',code:undefined}));
+ const search=q=>projectTurnReceipts(value,{view:'failures',q}).actions;
+ assert.deepEqual(search('').map(a=>a.callId),['call1','call2','old']);
+ assert.equal(search('document_changed')[0].tool,'MCP example');
+ assert.equal(search('old')[0].state,'failed');
+ assert.equal(search('PRIVATE').length,0);
+});
