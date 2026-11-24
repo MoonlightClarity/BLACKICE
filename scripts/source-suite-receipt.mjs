@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { appFingerprint } from './release-check.mjs';
 import { releaseSourceIndex, classifySourceSkips } from './release-request.mjs';
+import { parseSourceSuiteSkips } from './source-suite-skip-parser.mjs';
 import {prepareSourceTestTemp} from './source-test-temp.mjs';
 import {sourceSuiteIdentity} from './source-suite-provenance.mjs';
 const root=process.cwd(),output=path.resolve(process.argv[2]||'source-suite-evidence');
@@ -42,7 +43,7 @@ const counts=Object.fromEntries(['tests','pass','fail','cancelled','skipped','to
  const found=[...log.matchAll(new RegExp('^# '+k+' (\\d+)\\r?$','gm'))];
  return [k,found.length===1?Number(found[0][1]):null];
 }));
-const skips=[...log.matchAll(/^ok \d+ - (.*?) # SKIP(?: (.*))?\r?$/gm)].map(m=>({name:m[1],reason:m[2]||null}));
+const skips=parseSourceSuiteSkips(log);
 const {capability,unexpectedSkips}=classifySourceSkips(skips);
 const after=await releaseSourceIndex(root),afterFingerprint=await appFingerprint(root);
 const checkoutUnchanged=identity.sourceCommit===sourceSuiteIdentity(root).sourceCommit;

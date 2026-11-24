@@ -2,6 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import { classifySourceSkips } from '../scripts/release-request.mjs';
+import { parseSourceSuiteSkips } from '../scripts/source-suite-skip-parser.mjs';
+
+test('canonical TAP classification preserves explicit unexecuted frozen benchmark evidence', async () => {
+  const name='Historical MiniCPM native-control benchmark requires original pinned 2026-11-20 snapshot';
+  const reason='Historical frozen source absent; no benchmark assertions executed or credited.';
+  const tap=['TAP version 13', `ok 1 - ${name} # SKIP ${reason}`, 'ok 2 - unrelated passing test',
+    'not ok 3 - a failing assertion', 'ok 4 - ordinary passing assertion'].join('\r\n')+'\r\n';
+  const skips=parseSourceSuiteSkips(tap);
+  assert.deepEqual(skips,[{name,reason,assertionsRan:false}]);
+  assert.deepEqual(classifySourceSkips(skips),{capability:[],unexpectedSkips:[]});
+  assert.deepEqual(classifySourceSkips([{name,reason}]).unexpectedSkips,[{name,reason}],
+    'Unverified skip objects must not receive credit outside canonical TAP parsing');
+  assert.throws(()=>parseSourceSuiteSkips(null),TypeError);
+  const canonical=await fs.readFile(new URL('../scripts/source-suite-receipt.mjs',import.meta.url),'utf8');
+  assert.match(canonical,/const skips=parseSourceSuiteSkips\(log\)/);
+});
 
 test('source suite uses current canonical opt-in classification rather than a historical receipt', async () => {
   const skips=[
