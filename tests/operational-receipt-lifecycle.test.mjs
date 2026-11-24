@@ -252,64 +252,54 @@ test('cancellation during durable admission settles the eventual reservation wit
   assert.equal(rows[0].deliveryState,'cancelled-before-dispatch');assert.equal(f.driver.dispatches,0);
 });
 
-test('journal byte pressure preserves every legacy receipt and exact replay while permitting append',async t=>{
+test('legacy byte pressure migrates to SQLite without dropping receipts or replaying effects',async t=>{
  const f=await fixture(t);f.driver.loseReturn=false;f.driver.extraText='z'.repeat(4500);
+ const journal=f.store.file(f.guard.scopeId)+'.effects',database=journal+'.sqlite';
+ const base={operationId:'opaque:0',taskId:'older-task',runId:'older-run',nodeId:'agent',effect:'opaque',
+   state:'unknown',adapter:'relay_browser',action:'click',operationKey:'historical:opaque',
+   resources:[],evidence:[],interpretations:[],
+   result:{success:true,contentItems:[{type:'inputText',text:'x'.repeat(58900)}]}};
+ const records=Array.from({length:145},(_,i)=>({...base,operationId:'opaque:'+i}));
+ const legacy=JSON.stringify({version:1,root:f.cwd,records});
+ assert.ok(Buffer.byteLength(legacy)>8*1024*1024,'old journal exceeds the former bound');
+ await writeFile(journal,legacy);
  const submit=call('click','compression-replay');
  const original=await f.wrapped(submit);
- const journal=f.store.file(f.guard.scopeId)+'.effects';
- const legacy=JSON.parse(await readFile(journal,'utf8'));
- assert.equal(legacy.records.length,1);
- const legacyRow=legacy.records[0];
- for(let i=0;i<125;i++)legacy.records.push({...legacyRow,operationId:'opaque:'+i,taskId:'other-task',runId:'other-run',effect:'opaque',state:'unknown',result:{success:true,contentItems:[{type:'inputText',text:'x'.repeat(58900)}]}});
- const contents=JSON.stringify(legacy);
- assert.ok(Buffer.byteLength(contents)<8*1024*1024);
- // Keep the old journal readable but so close to saturation that a receipt reservation cannot fit.
- const pad=8*1024*1024-Buffer.byteLength(contents)-16;
- legacy.padding='x'.repeat(pad-13);
- await writeFile(journal,JSON.stringify(legacy));
- const newPath=path.join(f.cwd,'registry.json');
- const write={name:'relay_workspace',callId:'append-after-full',arguments:{action:'write',path:newPath,text:'fixture receipt'}};
+ assert.equal(original.success,true);
+ assert.equal(f.driver.dispatches,1);
+ assert.equal(await readFile(journal,'utf8'),legacy,'legacy source journal is preserved exactly');
+ let rows=await f.guard.records();
+ assert.equal(rows.length,146);
+ assert.equal(rows.filter(row=>row.state==='unknown').length,146);
+ assert.equal(rows.filter(row=>row.operationId.startsWith('opaque:')).length,145);
+ const target=path.join(f.cwd,'registry.json');
+ const write={name:'relay_workspace',callId:'append-after-migration',arguments:{action:'write',path:target,text:'fixture receipt'}};
  const raw=createWorkspaceToolHandler({cwd:f.cwd});
  assert.equal((await f.guard.wrap(raw)(write)).success,true);
- assert.equal(await readFile(newPath,'utf8'),'fixture receipt');
- const migrated=JSON.parse(await readFile(journal,'utf8'));
- assert.equal(migrated.records.length,127);
- assert.ok(migrated.records.some(row=>row.packedResult));
- assert.equal(migrated.records.filter(row=>row.effect==='opaque'&&row.state==='unknown').length,125);
+ assert.equal(await readFile(target,'utf8'),'fixture receipt');
  const reopened=createOperationalEffectGuard({store:await f.createStore(),cwd:f.cwd,...f.owner});
- assert.deepEqual(await reopened.wrap(f.raw)(submit),original);
- assert.equal(f.driver.dispatches,1);
- assert.equal((await reopened.records()).find(row=>row.operationId==='opaque:0').state,'unknown');
- const child=String.raw`
-  import {createOperationalEffectGuard} from './lib/operational-effect-guard.mjs';
-  const [journal,cwd,owner,args]=process.argv.slice(1);
-  const guard=createOperationalEffectGuard({store:{file:()=>journal.slice(0,-8),enqueue:()=>{throw Error('Replay must not reserve or dispatch');}},cwd,...JSON.parse(owner)});
-  const raw=()=>{throw Error('Replay must not dispatch');};
-  raw.describeOperation=()=>{throw Error('Replay must not reach the adapter');};
-  try{console.log(JSON.stringify({result:await guard.wrap(raw)(JSON.parse(args))}));}
-  catch(error){console.log(JSON.stringify({code:error.code||null}));}
- `;
- const replayFresh=()=>JSON.parse(execFileSync(process.execPath,['--input-type=module','-e',child,journal,f.cwd,JSON.stringify(f.owner),JSON.stringify(submit)],{encoding:'utf8'}));
- assert.deepEqual(replayFresh(),{result:original});
- const readRow=operationId=>reopened.handle({name:'relay_effects',arguments:{action:'read',operationId}});
- const list=()=>reopened.handle({name:'relay_effects',arguments:{action:'list'}});
- const unrelated=migrated.records.find(row=>row.operationId==='opaque:0');
- unrelated.packedResult.sha256='0'.repeat(64);
- await writeFile(journal,JSON.stringify(migrated));
- assert.equal((await reopened.records()).find(row=>row.operationId===unrelated.operationId).state,'unknown');
- assert.deepEqual(parse(await readRow(legacyRow.operationId)).result,original);
- assert.equal((await list()).success,true);
- const compressed=migrated.records.find(row=>row.operationId===legacyRow.operationId);
- assert.ok(compressed.packedResult);
- compressed.packedResult.sha256='0'.repeat(64);
- await writeFile(journal,JSON.stringify(migrated));
+ assert.deepEqual(await reopened.wrap(f.raw)(submit),original,'exact result recovered after fresh guard');
+ assert.equal(f.driver.dispatches,1,'replay must not re-dispatch');
+ assert.equal((await reopened.records()).length,147);
+ const originalRow=(await reopened.records()).find(row=>row.callId===submit.callId);
+ const readRow=id=>reopened.handle({name:'relay_effects',arguments:{action:'read',operationId:id}});
+ assert.deepEqual(parse(await readRow(originalRow.operationId)).result,original);
+ assert.equal((await reopened.handle({name:'relay_effects',arguments:{action:'list'}})).success,true);
+ // A corrupted compressed result must fail closed without losing unrelated receipts.
+ const db=new (await import('node:sqlite')).DatabaseSync(database);
+ try{
+  const selected=db.prepare('SELECT payload FROM receipts WHERE operation_id=?').get(originalRow.operationId);
+  const value=JSON.parse(selected.payload);
+  assert.ok(value.packedResult,'large native result must use a digest-bound compressed payload');
+  value.packedResult.sha256='0'.repeat(64);
+  db.prepare('UPDATE receipts SET payload=? WHERE operation_id=?').run(JSON.stringify(value),originalRow.operationId);
+ }finally{db.close();}
  await assert.rejects(reopened.wrap(f.raw)(submit),{code:'OPERATIONAL_RESULT_UNAVAILABLE'});
- assert.deepEqual(replayFresh(),{code:'OPERATIONAL_RESULT_UNAVAILABLE'});
- assert.equal(code(await readRow(legacyRow.operationId)),'OPERATIONAL_RESULT_UNAVAILABLE');
- assert.equal((await list()).success,true);
+ assert.equal(code(await readRow(originalRow.operationId)),'OPERATIONAL_RESULT_UNAVAILABLE');
+ assert.equal((await reopened.handle({name:'relay_effects',arguments:{action:'list'}})).success,true);
+ assert.equal((await reopened.records()).filter(row=>row.operationId.startsWith('opaque:')).length,145);
  assert.equal(f.driver.dispatches,1);
 });
-
 test('unsalvageable journal leaves original bytes and does not dispatch',async t=>{
  const f=await fixture(t);
  const journal=f.store.file(f.guard.scopeId)+'.effects';
@@ -327,27 +317,36 @@ test('unsalvageable journal leaves original bytes and does not dispatch',async t
  await assert.rejects(readFile(p),{code:'ENOENT'});
 });
 
-test('failure before journal replacement preserves old bytes and retries append safely',async t=>{
- const f=await fixture(t);f.driver.loseReturn=false;
- await f.wrapped(call('click','existing-effect'));
- const journal=f.store.file(f.guard.scopeId)+'.effects';
- const value=JSON.parse(await readFile(journal,'utf8'));
- const base=value.records[0];
- for(let i=0;i<125;i++)value.records.push({...base,operationId:'fixture:'+i,taskId:'other-task',runId:'other-run',effect:'opaque',state:'unknown',result:{success:true,contentItems:[{type:'inputText',text:'a'.repeat(58900)}]}});
- const n=8*1024*1024-Buffer.byteLength(JSON.stringify(value))-16;
- value.padding='p'.repeat(n-13);
- const before=JSON.stringify(value);
- await writeFile(journal,before);
+test('failed SQLite publication preserves legacy bytes and blocks unsafe retry until recovery',async t=>{
+ const f=await fixture(t),journal=f.store.file(f.guard.scopeId)+'.effects';
+ const rows=Array.from({length:125},(_,i)=>({
+  operationId:'historical:'+i,taskId:'other-task',runId:'other-run',nodeId:'agent',
+  adapter:'relay_workspace',effect:'opaque',state:'unknown',resources:[],
+  evidence:[],interpretations:[],operationKey:'historical:'+i,note:'x'.repeat(4000),
+ }));
+ const legacy=JSON.stringify({version:1,root:f.cwd,records:rows});
+ await writeFile(journal,legacy);
  const fs=(await import('node:fs')).promises,rename=fs.rename;
- const target=path.join(f.cwd,'receipt-after-rename-fault');
- const action={name:'relay_workspace',callId:'append-fault',arguments:{action:'write',path:target,text:'fixture saved'}};
- fs.rename=async(source,destination)=>{if(destination===journal)throw Object.assign(Error('fixture atomic rename failure'),{code:'EIO'});return rename(source,destination);};
- try{assert.equal((await f.guard.wrap(createWorkspaceToolHandler({cwd:f.cwd}))(action)).success,false);}
+ const target=path.join(f.cwd,'no-unsafe-retry-after-publish-failure');
+ const action={name:'relay_workspace',callId:'sqlite-migrate-fault',arguments:{action:'write',path:target,text:'must not dispatch'}};
+ fs.rename=async(source,destination)=>{
+   if(destination===journal+'.sqlite')throw Object.assign(Error('fixture SQLite publish failed'),{code:'EIO'});
+   return rename(source,destination);
+ };
+ let refused;
+ try{refused=await f.guard.wrap(createWorkspaceToolHandler({cwd:f.cwd}))(action);}
  finally{fs.rename=rename;}
- assert.equal(await readFile(journal,'utf8'),before);
+ assert.equal(refused.success,false);
+ assert.equal(parse(refused).actionDispatched,false);
+ assert.equal(await readFile(journal,'utf8'),legacy,'the complete v1 journal remains unchanged');
  await assert.rejects(readFile(target),{code:'ENOENT'});
+ await assert.rejects(readFile(journal+'.sqlite'),{code:'ENOENT'});
+ assert.ok((await readFile(journal+'.sqlite.anchor','utf8')).includes('ledgerId'),
+   'published identity anchor stops a later cold start from reconstructing an incomplete ledger');
  const reopened=createOperationalEffectGuard({store:await f.createStore(),cwd:f.cwd,...f.owner});
- assert.equal((await reopened.wrap(createWorkspaceToolHandler({cwd:f.cwd}))({...action,callId:'append-after-fault'})).success,true);
- assert.equal(await readFile(target,'utf8'),'fixture saved');
- assert.equal((await reopened.records()).length,127);
+ const retry=await reopened.wrap(createWorkspaceToolHandler({cwd:f.cwd}))({...action,callId:'retry-after-ambiguous-migration'});
+ assert.equal(retry.success,false,'no silent automatic replay after failed migration');
+ assert.equal(parse(retry).actionDispatched,false);
+ await assert.rejects(readFile(target),{code:'ENOENT'});
+ assert.equal(await readFile(journal,'utf8'),legacy);
 });
