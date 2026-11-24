@@ -37,9 +37,11 @@ test('reported small capacity and complete prompt/tool overhead constrain contin
   const actualEstimate=estimateContextTokens([[options.developerInstructions,options.prompt],options.dynamicTools]);assert.equal(continuity.estimatedInputTokens,actualEstimate);assert.ok(actualEstimate<=limits.inputBudgetTokens);assert.ok(options.dynamicTools.length>0);assert.match(options.prompt,/Additional saved identity instructions/);
 });
 
-test('unreported model capacity uses the existing working budget instead of loading a requested 900k history by default',async t=>{
+test('unreported model capacity does not invent a 128k ceiling or silently truncate saved history',async t=>{
   const history='ARCHIVE_START\n'+'d'.repeat(450000)+'\nARCHIVE_END';const{calls,next}=await handoffFixture(t,{history});assert.equal(next.status,'completed',next.error);
-  const continuity=next.nodes.agent.continuity;assert.equal(continuity.effectiveWindowTokens,128000);assert.equal(continuity.windowSource,'working-budget');assert.equal(continuity.truncated,true);assert.ok(calls[1].prompt.length<400000);assert.match(calls[1].prompt,/ARCHIVE_END/);assert.ok(continuity.estimatedInputTokens<=continuity.inputBudgetTokens);
+  const continuity=next.nodes.agent.continuity;assert.equal(continuity.effectiveWindowTokens,null);assert.equal(continuity.windowSource,'unresolved');
+  assert.equal(continuity.inputBudgetTokens,Infinity);assert.equal(continuity.truncated,false);assert.equal(continuity.omittedChars,0);
+  assert.equal(continuity.retainedChars,continuity.sourceChars);assert.match(calls[1].prompt,/ARCHIVE_START/);assert.match(calls[1].prompt,/ARCHIVE_END/);
 });
 
 test('UTF-8 history is fitted using token estimates rather than an ASCII character allowance',async t=>{
@@ -66,12 +68,16 @@ test('a current smaller reported model capacity takes precedence over an earlier
 
 test('changing models never inherits the previous model confirmed capacity',async t=>{
   const priorContext={windowSource:'provider-reported',modelWindowTokens:258400},history='Different-model history. '.repeat(20000);
-  const{next,calls}=await handoffFixture(t,{history,priorContext,nextModel:'another-model'});assert.equal(next.status,'completed',next.error);assert.equal(calls[1].model,'another-model');assert.equal(next.modelHandoff.reportedModelWindowTokens,undefined);assert.equal(next.nodes.agent.continuity.effectiveWindowTokens,128000);assert.equal(next.nodes.agent.continuity.windowSource,'working-budget');
+  const{next,calls}=await handoffFixture(t,{history,priorContext,nextModel:'another-model'});assert.equal(next.status,'completed',next.error);assert.equal(calls[1].model,'another-model');assert.equal(next.modelHandoff.reportedModelWindowTokens,undefined);
+  assert.equal(next.nodes.agent.continuity.effectiveWindowTokens,null);assert.equal(next.nodes.agent.continuity.windowSource,'unresolved');
+  assert.equal(next.nodes.agent.continuity.truncated,false);assert.equal(next.nodes.agent.continuity.omittedChars,0);
 });
 
 test('unconfirmed settings and malformed context metadata cannot become a reported handoff capacity',async t=>{
   for(const priorContext of [{windowSource:'user-configured',modelWindowTokens:258400,effectiveWindowTokens:900000},{windowSource:'provider-reported',modelWindowTokens:'258400'},{windowSource:'provider-reported',modelWindowTokens:0}]){
-    const{next}=await handoffFixture(t,{history:'Actual saved message.',priorContext});assert.equal(next.status,'completed',next.error);assert.equal(next.modelHandoff.reportedModelWindowTokens,undefined);assert.equal(next.nodes.agent.continuity.effectiveWindowTokens,128000);assert.equal(next.nodes.agent.continuity.windowSource,'working-budget');
+    const{next}=await handoffFixture(t,{history:'Actual saved message.',priorContext});assert.equal(next.status,'completed',next.error);assert.equal(next.modelHandoff.reportedModelWindowTokens,undefined);
+    assert.equal(next.nodes.agent.continuity.effectiveWindowTokens,null);assert.equal(next.nodes.agent.continuity.windowSource,'unresolved');
+    assert.equal(next.nodes.agent.continuity.truncated,false);
   }
 });
 
@@ -85,7 +91,7 @@ test('editing native context or reasoning discards the old working window instea
   const cases=[
     {context:{preset:'model'},nextContext:{preset:'900k'},effort:'ultra',nextEffort:'ultra',expected:900000,source:'user-configured'},
     {context:{preset:'900k'},nextContext:{preset:'900k'},effort:'ultra',nextEffort:'default',expected:900000,source:'user-configured'},
-    {context:{preset:'model'},effort:'ultra',nextEffort:'default',expected:128000,source:'working-budget'},
+    {context:{preset:'model'},effort:'ultra',nextEffort:'default',expected:null,source:'unresolved'},
   ];
   for(const value of cases){
     const priorContext={nativeCompaction:true,windowSource:'provider-reported',modelWindowTokens:475000},history='CHANGED_NATIVE_START\n'+'x'.repeat(400000)+'\nCHANGED_NATIVE_END';
