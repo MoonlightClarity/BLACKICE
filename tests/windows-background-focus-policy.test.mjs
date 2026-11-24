@@ -6,6 +6,7 @@ import {StringDecoder} from 'node:string_decoder';
 import path from 'node:path';
 import vm from 'node:vm';
 import {FIND_FILES_TOOL,validateFileSearchCall} from '../lib/file-search-contract.mjs';
+import {attachWorkspaceCommandOutcome} from '../lib/workspace-command-outcome.mjs';
 import { PDF_LIMITS } from '../lib/pdf-documents.mjs';
 import { XLSX_ROWS, XLSX_COLUMNS } from '../lib/spreadsheet-documents.mjs';
 import {tailscaleStartupRepairScript} from '../desktop/connection-startup.mjs';
@@ -29,7 +30,7 @@ test('normal Windows workspace commands suppress console creation while preservi
     });
     return child;
   };
-  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall, PDF_LIMITS, XLSX_ROWS, XLSX_COLUMNS, spawn,fs:{stat:async()=>({isDirectory:()=>true})},path:path.win32,StringDecoder,
+  const sandbox = { FIND_FILES_TOOL, validateFileSearchCall, attachWorkspaceCommandOutcome, PDF_LIMITS, XLSX_ROWS, XLSX_COLUMNS, spawn,fs:{stat:async()=>({isDirectory:()=>true})},path:path.win32,StringDecoder,
     process:{platform:'win32',env:{}},DESKTOP_RESTART_ORIGIN_ENV:'BLACKICE_RESTART_ORIGIN',
     setTimeout,clearTimeout,AbortSignal,Buffer,TextDecoder};
   // Strip complete ESM re-exports before declaration keywords; imported contracts are injected above.
@@ -72,12 +73,15 @@ test('Codex discovery uses hidden PowerShell without changing profile or PATH',(
     platform:'win32',arch:'x64',
     env:{LOCALAPPDATA:'C:\\Fake',SystemRoot:'C:\\Windows',Path:'C:\\Windows\\System32'},
     exists:()=>false,
-    execFile:(executable,args,options)=>{calls.push({args,options});return '';}
+    execFile:(executable,args,options)=>{calls.push({executable,args,options});return '';}
   });
-  assert.equal(calls.length,1);
-  assert.ok(calls[0].args.includes('-WindowStyle'));
-  assert.ok(calls[0].args.includes('Hidden'));
+  assert.equal(calls.length,2,'Current-user registration is checked before the AppX PowerShell fallback.');
+  assert.match(calls[0].executable,/\\reg\.exe$/i);
   assert.equal(calls[0].options.windowsHide,true);
+  assert.match(calls[1].executable,/\\powershell\.exe$/i);
+  assert.ok(calls[1].args.includes('-WindowStyle'));
+  assert.ok(calls[1].args.includes('Hidden'));
+  assert.equal(calls[1].options.windowsHide,true);
 });
 
 test('automatic Tailscale repair never starts another elevated child',()=>{
