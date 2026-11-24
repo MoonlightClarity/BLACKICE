@@ -85,7 +85,8 @@ test('blocked child remains recorded and parent cannot claim success until an ob
   action('audit','Inspect independent evidence'),
  ]});
  await edit(directory,{action:'focus',id:'primary'});
- await edit(directory,{action:'block',id:'primary',blocker:'no-viable-route',claim:'Original approach proved unusable.'});
+ const failed=await tool(directory,{input:{action:'run',command:'attempt-original-route'},success:false});
+ await edit(directory,{action:'block',id:'primary',blocker:'no-viable-route',claim:'Original approach proved unusable.',receipts:[failed.receiptId]});
  await edit(directory,{action:'focus',id:'audit'});
  const evidence=await tool(directory,{input:{action:'read',path:'audit.log'},observationOnly:true});
  await edit(directory,{action:'observe',id:'audit',outcome:'objective-met',claim:'Read corroborating evidence.',receipts:[evidence.receiptId]});

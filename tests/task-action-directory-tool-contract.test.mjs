@@ -68,7 +68,9 @@ test('actual model handler supports each blocker using the evidence its branch c
  await missing.model({...minima[7],receipts:[failed]});assert.equal(missing.ledger.read().actions[0].state,'blocked');
  const finite=await prepared({searchScope:[{tool:'relay_workspace',locator:'C:/fixture/source.txt'}]}),read=await record(finite);
  await finite.model({...minima[8],receipts:[read]});assert.equal(finite.ledger.read().actions[0].state,'blocked');
- const unavailable=await prepared();await unavailable.model(minima[9]);assert.equal(unavailable.ledger.read().actions[0].state,'blocked');
+ const unavailable=await prepared(),unavailableReceipt=await record(unavailable,{success:false});
+  await unavailable.model({...minima[9],receipts:[unavailableReceipt]});
+  assert.equal(unavailable.ledger.read().actions[0].state,'blocked');
  const unknown=await prepared(),unresolved=await record(unknown,{unknown:true});
  await unknown.model(minima[10]);assert.deepEqual(unknown.ledger.read().actions[0].observation.receipts,[unresolved]);
 });

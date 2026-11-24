@@ -14,6 +14,11 @@ const candidateRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'.
 const baselineRoot=process.env.BLACKICE_BENCH_CONTROL_ROOT||path.join(path.dirname(candidateRoot),'BLACKICE-context-control-20261123');
 const providerDir=process.env.BLACKICE_BENCH_PROVIDER_DIR||path.join(process.env.APPDATA||path.join(homedir(),'AppData','Roaming'),'Relay','data');
 const variant=process.argv.find(x=>x.startsWith('--variant='))?.slice(10)||'candidate';
+const arm=process.argv.find(x=>x.startsWith('--arm='))?.slice(6)||'directory-only';
+const arms=new Set(['planning-directory','planning-only','directory-only','neither']);
+if(!arms.has(arm))throw Error('Choose planning-directory, planning-only, directory-only or neither.');
+const usePlanning=arm==='planning-directory'||arm==='planning-only';
+const useDirectory=arm==='planning-directory'||arm==='directory-only';
 const model=process.argv.find(x=>x.startsWith('--model='))?.slice(8)||'kilo_free::cohere/north-mini-code:free';
 const testId=process.argv.find(x=>x.startsWith('--case='))?.slice(7)||'async-cache';
 const longEvidenceCase=testId==='event-replay-long';
@@ -229,7 +234,7 @@ try{
     const codex=new EventEmitter();
     codex.status=()=>({connected:false,authenticated:false,models:[]});
     codex.runAgent=async()=>{throw Error('Native Codex cannot be used for an API-model trial');};
-    runtime=new ProviderRuntime({codex,dataDir:path.join(root,'provider'),modelLimitResolver:{enrich:async (_config,m)=>m},runTimeoutMs:360000,maxSteps:90,requestTimeoutMs:60000});
+    runtime=new ProviderRuntime({codex,dataDir:path.join(root,'provider'),modelLimitResolver:{enrich:async (_config,m)=>m},runTimeoutMs:360000,requestTimeoutMs:60000});
     runtime.store=installed; // read-only provider settings; provider sessions stored in isolated root
   }
   const actual=runtime.runAgent.bind(runtime);
