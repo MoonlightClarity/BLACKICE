@@ -3306,3 +3306,70 @@ test('pointer preparation avoids unnecessary centering for a currently visible c
   assert.equal(denied.code,'BROWSER_TARGET_COVERED');
   assert.deepEqual(JSON.parse(JSON.stringify(covered.scrollAlignments)),[{block:'center',inline:'center',behavior:'instant'}]);
 });
+
+
+function capacityDataProof(tab,{eligible=true,type='application/rss+xml',probe}={}){
+  const wc=tab.window.webContents;
+  wc.navigationHistory={getAllEntries:()=>[{url:'about:blank'},{url:wc.getURL()}],canGoBack:()=>true,canGoForward:()=>false};
+  const original=wc.executeJavaScript;
+  wc.executeJavaScript=async script=>script.includes('inspectReloadableDataDocument')
+    ? (probe?await probe():{eligible,type}) : original(script);
+}
+function capacityFrameCommand(method,_params,window){
+  if(method==='Page.getFrameTree')return {frameTree:{frame:{id:'main',loaderId:'loader',url:window.url,mimeType:window.url?.includes('/feed')?'application/rss+xml':'text/html'}}};
+  return {};
+}
+test('live task capacity automatically suspends observed untouched data tabs without deleting saved pages or touching HTML forms',async t=>{
+  const {driver}=await fixture(t,{command:capacityFrameCommand,limits:{maxTaskTabs:2,maxLiveTabs:3}});await driver.init();
+  const owner=taskOwner('capacity-cache');
+  const first=await driver.perform({action:'open',url:'https://feeds.example/feed-one'},{owner});
+  const firstTab=driver.tabs.get(first.tabId),originalWindow=firstTab.window;
+  assert.ok(firstTab.capacityReadOnlyOpen,'open produced current observed-document provenance');
+  capacityDataProof(firstTab);
+  const form=await driver.perform({action:'open',url:'https://forms.example/apply'},{owner});
+  const formTab=driver.tabs.get(form.tabId),formWindow=formTab.window;
+  capacityDataProof(formTab,{type:'text/html'});
+  const third=await driver.perform({action:'open',url:'https://feeds.example/feed-two'},{owner:{...owner,runId:'next-run'}});
+  assert.equal(third.url,'https://feeds.example/feed-two');
+  assert.equal(third.capacityReclamation.tabId,first.tabId);
+  assert.equal(third.capacityReclamation.suspended,true);
+  assert.ok(originalWindow.isDestroyed());
+  assert.equal(firstTab.window,null);
+  assert.equal(firstTab.pendingURL,first.url);
+  assert.equal(driver.tabs.size,3);
+  assert.equal(driver.status().capacity.live,2);
+  assert.equal(formTab.window,formWindow);
+  assert.ok(!formWindow.isDestroyed());
+  capacityDataProof(driver.tabs.get(third.tabId));
+  const resumed=await driver.perform({action:'read',tabId:first.tabId},{owner:{...owner,runId:'next-run'}});
+  assert.equal(resumed.url,first.url);
+  assert.equal(resumed.tabId,first.tabId);
+  assert.equal(resumed.capacityReclamation.tabId,third.tabId);
+  assert.equal(driver.status().capacity.live,2);
+  assert.equal(driver.tabs.size,3);
+  assert.equal(driver.tabs.get(third.tabId).window,null);
+  assert.notEqual(firstTab.window,originalWindow);
+  assert.equal(formTab.window,formWindow);
+});
+
+for(const kind of ['pinned','in-use','uncertain-effect','wrong-mime','interactive-data','changed-document','navigation-history','missing-provenance','sibling-owner','user-action']){
+ test('automatic capacity reclamation preserves protected or insufficiently observed page: '+kind,async t=>{
+  const {driver}=await fixture(t,{command:capacityFrameCommand,limits:{maxTaskTabs:1,maxLiveTabs:1}});await driver.init();
+  const owner=taskOwner('capacity-protection');
+  const first=await driver.perform({action:'open',url:kind==='wrong-mime'?'https://forms.example/apply':'https://feeds.example/feed-one'},{owner});
+  const tab=driver.tabs.get(first.tabId),window=tab.window;
+  capacityDataProof(tab,{eligible:kind!=='interactive-data',probe:kind==='changed-document'?async()=>{tab.revision++;return {eligible:true,type:'application/rss+xml'};}:undefined});
+  if(kind==='pinned')tab.userPinned=true;
+  if(kind==='in-use')tab.inUse=true;
+  if(kind==='uncertain-effect')tab.adoptionUncertainEffects=true;
+  if(kind==='navigation-history')tab.window.webContents.navigationHistory.getAllEntries=()=>[{url:'https://other.example/old'},{url:first.url}];
+  if(kind==='missing-provenance')tab.capacityReadOnlyOpen=null;
+  if(kind==='user-action')await driver.perform({action:'read',tabId:first.tabId},{source:'user'});
+  const next=kind==='sibling-owner'?{...owner,nodeId:'different-worker'}:owner;
+  await assert.rejects(driver.perform({action:'open',url:'https://feeds.example/feed-two'},{owner:next}),{code:'BROWSER_LIVE_LIMIT',actionDispatched:false});
+  assert.equal(tab.window,window);
+  assert.ok(!window.isDestroyed());
+  assert.equal(driver.tabs.size,1);
+  assert.equal(driver.status().capacity.live,1);
+ });
+}
