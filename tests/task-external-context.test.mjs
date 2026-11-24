@@ -240,6 +240,8 @@ test('a single current archive supports a one-call exact text lookup without cop
   assert.equal(found.matches.length,1);
   assert.equal(found.firstMatchEvidence.reference,pointer.reference);
   assert.equal(found.firstMatchEvidence.offset,found.matches[0].offset);
+  assert.deepEqual(found.matchedReadCallTemplate,{tool:'relay_context_page',arguments:{action:'read',reference:pointer.reference,offset:found.matches[0].offset,maxBytes:512}});
+  assert.match(found.nextAction,/explicitly requests a separate read/);
   assert.ok(found.firstMatchEvidence.text.startsWith(marker));
   assert.equal(found.firstMatchEvidence.text,raw.slice(found.matches[0].offset,found.firstMatchEvidence.nextOffset));
   assert.equal((await store.read({reference:pointer.reference,offset:found.matches[0].offset,maxBytes:512})).text,found.firstMatchEvidence.text);
@@ -259,6 +261,7 @@ test('a single current archive supports a one-call exact text lookup without cop
   assert.equal(missing.matches.length,0);
   assert.equal(missing.complete,true);
   assert.equal(missing.firstMatchEvidence,undefined);
+  assert.equal(missing.matchedReadCallTemplate,undefined);
   assert.match(missing.nextAction,/does not prove absence in omitted original source/);
 });
 
