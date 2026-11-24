@@ -17,6 +17,7 @@ test('current workspace guidance routes discovery and local document reads witho
  assert.match(WORKSPACE_INSTRUCTIONS,/folder-scoped search|one read-only run command/, 'Multi-file extraction should not cause a large repeated-read loop');
  assert.match(WORKSPACE_INSTRUCTIONS,/bounded matching lines/, 'Prefer compact evidence over entire logs');
  assert.match(WORKSPACE_TOOL.inputSchema.properties.path.description,/bulk extraction across files/, 'Tool schema must not contradict multi-file extraction guidance');
+ assert.match(WORKSPACE_INSTRUCTIONS,/missing package\.json[^.]*node --test/, 'A missing optional Node manifest must not stop source repair or tests');
  assert.match(ATTACHMENT_TOOL.inputSchema.properties.pageCount.description,/only one page is read and pageCount is ignored/);
  assert.match(ATTACHMENT_TOOL.inputSchema.properties.charCount.description,/reads only startPage/);
 });
