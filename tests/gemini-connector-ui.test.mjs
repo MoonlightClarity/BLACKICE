@@ -25,23 +25,6 @@ function mount(t, snapshot = status(), custom = null) {
   return { ...dom, panel, state, calls, writes: () => calls.filter(x => x[1] === 'POST') };
 }
 
-test('refresh account models displays the outbound catalog and clears it on failure', async t => {
-  let failed = false;
-  const f = mount(t, status(), async ([url]) => {
-    if (url !== '/api/providers/gemini-account/models') return;
-    if (failed) throw Error('sign in again');
-    return { models: [{ id: 'account-choice', name: 'Account Choice' }] };
-  });
-  await settle();
-  const refresh = async () => { await f.$('[data-gemini-action="models"]').dispatch('click', {}, true); await settle(); };
-  await refresh();
-  assert.match(f.mount.textContent, /Account Choice/);
-  failed = true;
-  await refresh();
-  assert.match(f.mount.textContent, /sign in again/);
-  assert.doesNotMatch(f.mount.textContent, /Account Choice/);
-});
-
 test('Gemini connector is a client-specific panel that leaves ChatGPT grant intact and fetches read-only status', async t => {
   const f = mount(t);
   await settle();

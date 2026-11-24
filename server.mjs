@@ -1138,10 +1138,7 @@ export async function createHarnessServer(options = {}) {
         return json(res, result.status, result.body);
       }
       if (pathname === '/api/providers/gemini-account/models') {
-        if (req.headers['x-blackice-remote'] === '1') return json(res, 403, { error: 'Local account access required.' });
-        if (req.method !== 'POST') return json(res, 405, { error: 'Use POST to refresh account models.' });
-        try { return json(res, 200, await runtime.refreshGoogleAccount()); }
-        catch (error) { return json(res, 503, { error: error.message }); }
+        return json(res, 410, {error: 'Google account model support has been retired.'});
       }
       if (pathname === '/api/providers/preview') {
         const controller = new AbortController();
