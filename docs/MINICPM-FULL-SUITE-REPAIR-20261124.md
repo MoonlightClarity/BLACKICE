@@ -45,12 +45,16 @@ Exactly two file-level tests (`minicpm-execution-delivery.test.mjs` and `minicpm
 
 The historical controller checks require original exact bytes and SHA-256 pins; do **not** fabricate fixtures, relax hashes, reclassify them as passed, or infer the benchmark passed. A true rerun needs recovery of the original pinned source files (or a separate, explicitly redesigned benchmark with a new evidence identity).
 
-## Separate live-model limitation
+## Separate live-model smoke and limitations
 
-An isolated probe of the saved `MiniCPM-V-4.7-1B-heretic-Q4_K_S` GGUF and projector started the managed llama.cpp router and saw the model listed as loaded, but a small completion timed out after 45 seconds. Probe: `C:\Users\user\Documents\Codex\BLACKICE-minicpm-owner-operations-82137ed4-20261123\verification\minicpm-local-runtime-probe-20261124.json`. **No live inference success or general MiniCPM capability is claimed.** The probe shut down its own spawned process tree. Preserve the saved production model/context settings.
+The first isolated probe used the raw saved model-path list, including an unavailable WhiteRabbitNeo entry, and its non-streaming completion timed out after 45 seconds. Receipt: `C:\Users\user\Documents\Codex\BLACKICE-minicpm-owner-operations-82137ed4-20261123\verification\minicpm-local-runtime-probe-20261124.json`. This probe did **not** apply the managed supervisor's normal missing-model filtering.
+
+A corrected isolated probe filtered that unavailable extra model **only in its temporary launch preset**, retained MiniCPM's saved GGUF, projector and context settings, and used a bounded streaming chat completion. It recorded 39 events, first event at 11,347 ms, first content at 16,487 ms, and a completed `stop` response `READY.` after 16,499 ms. Receipt: `verification/minicpm-local-stream-probe-20261124.json`, SHA-256 `ec239de47da9f9421be32cd1fb2f442528eea484320deee0e672498ed70077c3`. No llama-server processes remained afterward.
+
+This is a **narrow live local inference smoke pass**, not a successful coding task, Directory benchmark, full agent workflow, or general MiniCPM qualification. Because both model-list filtering and streaming/response limits differed from the first probe, the timeout's precise cause remains unisolated. No saved production model or provider configuration changed.
 
 ## Next bounded steps
 
 1. Recover and independently SHA-256-verify the original historical benchmark inputs, then rerun the three frozen-fixture suites and the whole suite.
-2. Investigate the separate MiniCPM inference timeout with an isolated owned server, measured load/first-token latency and a realistic bounded timeout before making model-quality claims.
+2. Reconcile the unfiltered non-streaming timeout with the supervisor-parity streaming success under matched generation settings; then validate a real MiniCPM task and Directory workflow using independently observed tool and final-result receipts before model-quality claims.
 3. Submit this isolated repair branch and its immutable TAP digests to the integration owner; do not merge, install, or publish on incomplete evidence.
