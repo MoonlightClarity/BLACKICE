@@ -61,6 +61,7 @@ test('cold analytical compatible turn discovers exact support then sends the com
   const body = f.requests[1].body;
   assert.deepEqual(body.response_format, { type: 'json_schema', json_schema: { name: 'planning_response', strict: true, schema } });
   assert.deepEqual(body.provider, { require_parameters: true }); assert.equal(body.tools, undefined);
+  for(const field of ['dry_multiplier','dry_base','dry_allowed_length','dry_penalty_last_n'])assert.equal(Object.hasOwn(body,field),false);
   const capability = f.events.find(event => event.type === 'capabilities');
   assert.equal(capability.structuredOutput, 'provider-json-schema'); assert.equal(capability.hostValidationRequired, true);
   assert.equal(capability.structuredOutputTransport, 'chat-completions-response-format');
@@ -77,6 +78,9 @@ test('managed local llama uses strict JSON grammar even when /models advertises 
   assert.equal(capability.structuredOutput, 'provider-json-schema');
   assert.equal(capability.structuredOutputReason, 'managed_local_llama_json_schema');
   assert.equal(capability.hostValidationRequired, true);
+  assert.deepEqual(capability.structuredSampling,{source:'managed-structured-default',parameters:{dry_multiplier:0.8,dry_base:1.75,dry_allowed_length:2,dry_penalty_last_n:512}});
+  for(const [field,value] of Object.entries(capability.structuredSampling.parameters))assert.equal(body[field],value);
+  assert.equal(Object.hasOwn(body,'max_tokens'),false,'DRY is not an output-token cap');
 });
 
 test('fresh catalog is reused and a recreated runtime performs one cold discovery before inference', async t => {
@@ -322,4 +326,16 @@ test('exclusive-branch uniqueness uses explicit host fallback instead of narrowi
     assert.equal(capabilities.hostValidationRequired, true);
     assert.deepEqual(original, before);
   }
+});
+
+
+test('explicit per-model structured sequence penalty overrides automatic sampling without affecting ordinary generation',async t=>{
+ const f=await fixture(t,{local:true,parameters:null});
+ f.runtime.localModels={llamaConfig:()=>({settings:{modelOverrides:{'exact-model':{structuredDryMultiplier:0}}}})};
+ await f.runtime.runAgent(f.options);
+ assert.equal(f.requests[0].body.dry_multiplier,0);
+ assert.equal(f.events.find(event=>event.type==='capabilities').structuredSampling.source,'user-model-override');
+ await f.runtime.runAgent({...f.options,responseOnly:false,outputSchema:undefined});
+ const ordinary=f.requests.filter(item=>item.method==='POST').at(-1).body;
+ for(const field of ['dry_multiplier','dry_base','dry_allowed_length','dry_penalty_last_n'])assert.equal(Object.hasOwn(ordinary,field),false);
 });

@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { DEFAULT_LLAMA_CPP_SETTINGS, validateLlamaCppSettings, buildLlamaCppLaunch } from '../lib/llama-cpp-launch-config.mjs';
+import { DEFAULT_LLAMA_CPP_SETTINGS, validateLlamaCppSettings, buildLlamaCppLaunch, llamaCppStructuredSampling } from '../lib/llama-cpp-launch-config.mjs';
 import { LlamaCppSettingsStore } from '../lib/llama-cpp-settings.mjs';
 import { LlamaCppServerSupervisor } from '../lib/llama-cpp-supervisor.mjs';
 import { localModelHTTP } from '../lib/local-model-http.mjs';
@@ -343,4 +343,16 @@ test('unrelated 503 remains terminal and never starts a second process',async()=
  const f=mockSupervisor({external:true});f.supervisor.probe=async()=>{throw Object.assign(Error('Service unavailable'),{code:'LOCAL_ENGINE_REQUEST_FAILED',status:503});};
  await assert.rejects(f.supervisor.acquire(f.config,1),{code:'LOCAL_ENGINE_REQUEST_FAILED'});
  assert.equal(f.launches.length,0);assert.equal(f.kills,0);await f.supervisor.close();
+});
+
+
+test('structured sequence repetition setting is a per-request model override, never a native launch flag',()=>{
+ const configured=settings({modelOverrides:{small:{structuredDryMultiplier:0},other:{structuredDryMultiplier:0.3}}});
+ const launch=buildLlamaCppLaunch(configured);
+ assert.deepEqual(settings(JSON.parse(JSON.stringify(configured))),configured);
+ assert.doesNotMatch(launch.preset+launch.args.join(' '),/structuredDryMultiplier|dry-multiplier|dry-penalty-last-n/);
+ assert.equal(llamaCppStructuredSampling(configured,'small').parameters.dry_multiplier,0);
+ assert.equal(llamaCppStructuredSampling(configured,'other').parameters.dry_multiplier,0.3);
+ assert.equal(llamaCppStructuredSampling(configured,'unconfigured').parameters.dry_multiplier,0.8);
+ for(const value of [-1,null,'0.8',Infinity,NaN])assert.throws(()=>settings({modelOverrides:{small:{structuredDryMultiplier:value}}}),{code:'LOCAL_LLAMA_SETTINGS_INVALID'});
 });
