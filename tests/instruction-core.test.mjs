@@ -55,6 +55,17 @@ test('local file routing follows the attached schema instead of advertising a re
   assert.match(paths, /Continue while a cursor is returned, even after an empty page/);
 });
 
+test('archived text and outcome feedback have distinct current-task routing only when attached', () => {
+  const catalog=[tool('relay_workspace',['read','search']),tool('relay_find_files'),tool('relay_code',['save','check']),tool('relay_context_page',['read','search','list']),tool('relay_outcome_feedback',['read'])];
+  const guidance=capabilityGuidance(catalog,{planningMode:'off'});
+  assert.match(guidance,/relay_context_page: Retrieve archived text/);
+  assert.match(guidance,/relay_outcome_feedback: Read only the current independent assessment/);
+  assert.match(guidance,/For literal text inside a known file, use action search with path and query/);
+  assert.match(guidance,/For omitted text in an EXTERNAL CONTEXT RECORD use relay_context_page search/);
+  const absent=capabilityGuidance(catalog.slice(0,3),{planningMode:'off'});
+  assert.doesNotMatch(absent,/relay_context_page|relay_outcome_feedback/);
+});
+
 test('browser recovery guidance names only operations and identity fields present in the attached schema', () => {
   const ordinary = capabilityGuidance([tool('relay_browser', ['open', 'snapshot', 'click'])]);
   assert.match(ordinary, /fresh snapshot and retry/);

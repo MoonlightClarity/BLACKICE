@@ -35,6 +35,25 @@ for(const type of ['openai','anthropic','compatible'])test(`${type}: the engine 
   assert.doesNotMatch(firstInstructions,/full quantitative planning contract/);
   assert.match(firstInstructions,/Current user directions replace conflicting behavioral defaults, skill instructions and earlier assistant plans/);
   assert.deepEqual(manifest(firstInstructions).map(item=>item.name),toolNames(requests[0].body));assert.deepEqual(new Set(toolNames(requests[0].body)),new Set(['relay_workspace','relay_context_page','relay_code','relay_find_files','relay_control','relay_agents','relay_skills','relay_history']));for(const name of ['relay_browser','relay_desktop','relay_connections','relay_identity','relay_files','relay_task'])assert.ok(!manifest(firstInstructions).some(item=>item.name===name),name);
+  // Inspect the actual serialized definitions, not just the manifest names.
+  const definitions=new Map(requests[0].body.tools.map(tool=>{
+    const wire=type==='compatible'?tool.function:tool;
+    return [wire.name,{description:wire.description,schema:type==='anthropic'?wire.input_schema:wire.parameters}];
+  }));
+  for(const name of definitions.keys())assert.ok(firstInstructions.includes(name+': '),'missing adapter guidance for '+name);
+  assert.match(definitions.get('relay_context_page').description,/Retrieve omitted text from an EXTERNAL CONTEXT RECORD/);
+  assert.match(definitions.get('relay_find_files').schema.properties.query.description,/FILENAME or PATH substring/);
+  assert.match(definitions.get('relay_find_files').schema.properties.path.description,/does not read the contents/);
+  assert.match(definitions.get('relay_code').description,/check saved source code/);
+  assert.match(definitions.get('relay_code').schema.properties.expectedHash.description,/Omit if unknown; never invent a hash/);
+  assert.match(definitions.get('relay_workspace').description,/search literal text inside files/);
+  assert.match(definitions.get('relay_control').description,/does not read task files or archived tool-result text/);
+  assert.match(definitions.get('relay_agents').description,/Manage saved BLACKICE conversations/);
+  assert.match(definitions.get('relay_skills').description,/saved task procedures/);
+  assert.match(definitions.get('relay_history').description,/saved work from earlier runs|immediately previous turn/);
+  assert.match(firstInstructions,/relay_context_page: Retrieve archived text/);
+  assert.match(firstInstructions,/For omitted text in an EXTERNAL CONTEXT RECORD use relay_context_page search, not this tool/);
+  assert.match(firstInstructions,/relay_code: Save or check actual source code only/);
   assert.ok(!JSON.stringify(messages(requests[0].body)).includes('BLACKICE TOOL ROUTING'),'routing policy must not exist only in a user prompt');
   // Retrieval remains available on follow-up without any mutable memory service.
   const second=engine.continueRun(first.id,{nodeId:'agent',message:'SECOND_ROUTING_USER_MESSAGE'}),two=await settled(second.id);assert.equal(two.status,'completed',two.error);assert.equal(two.nodes.agent.threadId,one.nodes.agent.threadId);assert.equal(requests.length,2);
