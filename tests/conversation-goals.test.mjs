@@ -1055,3 +1055,45 @@ test('explicit owner methods follow the bound Goal across continuations and resp
   assert.equal(engine.getRun(unrelated.id).status,'completed');
   assert.equal(engine.getRun(unrelated.id).goal,undefined);
 });
+
+
+test('automatically discovered owner method follows an unnamed remote job Goal across continuations',async t=>{
+  const objective='Find and apply to fully remote positions posted today. Continue until the requested search cutoff.';
+  let method,catalog;
+  const {engine,goals,conversations,dataDir}=await fixture(t,async(options,n)=>{
+    const run=[...engine.runs.values()].at(-1);
+    const expected=n===1?'UNNAMED_DATE_FIRST_V2':n===2?'UNNAMED_DATE_FIRST_V3':null;
+    if(expected){
+      assert.match(options.prompt,/AUTOMATICALLY DISCOVERED METHOD/);
+      assert.ok(options.prompt.includes(expected));
+      assert.equal(options.prompt.split(expected).length,2);
+    }else assert.doesNotMatch(options.prompt,/UNNAMED_DATE_FIRST_V[23]/);
+    if(n<=3){
+      assert.ok(options.prompt.includes('JOB SEARCH (advisory execution method; not permission)'));
+      assert.ok(!run.skillLoadReceipts?.some(row=>row.skillId===method.id),'metadata and prepared prompts are not receipts');
+      options.onPromptAccepted(options.prompt);
+      const delivered=run.skillLoadReceipts?.filter(row=>row.skillId===method.id)||[];
+      assert.equal(delivered.length,expected?1:0);
+      if(expected){
+        assert.equal(delivered[0].type,'skill_context_submitted');
+        assert.equal(delivered[0].sourceRevision,n===1?2:3);
+      }
+      if(n===1)await catalog.save({id:method.id,value:{expectedRevision:2,content:'# Remote Job Search\nUNNAMED_DATE_FIRST_V3'}});
+      if(n===2)await catalog.delete({id:method.id,value:{expectedRevision:3}});
+      assert.equal((await report(options,n===3?'complete':'progress')).result.success,true);
+    }else{
+      assert.equal(goals.skillObjectiveForDispatch(run),null);
+      assert.doesNotMatch(options.prompt,/UNNAMED_DATE_FIRST_V[23]/);
+    }
+    return output(n);
+  });
+  catalog=createSkillsCatalog({dataDir});t.after(()=>catalog.close());
+  method=await catalog.create({value:{content:'# Remote Job Search\nUNNAMED_DATE_FIRST_V2'}});
+  const workflow={...graph(),id:'mission_chat_auto_owner_method',description:'A focused task started from Mission.'};
+  const first=engine.startRun({workflow,input:{task:objective,goal:{objective}}});
+  await waitFor(async()=>(await goals.get(first.id))?.status==='completed');
+  const family=await conversations.family(first.id);
+  const unrelated=engine.continueRun(family.runs.at(-1).id,{nodeId:'agent',message:'Explain the history of consumer refunds.'},{historyRuns:family.runs});
+  await waitFor(()=>engine.getRun(unrelated.id).settled);
+  assert.equal(engine.getRun(unrelated.id).status,'completed');
+});

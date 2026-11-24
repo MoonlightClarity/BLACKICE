@@ -185,7 +185,7 @@
     {
       "id": "library-job-search",
       "title": "Job Search",
-      "description": "Find current openings, check the exact posting and fit, and complete applications when the user requests them.",
+      "description": "Find current openings, verify the exact posting against owner scope, and complete requested applications.",
       "tags": [
         "research",
         "jobs",
