@@ -52,7 +52,7 @@ test('fresh semantic review can accept corrected response',async()=>{
  let calls=0;
  const c=createModularCompletionController({policy,getSnapshot:()=>({policy,evidence:{records:[]}}),
  review:async()=>({decision:++calls===1?'revise_response':'respond',summary:'Exact report reviewed',
- remaining:[],nextAction:'',evidenceRefs:['candidate'],blockers:[]})});
+ remaining:[],nextAction:calls===1?'Correct the report structure using the existing evidence.':'',evidenceRefs:['candidate'],blockers:[]})});
  assert.equal((await c.beforeFinal({output:'first'})).responseOnly,true);
  assert.equal(await c.beforeFinal({output:'corrected'}),null);
  assert.equal(calls,2);assert.equal((await c.assertReady()).ready,true);
