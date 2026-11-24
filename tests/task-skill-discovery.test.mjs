@@ -25,6 +25,8 @@ test('automatically discover the remote method from actual job intent, not a nam
   'Find and apply to fully remote positions posted today.',
   'Apply to remote jobs for me until 6 AM EST.',
   'Continue my real overnight remote job search and submit genuine applications.',
+  'Conduct my real overnight remote job search and submit genuine applications until 6 AM EST Tuesday November 24, 2026 (11:00 UTC). Apply within my requested range: US-compatible fully remote W-2 employment. Discover broad current postings date-first, not by predicted applicant fit or familiar employer; optimize incremental return relative to time. Reconcile existing application and outreach records. Do not stop at an arbitrary application count.',
+  'Carry out my remote job search and submit applications.',
  ]){
   assert.ok(taskSkillQueries(request).intent.includes('remote job search'),request);
   const selected=discoverTaskSkills(request,metadata).automatic;
@@ -52,6 +54,9 @@ test('diagnostic discussion and quoted tasks are not operational job-skill selec
   'Review the remote job search skill.',
   '> Apply to remote jobs for me.',
   'Run the remote job search workflow as a dry run.',
+  'Conduct the remote job search workflow as a dry run.',
+  'Conduct the remote job search workflow tests.',
+  'Explain how to conduct a remote job search.',
  ]){
   assert.ok(!discoverTaskSkills(request,metadata).automatic.some(row=>row.id===remote.id),request);
  }
