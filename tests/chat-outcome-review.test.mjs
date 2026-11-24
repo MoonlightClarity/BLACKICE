@@ -215,3 +215,112 @@ test('large receipts have host-only exact-reference reads and model JSON cannot 
   assert.ok(accepted.evidenceInspection.reads.some(read=>read.evidenceIds.includes(record.id)&&read.field==='result'));
   assert.equal(g.calls.length,1);assert.ok(g.events.every(event=>event.verified===false));
 });
+
+
+test('contradictory local respond verdict is repaired in the reviewer, not coerced into operational continuation',async t=>{
+  const receipt=row('exact-match',{text:'The observed result is available.'});
+  const f=await fixture(t,(options,index)=>{
+    if(index===1)return response({decision:'respond',summary:'The evidence supports the result.',
+      remaining:['Identify the result already returned by the tool'],nextAction:'Respond with the verified result.',evidenceRefs:['evidence-0001']});
+    assert.match(options.prompt,/respond requires remaining/);
+    assert.match(options.prompt,/Do not list satisfied requirements as remaining/);
+    return response({decision:'respond',summary:'The result is supported.',evidenceRefs:['evidence-0001']});
+  },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+  const result=await f.reviewer.assess(request('Report the observed result.',[receipt]));
+  assert.equal(result.decision,'respond');
+  assert.deepEqual(result.remaining,[]);
+  assert.equal(result.nextAction,'');
+  assert.equal(f.calls.length,2);
+  assert.equal(f.events.filter(event=>event.status==='repairing').length,1);
+  assert.equal(f.events.filter(event=>event.status==='validated').length,1);
+  assert.ok(f.calls.every(call=>call.hostOnlyTools&&call.sandbox==='read-only'&&!call.onBeforeFinal));
+});
+
+test('persistent contradictory respond verdict is unreviewed, not a fabricated task-action instruction',async t=>{
+  const f=await fixture(t,()=>response({decision:'respond',remaining:[],nextAction:'Repeat the existing read.',evidenceRefs:['evidence-0001']}),
+    {model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+  const result=await f.reviewer.assess(request('Report the observed result.',[row('read',{text:'Existing result'})]));
+  assert.equal(result.decision,'unreviewed');
+  assert.equal(result.reason,'MODULAR_REVIEW_INVALID');
+  assert.equal(f.calls.length,3);
+  assert.equal(f.events.filter(event=>event.status==='validated').length,0);
+});
+
+
+test('review distinguishes authorship from transport role and retains owner constraints while omitting redundant worker methods',async t=>{
+  const authority={developerInstructions:'Exact developer constraints.',sections:[
+    {id:'owner',role:'user',origin:'owner-skill',source:'Owner skill: custom',text:'OWNER_EXACT_REQUIREMENT'},
+    {id:'workflow',role:'user',origin:'workflow',source:'workflow node',text:'WORKFLOW_DEFAULT'},
+    {id:'runtime',role:'user',origin:'host-runtime',source:'lib/engine.mjs',text:'HOST_CAPABILITY_BOUNDARY'},
+    {id:'bundled',role:'user',origin:'bundled-skill',reviewAudience:'worker',source:'Bundled skill: method',text:'WORKER_ONLY_BUNDLED_METHOD'},
+    {id:'duplicate',role:'user',origin:'host-runtime',reviewAudience:'worker',source:'lib/engine.mjs',text:'WORKER_ONLY_DUPLICATE'}
+  ]};
+  const f=await fixture(t,options=>{
+    assert.ok(options.prompt.indexOf('CURRENT TASK REQUEST')<options.prompt.indexOf('OWNER_EXACT_REQUIREMENT'));
+    assert.match(options.prompt,/DELIVERED USER INSTRUCTION .*"origin":"owner-skill"/);
+    assert.match(options.prompt,/OWNER_EXACT_REQUIREMENT/);
+    assert.match(options.prompt,/DELIVERED WORKFLOW INSTRUCTIONS .*"origin":"workflow"/);
+    assert.match(options.prompt,/DELIVERED HOST RUNTIME GUIDANCE .*"origin":"host-runtime"/);
+    assert.match(options.prompt,/HOST_CAPABILITY_BOUNDARY/);
+    assert.doesNotMatch(options.prompt,/WORKER_ONLY_BUNDLED_METHOD|WORKER_ONLY_DUPLICATE/);
+    assert.equal(options.developerInstructions,authority.developerInstructions);
+    return response();
+  },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S',authority});
+  const result=await f.reviewer.assess(request('Exact current task.'));
+  assert.equal(result.decision,'respond');
+  const start=f.events.find(e=>e.status==='started');
+  assert.equal(start.authorityIdentities.length,5,'Audit preserves all delivered instruction sources.');
+  assert.ok(start.authorityIdentities.some(s=>s.origin==='bundled-skill'&&s.reviewAudience==='worker'));
+});
+
+
+test('affirmative ordinary review cannot use the request alone as proof of an admitted tool result',async t=>{
+  const receipt={...row('current-read',{text:'Observed source content.'}),callId:'current-read'};
+  const f=await fixture(t,(options,index)=>{
+    if(index===1)return response({summary:'The source was inspected.',evidenceRefs:['user-request']});
+    assert.match(options.prompt,/missingResultCitation/);
+    assert.match(options.prompt,/Correct the review using the existing receipts/);
+    return response({summary:'The admitted receipt records the observation.',evidenceRefs:['evidence-0001']});
+  },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+  const result=await f.reviewer.assess(request('Report the observed source content.',[receipt]));
+  assert.equal(result.decision,'respond');
+  assert.deepEqual(result.evidenceRefs,['current-read']);
+  assert.equal(f.calls.length,2);
+  assert.ok(f.events.some(event=>event.status==='repairing'&&event.validation?.missingResultCitation));
+});
+
+test('an affirmative assessment with unresolved blockers is repaired rather than accepted',async t=>{
+  const f=await fixture(t,(options,index)=>{
+    if(index===1)return response({blockers:[{scope:'current result',evidenceRefs:['user-request'],whyNotRepairable:'Still missing'}]});
+    assert.match(options.prompt,/respond requires remaining/);
+    assert.match(options.prompt,/blockers: \[\]/);
+    return response();
+  });
+  assert.equal((await f.reviewer.assess(request('Answer the supplied question.'))).decision,'respond');
+  assert.equal(f.calls.length,2);
+});
+
+
+test('empty operational continuation is repaired in the reviewer, not sent to the worker',async t=>{
+  const f=await fixture(t,(options,index)=>{
+    if(index===1)return response({decision:'continue',remaining:[],nextAction:''});
+    assert.match(options.prompt,/continue requires a concrete unfinished user obligation/);
+    return response({decision:'continue',remaining:['Read the requested source'],nextAction:'Read the exact source.'});
+  });
+  const result=await f.reviewer.assess(request('Read the source.'));
+  assert.equal(result.decision,'continue');assert.equal(result.nextAction,'Read the exact source.');
+  assert.equal(f.calls.length,2);
+});
+
+test('strict local review sends concise field guidance and a finite set of citation slots, not a generation cap',async t=>{
+  const receipt={...row('read-a',{text:'Observed source content.'}),callId:'read-a'};
+  const f=await fixture(t,options=>{
+    assert.match(options.prompt,/The exact structured output schema is supplied separately by the host/);
+    assert.doesNotMatch(options.prompt,/Use only these exact fields: \{"type":"object"/);
+    assert.equal(options.outputSchema.properties.evidenceRefs.maxItems,3);
+    assert.equal(options.outputSchema.properties.blockers.items.properties.evidenceRefs.maxItems,3);
+    assert.equal(options.outputSchema.properties.summary.maxLength,undefined);
+    return response({evidenceRefs:['evidence-0001']});
+  },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+  assert.equal((await f.reviewer.assess(request('Report the observed result.',[receipt]))).decision,'respond');
+});

@@ -150,3 +150,20 @@ test('a single local-file match returns exact workspace read arguments, not an a
  const read=success(await handler(call(found.readMatch.arguments,found.readMatch.tool)));
  assert.match(JSON.stringify(read),/Read this task document/);
 });
+
+
+test('filename search misses explicitly disclaim content coverage even for an existing exact file',async t=>{
+  const {cwd,handler}=await fixture(t);
+  const filename=path.join(cwd,'incident.log');
+  const marker='ROOT_CAUSE_CODE:';
+  await writeFile(filename,marker+' CACHE_EPOCH_STALE_42');
+  const miss=success(await handler(call({path:filename,query:marker,match:'path'})));
+  assert.equal(miss.matches.length,0);
+  assert.equal(miss.searchDomain,'filename-and-path-only');
+  assert.match(miss.searchScopeNotice,/No file contents were searched/);
+  assert.match(miss.searchScopeNotice,/does not establish absence of text/);
+  const hit=success(await handler(call({path:cwd,query:'incident.log'})));
+  assert.equal(hit.matches.length,1);
+  assert.equal(hit.searchDomain,'filename-and-path-only');
+  assert.equal(hit.readMatch.arguments.path,filename);
+});

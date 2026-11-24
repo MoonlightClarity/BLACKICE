@@ -259,8 +259,8 @@ test('registering another local model preserves explicit output choices and does
     });
     await registerLocalModel(f.runtime, 'llamacpp', 'MiniCPM-public-fixture.gguf');
     const provider = (await f.reopen()).get('local_llamacpp');
-    assert.equal(provider.outputTokenPolicy, policy);
-    assert.equal(Object.hasOwn(provider, 'outputTokenPolicy'), policy !== undefined);
+    assert.equal(provider.outputTokenPolicy, policy??'configured-limit');
+    assert.equal(Object.hasOwn(provider, 'outputTokenPolicy'), true);
     assert.equal(provider.maxTokens, 4096);
     assert.deepEqual(provider.models.map(model => model.id), ['existing.gguf', 'MiniCPM-public-fixture.gguf']);
     assert.equal(Object.hasOwn(f.calls[0].value, 'outputTokenPolicy'), false);
@@ -281,7 +281,7 @@ test('new suffixed llama providers use native output defaults while other local 
   const reopened = await f.reopen();
   assert.equal(reopened.get('local_llamacpp_2').outputTokenPolicy, 'provider-default');
   for (const id of ['local_ollama', 'local_lmstudio'])
-    assert.equal(Object.hasOwn(reopened.get(id), 'outputTokenPolicy'), false, id);
+    assert.equal(reopened.get(id).outputTokenPolicy, 'provider-default', id);
   assert.equal(reopened.get('local_llamacpp').baseUrl, 'http://127.0.0.1:45678/v1');
   assert.equal(reopened.get('local_llamacpp').maxTokens, 2048);
   assert.deepEqual(reopened.get('local_llamacpp').models.map(model => model.id), ['unrelated']);

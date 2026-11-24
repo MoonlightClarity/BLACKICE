@@ -46,7 +46,7 @@ test('reported model capacity bounds requested capacity and all remaining counts
   assert.equal(snapshot.inputBudgetTokens, 828400 - snapshot.outputReserveTokens - snapshot.headroomTokens);
   assert.equal(snapshot.actualInputTokens, 3000); assert.equal(snapshot.actualOutputTokens, 8); assert.equal(snapshot.remainingIsEstimate, true);
   assert.equal(snapshot.estimatedInputTokens, estimateContextTokens([['hello'], []]) * 3); assert.match(snapshot.warnings[0], /828,400/);
-  const unknown = contextSnapshot(); assert.equal(unknown.modelWindowTokens, null); assert.equal(unknown.windowSource, 'working-budget'); assert.match(unknown.warnings[0], /not a model capability claim/);
+  const unknown = contextSnapshot(); assert.equal(unknown.modelWindowTokens, null); assert.equal(unknown.windowSource, 'unresolved'); assert.equal(unknown.effectiveWindowTokens,null); assert.equal(unknown.inputBudgetTokens,Infinity); assert.match(unknown.warnings[0], /No substitute context ceiling/);
   const configured = contextSnapshot({ modelWindowTokens: 900000, modelWindowSource: 'user-configured' }); assert.equal(configured.modelWindowTokens, null); assert.equal(configured.configuredModelWindowTokens, 900000); assert.equal(configured.windowSource, 'user-configured');
   assert.throws(() => contextSnapshot({ options: { compactAtTokens: 900000 }, modelWindowTokens: 100000, modelWindowSource: 'provider-reported' }), { code: 'INVALID_CONTEXT' });
   assert.equal(reportedWindowFromError('maximum context length is 128,000 tokens'), 128000);

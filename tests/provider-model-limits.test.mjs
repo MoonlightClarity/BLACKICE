@@ -41,7 +41,7 @@ test('both limits are explicitly unknown without confusing a working budget or p
   assert.equal(unknown.contextWindowTokens, null); assert.equal(unknown.contextWindowSource, 'unknown');
   assert.equal(unknown.maxOutputTokens, null); assert.equal(unknown.maxOutputTokensSource, 'unknown');
   const budget = contextSnapshot({ maxOutputTokens: 4096 });
-  assert.equal(budget.modelWindowTokens, null); assert.equal(budget.effectiveWindowTokens, 128000); assert.equal(budget.windowSource, 'working-budget');
+  assert.equal(budget.modelWindowTokens, null); assert.equal(budget.effectiveWindowTokens, null); assert.equal(budget.windowSource, 'unresolved'); assert.equal(budget.inputBudgetTokens,Infinity);
 });
 
 test('positive reported capacities retain their values outside old arbitrary metadata bounds', () => {

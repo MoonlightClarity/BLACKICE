@@ -60,7 +60,7 @@ async function fixture(t, scenario) {
 }
 
 const scenarios = [
-  { name: 'truncation reports the actual 8192 request under configured 16384 and model capacity 64000', configuredBudget: 16384, modelCapacity: 64000, effectiveBudget: 8192, providerContext: { outputReserveTokens: 16384 }, context: { outputReserveTokens: 8192 } },
+  { name: 'truncation reports configured 16384 independent of the smaller context reserve', configuredBudget: 16384, modelCapacity: 64000, effectiveBudget: 16384, providerContext: { outputReserveTokens: 16384 }, context: { outputReserveTokens: 8192 } },
   { name: 'truncation reports the configured budget when configuration is the limiting bound', configuredBudget: 2048, modelCapacity: 64000, effectiveBudget: 2048 },
   { name: 'truncation reports the model budget when saved model capacity is the limiting bound', configuredBudget: 16384, modelCapacity: 4096, effectiveBudget: 4096 },
   { name: 'explicit context output reserve 16384 reaches the wire and is reported without a policy change', configuredBudget: 16384, modelCapacity: 64000, effectiveBudget: 16384, context: { outputReserveTokens: 16384 } }

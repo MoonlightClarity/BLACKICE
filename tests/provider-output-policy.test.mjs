@@ -114,14 +114,18 @@ async function fixture(t, {
   };
 }
 
-test('output policy is explicit; old maxTokens and null semantics are unchanged', () => {
-  const old = normalizeProvider(localConfig);
+test('managed local legacy default migrates, explicit choices and remote limits are preserved', () => {
+  const old = normalizeProvider(localConfig,{}, {preserveLimitSources:true});
+  assert.equal(normalizeProvider(localConfig).outputTokenPolicy,'configured-limit','A deliberately supplied numeric budget remains explicit, even at 8192.');
+  assert.equal(normalizeProvider({...localConfig,maxTokens:undefined}).outputTokenPolicy,'provider-default');
   assert.equal(old.maxTokens, 8192);
-  assert.equal(Object.hasOwn(old, 'outputTokenPolicy'), false);
+  assert.equal(old.outputTokenPolicy, 'provider-default');
   assert.equal(normalizeProvider({ id: old.id, maxTokens: null }, old).maxTokens, 8192);
-  assert.equal(normalizeOutputTokenPolicy(undefined, localConfig), 'configured-limit');
-  assert.equal(createOutputTokenPolicySnapshot(old), undefined);
-  assert.equal(outputTokenPolicyForRecord({}, { ...localConfig, outputTokenPolicy: 'provider-default' }), 'configured-limit');
+  assert.equal(normalizeOutputTokenPolicy(undefined, localConfig), 'provider-default');
+  assert.deepEqual(createOutputTokenPolicySnapshot(old),{version:1,policy:'provider-default'});
+  assert.equal(outputTokenPolicyForRecord({}, { ...localConfig, outputTokenPolicy: 'provider-default' }), 'provider-default');
+  assert.equal(normalizeOutputTokenPolicy(undefined,{...localConfig,maxTokens:4096}),'configured-limit');
+  assert.equal(normalizeOutputTokenPolicy(undefined,{...localConfig,id:'remote'}),'provider-default');
   const selected = normalizeProvider({ ...localConfig, outputTokenPolicy: 'provider-default' });
   assert.equal(selected.outputTokenPolicy, 'provider-default');
   assert.equal(selected.maxTokens, 8192, 'retained configured budget is not the selected generation policy');
@@ -143,11 +147,11 @@ test('unsupported output policies and transports are rejected without changing l
     { id: 'other_local' }, { baseUrl: 'https://remote.example/v1' },
     { baseUrl: 'http://127.0.0.1:8081/v1' }, { preset: 'compatible' },
     { endpoints: { chatCompletions: '/other/completions' } },
-  ]) assert.throws(() => normalizeProvider({ ...localConfig, ...changes, outputTokenPolicy: 'provider-default' }),
-    { code: 'INVALID_OUTPUT_TOKEN_POLICY' });
-  assert.throws(() => normalizeOutputTokenPolicy('provider-default', { ...localConfig, type: 'anthropic' }),
-    { code: 'INVALID_OUTPUT_TOKEN_POLICY' });
-  assert.equal(normalizeProvider({ ...localConfig, id: 'other_local' }).maxTokens, 8192);
+  ]) assert.equal(normalizeProvider({ ...localConfig, ...changes, outputTokenPolicy: 'provider-default' }).outputTokenPolicy,'provider-default');
+  assert.equal(normalizeOutputTokenPolicy('provider-default', { ...localConfig, type: 'anthropic' }),'provider-default');
+  assert.throws(()=>normalizeOutputTokenPolicy('provider-default',{type:'subscription-cli'}),{code:'INVALID_OUTPUT_TOKEN_POLICY'});
+  assert.equal(normalizeProvider({ ...localConfig, id: 'other_local' }).outputTokenPolicy,'configured-limit');
+  assert.equal(normalizeProvider({ ...localConfig, id: 'other_local',maxTokens:undefined }).outputTokenPolicy,'provider-default');
 });
 
 test('fresh local provider-default requests omit max_tokens despite the ordinary 8192 admission reserve', async t => {
@@ -182,13 +186,13 @@ test('legacy conversation continuation retains its configured limit after the pr
   const first = await f.run({ context: { autoCompact: false }, effort: 'default' });
   const before = await f.record(first.threadId);
   assert.equal(f.requests[0].body.max_tokens, 8192);
-  assert.equal(Object.hasOwn(before, 'outputTokenPolicy'), false);
+  assert.deepEqual(before.outputTokenPolicy,{version:1,policy:'configured-limit'});
   await f.configure({ outputTokenPolicy: 'provider-default' });
   const resumed = await f.run({ threadId: first.threadId, prompt: 'Continue the same public fixture.' });
   assert.equal(resumed.threadId, first.threadId);
   assert.equal(f.requests.at(-1).body.max_tokens, 8192);
   const after = await f.record(first.threadId);
-  assert.equal(Object.hasOwn(after, 'outputTokenPolicy'), false);
+  assert.deepEqual(after.outputTokenPolicy,before.outputTokenPolicy);
   assert.equal(after.model, before.model);
   assert.deepEqual(after.contextOptions, before.contextOptions);
 });
@@ -307,4 +311,18 @@ test('a malformed saved output policy is rejected before acquiring a model lease
     { code: 'INVALID_OUTPUT_TOKEN_POLICY' });
   assert.equal(f.requests.length, requests);
   assert.equal(f.order.filter(item => item === 'lease').length, admissions);
+});
+
+
+test('inherited local default omits the generation cap and an explicit finite cap is not reduced by the context reserve',async t=>{
+  const f=await fixture(t,{policy:'provider-default'});
+  const initial=await f.run({context:{outputReserveTokens:1024,autoCompact:false}});
+  assert.equal(Object.hasOwn(f.requests.at(-1).body,'max_tokens'),false);
+  const legacy=await f.record(initial.threadId);delete legacy.outputTokenPolicy;
+  await writeFile(f.runtime.threadFile(initial.threadId),JSON.stringify(legacy));
+  await f.run({threadId:initial.threadId,prompt:'Continue the legacy local conversation.'});
+  assert.equal(Object.hasOwn(f.requests.at(-1).body,'max_tokens'),false);
+  await f.configure({outputTokenPolicy:'configured-limit',maxTokens:32768});
+  await f.run({context:{outputReserveTokens:8192,autoCompact:false}});
+  assert.equal(f.requests.at(-1).body.max_tokens,32768);
 });

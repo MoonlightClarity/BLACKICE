@@ -152,6 +152,19 @@ test('tool feedback uses a neutral continuation and binds exact delivery without
  assert.equal(await f.review.beforeFinal(candidate),null);
  assert.equal(f.calls(),1);
 });
+test('omitted feedback ID resolves only the current assessment and preserves delivery binding',async()=>{
+ const events=[],f=fixture(()=>assessment,{feedbackTransport:'tool-result',onFeedback:e=>events.push(e)});
+ const call={callId:'implicit-current',name:'relay_outcome_feedback',arguments:{action:'read'}};
+ assert.equal(f.review.readOutcomeFeedback(call).code,'OUTCOME_FEEDBACK_UNAVAILABLE');
+ f.review.beforeFinal(candidate);const id=cue(await f.review.beforeFinal(candidate));
+ const before=f.review.evidenceSnapshot(),result=f.review.readOutcomeFeedback(call);
+ assert.equal(result.success,true);assert.equal(JSON.parse(result.contentItems[0].text).feedbackId,id);
+ f.review.delivered({call,result,delivery:'accepted-provider-request'});
+ assert.deepEqual(events.map(e=>e.status),['available','returned','delivered']);
+ assert.deepEqual(f.review.evidenceSnapshot(),before);
+ addRead(f.review,'changed-input','Changed source');
+ assert.equal(f.review.readOutcomeFeedback(call).code,'OUTCOME_FEEDBACK_STALE');
+});
 test('both explicit modes receive a mistaken review through the tool and re-assess the original report',async()=>{
  for(const feedbackMode of ['gate-only','gate-and-steer']){
   const f=fixture((req,n)=>n===1?{...assessment,decision:'continue',summary:'REVIEWER_MISTAKE',remaining:['Correct the report now'],nextAction:'Correct the report now'}:assessment,{feedbackMode,feedbackTransport:'tool-result'});

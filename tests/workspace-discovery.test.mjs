@@ -42,7 +42,7 @@ test('model guidance exposes native filename discovery without profile facts or 
  assert.match(WORKSPACE_TOOL.description,/filenames or paths use relay_find_files/);
  assert.match(WORKSPACE_TOOL.description,/search matches one literal string inside files/);
  assert.match(FIND_FILES_TOOL.description,/searchComplete.*errors.*skippedCount.*roots/);
- assert.deepEqual(WORKSPACE_TOOL.inputSchema.properties.action.enum,['list','read','write','patch','patch_history','undo_patch','search','run']);
+ assert.deepEqual(WORKSPACE_TOOL.inputSchema.properties.action.enum,['list','read','stat','write','append','patch','patch_history','undo_patch','search','run']);
  assert.equal(FIND_FILES_TOOL.name,'relay_find_files');assert.deepEqual(FIND_FILES_TOOL.inputSchema.required,['query']);
  const engine=await readFile(new URL('../lib/engine.mjs',import.meta.url),'utf8');assert.match(engine,/WORKSPACE_INSTRUCTIONS/);
 });

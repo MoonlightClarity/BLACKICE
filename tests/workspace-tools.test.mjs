@@ -372,3 +372,51 @@ test('rg capture cap reports partial output without counting a trailing fragment
   assert.equal(coverage.returnedMatches,undefined);
   assert.doesNotMatch(JSON.stringify(coverage),/PRIVATE_FRAGMENT|VISIBLE_LINE/);
 });
+
+
+test('incremental file writes return complete hashes, preserve Unicode, and reject duplicate or stale chunks',async t=>{
+  const {handler,cwd}=await harness(t);
+  const target='large.txt',first='start\n'+'a'.repeat(800000),chunk='\nUnicode: \u{1f642}\n'+'b'.repeat(500000);
+  const written=parsed(await handler(call({action:'write',path:target,text:first})));
+  assert.match(written.sha256,/^[a-f0-9]{64}$/);
+  const appended=await handler(call({action:'append',path:target,text:chunk,expectedHash:written.sha256}));
+  assert.equal(appended.success,true,JSON.stringify(appended));
+  const receipt=parsed(appended);
+  assert.equal(receipt.beforeHash,written.sha256);assert.equal(receipt.status,'applied');assert.equal(receipt.atomic,true);
+  assert.equal(await readFile(path.join(cwd,target),'utf8'),first+chunk);
+  const info=parsed(await handler(call({action:'stat',path:target})));
+  assert.equal(info.sha256,receipt.sha256);assert.equal(info.size,Buffer.byteLength(first+chunk));
+  assert.equal(Object.hasOwn(info,'content'),false);
+  const retry=await handler(call({action:'append',path:target,text:chunk,expectedHash:written.sha256}));
+  assert.equal(retry.success,false);assert.equal(parsed(retry).actionDispatched,false);
+  assert.equal(await readFile(path.join(cwd,target),'utf8'),first+chunk);
+  const final=await handler(call({action:'append',path:target,text:'\nend',expectedHash:info.sha256}));
+  assert.equal(final.success,true);assert.equal(await readFile(path.join(cwd,target),'utf8'),first+chunk+'\nend');
+});
+test('concurrent chunks using the same preimage cannot both be applied',async t=>{
+  const {handler,cwd}=await harness(t);
+  const initial=parsed(await handler(call({action:'write',path:'race.txt',text:'initial'})));
+  const second=createWorkspaceToolHandler({cwd});
+  const results=await Promise.all([handler,second].map((h,i)=>h(call({action:'append',path:'race.txt',text:String(i),expectedHash:initial.sha256}))));
+  assert.equal(results.filter(r=>r.success).length,1);
+  assert.equal(results.filter(r=>!r.success&&parsed(r).actionDispatched===false).length,1);
+  assert.match(await readFile(path.join(cwd,'race.txt'),'utf8'),/^initial[01]$/);
+  assert.deepEqual(await readdir(cwd),['race.txt']);
+});
+test('append validates preconditions, respects protected paths, and does not create missing targets',async t=>{
+  const {handler,cwd}=await harness(t);
+  const initial=parsed(await handler(call({action:'write',path:'protected.txt',text:'original'})));
+  for(const args of [
+    {action:'append',path:'protected.txt',text:'x'},
+    {action:'append',path:'missing.txt',text:'x',expectedHash:initial.sha256},
+    {action:'append',path:'protected.txt',text:'',expectedHash:initial.sha256}
+  ]){
+    const rejected=await handler(call(args));assert.equal(rejected.success,false,JSON.stringify(rejected));
+    assert.equal(parsed(rejected).actionDispatched,false);
+  }
+  const protectedHandler=createWorkspaceToolHandler({cwd,protectedPaths:[path.join(cwd,'protected.txt')]});
+  const denied=await protectedHandler(call({action:'append',path:'protected.txt',text:'x',expectedHash:initial.sha256}));
+  assert.equal(denied.success,false);assert.equal(parsed(denied).code,'WORKSPACE_PROTECTED_PATH');
+  assert.equal(await readFile(path.join(cwd,'protected.txt'),'utf8'),'original');
+  assert.deepEqual(await readdir(cwd),['protected.txt']);
+});

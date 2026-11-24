@@ -23,6 +23,9 @@ for(const mode of ['gate-only','gate-and-steer'])test('Engine '+mode+' transport
     assert.equal(Boolean(options.dynamicTools?.some(x=>x.name===OUTCOME_FEEDBACK_TOOL.name)),false);
     const {snapshot}=view(options);
     assert.equal(snapshot.request,task);
+    assert.match(options.prompt,/DELIVERED WORKFLOW INSTRUCTIONS/);
+    assert.match(options.prompt,/DELIVERED HOST RUNTIME GUIDANCE/);
+    assert.doesNotMatch(options.prompt,/WHAT MAKES DONE \(bundled execution method\)|ANTI-COMPLETION BIAS \(bundled execution method\)/);
     assert.equal(snapshot.evidence.records.length,2,'feedback is not operational evidence');
     assert.ok(snapshot.evidence.records.every(r=>r.tool==='relay_workspace'));
     const ids=snapshot.evidence.records.map(r=>r.citationRef);
