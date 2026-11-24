@@ -222,3 +222,104 @@ test('missing disk storage leaves full tool result intact instead of losing evid
   const observed = await store.archiveResult(readCall, original);
   assert.strictEqual(observed, original);
 });
+
+
+test('a single current archive supports a one-call exact text lookup without copying a UUID', async t=>{
+  const {store}=await fixture(t);
+  const marker='ROOT_CAUSE_CODE: CACHE_EPOCH_STALE_42';
+  const raw=JSON.stringify({path:'incident.log',content:'a'.repeat(2500)+marker+'b'.repeat(2500)});
+  const pointer=parsed(await store.archiveResult(readCall,result(raw)));
+  assert.equal(pointer.searchCallTemplate.tool,'relay_context_page');
+  assert.equal(pointer.searchCallTemplate.arguments.reference,pointer.reference);
+  assert.equal(pointer.searchCallTemplate.arguments.action,'search');
+  assert(!JSON.stringify(pointer.preview).includes(marker));
+  const response=await store.handle({arguments:{action:'search',needle:'ROOT_CAUSE_CODE:'}});
+  assert.equal(response.success,true,JSON.stringify(response));
+  const found=parsed(response);
+  assert.equal(found.reference,pointer.reference);
+  assert.equal(found.matches.length,1);
+  assert.equal(found.firstMatchEvidence.reference,pointer.reference);
+  assert.equal(found.firstMatchEvidence.offset,found.matches[0].offset);
+  assert.ok(found.firstMatchEvidence.text.startsWith(marker));
+  assert.equal(found.firstMatchEvidence.text,raw.slice(found.matches[0].offset,found.firstMatchEvidence.nextOffset));
+  assert.equal((await store.read({reference:pointer.reference,offset:found.matches[0].offset,maxBytes:512})).text,found.firstMatchEvidence.text);
+  const failed=await store.handle({arguments:{action:'search',reference:'incident.log',offset:1,limit:5}});
+  assert.equal(failed.success,false);
+  assert.equal(failed.code,'CONTEXT_ARCHIVE_INVALID');
+  assert.match(failed.contentItems[0].text,/NOT evidence of absence/);
+  assert.ok(failed.contentItems[0].text.includes(pointer.reference));
+  assert.match(failed.contentItems[0].text,/"action":"search"/);
+  const wrongId=await store.handle({arguments:{action:'search',reference:'incident.log',needle:'ROOT_CAUSE_CODE:'}});
+  assert.equal(wrongId.success,false,'Explicit invalid filename is never silently substituted.');
+  assert.equal(wrongId.code,'CONTEXT_ARCHIVE_INVALID');
+  const unknown=await store.handle({arguments:{action:'search',reference:'00000000-0000-0000-0000-000000000000',needle:'ROOT_CAUSE_CODE:'}});
+  assert.equal(unknown.success,false,'An explicit absent or foreign reference never falls back to the current archive.');
+  assert.equal(unknown.code,'CONTEXT_ARCHIVE_NOT_FOUND');
+  const missing=parsed(await store.handle({arguments:{action:'search',needle:'NO_SUCH_LITERAL'}}));
+  assert.equal(missing.matches.length,0);
+  assert.equal(missing.complete,true);
+  assert.equal(missing.firstMatchEvidence,undefined);
+  assert.match(missing.nextAction,/does not prove absence in omitted original source/);
+});
+
+test('archive reference omission does not guess across multiple results or a reopened store',async t=>{
+  const {store,dataDir}=await fixture(t);
+  const before=await store.handle({arguments:{action:'search',needle:'target'}});
+  assert.equal(before.success,false);
+  const first=parsed(await store.archiveResult(readCall,result('target first '+ 'x'.repeat(2000))));
+  await store.archiveResult(readCall,result('target first '+ 'x'.repeat(2000)));
+  assert.equal((await store.handle({arguments:{action:'search',needle:'target'}})).success,true,'Repeated identical archive stays unique.');
+  const reopened=new TaskExternalContextStore({dataDir,taskId:'task-alpha',thresholdBytes:500});
+  assert.equal((await reopened.handle({arguments:{action:'search',needle:'target'}})).success,false,'No implicit lookup of a prior turn archive.');
+  assert.equal((await reopened.handle({arguments:{action:'search',reference:first.reference,needle:'target'}})).success,true);
+  const second=parsed(await store.archiveResult(readCall,result('target second '+ 'y'.repeat(2000))));
+  assert.notEqual(first.reference,second.reference);
+  const ambiguous=await store.handle({arguments:{action:'search',needle:'target'}});
+  assert.equal(ambiguous.success,false);
+  assert.match(ambiguous.contentItems[0].text,/no unique current archive/);
+  const exact=parsed(await store.handle({arguments:{action:'search',reference:second.reference,needle:'target'}}));
+  assert.match(exact.firstMatchEvidence.text,/target second/);
+});
+
+test('same-length archive tampering cannot masquerade as a valid no-match search',async t=>{
+  const {store}=await fixture(t);
+  const raw='a'.repeat(1200)+'target'+'b'.repeat(1200);
+  const pointer=parsed(await store.archiveResult(readCall,result(raw)));
+  await writeFile(store.file(pointer.reference,'.txt'),raw.replace('target','absent'));
+  const failure=await store.handle({arguments:{action:'search',reference:pointer.reference,needle:'target'}});
+  assert.equal(failure.success,false);
+  assert.equal(failure.code,'CONTEXT_ARCHIVE_CORRUPT');
+  assert.match(failure.contentItems[0].text,/NOT evidence of absence/);
+});
+
+
+test('provider and host share closed mutually exclusive action contracts',async t=>{
+  const {store}=await fixture(t);
+  const schema=EXTERNAL_CONTEXT_TOOL.inputSchema;
+  assert.equal(schema.oneOf.length,3);
+  const byAction=Object.fromEntries(schema.oneOf.map(branch=>[branch.properties.action.const,branch]));
+  for(const [action,branch] of Object.entries(byAction)){
+    assert.equal(branch.type,'object');
+    assert.equal(branch.additionalProperties,false);
+    assert.ok(branch.required.includes('action'));
+    assert.ok(schema.properties.action.enum.includes(action));
+  }
+  assert.deepEqual(byAction.search.required,['action','needle']);
+  assert.deepEqual(Object.keys(byAction.search.properties),['action','needle','reference','startOffset','limit']);
+  assert.deepEqual(Object.keys(byAction.read.properties),['action','reference','offset','maxBytes']);
+  assert.deepEqual(Object.keys(byAction.list.properties),['action','limit']);
+  assert.equal(byAction.search.properties.offset,undefined);
+  assert.equal(byAction.read.properties.needle,undefined);
+  await store.archiveResult(readCall,result('target '+ 'x'.repeat(2000)));
+  for(const args of [
+    {action:'search'},{action:'search',needle:''},{action:'search',needle:12},
+    {action:'search',needle:'target',offset:1},{action:'read',needle:'target'},
+    {action:'list',limit:0},{action:'list',reference:'invalid'},{action:'constructor'},
+    {action:['search'],needle:'target'}
+  ]){
+    const rejected=await store.handle({arguments:args});
+    assert.equal(rejected.success,false,JSON.stringify(args));
+    assert.equal(rejected.code,'CONTEXT_ARCHIVE_INVALID');
+  }
+  assert.equal((await store.handle({arguments:{action:'search',needle:'target'}})).success,true);
+});
