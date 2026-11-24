@@ -310,7 +310,13 @@ test('real compatible continuations preserve temporal scope for new exports and 
    assert.match(message.content,/Earlier effects can satisfy a state or history request/);
    assert.match(message.content,/including earlier or resumed attempts/);
   }
-  assert.ok(requests.every(body=>JSON.stringify(body.messages).includes("Verified effect within the current request's time and count")),'the shared completion skill reaches the actual provider');
+  const sharedMethod="Verified effect within the current request's time and count";
+  const executionRequests=requests.filter(body=>!outcomeRequest(body));
+  const reviewRequests=requests.filter(outcomeRequest);
+  assert.ok(executionRequests.length>0&&executionRequests.every(body=>JSON.stringify(body.messages).includes(sharedMethod)),
+    'the shared completion skill reaches every execution-provider request');
+  assert.ok(reviewRequests.length>0&&reviewRequests.every(body=>!JSON.stringify(body.messages).includes(sharedMethod)),
+    'the independent outcome reviewer does not inherit worker-only instructions');
   const reviews=run.events.filter(row=>row.data?.type==='chat.execution-review').map(row=>row.data);
   assert.deepEqual(reviews.map(row=>row.reviewDecision),scenario.create?['continue','continue','accepted']:['continue','accepted']);
   assert.equal(reviews.at(-1).reason,'task-outcome-supported');
