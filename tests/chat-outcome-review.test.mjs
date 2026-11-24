@@ -299,3 +299,28 @@ test('an affirmative assessment with unresolved blockers is repaired rather than
   assert.equal((await f.reviewer.assess(request('Answer the supplied question.'))).decision,'respond');
   assert.equal(f.calls.length,2);
 });
+
+
+test('empty operational continuation is repaired in the reviewer, not sent to the worker',async t=>{
+  const f=await fixture(t,(options,index)=>{
+    if(index===1)return response({decision:'continue',remaining:[],nextAction:''});
+    assert.match(options.prompt,/continue requires a concrete unfinished user obligation/);
+    return response({decision:'continue',remaining:['Read the requested source'],nextAction:'Read the exact source.'});
+  });
+  const result=await f.reviewer.assess(request('Read the source.'));
+  assert.equal(result.decision,'continue');assert.equal(result.nextAction,'Read the exact source.');
+  assert.equal(f.calls.length,2);
+});
+
+test('strict local review sends concise field guidance and a finite set of citation slots, not a generation cap',async t=>{
+  const receipt={...row('read-a',{text:'Observed source content.'}),callId:'read-a'};
+  const f=await fixture(t,options=>{
+    assert.match(options.prompt,/The exact structured output schema is supplied separately by the host/);
+    assert.doesNotMatch(options.prompt,/Use only these exact fields: \{"type":"object"/);
+    assert.equal(options.outputSchema.properties.evidenceRefs.maxItems,3);
+    assert.equal(options.outputSchema.properties.blockers.items.properties.evidenceRefs.maxItems,3);
+    assert.equal(options.outputSchema.properties.summary.maxLength,undefined);
+    return response({evidenceRefs:['evidence-0001']});
+  },{model:'local_llamacpp::MiniCPM-V-4.7-1B-heretic-Q4_K_S'});
+  assert.equal((await f.reviewer.assess(request('Report the observed result.',[receipt]))).decision,'respond');
+});
