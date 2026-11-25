@@ -196,8 +196,10 @@ test('effective staged source skill executes neutral reconstruction and challeng
     assert.match(options.prompt,/INITIAL ASSESSMENT/);assert.match(options.prompt,/Analyze the attached report/);
     value={claims:[claim('No evidence of any repository','not-established',[],'Provisional mistaken reading')]};
   }else if(number===4){
-    assert.match(options.prompt,/ORIGINAL SOURCE UNITS IN REVERSE ORDER/);assert.match(options.prompt,/No evidence of any repository/);
+    assert.match(options.prompt,/ACTUAL SOURCE TEXT \(reverse order\)/);assert.match(options.prompt,/No evidence of any repository/);
     value={review:[{id:1,challenge:'The explicit URL contradicts this assumption.',counterRefs:[3],disposition:'revise',revised:claim('The report lists a repository but no adoption data.','source-assertion',[3,5],'Do not confuse an available repository with independently proven adoption.')}],additional:[]};
+  }else if(number===5){
+    assert.match(options.prompt,/FINAL ANALYSIS FOR USER/);value={answer:'The report identifies a repository, but no adoption outcome; evaluate the implementation rather than assume it is absent.',sourceRefs:[3,5]};
   }else assert.fail('Unexpected ordinary provider execution');
   return {output:JSON.stringify(value),threadId:'provider_phase_'+number,usage:{totalTokens:10}};
  },{model:'local_llamacpp::fixture',threadId});
@@ -211,13 +213,91 @@ test('effective staged source skill executes neutral reconstruction and challeng
  let skill;try{skill=await catalog.create({value:{content:'---\nactivation: [substantive-analysis]\nanalysis_protocol: source-reconstruction-v1\n---\n# Source First\n\nReconstruct the source before judging.'}});}finally{await catalog.close();}
  const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Analyze the attached report.',attachmentIds:[ids.pdf],planningMode:'off',chatPlanning:'off',directoryActions:'off'}}).id);
  completed(run);
- assert.equal(calls.length,4);assert.equal(run.nodes.agent.sourceReconstruction.status,'stages-returned');
+ assert.equal(calls.length,5);assert.equal(run.nodes.agent.sourceReconstruction.status,'stages-returned');
  assert.equal(run.nodes.agent.sourceReconstruction.semanticVerification,'not-established');
  assert.ok(run.skillLoadReceipts.some(r=>r.skillId===skill.id&&r.type==='skill_context_submitted'));
  assert.ok(run.nodes.agent.instructionAudit.preparations.every(p=>p.audit.delivery==='accepted'));
- assert.match(run.output,/\n    - \*\*U3/);
- assert.match(run.output,/Repository: https:\/\/example.test\/project/);
- assert.match(run.output,/The report lists a repository but no adoption data/);
- assert.doesNotMatch(run.output.split('## Revised assessment').at(-1),/No evidence of any repository/);
- assert.equal(run.nodes.agent.usage.totalTokens,40);
+ assert.doesNotMatch(run.output,/\n    - \*\*U3/);
+ assert.match(run.nodes.agent.sourceReconstruction.source.units[2].text,/Repository: https:\/\/example.test\/project/);
+ assert.match(run.output,/repository, but no adoption outcome/);
+ assert.doesNotMatch(run.output,/No evidence of any repository/);
+ assert.equal(run.nodes.agent.usage.totalTokens,50);
+});
+
+test('employer reader role propagates into analysis and analyze-it continuation reuses the source instead of summarizing',async t=>{
+ const phases=[],model='local_llamacpp::fixture';
+ const f=await fixture(t,async(options,number)=>{
+  options.onPromptAccepted(options.prompt);
+  const prompt=options.prompt;
+  const kind=prompt.includes('FINAL ANALYSIS FOR USER.')?'synthesis':prompt.includes('INDEPENDENT COUNTER-ASSESSMENT.')?'challenge':prompt.includes('INITIAL ASSESSMENT.')?'initial-assessment':prompt.includes('NEUTRAL SUMMARY ONLY.')?'neutral-summary':'unexpected';
+  phases.push({kind,promptChars:prompt.length,prompt});
+  assert.equal(options.responseOnly,true);
+  assert.deepEqual(options.dynamicTools,[]);
+  assert.equal(options.sandbox,'read-only');
+  if(kind==='neutral-summary'){
+   assert.doesNotMatch(prompt,/requested analytical perspective: hiring-side reviewer/i,'source-only pass should not anchor to a hiring judgment');
+   const key=/"key":"(g\d+)"/.exec(prompt)?.[1];
+   assert.ok(key,'source group key missing');
+   return {output:JSON.stringify({summaries:{[key]:'The source records a position, its responsibilities, and any qualifications or referenced project.'}}),threadId:'provider_phase_'+number,usage:{totalTokens:7}};
+  }
+  assert.match(prompt,/Requested analytical perspective: hiring-side reviewer/);
+  assert.match(prompt,/Source subject: candidate described in the résumé/);
+  assert.match(prompt,/Original user request: "Analyze the following resume as employer/);
+  assert.doesNotMatch(prompt,/Source subject: employer/);
+  let artifact;
+  if(kind==='initial-assessment')artifact={claims:[{claim:'The candidate describes source-grounded evaluation experience, relevant to evaluating complex work.',basis:'inference',refs:[6],reasoning:'The cited responsibility supports analytical review, not automatically people management.',assumptions:'This is a self-reported résumé assertion, not externally verified.'}]};
+  else if(kind==='challenge')artifact={review:[{id:1,challenge:'The source describes evaluating subject-matter work but does not establish scale of line management.',counterRefs:[6],disposition:'retain',revised:{claim:'The résumé reports evaluation responsibilities; conventional people-management tenure is not established.',basis:'inference',refs:[6],reasoning:'A source-grounded review skill may be relevant to certain analytical roles; this cannot prove formal management experience.',assumptions:'There is no specific vacancy or independent verification.'}}],additional:[]};
+  else if(kind==='synthesis')artifact={answer:'From a hiring perspective, the résumé describes substantive evaluation work: the candidate reports reviewing evidence and identifying reasoning errors. That is relevant to analytical quality roles, but it does not by itself establish conventional line-management experience. I would examine examples of completed evaluations rather than infer competence from a job title.',sourceRefs:[6]};
+  else assert.fail('Unexpected phase '+kind);
+  return {output:JSON.stringify(artifact),threadId:'provider_phase_'+number,usage:{totalTokens:7}};
+ },{model,threadId:'provider_phase_mock'});
+ f.workflow.id='mission_chat_employer_followup_fixture';
+ const entry={...f.attachments.entries.get(ids.pdf),name:'Candidate_Resume.pdf',pageCount:2};
+ f.attachments.entries.set(ids.pdf,entry);
+ const pages=[
+   'PROFILE\nCandidate professional with research work.\nEXPERIENCE\nResearch Group — Analyst\n2025 | Remote | Contract\n• Evaluated expert reports and identified reasoning errors.\nRepository: https://example.test/project',
+   'EDUCATION\nState University\nBachelor of Arts | 2022\nGPA 3.9'
+ ];
+ let reads=0;
+ f.attachments.read=async()=>{
+  reads++;
+  return {attachment:entry,format:'pdf',totalPages:2,pages:pages.map((text,i)=>{
+   let offset=0;
+   const layout=text.split('\n').map((line,j)=>{
+    const bold=i===0?[0,2,3].includes(j):[0,1].includes(j);
+    const start=offset;offset+=line.length+1;
+    return {line:j+1,start,end:start+line.length,fontWeight:bold?900:400,fontSize:10.6,uniform:true};
+   });
+   return {page:i+1,startChar:0,text,totalChars:text.length,nextChar:null,textAvailable:true,layout};
+  }),nextPage:null,nextChar:null};
+ };
+ const {createSkillsCatalog}=await import('../lib/skills-catalog.mjs');
+ const catalog=createSkillsCatalog({dataDir:f.engine.dataDir});
+ try{await catalog.create({value:{content:'---\nactivation: [substantive-analysis]\nanalysis_protocol: source-reconstruction-v1\n---\n# Source-first analysis method\n\nConstruct the source before evaluating its subject.'}});}
+ finally{await catalog.close();}
+ const first=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Analyze the following resume as employer',attachmentIds:[ids.pdf],planningMode:'off',chatPlanning:'off',directoryActions:'off'}}).id);
+ completed(first);
+ const firstReceipt=first.nodes.agent.sourceReconstruction;
+ assert.equal(firstReceipt.intent.subject,'candidate described in the résumé');
+ assert.equal(firstReceipt.intent.perspective.label,'hiring-side reviewer');
+ assert.equal(firstReceipt.status,'stages-returned');
+ assert.ok(firstReceipt.outline.length>=8);
+ assert.equal(firstReceipt.outlineOrigin,'observed-source-layout');
+ assert.match(first.output,/From a hiring perspective/);
+ assert.ok(first.output.length<1000,'default answer should not dump full source');
+ assert.doesNotMatch(first.output,/## Reverse outline|## Neutral source summary/);
+ const firstSummaryPhases=phases.filter(p=>p.kind==='neutral-summary').length;
+ const firstReads=reads;
+ assert.ok(firstSummaryPhases>=2);
+ const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'analyze it'}).id);
+ completed(next);
+ assert.equal(next.nodes.agent.sourceReconstruction.intent.inheritedFromPrevious,true);
+ assert.equal(next.nodes.agent.sourceReconstruction.intent.perspective.label,'hiring-side reviewer');
+ assert.equal(next.nodes.agent.sourceReconstruction.reusedSourceRunId,first.id);
+ assert.equal(phases.filter(p=>p.kind==='neutral-summary').length,firstSummaryPhases,'follow-up should not rerun neutral summary');
+ assert.equal(phases.slice(-3).map(p=>p.kind).join(','),'initial-assessment,challenge,synthesis');
+ assert.ok(reads>firstReads,'verify current original source before reuse');
+ assert.match(next.output,/From a hiring perspective/);
+ assert.ok(next.output.length<1000);
+ assert.match(next.nodes.agent.sourceReconstruction.source.sourceSha256,/^[a-f0-9]{64}$/);
 });

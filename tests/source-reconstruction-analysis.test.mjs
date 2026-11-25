@@ -45,28 +45,29 @@ test('real staged execution reconstructs before summary, only then sees the eval
   if(phase.kind==='reverse-outline'){assert.doesNotMatch(phase.prompt,/unique evaluation lens/);value={outline:validOutline};}
   else if(phase.kind==='neutral-summary'){assert.doesNotMatch(phase.prompt,/unique evaluation lens/);assert.match(phase.prompt,/Group A/);value={summary:[{text:'The document records experience reviewing experts, a repository, and education.',refs:[1,2,3,4,5,6,7]}],corrections:[row(3,2,'The reviewer, not the reviewed experts, identified weak conclusions','Responsibility')]};}
   else if(phase.kind==='initial-assessment'){assert.match(phase.prompt,/NEUTRAL SUMMARY/);assert.match(phase.prompt,/unique evaluation lens/);value={claims:initial};}
-  else if(phase.kind==='challenge'){assert.match(phase.prompt,/ORIGINAL SOURCE UNITS IN REVERSE ORDER/);assert.ok(phase.prompt.indexOf('"id":7')<phase.prompt.indexOf('"id":1'));assert.match(phase.prompt,/No repository is documented/);value=challenge;}
+  else if(phase.kind==='challenge'){assert.match(phase.prompt,/ACTUAL SOURCE TEXT \(reverse order\)/);assert.ok(phase.prompt.indexOf('"id":7')<phase.prompt.indexOf('"id":1'));assert.match(phase.prompt,/No repository is documented/);value=challenge;}
+  else if(phase.kind==='synthesis'){assert.match(phase.prompt,/FINAL ANALYSIS FOR USER/);value={answer:'The source provides a real repository link. The existence of adoption metrics is not established, so a reviewer should inspect shipped work rather than assume no project exists.',sourceRefs:[4,3]};}
   else assert.fail(phase.kind);
   return {output:JSON.stringify(value),threadId:'phase-'+phase.kind,usage:{totalTokens:100}};
  };
  const result=await runSourceReconstructionAnalysis({grounding,input:actualTask,invoke,onUpdate:r=>updates.push(r)});
- assert.deepEqual(calls.map(x=>x.kind),['reverse-outline','neutral-summary','initial-assessment','challenge']);
+ assert.deepEqual(calls.map(x=>x.kind),['reverse-outline','neutral-summary','initial-assessment','challenge','synthesis']);
  assert.equal(result.receipt.status,'stages-returned');assert.equal(result.receipt.semanticVerification,'not-established');
  assert.ok(result.receipt.phases.every(p=>p.delivery==='accepted-provider-request'&&p.status==='artifact-returned'));
- assert.match(result.output,/\n    - \*\*U3/);assert.match(result.output,/The reviewer, not the reviewed experts, identified weak conclusions/);
- assert.match(result.output,/Reviewed 20 experts;  identified weak conclusions\./);
- assert.match(result.output,/## Neutral source summary[\s\S]*## Initial assessment[\s\S]*## Adversarial challenge[\s\S]*## Revised assessment/);
- assert.match(result.output,/A repository link is provided/);
- assert.match(result.output,/Repository: https:\/\/example.test\/a/);
- assert.doesNotMatch(result.output.split('## Revised assessment').at(-1),/No repository is documented/);
+ assert.doesNotMatch(result.output,/\n    - \*\*U3/);assert.match(result.receipt.outline[2].summary,/The reviewer, not the reviewed experts/);
+ assert.ok(result.output.length<1200);
+ assert.doesNotMatch(result.output,/## Neutral source summary/);
+ assert.match(result.output,/real repository link/);
+ assert.match(result.receipt.source.units[3].text,/Repository: https:\/\/example.test\/a/);
+ assert.doesNotMatch(result.output,/No repository is documented/);
  assert.equal(updates[0].status,'running');
 });
 test('a shallow selected-points response is not promoted to a completed reverse outline or generic evaluation',async()=>{
  const calls=[];
  const result=await runSourceReconstructionAnalysis({grounding,input:'Analyze the document',invoke:async phase=>{calls.push(phase.kind);return {output:JSON.stringify({outline:[row(1,0,'A few highlights')]})}}});
  assert.equal(result.receipt.status,'partial');assert.deepEqual(calls,['reverse-outline','reverse-outline']);
- assert.match(result.output,/semantic reverse outline could not be completed/);assert.match(result.output,/Analysis incomplete/);
- assert.match(result.output,/Repository: https:\/\/example.test\/a/);assert.doesNotMatch(result.output,/## Initial assessment/);
+ assert.match(result.output,/analysis did not finish/);
+ assert.match(result.receipt.source.units[3].text,/Repository: https:\/\/example.test\/a/);assert.doesNotMatch(result.output,/## Initial assessment/);
 });
 test('protocol uses effective skill declaration and avoids mixed-action and explicit shorter tasks',()=>{
  assert.equal(hasSourceReconstructionProtocol({content:'---\nanalysis_protocol: source-reconstruction-v1\n---\n# Any title'}),true);
