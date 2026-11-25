@@ -1,12 +1,38 @@
 # BLACKICE
 
-BLACKICE is an open-source Windows desktop workspace for AI agents. It combines chat with a contained browser, local file and command tools, saved task state, and scheduled work. You can run supported models in BLACKICE or connect an external assistant to its tools.
+**An open-source agent harness designed to turn user intent into verifiable work.**
 
-BLACKICE is under active development. A tool being available does not guarantee that a model can use it reliably or that a task completed; inspect the actual result.
+**Status: STAGING — active development and real-world dogfooding, not a production-ready reliability claim.**
+
+BLACKICE is a Windows desktop execution environment for AI agents. Rather than treating an agent as a chat persona, BLACKICE equips supported local and hosted models with tools, persistent task state, execution controls, and evidence of what actually happened. It can also expose its tools to an authenticated external assistant.
+
+The core design principle is **user sovereignty**: the agent works for the person giving it instructions. It should exercise delegated judgment, proceed when information is incomplete, recover from errors, and finish the requested work instead of repeatedly asking for permission already given or substituting a polished explanation for an available action.
+
+## Core competencies
+
+- **Agency and delegated judgment.** Behavioral guidance and execution controls target premature stopping, unnecessary permission loops, self-disqualification, and other failures that prevent agents from carrying out authorized instructions.
+- **Long-horizon execution.** Persistent goals, deadlines, scheduled jobs, task records, and context/continuation mechanisms support work spanning many model turns and interruptions.
+- **Observable execution and recovery.** Tool receipts, effect tracking, outcome checks, and recovery paths distinguish an attempted action from a confirmed result, including when browser state changes or the effect of a tool call is uncertain.
+- **Computer and browser operations.** A contained browser and Windows tools let agents work with files, commands, documents, applications, and external sites rather than only produce text.
+- **Model independence and interoperability.** Supported local and hosted models, native Codex integration, and authenticated direct-tool connections let the harness be used across different model configurations.
+- **Coordination and specialization.** Subagents, task delegation, projects, editable instructions, and discoverable skills support complex work and task-specific behavior.
+
+These are competencies being developed and tested, **not guarantees that every model or unattended workflow will succeed**. A tool being available does not prove that the model used it correctly, and an agent's completion message is not proof that the result occurred.
+
+## How BLACKICE is being tested
+
+Development is driven by repeated end-to-end use, particularly the maintainer's own job search: research, evaluating opportunities, handling documents, navigating application systems, and checking whether submissions actually completed.
+
+Two complementary test configurations isolate different failure classes:
+
+- **Luna** is used for long-horizon agency failures, such as over-restrictive interpretation, unnecessary stopping, weak delegated judgment, and incomplete follow-through.
+- **MiniCPM-1B**, a small local model, is used to expose tool-contract, execution, context, and recovery errors quickly.
+
+Failures are investigated as evidence for improvements to the *harness*, rather than assuming that a larger model alone will solve them. BLACKICE remains in staging while this testing and reliability work continues.
 
 ## Install and use
 
-1. On 64-bit Windows, get the installer from the BLACKICE project's GitHub Releases page. Download model weights or sign in to a model provider separately.
+1. On 64-bit Windows, get the installer from the BLACKICE project's [GitHub Releases](https://github.com/MoonlightClarity/BLACKICE/releases) page. Download model weights or sign in to a model provider separately.
 2. Launch BLACKICE. In **Config → Models**, connect a supported model account, API endpoint, or local model. Native Codex support requires the separately installed and signed-in Codex CLI.
 3. In **Config → General**, choose a working directory. Open **Chat**, select a model, and give it a task.
 4. Check files, browser state, and action results rather than relying solely on the model's completion message.
