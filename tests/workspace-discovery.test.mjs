@@ -94,3 +94,23 @@ test('native delivery states file scope and can read a user-supplied path outsid
  const run=engine.startRun({workflow,input:'Read the source at '+file+'. Save any requested output under '+cwd+'.'});
  await engine.executions.get(run.id);assert.equal(engine.getRun(run.id).status,'completed',engine.getRun(run.id).error);assert.equal(admissions,1);
 });
+
+test('a plausible workspace derivative is not proof of source identity; outside candidates stay discoverable',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'blackice-source-authority-')),cwd=path.join(root,'work'),personal=path.join(root,'Documents');
+ t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(cwd);await mkdir(personal);
+ const derivative=path.join(cwd,'Synthetic Resume David AI.txt'),source=path.join(personal,'Synthetic Resume Thin.txt');
+ await writeFile(derivative,'Historical task-specific derivative.');await writeFile(source,'Current designated application document.');
+ const h=createWorkspaceToolHandler({cwd});
+ const local=parsed(await h(call({action:'list'})));assert.ok(local.entries.some(x=>x.path===derivative));
+ assert.match(WORKSPACE_TOOL.description,/listing hit is only a candidate/);
+ const first=parsed(await h(find({query:'Synthetic Resume',roots:[cwd,personal],limit:1})));
+ assert.equal(first.matches.length,1);assert.ok(first.cursor);assert.equal(first.searchComplete,false);
+ assert.match(first.searchScopeNotice,/candidate paths, not proof of identity or authority/);
+ assert.match(first.readHint,/Discovery order and workspace location confer no authority/);
+ const second=parsed(await h(find({query:'Synthetic Resume',cursor:first.cursor,limit:10})));
+ assert.deepEqual(new Set([...first.matches,...second.matches].map(x=>x.path)),new Set([derivative,source]));
+ assert.match(parsed(await h(call({action:'read',path:source}))).content,/Current designated application document/);
+ assert.match(FIND_FILES_TOOL.description,/not a preferred source of user information/);
+ assert.match(WORKSPACE_INSTRUCTIONS,/Do not infer source authority from location/);
+ assert.match(FIND_FILES_TOOL.inputSchema.properties.timeoutMs.description,/default 3000 ms/);
+});

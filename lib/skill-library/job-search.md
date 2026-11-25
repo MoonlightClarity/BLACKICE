@@ -2,6 +2,12 @@
 
 Use to find, shortlist, or apply to open roles. Deliver the requested outcome: findings for a search, completed applications when the user asked to apply.
 
+## Use existing application documents
+
+For applications, use the user's current designated application resume unchanged by default. Identify the actual source first; a professional profile or master may be background evidence, not the upload. A workspace copy, past application artifact, tailored derivative, or filename match is not automatically the current resume. If the intended path is unknown, search the relevant personal document folder and compare plausible candidates; do not stop at the first workspace hit. Reuse the established current path across applications and successor turns rather than rediscovering it for every role.
+
+Do not tailor, rewrite, reformat, or create role-specific resume versions unless the user explicitly requests it. If an employer genuinely requires a different file format, convert the existing document without changing its substantive content. Complete the application directly rather than spending time on unsolicited resume preparation. Do not promote generated copies or prior uploads to authoritative applicant records.
+
 ## Reconcile application history
 
 Reuse application history and submission receipts already available from the current search or prior work. If necessary, load the relevant index once for a candidate batch, not a fresh broad file search for every role. A missing or stale index is not evidence that no application was made; it is also not a reason to stall other applications.
@@ -50,13 +56,13 @@ Keep a compact record: employer, title, exact requisition/posting ID when availa
 
 ## Complete applications efficiently
 
-Read the question, make the best supported call, and enter it. Use the resume and context already available, including reasonable inferences. Do not demand documents or corroboration merely to defend a routine answer. Hold competing answers to the same standard; failing to prove one does not justify its opposite or an automatic blank. For a delegated choice, choose a sensible default.
+Read the question, make the best supported call, and enter it. Use the identified existing application resume and context already available, including reasonable inferences. Do not demand documents or corroboration merely to defend a routine answer. Hold competing answers to the same standard; failing to prove one does not justify its opposite or an automatic blank. For a delegated choice, choose a sensible default.
 
 - Answer the exact field. For general or equivalent experience, add nonoverlapping periods that actually involved the work. An adjacent title does not turn supported experience into zero.
 - **Do not self-disqualify or abandon an otherwise suitable application merely because an employer asks for a required attestation.** Determine what the field actually asks and answer from the candidate's existing records and reasonable good-faith inference. A missing document does not establish a negative answer; unsupported employer preferences are not eligibility vetoes. Use known facts about relatives and other routine answers, and a truthful “not known” choice when it exists. For a factual claim with genuinely no responsible basis, never invent a license, legal status or past experience: isolate the exact unresolved assertion, complete the rest of the form, seek another legitimate intake or truthful response route for the **same requisition**, and continue independent authorized work. Preserve the application as pending rather than treating the attestation itself as a reason to reject the candidate or close the target.
 - A request to apply carries implied consent for the submission steps and agreements required to complete the application. Accept every required agreement. Select “Yes,” “I agree,” or the equivalent affirmative control, including for arbitration, waivers, applicant-data notices, and other required terms. Do not ask for renewed permission or decline a required agreement because of its legal effect. Honor an explicit user prohibition or prepare-only instruction. Answer factual questions and attestations in good faith; accepting an agreement does not authorize inventing facts. Leave optional marketing and unrelated optional sharing unchecked. Complete submission and verify the result within the user's scope.
 - Lead with the candidate's strongest real evidence. Answer what is asked without volunteering weaknesses, apologizing for titles, or adding warnings about training the employer already provides.
-- For a quick behavioral prompt, use a relevant real example. Compare lengthy essays, take-homes, and extensive tailoring with the opportunity and other live options. This is an effort decision, not a verdict on fit. Save deeper company preparation for a screen or interview.
+- For a quick behavioral prompt, use a relevant real example. Compare lengthy essays and take-homes with the opportunity and other live options; do not add unsolicited resume tailoring. This is an effort decision, not a verdict on fit. Save deeper company preparation for a screen or interview.
 
 Before submission, recheck the chosen requisition against the reconciled history and any attempts made during this task. Submit when eligible and inspect the result. Count only a confirmed submission made for this request as a new application; a timeout calls for checking the destination before retrying. Record the requisition, outcome, timestamp, and confirmation evidence in the application history so later work can reconcile it.
 

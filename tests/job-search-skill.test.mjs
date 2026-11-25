@@ -227,7 +227,11 @@ test('routine fields use known answers without added friction and behavioral ess
   /continue independent authorized work/,
   /Preserve the application as pending/,
   /reasonable inferences/,
-  /lengthy essays, take-homes, and extensive tailoring/,
+  /lengthy essays and take-homes/,
+  /do not add unsolicited resume tailoring/,
+  /current designated application resume unchanged by default/,
+  /Do not tailor, rewrite, reformat, or create role-specific resume versions unless the user explicitly requests it/,
+  /do not stop at the first workspace hit/,
   /an effort decision, not a verdict on fit/,
   /Save deeper company preparation for a screen or interview/,
  ])assert.match(content,expected);
