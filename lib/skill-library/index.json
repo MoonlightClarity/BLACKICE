@@ -612,9 +612,12 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "clarity-20261121"
+        "revision": "skill-allocation-20261125"
       },
-      "bodyFile": "long-term-judgment.md"
+      "bodyFile": "long-term-judgment.md",
+      "activation": [
+        "resource-allocation"
+      ]
     },
     {
       "id": "library-verify-a-working-slice",

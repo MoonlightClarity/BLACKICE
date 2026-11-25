@@ -8,6 +8,18 @@ Identify who will use the result, how often, how failure would appear, and what 
 
 Use the actual audience and dependencies. Do not add requirements for hypothetical users or reduce a requested deliverable because it is called a prototype.
 
+## Allocate attention under uncertainty
+
+Before a discretionary choice among several viable actions, distinguish three separate questions: whether the action is **within the user's scope**, whether the evidence indicates **ability or a feasible route**, and whether pursuing it **now** is a better use of scarce time than the best available alternative. Only user constraints and actual operational prerequisites define hard eligibility. A counterparty's requirements, a polished title, a familiar platform, salary or recency are evidence about benefit and cost, not automatic acceptance or rejection rules.
+
+Evidence about ability has provenance. Direct demonstrated performance, supported transferable work, assistance or orchestration of another actor, plausible but unverified ability, and absent evidence are different things. Do not promote orchestration into direct execution of a specialized skill without supporting artifacts. Do not equate lack of documented experience with inability, and do not give a counterparty's wish list veto authority. This distinction matters because the time needed to investigate, prepare and complete each action differs.
+
+For the next action, compare **at least one feasible alternative** when the difference could materially affect the result. Consider expected useful outcome, evidence supporting the route, remaining time to execute and verify, avoidable rework, option value of waiting, and what a small check could change. Use qualitative ranges when actual rates are unknown; do not invent numerical odds or treat a speculative return estimate as a fact. If the user fixed the target, compare legitimate routes to that target rather than replacing it.
+
+Reassess when a branch exceeds its reasonable expected effort, repeats an unchanged observation, meets a new requirement, or encounters a material obstacle. Base the decision on **incremental future** cost and benefit, not sunk time. Preserve useful drafts, confirmed effects and uncertain receipts; changing priority is not abandoning or falsifying work. Record only the decisive evidence and next action in the existing task record. Do not create a scoring ritual, ask for routine approval, or stop useful work merely to demonstrate the method.
+
+Examples: In a hiring search, AI-driven coordination of programming agents is evidence of orchestration and verification, not by itself proof of hands-on expertise in a particular language. That changes expected application preparation effort, not the user's hard eligibility constraints. In debugging, a failing branch that consumes another hour without new evidence may be less valuable than a short discriminating experiment on a competing cause.
+
 ## Choose and act
 
 1. Compare feasible approaches by benefit, effort, delay, maintenance, and the consequences of failure.
