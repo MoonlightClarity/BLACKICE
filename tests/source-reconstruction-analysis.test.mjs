@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {sourceInspectionUnits,validateOutline,validateTree,validateInitial,validateChallenge,runSourceReconstructionAnalysis,hasSourceReconstructionProtocol,acceptsStagedSourceAnalysis,sourceAnalysisSchemas} from '../lib/source-reconstruction-analysis.mjs';
+import {sourceInspectionUnits,validateOutline,validateTree,validateInitial,validateChallenge,runSourceReconstructionAnalysis,hasSourceReconstructionProtocol,acceptsStagedSourceAnalysis,sourceAnalysisSchemas,hostLayoutOutline,outlineSummaryGroups} from '../lib/source-reconstruction-analysis.mjs';
 import {strictProviderSchema,compatibleWireOutputSchema} from '../lib/provider-output-schema.mjs';
 
 const entry={id:'file_'+'a'.repeat(32),name:'fixture.pdf',kind:'pdf',sha256:'a'.repeat(64),pageCount:2,coverage:'complete'};
@@ -75,4 +75,27 @@ test('protocol uses effective skill declaration and avoids mixed-action and expl
  assert.equal(acceptsStagedSourceAnalysis('Analyze this report online.',{}),false);
  assert.equal(acceptsStagedSourceAnalysis('Analyze the document.',{explicitShort:true}),false);
  assert.equal(acceptsStagedSourceAnalysis('Review this code for bugs.',{}),true);
+});
+
+
+const layoutPages=['EXPERIENCE\r\nCompany A \u2014 Role\r\n2025 | Contract\r\n\u2022 Performed specific work.\r\nRepository: https://example.test/a','EDUCATION\r\nCollege A\r\nDegree | 2024\r\n3.92 GPA'];
+const layoutGrounding=structuredClone(grounding);
+const layoutRecord=JSON.parse(layoutGrounding.records[0].result.contentItems[0].text);
+layoutRecord.pages=layoutPages.map((text,i)=>{
+ let start=0;
+ const layout=text.split('\r\n').map((line,j)=>{
+ const weight=(i===0?j<3:j<2)?900:400;
+ const span={start,end:start+line.length,line:j+1,fontWeight:weight,fontSize:10.6,uniform:true};
+ start+=line.length+2;return span;
+ });
+ return {page:i+1,text,layout};
+});
+layoutGrounding.records[0].result.contentItems[0].text=JSON.stringify(layoutRecord);
+test('matched source layout retains literal branches, including numeric grades under their actual institution',()=>{
+ const src=sourceInspectionUnits(layoutGrounding);
+ assert.ok(src.units.every(u=>u.style?.uniform));
+ const outline=hostLayoutOutline(src);
+ assert.ok(outline);
+ assert.deepEqual(outline.map(r=>r.parent),[0,1,2,2,2,0,6,7,7]);
+ assert.deepEqual(outlineSummaryGroups(outline,src).flatMap(g=>g.units.map(u=>u.id)),src.units.map(u=>u.id));
 });
