@@ -19,6 +19,14 @@ node_modules/
 *.log
 *.tmp
 *.bak
+
+# Transient verification output, not active fixtures or source-publication receipts
+/verification/*.tap
+/verification/*.jsonl
+/verification/windows-[0-9]*.json
+/verification/instruction-clarity-*.json
+/verification/startup-evidence-*.json
+/verification/goal-mode-*.jpg
 .DS_Store
 Thumbs.db
 
