@@ -375,3 +375,19 @@ test('ordinary browser work delivers native cleanup in the actual provider tool 
     assert.doesNotMatch(browser.description, /blackice_browser_action|blackice_get_job/);
   }
 });
+
+test('composed methods reach the provider with exact effective revisions across origins',async t=>{
+ const f=await fixture(t);
+ const bundled=await f.catalog.detail({id:'builtin-structured-analysis'});
+ const base=await f.catalog.detail({id:'builtin-decomposition'});
+ const overlay=await f.catalog.save({id:base.id,value:{expectedRevision:base.revision,content:base.content+'\nOwner decomposition fixture.\n'}});
+ const created=await f.catalog.create({value:{content:'---\nactivation: [judgment]\n---\n# Evaluate Claims\n\nCheck evidence before judging.'}});
+ const result=await f.invoke('mission','Analyze the evidence in this report.');
+ for(const skill of [bundled,overlay,created]){
+  requireSkillHeader(result,skill);
+  const decision=result.run.nodes.agent.skillSelection.decisions.find(d=>d.id===skill.id);
+  assert.equal(decision.decision,'selected');
+  assert.equal(decision.reason,'declared-applicability');
+  assert.equal(decision.delivery,'accepted-provider-request');
+ }
+});

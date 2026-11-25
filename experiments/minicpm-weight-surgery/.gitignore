@@ -1,0 +1,11 @@
+*.pid.json
+*.stdout.log
+*.stderr.log
+*.stdout.txt
+*.stderr.txt
+toy_*.json
+*activations.json
+*.gguf
+*.safetensors
+*.bin
+.venv/

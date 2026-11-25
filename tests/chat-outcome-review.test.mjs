@@ -418,3 +418,19 @@ test('malformed nested verdict is repaired only within the independent assessmen
  assert.equal(result.decision,'continue');assert.equal(result.nextAction,'Read the matching archive page.');assert.equal(f.calls.length,2);
  assert.ok(f.calls.every(options=>options.hostOnlyTools&&options.responseOnly));
 });
+
+test('source-bound optimistic reviewer verdict cannot release direct role inversion; synthesize and reassess',async t=>{
+  const entry={id:'file_'+'1'.repeat(32),name:'Candidate.pdf',sha256:'a'.repeat(64),kind:'pdf',pageCount:1};
+  const record={...row('host-document:fixture',{contentItems:[{type:'inputText',text:JSON.stringify({attachment:entry,pages:[{text:'Python pipeline engineering and quality assurance.',textAvailable:true}]})}]}),source:'host-attachment-content',tool:'host_attachment_source'};
+  const bad="The resume as an employer's profile for Candidate contains the core employer details.";
+  const corrected='As a hiring reviewer, I would prioritize the demonstrated Python pipeline engineering and quality assurance experience.';
+  const r=request('Analyze the resume as employer.',[record]);
+  r.candidate={output:bad};r.documentSource={kind:'attached-document-analysis',inventory:[entry],perspective:'employer-reviewer',sourceRefs:[record.id]};
+  const f=await fixture(t,(_options,index)=>response({summary:index===2?corrected:'The review cites the actual resume.',evidenceRefs:['evidence-0001'],supportBasis:'observed-results'}));
+  const result=await f.reviewer.assess(r);
+  assert.equal(result.decision,'respond');assert.equal(result.replacementOutput,corrected);assert.equal(f.calls.length,3);
+  assert.ok(f.events.some(e=>e.reason==='CHAT_DOCUMENT_PERSPECTIVE_CONTRADICTION'));
+  const failed=await fixture(t,()=>response({summary:bad,evidenceRefs:['evidence-0001'],supportBasis:'observed-results'}));
+  const rejected=await failed.reviewer.assess(r);
+  assert.equal(rejected.decision,'unreviewed');assert.equal(rejected.reason,'CHAT_DOCUMENT_PERSPECTIVE_CONTRADICTION');assert.equal(failed.calls.length,2);
+});

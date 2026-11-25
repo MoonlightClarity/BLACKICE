@@ -73,3 +73,51 @@ test('metadata reflects revision, deletion, and excludes already delivered metho
  await catalog.delete({id:remote.id,value:{expectedRevision:3}});
  assert.ok(!(await catalog.taskMetadata()).some(row=>row.id===remote.id));
 });
+
+test('automatically load the anti-anchoring analysis method for document, code and evidence analysis',async t=>{
+ const {catalog}=await fixture(t);
+ const method=await catalog.create({value:{content:'---\nactivation: [substantive-analysis]\n---\n# Evidence Reconstruction\n\nReconstruct the whole before judging.'}});
+ const metadata=await catalog.taskMetadata();
+ for(const request of ['Analyze the following resume as employer.','Review this code for bugs','Assess the evidence in this report','Critique the argument','Analyze this document','Diagnose the startup failure','Give me an analysis of this report','What do you think of this resume?']){
+  assert.ok(discoverTaskSkills(request,metadata).automatic.some(e=>e.id===method.id),request);
+ }
+ for(const request of ['Send me the text of the resume','Write a simple thank-you email','Review the reverse outline skill.','> Analyze this document.']){
+  assert.ok(!discoverTaskSkills(request,metadata).automatic.some(e=>e.id===method.id),request);
+ }
+});
+
+test('applicability and strong topical eligibility are independent of skill provenance',()=>{
+ const variants=[
+  {id:'builtin-method',source:'bundled',revision:1,ownerCreated:false},
+  {id:'library-method',source:'user',revision:9,ownerCreated:false},
+  {id:'user-method',source:'user',revision:2,ownerCreated:true}
+ ];
+ const methods=variants.map(row=>({...row,title:'Arbitrary Evidence Method',description:'Reconstruct material evidence.',activationDeclared:true,activation:['substantive-analysis']}));
+ const selection=discoverTaskSkills('Analyze the following resume as employer.',methods);
+ assert.equal(selection.automatic.length,3);
+ assert.ok(selection.selection.decisions.every(row=>row.decision==='selected'&&row.reason==='declared-applicability'));
+ assert.equal(discoverTaskSkills('Send me the text of the resume',methods).automatic.length,0);
+ const topical=variants.map(row=>({...row,title:'Read a PDF for evidence',description:'Extract source evidence from a PDF.'}));
+ assert.equal(discoverTaskSkills('Read a PDF for evidence.',topical).automatic.length,3);
+});
+
+test('effective owner declarations can override a packaged applicability default',async t=>{
+ const {catalog}=await fixture(t);
+ const builtin=await catalog.detail({id:'builtin-decomposition'});
+ const task='Create a multistep migration plan with dependencies';
+ assert.ok(discoverTaskSkills(task,await catalog.taskMetadata()).automatic.some(x=>x.id===builtin.id));
+ const edited=await catalog.save({id:builtin.id,value:{expectedRevision:builtin.revision,content:'---\nactivation: none\n---\n'+builtin.content}});
+ const rows=await catalog.taskMetadata(),entry=rows.find(x=>x.id===builtin.id);
+ assert.equal(entry.source,'user');assert.equal(entry.revision,edited.revision);assert.equal(entry.activationDeclared,true);assert.deepEqual(entry.activation,[]);
+ const result=discoverTaskSkills(task,rows);
+ assert.ok(!result.automatic.some(x=>x.id===builtin.id));assert.equal(result.selection.decisions.find(x=>x.id===builtin.id).decision,'not-applicable');
+});
+
+test('generic completion similarity and a specialist subject mismatch do not activate methods',async t=>{
+ const {catalog}=await fixture(t);
+ const rows=await catalog.taskMetadata();
+ assert.ok(!discoverTaskSkills('Keep the core completion contract only.',rows).automatic.some(x=>x.id==='library-verify-a-working-slice'));
+ const recover=discoverTaskSkills('Recover website interactions after stale input controls stop responding.',rows);
+ assert.ok(recover.automatic.some(x=>x.id==='library-browser-navigation'));
+ assert.ok(!recover.automatic.some(x=>x.id==='library-accessibility-spot-check'));
+});
