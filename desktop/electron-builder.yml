@@ -74,6 +74,6 @@ nsis:
   shortcutName: BLACKICE
   uninstallDisplayName: BLACKICE ${version}
   deleteAppDataOnUninstall: false
-  runAfterFinish: false
+  runAfterFinish: true
 electronLanguages:
   - en-US
