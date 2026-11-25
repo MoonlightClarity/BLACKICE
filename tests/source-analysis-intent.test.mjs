@@ -46,3 +46,12 @@ test('internal reconstruction remains internal unless the user explicitly reques
  assert.equal(resolveSourceAnalysisIntent({input:'analyze the resume and show the complete reverse outline',documentType:'resume'}).showWorking,true);
  assert.equal(resolveSourceAnalysisIntent({input:'analyze the resume briefly',documentType:'resume'}).showWorking,false);
 });
+
+test('an explicitly requested analytical method remains selected across same-task continuation',()=>{
+ const first=resolveSourceAnalysisIntent({input:'Analyze the attached resume using structured analytic techniques',documentType:'resume'});
+ assert.equal(first.explicitMethod,true);assert.equal(first.showWorking,false);
+ const next=resolveSourceAnalysisIntent({input:'analyze it',documentType:'resume',previous:first});
+ assert.equal(next.explicitMethod,true);assert.equal(next.originalRequest,first.originalRequest);
+ assert.equal(resolveSourceAnalysisIntent({input:'Analyze resume as an employer',documentType:'resume'}).explicitMethod,false);
+ assert.equal(resolveSourceAnalysisIntent({input:'Analyze resume with the Reverse Outline method',documentType:'resume'}).explicitMethod,true);
+});

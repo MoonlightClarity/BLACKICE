@@ -346,3 +346,58 @@ test('malformed local JSON falls back once to ordinary source-grounded analysis 
  assert.equal(run.nodes.agent.sourceReconstruction.semanticVerification,'not-established');
  assert.equal(run.nodes.agent.sourceReconstruction.phases.filter(x=>x.kind==='fallback-analysis').length,1);
 });
+
+test('explicit owner analytical skill uses method-bearing staged phases instead of the compact shortcut, including follow-up',async t=>{
+ const calls=[],f=await fixture(t,async options=>{
+  options.onPromptAccepted(options.prompt);
+  assert.equal(options.responseOnly,true);
+  assert.deepEqual(options.dynamicTools,[]);
+  const prompt=options.prompt;
+  const claim=(claim,basis,refs)=>({claim,basis,refs,reasoning:'Bounded interpretation of what this source does and does not report.',assumptions:'Source claims are not externally corroborated.'});
+  let value,kind;
+  if(prompt.includes('RECONSTRUCTION ONLY')){
+   kind='reverse-outline';
+   value={outline:[{id:1,parent:0,summary:'Project heading',function:'Section'},{id:2,parent:1,summary:'Design decision',function:'Subsection'},{id:3,parent:2,summary:'Repository reference',function:'Evidence'},{id:4,parent:0,summary:'Limitations heading',function:'Section'},{id:5,parent:4,summary:'No adoption data reported',function:'Qualification'}]};
+  }else if(prompt.includes('NEUTRAL SUMMARY ONLY')){
+   kind='neutral-summary';
+   value={summary:[{text:'The report records a design project and a repository, with no adoption outcome quantified.',refs:[1,2,3,4,5]}],corrections:[]};
+  }else if(prompt.includes('INITIAL ASSESSMENT')){
+   kind='initial-assessment';
+   assert.match(prompt,/OWNER_METHOD_DELIVERY_MARKER/);
+   value={claims:[claim('The source reports a project repository, not independently demonstrated adoption.','source-assertion',[3,5])]};
+  }else if(prompt.includes('INDEPENDENT COUNTER-ASSESSMENT')){
+   kind='challenge';
+   assert.match(prompt,/OWNER_METHOD_DELIVERY_MARKER/);
+   value={review:[{id:1,challenge:'A link does not establish adoption.',counterRefs:[3,5],disposition:'retain',revised:claim('The report contains a repository link but no adoption outcome.','source-assertion',[3,5])}],additional:[]};
+  }else if(prompt.includes('FINAL ANALYSIS FOR USER')){
+   kind='synthesis';
+   assert.match(prompt,/OWNER_METHOD_DELIVERY_MARKER/);
+   value={answer:'The report provides evidence of a project and a repository; the effect and adoption of its implementation are not established by the supplied text.',sourceRefs:[3,5]};
+  }else assert.fail('Unknown provider phase');
+  calls.push(kind);
+  return {output:JSON.stringify(value),threadId:'provider_explicit_'+calls.length,usage:{totalTokens:11}};
+ },{model:'local_llamacpp::fixture'});
+ f.workflow.id='mission_chat_explicit_source_method';
+ const entry={...f.attachments.entries.get(ids.pdf),name:'research-report.pdf',pageCount:2};
+ f.attachments.entries.set(ids.pdf,entry);
+ const pages=['PROJECT\nDesign decision\n• Repository: https://example.test/project','LIMITATIONS\nNo adoption data supplied.'];
+ f.attachments.read=async()=>({attachment:entry,format:'pdf',totalPages:2,pages:pages.map((text,i)=>({page:i+1,startChar:0,text,totalChars:text.length,nextChar:null,textAvailable:true})),nextPage:null,nextChar:null});
+ const {createSkillsCatalog}=await import('../lib/skills-catalog.mjs');
+ const skills=createSkillsCatalog({dataDir:f.engine.dataDir});
+ let method;try{method=await skills.create({value:{content:'---\nactivation: [substantive-analysis]\nanalysis_protocol: source-reconstruction-v1\n---\n# Reverse Outline\n\nOWNER_METHOD_DELIVERY_MARKER: challenge conclusions based on the source.'}});}finally{await skills.close();}
+ const request='Analyze the attached report using the Reverse Outline and Adversarial Analysis skill.';
+ const first=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:request,attachmentIds:[ids.pdf],planningMode:'off',chatPlanning:'off',directoryActions:'off'}}).id);
+ completed(first);
+ assert.deepEqual(calls,['reverse-outline','neutral-summary','initial-assessment','challenge','synthesis']);
+ assert.equal(first.nodes.agent.sourceReconstruction.intent.explicitMethod,true);
+ assert.equal(first.nodes.agent.sourceReconstruction.status,'stages-returned');
+ assert.equal(first.nodes.agent.sourceReconstruction.intent.showWorking,false);
+ assert.doesNotMatch(first.output,/## Reverse outline/);
+ assert.ok(first.skillLoadReceipts.some(r=>r.skillId===method.id&&r.type==='skill_context_submitted'));
+ const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'analyze it'}).id);
+ completed(next);
+ assert.deepEqual(calls.slice(5),['initial-assessment','challenge','synthesis']);
+ assert.equal(next.nodes.agent.sourceReconstruction.intent.explicitMethod,true);
+ assert.equal(next.nodes.agent.sourceReconstruction.reusedSourceRunId,first.id);
+ assert.equal(next.nodes.agent.sourceReconstruction.semanticVerification,'not-established');
+});

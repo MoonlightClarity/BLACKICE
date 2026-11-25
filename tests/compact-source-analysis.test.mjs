@@ -19,6 +19,7 @@ test('a small complete source is eligible, and detailed working or larger source
  assert.ok(src.withinBudget);
  assert.ok(hostLayoutOutline(src));
  assert.equal(compactSourceAnalysisEligible(src,intent),true);
+ assert.equal(compactSourceAnalysisEligible(src,resolveSourceAnalysisIntent({input:'Analyze the resume using structured analytic techniques',documentType:'resume'})),false);
  assert.equal(compactSourceAnalysisEligible(src,resolveSourceAnalysisIntent({input:'Analyze the resume. Show the complete reverse outline',documentType:'resume'})),false);
  assert.equal(compactSourceAnalysisEligible({...src,units:[{...src.units[0],text:'A'.repeat(8001)}]},intent),false);
  assert.equal(compactSourceAnalysisEligible({...src,sources:[...src.sources,{...src.sources[0],index:2}]},intent),false);

@@ -18,5 +18,11 @@ export const semanticContrastPairs = Object.freeze([
  {id:'direct-report-management',question:"Does the source establish that the twenty experts were Mara's direct reports? A) Yes. B) No.",cases:[
   {id:'external-experts',source:"Mara audited and coached twenty external subject-matter experts on report quality. No direct reporting relationship was described.",answer:'B'},
   {id:'line-management',source:"Mara was the line manager of twenty subject-matter experts. All twenty reported directly to her.",answer:'A'}]},
+ {id:'cross-role-project',question:"Was the platform developed as part of the research analyst's role at Company B? A) Yes. B) No.",cases:[
+  {id:'separate-employers',source:"PROFILE: AI Systems Lead. EXPERIENCE: Company A — Product Director, created the Aurora platform. Company B — Research Analyst, audited expert reports and built evaluation rubrics. The source describes these as distinct work entries.",answer:'B'},
+  {id:'explicit-company-b-platform',source:"PROFILE: AI Systems Lead. EXPERIENCE: Company A — Product Director, developed unrelated customer software. Company B — Research Analyst, created the Aurora platform for Company B and used it to audit expert reports.",answer:'A'}]},
+ {id:'headline-versus-job',question:"Does this source list 'AI Systems Lead' as a separate experience job entry rather than a profile headline? A) Yes. B) No.",cases:[
+  {id:'profile-headline',source:"PROFILE HEADLINE: AI SYSTEMS LEAD. EXPERIENCE: Company A — Product Director. Company B — Research Analyst. The phrase appears in the profile heading, above the experience section.",answer:'B'},
+  {id:'experience-position',source:"PROFILE HEADLINE: Technical Professional. EXPERIENCE: Company A — AI Systems Lead, 2024 to 2025. Company B — Research Analyst, 2022 to 2024.",answer:'A'}]},
 ]);
 export const semanticContrastCases = Object.freeze(semanticContrastPairs.flatMap(p=>p.cases.map(c=>({...c,pair:p.id,question:p.question}))));
