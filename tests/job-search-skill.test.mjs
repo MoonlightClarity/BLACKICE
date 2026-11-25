@@ -47,8 +47,8 @@ const agreementContract=[
  "including for arbitration, waivers, applicant-data notices, and other required terms",
  "Do not ask for renewed permission or decline a required agreement because of its legal effect",
  "Honor an explicit user prohibition or prepare-only instruction",
- "Answer factual questions and attestations in good faith",
- "accepting an agreement does not authorize inventing facts",
+ "Use applicable prior application answers, saved user records, and context",
+ "Complete contact and experience fields and attach the designated resume",
  "Leave optional marketing and unrelated optional sharing unchecked",
  "Complete submission and verify the result within the user's scope"
 ];
@@ -86,7 +86,7 @@ const jobConfirmationContract=[
 ];
 const assertJobConfirmationMethod=content=>{for(const expected of jobConfirmationContract)assert.ok(content.includes(expected),expected);};
 const heading='JOB SEARCH (advisory execution method; not permission)';
-const accepted={type:'skill_context_submitted',skillId:id,title:'Job Search',source:'bundled',sourceRevision:'employer-first-w2-20261123'};
+const accepted={type:'skill_context_submitted',skillId:id,title:'Job Search',source:'bundled',sourceRevision:'agency-judgment-20261124'};
 
 test('current actionable job requests select only the job skill, not the general intent skill',()=>{
  for(const input of [example,'Apply for jobs until 6 AM EST.','Apply for the Circana Senior Product Manager, AI Evaluation & Quality position.','Apply to this job opening.','Job search for me. Stop at 3 jobs.','Can you shortlist remote open roles?','Please load the Job Search skill.','Search job boards for research roles.']){
@@ -200,7 +200,7 @@ test('application confirmations remain pending until observed and failed candida
 
 test('fit ignores listed years even for director roles and credits work under adjacent titles',async()=>{
  const {content,provenance}=await createSkillsCatalog().detail({id});
- assert.equal(provenance.revision,'employer-first-w2-20261123');
+ assert.equal(provenance.revision,'agency-judgment-20261124');
  for(const expected of [
   /Ignore every numerical years-of-experience requirement when evaluating fit/,
   /Do not use it to filter, rank, downlevel, or decide not to apply/,
@@ -221,11 +221,11 @@ test('routine fields use known answers without added friction and behavioral ess
   /Read the question, make the best supported call, and enter it/,
   /Do not demand documents or corroboration merely to defend a routine answer/,
   /Hold competing answers to the same standard/,
-  /Use known facts about relatives/,
-  /isolate the exact unresolved assertion/,
+  /Use applicable prior application answers, saved user records, and context/,
+  /Complete contact and experience fields and attach the designated resume/,
   /same requisition/,
   /continue independent authorized work/,
-  /Preserve the application as pending/,
+  /preserve the application as pending/,
   /reasonable inferences/,
   /lengthy essays and take-homes/,
   /do not add unsolicited resume tailoring/,
@@ -364,7 +364,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.ok(job.receipts.some(r=>r.skillId===browserSkill&&r.sourceRevision===browserRevision));
  assert.equal(job.prompt.split('ANTI-COMPLETION BIAS (bundled execution method)').length,2);
  assert.ok(job.prompt.includes('Compare the request with the last result you actually observed'));
- assert.deepEqual(job.receipts.filter(r=>r.skillId===antiCompletion),[completionReceipt('bundled','clarity-20261121')]);
+ assert.deepEqual(job.receipts.filter(r=>r.skillId===antiCompletion),[completionReceipt('bundled','agency-judgment-20261124')]);
  assert.ok(job.prompt.includes(alignmentHeading));
  assert.ok(job.prompt.includes('Take the simplest route that delivers the whole result'));
  assert.ok(job.prompt.includes('Name the exact action and the observed obstacle'));
@@ -374,7 +374,7 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  assert.doesNotMatch(job.input,/sponsor|arbitrat/i,'the ordinary user request contains no form-answer coaching');
  assert.ok(job.receipts.some(r=>r.skillId===alignmentId&&r.title==='Anti-Overalignment'&&r.type==='skill_context_submitted'));
  assert.ok(job.prompt.includes(heading));assert.ok(job.prompt.includes('rolling last seven days'));assert.ok(job.prompt.includes('## Verify the exact vacancy'));
- assert.ok(job.prompt.includes('seek another legitimate intake or truthful response route for the'));
+ assert.ok(job.prompt.includes('seek another legitimate intake or completion route for the'));
  assert.deepEqual(job.receipts.filter(r=>r.skillId===id),[accepted]);
  assert.ok(job.receipts.every(r=>r.skillId!=='library-intent-inference'));
 

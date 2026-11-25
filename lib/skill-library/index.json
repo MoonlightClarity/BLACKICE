@@ -200,7 +200,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "employer-first-w2-20261123"
+        "revision": "agency-judgment-20261124"
       },
       "bodyFile": "job-search.md"
     },
@@ -568,7 +568,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "api-boundary-promise-rejections-20261124"
+        "revision": "agency-judgment-20261124"
       },
       "bodyFile": "what-makes-done.md"
     },
@@ -677,7 +677,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "clarity-20261121"
+        "revision": "agency-judgment-20261124"
       },
       "bodyFile": "anti-completion-bias.md"
     },

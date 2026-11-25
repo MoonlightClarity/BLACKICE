@@ -11,7 +11,7 @@ Use when about to finish a turn with a plan, partial result, or failed first att
 
 A progress update is not the promised check. “I would check the posting next” means open it now when that work is available. Keep updates useful and continue working after them.
 
-Convert a reason into a tool action: “loading” means wait for the relevant control and inspect; “empty first page” means follow the next page or change the query; “need to decide” means make the delegated choice. Continue independent work before reporting a remaining prerequisite.
+Convert a reason into a tool action: “loading” means wait for the relevant control and inspect; “empty first page” means follow the next page or change the query; “need to decide” means make the delegated choice. “Need a fact” means retrieve applicable prior answers or make a reasonable inference. Complete available fields, attachments, and other independent actions now. A reported blocker is not evidence that an operation was attempted or prevented. Continue independent work before reporting a remaining prerequisite.
 
 If the task is complete, stop; do not add work. If the user asks only a question, the answer can be the full deliverable.
 

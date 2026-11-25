@@ -256,7 +256,9 @@ test('Goal instruction text preserves counterparty reasoning across non-job-sear
   const goals=new ConversationGoals({engine:{runs:new Map()},conversations:{states:{root:{goal}}},autoStart:false});
   const instructions=goals.instructions({id:'initial-turn',taskId:'root',goal:{id:goal.id}});
   assert.match(instructions,/Evaluate counterparty requirements and preferences rather than treating them as automatic vetoes\./);
-  assert.match(instructions,/Distinguish routine delegated assent from truth-constrained factual statements/);
+  assert.match(instructions,/make the most reasonable factual inference from available context/);
+  assert.match(instructions,/Complete independent fields and attachments now/);
+  assert.match(instructions,/An agent-reported blocker is not observed prevention/);
   assert.doesNotMatch(instructions,/Treat counterparties When handing off/);
 });
 

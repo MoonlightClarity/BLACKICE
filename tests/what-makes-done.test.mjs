@@ -14,7 +14,7 @@ async function readCurrentGuidance(id){
  const skill=await readBundledSkill(id);
  assert.deepEqual(skill.provenance,declaration.source);
  const expectedRevisions={
-  'library-what-makes-done':'api-boundary-promise-rejections-20261124',
+  'library-what-makes-done':'agency-judgment-20261124',
   'library-simplest-complete-path':'clarity-20261121',
   'library-long-term-judgment':'clarity-20261121',
  };
@@ -41,7 +41,7 @@ test('What Makes Done is a discoverable advisory skill with actionable examples'
   /Stop when the requested result is supported[\s\S]*real cutoff is reached[\s\S]*State unfinished work accurately/,
   /Report a continuation only when one is actually running/,
   /requires two verified matches[\s\S]*cap, not a completion minimum/,
-  /hard requirement that remains unknown does not become verified/,
+  /A hard requirement imposed by the user remains distinct from a counterparty preference/,
   /failed candidate closes that candidate, not the whole search/
  ])assert.match(content,pattern);
  assert.match(content,/every exported method[^.]*read-only getters/, 'Code contracts must cover query methods as well as mutations');
