@@ -1,0 +1,121 @@
+{
+  "format": 1,
+  "product": "BLACKICE",
+  "scope": "source-publication",
+  "sourceCommit": "84cda8980c73cb0d2fab8545197c1c053e81f961",
+  "workflowControllerCommit": null,
+  "sourceCommitOrigin": "git-rev-parse-HEAD",
+  "checkoutUnchanged": true,
+  "version": "2.40.82",
+  "startedAt": "2026-11-25T14:30:33.852Z",
+  "checkedAt": "2026-11-25T14:59:51.630Z",
+  "node": "v22.23.5",
+  "platform": "win32",
+  "appFingerprint": "b9acfcbf2136502eb0d7840ef9484add90886c064da27e9d623dd9b1a9bfbd9e",
+  "sourceIndexSha256": "25e580a8d197c66ad35d19b4cc6652c8fe4537658c75a78c435255b2542a98ff",
+  "sourceFilesVerified": 2184,
+  "testFiles": 1045,
+  "testInventorySha256": "de221ea35aebb0c292304f996c59ad55ba864f883ef990f8b8626ef8a87a6ba8",
+  "state": "passed",
+  "passed": true,
+  "fullSuite": true,
+  "countsComplete": true,
+  "sourceUnchanged": true,
+  "fingerprintUnchanged": true,
+  "tests": {
+    "total": 10656,
+    "passed": 10644,
+    "failed": 0,
+    "requiredSkipped": 0,
+    "optionalSkipped": 12,
+    "cancelled": 0,
+    "todo": 0,
+    "exitCode": 0,
+    "signal": null
+  },
+  "testLogSha256": "c31e40ee72bdd610a243143ea3c2dcf905e6e17d5514ecf02edba0f4f777f8bb",
+  "execution": {
+    "kind": "node-test-explicit-inventory",
+    "concurrency": 1,
+    "uniqueCoverageVerified": true
+  },
+  "optionalSkips": [
+    "native live informational alert releases without focus or effect replay",
+    "native offscreen informational alert releases without focus or effect replay",
+    "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+    "live contained input updates application state and delivers editing keys without OS focus",
+    "offscreen contained input updates application state and delivers editing keys without OS focus",
+    "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+    "native popups preserve OAuth routing and remain independent when their opener closes",
+    "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+    "real packaged desktop main reaches ready with UIA retired and no launcher window",
+    "Historical MiniCPM execution-delivery benchmark requires original pinned 2026-11-20 snapshot",
+    "Historical MiniCPM execution-evidence benchmark requires original pinned 2026-11-20 snapshot",
+    "Historical MiniCPM native-control benchmark requires original pinned 2026-11-20 snapshot"
+  ],
+  "fileSymlinkCapabilitySkips": [],
+  "skipDetails": [
+    {
+      "name": "native live informational alert releases without focus or effect replay",
+      "reason": null,
+      "assertionsRan": false
+    },
+    {
+      "name": "native offscreen informational alert releases without focus or effect replay",
+      "reason": null,
+      "assertionsRan": false
+    },
+    {
+      "name": "Relay-owned sign-in and local storage survive a full process restart without foregrounding",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+      "assertionsRan": false
+    },
+    {
+      "name": "live contained input updates application state and delivers editing keys without OS focus",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for the isolated native fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "offscreen contained input updates application state and delivers editing keys without OS focus",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for the isolated native fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "restored hidden browser tabs defer requests until used and never load closed or replaced pages",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 for disposable Electron restoration.",
+      "assertionsRan": false
+    },
+    {
+      "name": "native popups preserve OAuth routing and remain independent when their opener closes",
+      "reason": "Set RELAY_LIVE_BROWSER_QA=1 to run disposable hidden Electron browsers.",
+      "assertionsRan": false
+    },
+    {
+      "name": "actual hidden Chromium fill commits trusted form state across replacement empty Unicode and iframe cases",
+      "reason": "Set RELAY_TRUSTED_FILL_QA=1 for the isolated native fixture.",
+      "assertionsRan": false
+    },
+    {
+      "name": "real packaged desktop main reaches ready with UIA retired and no launcher window",
+      "reason": null,
+      "assertionsRan": false
+    },
+    {
+      "name": "Historical MiniCPM execution-delivery benchmark requires original pinned 2026-11-20 snapshot",
+      "reason": "Historical frozen source absent; no benchmark assertions executed or credited.",
+      "assertionsRan": false
+    },
+    {
+      "name": "Historical MiniCPM execution-evidence benchmark requires original pinned 2026-11-20 snapshot",
+      "reason": "Historical frozen source absent; no benchmark assertions executed or credited.",
+      "assertionsRan": false
+    },
+    {
+      "name": "Historical MiniCPM native-control benchmark requires original pinned 2026-11-20 snapshot",
+      "reason": "Historical frozen source absent; no benchmark assertions executed or credited.",
+      "assertionsRan": false
+    }
+  ],
+  "unexpectedSkips": [],
+  "validationScope": "Windows source suite only. Named skipped assertions were not exercised. Live model and installed runtime require separate verification."
+}
