@@ -177,3 +177,47 @@ test('explicit same-conversation original text follow-up bypasses the model and 
  assert.ok(originals.every(text=>next.output.includes(text)));
  assert.doesNotMatch(next.output,/selected summary/);
 });
+
+test('effective staged source skill executes neutral reconstruction and challenge in separate read-only provider sessions',async t=>{
+ const threadId='provider_reconstruction_fixture',calls=[];
+ const f=await fixture(t,async(options,number)=>{
+  assert.equal(options.responseOnly,true);assert.equal(options.hostOnlyTools,true);assert.equal(options.sandbox,'read-only');assert.deepEqual(options.dynamicTools,[]);assert.equal(options.threadId,undefined);
+  options.onPromptAccepted(options.prompt);calls.push(options);
+  const row=(id,parent,summary,fn)=>({id,parent,summary,function:fn});
+  const claim=(claim,basis,refs,reasoning)=>({claim,basis,refs,reasoning,assumptions:'Only source statements, no independent corroboration.'});
+  let value;
+  if(number===1){
+    assert.match(options.prompt,/RECONSTRUCTION ONLY/);assert.doesNotMatch(options.prompt,/CURRENT USER QUESTION/);
+    value={outline:[row(1,0,'Project heading','Section'),row(2,1,'An observed design decision','Subsection'),row(3,2,'The source provides a repository URL','Evidence'),row(4,0,'Limitations heading','Section'),row(5,4,'No adoption data are reported','Qualification')]};
+  }else if(number===2){
+    assert.match(options.prompt,/NEUTRAL SUMMARY ONLY/);assert.match(options.prompt,/RECONSTRUCTED OUTLINE/);assert.doesNotMatch(options.prompt,/CURRENT USER QUESTION/);
+    value={summary:[{text:'The report describes a project and its repository, and limits its adoption claims.',refs:[1,2,3,4,5]}],corrections:[]};
+  }else if(number===3){
+    assert.match(options.prompt,/INITIAL ASSESSMENT/);assert.match(options.prompt,/Analyze the attached report/);
+    value={claims:[claim('No evidence of any repository','not-established',[],'Provisional mistaken reading')]};
+  }else if(number===4){
+    assert.match(options.prompt,/ORIGINAL SOURCE UNITS IN REVERSE ORDER/);assert.match(options.prompt,/No evidence of any repository/);
+    value={review:[{id:1,challenge:'The explicit URL contradicts this assumption.',counterRefs:[3],disposition:'revise',revised:claim('The report lists a repository but no adoption data.','source-assertion',[3,5],'Do not confuse an available repository with independently proven adoption.')}],additional:[]};
+  }else assert.fail('Unexpected ordinary provider execution');
+  return {output:JSON.stringify(value),threadId:'provider_phase_'+number,usage:{totalTokens:10}};
+ },{model:'local_llamacpp::fixture',threadId});
+ f.workflow.id='mission_chat_staged_source_fixture';
+ const entry={...f.attachments.entries.get(ids.pdf),name:'project-report.pdf',pageCount:2};
+ f.attachments.entries.set(ids.pdf,entry);
+ const pages=['PROJECT\nDesign decision\n\u2022 Repository: https://example.test/project','LIMITATIONS\nNo adoption data supplied.'];
+ f.attachments.read=async()=>({attachment:entry,format:'pdf',totalPages:2,pages:pages.map((text,i)=>({page:i+1,startChar:0,text,totalChars:text.length,nextChar:null,textAvailable:true})),nextPage:null,nextChar:null});
+ const {createSkillsCatalog}=await import('../lib/skills-catalog.mjs');
+ const catalog=createSkillsCatalog({dataDir:f.engine.dataDir});
+ let skill;try{skill=await catalog.create({value:{content:'---\nactivation: [substantive-analysis]\nanalysis_protocol: source-reconstruction-v1\n---\n# Source First\n\nReconstruct the source before judging.'}});}finally{await catalog.close();}
+ const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Analyze the attached report.',attachmentIds:[ids.pdf],planningMode:'off',chatPlanning:'off',directoryActions:'off'}}).id);
+ completed(run);
+ assert.equal(calls.length,4);assert.equal(run.nodes.agent.sourceReconstruction.status,'stages-returned');
+ assert.equal(run.nodes.agent.sourceReconstruction.semanticVerification,'not-established');
+ assert.ok(run.skillLoadReceipts.some(r=>r.skillId===skill.id&&r.type==='skill_context_submitted'));
+ assert.ok(run.nodes.agent.instructionAudit.preparations.every(p=>p.audit.delivery==='accepted'));
+ assert.match(run.output,/\n    - \*\*U3/);
+ assert.match(run.output,/Repository: https:\/\/example.test\/project/);
+ assert.match(run.output,/The report lists a repository but no adoption data/);
+ assert.doesNotMatch(run.output.split('## Revised assessment').at(-1),/No evidence of any repository/);
+ assert.equal(run.nodes.agent.usage.totalTokens,40);
+});
