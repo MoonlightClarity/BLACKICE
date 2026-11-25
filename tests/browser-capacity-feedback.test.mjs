@@ -110,3 +110,11 @@ test('older or incomplete status metadata omits capacity rather than inventing a
     assert.equal(response.success, true); assert.equal(parsed(response).taskCapacity, undefined);
   }
 });
+
+test('capacity is visible before a failed open and after a successful slot release',async t=>{
+ const f=fixture(t,{limit:2});
+ const opened=parsed(await f.call({action:'open',url:'https://example.invalid/first'}));
+ assert.equal(opened.taskCapacity.remaining,0);
+ const before=parsed(await f.call({action:'tabs'}));assert.equal(before.taskCapacity.remaining,0);assert.match(before.capacityHint,/Do not open another tab/);
+ const after=parsed(await f.call({action:'suspend',tabId:'opened-1'}));assert.equal(after.taskCapacity.remaining,1);assert.equal(after.capacityHint,undefined);
+});

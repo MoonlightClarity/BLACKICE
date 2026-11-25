@@ -18,7 +18,7 @@ import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { BrowserTabDiagnostics, diagnosticText } from '../lib/browser-tab-diagnostics.mjs';
 import { BrowserProtection, protectionOrigin } from '../lib/browser-protection.mjs';
 import { BrowserSurfaceHost } from './browser-surface.mjs';
-import { browserControlDescriptor, browserPointerHitMatches } from './browser-control-identity.mjs';
+import { browserControlDescriptor, browserPointerHitMatches, browserAssociatedFileInput } from './browser-control-identity.mjs';
 import { performProviderKeySource } from './provider-key-source.mjs';
 import { inspectObservedFormControl, observePageReceiptRecords } from './browser-operation-observation.mjs';
 import { decorateStoppedTabAdoption } from '../lib/browser-stopped-adoption.mjs';
@@ -145,7 +145,7 @@ const bounded = (promise, signal, ms = 12000) => new Promise((resolve, reject) =
 
 // The same function executes inside each frame, including cross-origin frames.
 // No Node APIs, keys or local application handles are exposed to the page.
-function pageSnapshot(key, prefix, query, readContext = false, describeControl) {
+function pageSnapshot(key, prefix, query, readContext = false, describeControl, associatedFileInput) {
   let state = globalThis[key];
   if (!state || state.document !== document || state.prefix !== prefix) state = globalThis[key] = { document, prefix, documentId: Math.random().toString(36).slice(2), elements: new Map(), identities: new Map(), descriptors: new WeakMap(), ids: new WeakMap(), next: 0 };
   const items = [], text = []; let scanned = 0, truncated = false, visibleControlsUnderHiddenAncestor = 0;
@@ -186,10 +186,11 @@ function pageSnapshot(key, prefix, query, readContext = false, describeControl) 
       if (++scanned > 16000 || items.length >= 300) { truncated = true; return; }
       if (['SCRIPT','STYLE','NOSCRIPT','TEMPLATE'].includes(el.tagName)) continue;
       const style = getComputedStyle(el);
-      if (style.display === 'none') continue;
+      const associatedUpload = associatedFileInput?.(el) === true;
+      if (style.display === 'none' && !associatedUpload) continue;
       // Unlike display:none, visibility is inherited and descendants can
       // override it. Keep walking without exposing the hidden node itself.
-      if (style.visibility === 'hidden') {
+      if (style.visibility === 'hidden' && !associatedUpload) {
         if (el.shadowRoot) walk(el.shadowRoot, true);
         walk(el, true);
         continue;
@@ -200,7 +201,8 @@ function pageSnapshot(key, prefix, query, readContext = false, describeControl) 
       // Reading every ancestor's innerText/geometry can repeatedly lay out a
       // large feed. Only controls need boxes and accessible names.
       const box = control ? el.getBoundingClientRect() : null;
-      if (box && (box.width > 0 || box.height > 0)) {
+      const uploadOnly = associatedUpload && (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || !box || !(box.width > 0 || box.height > 0));
+      if (uploadOnly || box && (box.width > 0 || box.height > 0)) {
         const identity = describeControl(el, role), label = identity[3];
         const descriptor = JSON.stringify(identity);
         let ref = state.ids.get(el);
@@ -215,7 +217,7 @@ function pageSnapshot(key, prefix, query, readContext = false, describeControl) 
           const ariaRequired = el.getAttribute('aria-required');
           const required = el.matches?.(':required') || ariaRequired === 'true' ? true
             : el.matches?.(':optional') || ariaRequired === 'false' ? false : undefined;
-          items.push({ ref, role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...(required === undefined ? {} : { required }), ...('value' in el ? { value: String(el.value).slice(0, 300) } : {}), disabled: Boolean(el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true'), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
+          items.push({ ref, ...(uploadOnly ? { uploadOnly: true, hidden: true } : {}), role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...(required === undefined ? {} : { required }), ...('value' in el ? { value: String(el.value).slice(0, 300) } : {}), disabled: Boolean(el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true'), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
         }
       }
       for (const node of el.childNodes) if (node.nodeType === 3) {
@@ -282,7 +284,7 @@ async function smoothPageScroll(target, top, left) {
   return position();
 }
 
-function elementAction(key, ref, action, args, scrollPage, inspectOperation, describeControl, pointerHitMatches) {
+function elementAction(key, ref, action, args, scrollPage, inspectOperation, describeControl, pointerHitMatches, associatedFileInput) {
   // This function runs in the renderer, so reject malformed fill preparation
   // here as well as at the host boundary, before focus or selection can change.
   if (['fill', 'fill-ready'].includes(action) && (typeof args?.text !== 'string' || args.value !== undefined)) return { __blackiceElementError: { message: 'Fill requires an explicit text string and does not accept value. Use text:"" to intentionally clear a field; value is only for select.', code: 'BROWSER_VALIDATION', inputDispatched: false } };
@@ -294,8 +296,9 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
   if (expected) {
     const style = getComputedStyle(el), box = el.getBoundingClientRect();
     const descriptor = describeControl(el);
-    const cause = style.display === 'none' || style.visibility === 'hidden' ? 'hidden'
-      : !(box.width > 0 || box.height > 0) ? 'no-box'
+    const uploadTarget = (action === 'upload' || action === 'host-inspect' && args.action === 'upload') && associatedFileInput?.(el) === true;
+    const cause = !uploadTarget && (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') ? 'hidden'
+      : !uploadTarget && !(box.width > 0 || box.height > 0) ? 'no-box'
       : JSON.stringify(descriptor) !== expected ? 'identity-changed' : undefined;
     if (cause) {
       let mismatch = {};
@@ -315,6 +318,14 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
   }
   if (el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true') throw new Error('This element is disabled. Inspect what is required first.');
   if (action === 'host-inspect') return inspectOperation(el, state, args);
+  if (action === 'keyboard-verify') {
+    // The browser may have advanced its whole-page revision for an unrelated
+    // frame. Verify the exact still-observed target has focus before using a
+    // frame-scoped keyboard guard. Raw keyboard input never takes this path.
+    const focused = (document.activeElement === el || el.getRootNode()?.activeElement === el)
+      && (typeof document.hasFocus !== 'function' || document.hasFocus());
+    return { focused };
+  }
   if (action === 'pointer-verify') {
     if (!pointerHitMatches(el, args.hit, args.point)) throw new Error('The current pointer target is not the observed control. Inspect the page before acting.');
     return { verified: true };
@@ -414,8 +425,8 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
   throw new Error('Unsupported element action.');
 }
 
-async function elementActionResult(run, scrollPage, key, ref, action, args, inspectOperation, describeControl, pointerHitMatches) {
-  try { return await run(key, ref, action, args, scrollPage, inspectOperation, describeControl, pointerHitMatches); }
+async function elementActionResult(run, scrollPage, key, ref, action, args, inspectOperation, describeControl, pointerHitMatches, associatedFileInput) {
+  try { return await run(key, ref, action, args, scrollPage, inspectOperation, describeControl, pointerHitMatches, associatedFileInput); }
   catch (reason) {
     // Preserve non-enumerable Error.message before the renderer result crosses
     // Electron's process boundary. Unknown failures cannot prove no side effect.
@@ -1464,7 +1475,7 @@ export class ElectronBrowserDriver extends EventEmitter {
           const stamp = this.frameStamp(tab, frame, { mainFrame, throwDisposed: true });
           if (!stamp) { changedRead = true; break; }
           const prefix = `${stamp.mainRevision}-${stamp.lineage.map(value => value.revision).join('_')}-${frameLabel}`;
-          const value = await this.pageWork(tab, frame.executeJavaScript(`(${pageSnapshot.toString()})(${JSON.stringify(this.key)},${JSON.stringify(prefix)},${JSON.stringify(query || '')},${Boolean(readContext)},${browserControlDescriptor.toString()})`), signal, Math.max(1, Math.min(deadline - Date.now(), frame === mainFrame ? 5000 : 500)));
+          const value = await this.pageWork(tab, frame.executeJavaScript(`(${pageSnapshot.toString()})(${JSON.stringify(this.key)},${JSON.stringify(prefix)},${JSON.stringify(query || '')},${Boolean(readContext)},${browserControlDescriptor.toString()},${browserAssociatedFileInput.toString()})`), signal, Math.max(1, Math.min(deadline - Date.now(), frame === mainFrame ? 5000 : 500)));
           if (!this.frameStampCurrent(tab, stamp)) { changedRead = true; break; }
           if (value.elements.length > remainingElements || value.text.length > remainingText) value.truncated = true;
           value.elements = value.elements.slice(0, remainingElements); value.text = value.text.slice(0, remainingText);
@@ -1516,7 +1527,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     try {
       const main = tab.window.webContents.mainFrame;
       if (frame !== main && !main.framesInSubtree.includes(frame)) throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', actionDispatched: false, browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref, 'frame-changed') });
-      result = await this.pageWork(tab, frame.executeJavaScript(`(${elementActionResult.toString()})(${elementAction.toString()},${smoothPageScroll.toString()},${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })},${inspectObservedFormControl.toString()},${browserControlDescriptor.toString()},${browserPointerHitMatches.toString()})`), signal);
+      result = await this.pageWork(tab, frame.executeJavaScript(`(${elementActionResult.toString()})(${elementAction.toString()},${smoothPageScroll.toString()},${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })},${inspectObservedFormControl.toString()},${browserControlDescriptor.toString()},${browserPointerHitMatches.toString()},${browserAssociatedFileInput.toString()})`), signal);
     } catch (reason) {
       if (disposedFrame(reason)) {
         const diagnostic = this.referenceDiagnostic(tab, args.ref, 'frame-changed');
@@ -1791,7 +1802,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     return expected;
   }
   scopedInputCurrent(tab, expected) {
-    return Boolean(['click', 'hover', 'select', 'upload'].includes(expected?.action) && typeof expected.ref === 'string' && this.referenceCurrent(tab, expected.ref, expected.expectedDocumentId));
+    return Boolean(['click', 'hover', 'select', 'upload', 'fill', 'press'].includes(expected?.action) && typeof expected.ref === 'string' && this.referenceCurrent(tab, expected.ref, expected.expectedDocumentId));
   }
   assertInputDocument(tab, expected) {
     if (expected?.expectedDocumentId === undefined && expected?.expectedUrl === undefined) return;
@@ -1820,10 +1831,16 @@ export class ElectronBrowserDriver extends EventEmitter {
       // A detach can invalidate the guard while the awaiting caller resumes.
       // Never reconnect and send this input under a fresh, unguarded session.
       if (!wc.debugger.isAttached() || !tab.containmentReady) throw Object.assign(error('The contained browser connection changed before input. Inspect the page and try the action again after it reconnects.'), { code: 'BROWSER_CONTAINMENT_LOST' });
-      // Keyboard/text focus is whole-page context, even when preparation used
-      // a ref. A sibling reload must not authorize input into a changed focus.
+      // Raw keyboard input retains the whole-document guard. A reference-bound
+      // edit can survive unrelated frame navigation only after the exact current
+      // control is independently checked for focus in its own renderer.
       const keyboard = method === 'Input.insertText' || method === 'Input.dispatchKeyEvent';
-      this.assertInputDocument(tab, keyboard && expected ? { ...expected, action: undefined } : expected);
+      if (keyboard && expected && expected.expectedDocumentId !== inputDocumentId(tab)
+        && ['fill', 'press'].includes(expected.action) && this.scopedInputCurrent(tab, expected)) {
+        const proof = await this.element(tab, expected, 'keyboard-verify', signal);
+        if (proof.result?.focused !== true) throw Object.assign(error('The observed keyboard target no longer has focus. Inspect that field before retrying.'), { code: 'BROWSER_INPUT_FOCUS_CHANGED', inputDispatched: false });
+        this.assertInputDocument(tab, expected);
+      } else this.assertInputDocument(tab, keyboard && expected ? { ...expected, action: undefined } : expected);
       if (method === 'Input.dispatchMouseEvent' && ['mouseMoved', 'mousePressed', 'mouseWheel'].includes(params.type) && expected?.ref) {
         await this.assertPointerReference(tab, expected, params, signal, sessionId);
         this.assertInputDocument(tab, expected);
@@ -2380,13 +2397,19 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (args.action === 'type' && (typeof args.text !== 'string' || !args.text.length || args.text.length > 16384 || typeof args.expectedDocumentId !== 'string' || typeof args.expectedUrl !== 'string')) throw error('Type 1–16384 characters into a field on the current observed page.');
     const navigation = ['click','press','reload','back','forward'].includes(args.action) ? this.watchNavigation(tab, signal) : null;
     let releaseInputFocus;
+    // Derive a reference-bound guard from actual observation provenance, not
+    // from a newly invented document id. Do not change the public press result.
+    const keyboardContext = args.ref && ['fill','press'].includes(args.action) ? tab.refContexts?.get(args.ref) : null;
+    const keyboardGuard = args.expectedDocumentId !== undefined || args.expectedUrl !== undefined ? args
+      : keyboardContext && this.referenceCurrent(tab, args.ref) && keyboardContext.documents.size
+        ? { ...args, expectedDocumentId: [...keyboardContext.documents].at(-1), expectedUrl: keyboardContext.stamp.topUrl }
+        : { expectedDocumentId: inputDocumentId(tab), expectedUrl: tab.window.webContents.getURL() };
     // Only these keyboard paths have no DOM focus/selection, popup resize,
     // restored navigation or recovery preparation before their first input.
     const unpreparedKeyboard = !activationMayAffectPage && !tab.window.liveSurface && !tab.popupViewport && !args.ref && !recoveryInput;
     try {
     if (['type', 'press', 'fill'].includes(args.action)) {
-      const expected = args.expectedDocumentId === undefined && args.expectedUrl === undefined ? { expectedDocumentId: inputDocumentId(tab), expectedUrl: tab.window.webContents.getURL() } : args;
-      releaseInputFocus = await this.focusForInput(tab, signal, expected);
+      releaseInputFocus = await this.focusForInput(tab, signal, keyboardGuard);
     }
     if (args.action === 'open') await this.pageWork(tab, tab.loading, signal, 20000);
     if (['navigate', 'reload', 'back', 'forward'].includes(args.action)) {
@@ -2414,7 +2437,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (args.action === 'fill') {
       const text = fillText;
-      const guard = args.expectedDocumentId === undefined && args.expectedUrl === undefined ? { expectedDocumentId: inputDocumentId(tab), expectedUrl: tab.window.webContents.getURL() } : args;
+      const guard = keyboardGuard;
       if (recoveryInput) await recoveryInput({ signal, prepared: true });
       receipt = (await this.element(tab, { ...args, text }, 'fill', signal)).result;
       // Focus preparation can invoke page handlers. A later unsent renderer
@@ -2489,9 +2512,9 @@ export class ElectronBrowserDriver extends EventEmitter {
       const { text: _text, unmodifiedText: _unmodifiedText, ...up } = down;
       let pressed = false, release = true;
       try {
-        await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyDown', ...down }, signal, args);
+        await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyDown', ...down }, signal, keyboardGuard);
         pressed = true;
-        if (key === 'Enter') await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'char', text: '\r', key: 'Enter', ...keys[key], modifiers }, signal, args);
+        if (key === 'Enter') await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'char', text: '\r', key: 'Enter', ...keys[key], modifiers }, signal, keyboardGuard);
       } catch (reason) {
         release = pressed || reason?.[commandDispatched] !== false;
         if (!release && unpreparedKeyboard && !releaseInputFocus && !tab.popupViewport) reason.actionDispatched = false;
@@ -2612,7 +2635,15 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
     if (args.action === 'wait') {
       const expected = args.text || args.query;
-      if (!expected || typeof expected !== 'string' || expected.length > 1000) throw error('Specify expected page text to wait for.');
+      if (expected === undefined || expected === '') {
+        // A no-text wait is a bounded pause followed by an actual observation,
+        // not a successful text match or an unbounded network-idle wait.
+        const duration = Math.min(20000, Math.max(100, Number(args.timeoutMs) || 500));
+        await bounded(new Promise(resolve => setTimeout(resolve, duration)), signal, duration + 1000);
+        cancel(signal);
+        return { ...await this.snapshot(tab, undefined, signal), waitMode: 'observe', waitedMs: duration };
+      }
+      if (typeof expected !== 'string' || expected.length > 1000) throw error('Expected page text must contain 1 to 1000 characters.');
       const deadline = Date.now() + Math.min(20000, Math.max(100, Number(args.timeoutMs) || 10000));
       do {
         cancel(signal); const snapshot = await this.snapshot(tab, expected, signal);

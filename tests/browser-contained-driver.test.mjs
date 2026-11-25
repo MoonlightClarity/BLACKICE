@@ -3378,3 +3378,35 @@ for(const kind of ['pinned','in-use','uncertain-effect','wrong-mime','interactiv
   assert.equal(driver.status().capacity.live,1);
  });
 }
+
+test('wait without text returns a bounded fresh observation instead of a validation failure', async t => {
+  const {driver} = await fixture(t), tab = driver.newTab('https://example.test/form');
+  await tab.loading;
+  const result = await driver.perform({action:'wait',tabId:tab.id,timeoutMs:100});
+  assert.equal(result.waitMode,'observe');
+  assert.equal(result.waitedMs,100);
+  assert.equal(result.tabId,tab.id);
+  assert.ok(Array.isArray(result.frames));
+  assert.equal(Object.hasOwn(result,'matched'),false);
+});
+test('reference-bound keyboard input survives only unrelated frame changes with exact focus proof', async t => {
+  const {driver,windows} = await fixture(t);
+  const tab = driver.newTab('https://example.test/form'); await tab.loading;
+  const main = tab.window.webContents.mainFrame, child={processId:7,routingId:21,url:'https://ads.example.test/',parent:main};
+  main.framesInSubtree=[main,child];
+  rememberFixtureRef(driver,tab,'field');
+  const guard={action:'fill',ref:'field',tabId:tab.id,expectedDocumentId:tab.id+':'+tab.revision,expectedUrl:tab.url,text:'hello'};
+  driver.navigationChanged(tab,false,7,21,child.url,'frame-navigation');
+  assert.doesNotThrow(()=>driver.assertInputDocument(tab,guard));
+  assert.throws(()=>driver.assertInputDocument(tab,{...guard,action:'type',ref:undefined}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+  let focused=true,verifications=0;
+  driver.element=async(_tab,args,action)=>{assert.equal(action,'keyboard-verify');assert.equal(args.ref,'field');verifications++;return {result:{focused}}};
+  await driver.cdp(tab,'Input.insertText',{text:'hello'},undefined,guard);
+  assert.equal(verifications,1);
+  focused=false;
+  const before=windows[0].protocol.filter(x=>x.method==='Input.insertText').length;
+  await assert.rejects(driver.cdp(tab,'Input.insertText',{text:'no'},undefined,guard),{code:'BROWSER_INPUT_FOCUS_CHANGED',inputDispatched:false});
+  assert.equal(windows[0].protocol.filter(x=>x.method==='Input.insertText').length,before);
+  driver.navigationChanged(tab,true);
+  await assert.rejects(driver.cdp(tab,'Input.insertText',{text:'no'},undefined,guard),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+});

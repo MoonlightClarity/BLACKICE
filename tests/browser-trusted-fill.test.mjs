@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import vm from 'node:vm';
+import { browserControlDescriptor, browserPointerHitMatches, browserAssociatedFileInput } from '../desktop/browser-control-identity.mjs';
 
 const source = await fs.readFile(new URL('../desktop/browser-driver.mjs', import.meta.url), 'utf8');
 const elementSource = source.slice(source.indexOf('function elementAction('), source.indexOf('\nasync function elementActionResult('));
@@ -129,7 +130,7 @@ test('renderer stale diagnostics distinguish fixed causes and redact control con
       document: { activeElement: null, getElementById: () => null },
       getComputedStyle: () => ({ display: kind === 'hidden' ? 'none' : 'block', visibility: 'visible' }),
     });
-    const perform = action => vm.runInContext('(' + elementSource + ')("fixture","field",' + JSON.stringify(action) + ',{text:"PRIVATE_INPUT"})', context);
+    const perform = action => vm.runInContext('(' + elementSource + ')("fixture","field",' + JSON.stringify(action) + ',{text:"PRIVATE_INPUT"},undefined,undefined,' + browserControlDescriptor.toString() + ',' + browserPointerHitMatches.toString() + ',' + browserAssociatedFileInput.toString() + ')', context);
     let result = perform('fill');
     if (kind === 'focus-change') {
       assert.equal(result.needsTrustedTextInput, true);

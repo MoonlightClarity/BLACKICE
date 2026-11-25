@@ -19,7 +19,7 @@ export function browserControlDescriptor(el, role) {
     visit(node); return parts.join(' ');
   };
   const labelled = (el.getAttribute('aria-labelledby') || '').trim().split(/\s+/).filter(Boolean).map(id => textOf(root?.getElementById?.(id) || doc?.getElementById?.(id))).join(' ');
-  const label = [el.getAttribute('aria-label'), labelled, el.labels ? [...el.labels].map(textOf).join(' ') : '', el.getAttribute('placeholder'), el.getAttribute('aria-placeholder'), el.getAttribute('data-placeholder'), textOf(el), el.getAttribute('title'), el.getAttribute('alt')].map(normalized).find(Boolean) || '';
+  const label = [el.getAttribute('aria-label'), labelled, el.labels ? [...el.labels].map(textOf).join(' ') : '', el.getAttribute('placeholder'), el.getAttribute('aria-placeholder'), el.getAttribute('data-placeholder'), textOf(el), el.getAttribute('title'), el.getAttribute('alt'), el.tagName === 'INPUT' && el.type === 'file' ? (el.name || el.id) : ''].map(normalized).find(Boolean) || '';
   return [el.tagName, el.type || '', role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), label.slice(0, 300)];
 }
 
@@ -54,4 +54,27 @@ export function browserPointerHitMatches(el, hit, point) {
     hit = next;
   }
   return false;
+}
+
+/** A native file picker may be deliberately unrendered while its label or form
+ * remains visible. Publish only a named, enabled, connected exact file control;
+ * never treat a hidden input as a pointer or keyboard target. */
+export function browserAssociatedFileInput(el) {
+  if (!el?.isConnected || el.tagName !== 'INPUT' || el.type !== 'file' || el.disabled
+    || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true' || el.webkitdirectory) return false;
+  const root = el.getRootNode?.();
+  const doc = el.ownerDocument;
+  const labels = [...(el.labels || [])];
+  for (const id of (el.getAttribute('aria-labelledby') || '').trim().split(/\s+/).filter(Boolean)) {
+    const label = root?.getElementById?.(id) || doc?.getElementById?.(id);
+    if (label) labels.push(label);
+  }
+  const visible = node => {
+    if (!node?.isConnected) return false;
+    const style = getComputedStyle(node), box = node.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse'
+      && box.width > 0 && box.height > 0;
+  };
+  const named = Boolean(String(el.getAttribute('aria-label') || el.name || el.id || labels.map(label => label.textContent || '').join(' ')).trim());
+  return named && (labels.some(visible) || visible(el.form));
 }
