@@ -43,9 +43,9 @@ export function createNativeSafeQuitHandler({ host, retain, shutdown, onReleased
     let timer;
     pending = Promise.resolve().then(async()=>{
       if(nativeOwnershipPossible(host)){
-        const result=await retain();if(result.retained){onRetained();return;}
+        const result=await retain();if(result.retained)return onRetained();
       }
-      if(!await prepareQuit()){onRetained();return;}
+      if(!await prepareQuit())return onRetained();
       timer=setTimer(()=>{
         if(nativeOwnershipPossible(host)){onTimeoutBlocked();return;}
         void onTimeout();

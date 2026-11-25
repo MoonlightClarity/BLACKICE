@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHarnessServer } from '../server.mjs';
 import { DesktopRestartController } from '../desktop/restart.mjs';
+import { createQuitWindowGate } from '../desktop/quit-window-gate.mjs';
+import { assertNativeParentUnowned } from '../desktop/native-parent-lifetime.mjs';
 
 const held = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 class Runtime extends EventEmitter {
@@ -73,7 +75,7 @@ test('restart browser final native callback refuses a download that starts after
   const main = await readFile(new URL('../desktop/main.mjs', import.meta.url), 'utf8');
   const callback = /relaunch:\s*(options\s*=>\s*\{[^{}]+\})/.exec(main)?.[1];
   assert.ok(callback, 'Exercise the desktop runtime’s actual native relaunch callback.');
-  const relaunch = new Function('harness', 'app', `let restartClosing = false; return (${callback});`)(f.app, { relaunch: () => native.push('relaunch') });
+  const relaunch = new Function('harness', 'app', 'assertNativeParentUnowned', 'nativeApps', 'assertPlannedWindowClosed', `let restartClosing = false; return (${callback});`)(f.app, { relaunch: () => native.push('relaunch') }, assertNativeParentUnowned, {}, () => {});
   const controller = new DesktopRestartController({
     profileDir, getIdentity: () => identity,
     checkReady: context => f.app.assertRestartReady(context),
@@ -88,7 +90,7 @@ test('restart browser final native callback refuses a download that starts after
   const scheduled = await controller.request({ requestId: 'late-browser-download' });
   assert.equal(scheduled.status, 'scheduled');
   const result = await controller.waitForHandoff();
-  assert.equal(result.status, 'failed'); assert.deepEqual(native, []);
+  assert.equal(result.status, 'failed'); assert.equal(result.error.code,'DESKTOP_RESTART_BROWSER_BUSY'); assert.deepEqual(native, []);
   assert.deepEqual(f.effects, ['flush']); assert.equal(f.app.engine.maintenanceRequested, false);
   assert.equal(f.state.downloads[0].status, 'downloading'); assert.equal(f.state.tabs.length, 8);
 });
@@ -146,4 +148,31 @@ test('ordinary desktop quit closes the harness without persisting an emergency p
     assert.equal(settings.pauseReason,null,file);
   }
   assert.ok(f.effects.includes('cancel'),'The browser must still be cancelled on quit.');
+});
+
+test('renderer veto or unanswered close releases the real restart gate before a clean retry',async t=>{
+ const f=await fixture(t), profileDir=path.join(f.directory,'close-negotiation'), events=[];
+ const w=new EventEmitter();w.webContents=new EventEmitter();w.isDestroyed=()=>false;let behavior='veto', late=0;
+ w.close=()=>{w.emit('close',{});if(behavior==='veto')w.webContents.emit('will-prevent-unload',{});else if(behavior==='accepted')w.emit('closed');};
+ const gate=createQuitWindowGate({getWindow:()=>w,timeoutMs:35,onLateClose:()=>late++});
+ const main=await readFile(new URL('../desktop/main.mjs',import.meta.url),'utf8');
+ const hooks=main.slice(main.indexOf('function reopenCancelledWindow()'),main.indexOf('function assertPlannedWindowClosed()'));
+ assert.ok(hooks.includes('await prepareQuit({ signal })'));
+ const state=new Function('prepareQuit','desktopLifecycle','diagnostics','mainWindow',`
+   let plannedQuit=null,shutdownPromise=null,didClose=false,restartClosing=false,maintenanceScheduled=false;
+   const windowWriteChain=Promise.resolve();
+   ${hooks}
+   return {preparePlannedQuit,releasePlannedQuit,planned:()=>plannedQuit};
+ `)(gate,{stopped:false,mode:'window',cancelQuit(){},show:async()=>assert.fail('Vetoed live window must not be replaced')},{recordError:async()=>{}},w);
+ const controller=new DesktopRestartController({profileDir,getIdentity:()=>({pid:1234,startedAt:new Date().toISOString(),profileDir,mode:'window'}),getLaunchOptions:()=>({execPath:process.execPath,args:[],profileDir,mode:'window'}),checkReady:context=>f.app.assertRestartReady(context),prepare:async context=>{await f.app.beginRestart(context);await state.preparePlannedQuit('restart',context.signal);},release:()=>{f.app.endRestart();state.releasePlannedQuit('restart');},relaunch:()=>{f.app.assertRestartPrepared();events.push('relaunch')},quit:()=>events.push('quit')});
+ for(const [requestId,mode,code] of [['veto','veto','DESKTOP_RESTART_QUIT_VETOED'],['no-response','silent','DESKTOP_RESTART_QUIT_TIMEOUT']]){
+  behavior=mode;await controller.request({requestId});const receipt=await controller.waitForHandoff();
+  assert.equal(receipt.status,'failed');assert.equal(receipt.error.code,code);assert.equal(receipt.durable,true);
+  assert.equal(f.app.engine.maintenanceRequested,false);assert.equal(state.planned(),null);assert.deepEqual(events,[]);
+  assert.equal((await controller.request({requestId})).status,'failed','same ID cannot replay a failed handoff');
+ }
+ w.emit('closed');await Promise.resolve();assert.equal(late,1);assert.deepEqual(events,[]);
+ behavior='accepted';await controller.request({requestId:'clean-retry'});const receipt=await controller.waitForHandoff();
+ assert.equal(receipt.status,'restarting');assert.deepEqual(events,['relaunch','quit']);assert.equal(f.app.engine.maintenanceRequested,true);
+ assert.equal(f.state.tabs.length,8,'ordinary restart preserves browser pages');
 });

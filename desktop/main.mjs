@@ -79,7 +79,8 @@ let windowState = {}, windowSaveTimer, windowWriteChain = Promise.resolve();
 let maintenancePromise=null,maintenanceReceipt=null,maintenanceScheduled=false;
 let runtimeRecord = null, runtimeWriteChain = Promise.resolve();
 let hardRestartIdentity = null;
-let desktopRestart = null, restartReady = false, restartClosing = false;
+let desktopRestart = null, restartReady = false, restartClosing = false, plannedQuit = null;
+let requestPlannedShutdown = () => app.quit();
 const launch = parseDesktopLaunchArgs();
 const processStartedAt = new Date(Date.now() - process.uptime() * 1000).toISOString();
 // --headless controls BLACKICE's window, not Chromium's browser implementation.
@@ -135,7 +136,28 @@ const desktopLifecycle = new DesktopLifecycle({ headless: launch.headless, backg
 } });
 desktopLifecycle.on('updated', () => { if (runtimeRecord && !shutdownPromise) void saveRuntimeRecord(); });
 const retainNativeParent=createNativeParentRetainer({host:nativeApps,background:()=>desktopLifecycle.background()});
-const launcherWindowClosed=()=>{if(!didClose)desktopLifecycle.windowClosed();};
+const prepareQuit = createQuitWindowGate({ getWindow: () => mainWindow, onLateClose: () => reopenCancelledWindow() });
+const launcherWindowClosed = window => { if (!didClose && !prepareQuit.ownsClose(window)) desktopLifecycle.windowClosed(); };
+
+function reopenCancelledWindow() {
+  if (shutdownPromise || didClose || restartClosing || plannedQuit || maintenanceScheduled || desktopLifecycle.stopped) return;
+  desktopLifecycle.cancelQuit();
+  if (desktopLifecycle.mode === 'window' && !mainWindow) void desktopLifecycle.show({ activate: desktopLifecycle.activateWindow }).catch(error => diagnostics.recordError('desktop', 'window_reopen_failed', error));
+}
+
+async function preparePlannedQuit(owner, signal) {
+  const check = () => { if (signal?.aborted || plannedQuit && plannedQuit !== owner) throw Object.assign(new Error('The close negotiation was cancelled.'), { code: 'DESKTOP_RESTART_CANCELLED' }); };
+  check(); plannedQuit = owner;
+  if (!await prepareQuit({ signal })) throw Object.assign(new Error('The window declined closing. Save or discard unsaved edits before retrying.'), { code: 'DESKTOP_RESTART_QUIT_VETOED' });
+  check(); await windowWriteChain; check();
+}
+function releasePlannedQuit(owner) {
+  if (plannedQuit === owner) plannedQuit = null;
+  reopenCancelledWindow();
+}
+function assertPlannedWindowClosed() {
+  if (mainWindow && !mainWindow.isDestroyed()) throw Object.assign(new Error('A window reopened during close negotiation.'), { code: 'DESKTOP_RESTART_QUIT_VETOED' });
+}
 
 function saveRuntimeRecord() {
   if (!runtimeRecord) return runtimeWriteChain;
@@ -242,14 +264,15 @@ function profileMaintenance(mode){
       await harness.beginMaintenance();
       maintenanceBegan = true;
       prepared=await prepareProfileMaintenance({mode,profileDir,backupDir,appVersion:app.getVersion(),allowForeignBinding:mode==='restore'});
+      await preparePlannedQuit('profile');
       assertNativeParentUnowned(nativeApps);
       const args=[path.join(DESKTOP_DIR,'maintenance-helper.mjs'),prepared.requestFile,process.execPath,...(!app.isPackaged?[APP_DIR]:[])];
       const child=spawn(process.execPath,args,{detached:true,stdio:'ignore',windowsHide:true,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'}});
       await new Promise((resolve,reject)=>{child.once('spawn',resolve);child.once('error',reject);});
       await registerMaintenanceHelper(prepared.requestFile,prepared.request.id,child.pid);child.unref();
       void diagnostics.record({component:'maintenance',event:mode==='backup'?'backup_started':'restore_started'});
-      maintenanceScheduled=true;setImmediate(()=>app.quit());return{scheduled:true,restarting:true};
-    }catch(error){if(prepared)await cancelPreparedMaintenance(prepared.requestFile,prepared.request.id).catch(()=>{});if(maintenanceBegan)harness?.endMaintenance();void diagnostics.recordError('maintenance','maintenance_failed',error);throw new Error(`${error.message} Queued work stays paused if maintenance preparation began.`);}
+      maintenanceScheduled=true;setImmediate(requestPlannedShutdown);return{scheduled:true,restarting:true};
+    }catch(error){if(prepared)await cancelPreparedMaintenance(prepared.requestFile,prepared.request.id).catch(()=>{});if(maintenanceBegan)harness?.endMaintenance();releasePlannedQuit('profile');void diagnostics.recordError('maintenance','maintenance_failed',error);throw new Error(`${error.message} Queued work stays paused if maintenance preparation began.`);}
   })().finally(()=>{if(!maintenanceScheduled)maintenancePromise=null;});
   return maintenancePromise;
 }
@@ -347,6 +370,7 @@ async function startLocalHarness(dataDir, defaultCwd) {
 }
 
 function createWindow() {
+  if (plannedQuit || restartClosing || maintenanceScheduled || shutdownPromise) throw new Error('BLACKICE is negotiating or completing a close.');
   rendererRecovery?.stop();
   const window = mainWindow = new BrowserWindow({
     width: 1500, height: 980, minWidth: 780, minHeight: 560,
@@ -423,8 +447,12 @@ function createWindow() {
     onError:error=>{void diagnostics.recordError('native-apps','detach_failed',error);},
     onAllowed:()=>{void saveWindowState();}
   });
-  mainWindow.on('close',ordinaryClose);
-  mainWindow.on('closed', () => { mainWindow = null; launcherWindowClosed(); });
+  mainWindow.on('close', event => {
+    // Only the owned negotiation may close the window during preparation.
+    if (!prepareQuit.ownsClose(window) && (desktopRestart?.isPending() || maintenancePromise || plannedQuit)) { event.preventDefault(); return; }
+    ordinaryClose(event);
+  });
+  mainWindow.on('closed', () => { if (mainWindow === window) { mainWindow = null; launcherWindowClosed(window); } });
   return recovery.loadInitial();
 }
 
@@ -447,20 +475,30 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
     // Malformed secondary arguments must never reach the fatal-error quit path.
     try {
       const requested = extra && ['headless', 'background', 'quit', 'restart'].every(key => typeof extra[key] === 'boolean') ? extra : parseDesktopLaunchArgs(commandLine);
+      if (plannedQuit || restartClosing || maintenanceScheduled || shutdownPromise) return;
       void desktopLifecycle.secondInstance(requested).then(async () => {
         // Reopening a settled failed shell is an explicit, bounded retry.
         if (!requested.quit && !requested.restart && !requested.headless && !requested.background) await rendererRecovery?.retry();
       }).catch(error => diagnostics.recordError('desktop', requested.restart ? 'restart_failed' : 'window_reopen_failed', error));
     } catch (error) { void diagnostics.recordError('desktop', 'lifecycle_request_failed', error); }
   });
-  app.on('window-all-closed',launcherWindowClosed);
-  const prepareQuit = createQuitWindowGate({getWindow:()=>mainWindow});
+  // The launcher window owns ordinary quit, not Electron's last-window event.
+  // In particular, a prepared or retired close cannot implicitly quit.
+  app.on('window-all-closed', () => {});
+  const finishDesktopQuit = (code = 0) => {
+    didClose = true;
+    // Once the renderer accepted and services settled, another native veto
+    // must not strand the closed backend. Prefer normal Electron quit.
+    const fallback = setTimeout(() => { if (!nativeOwnershipPossible(nativeApps)) app.exit(code || 1); }, 3000);
+    fallback.unref?.();
+    try { app.quit(); } catch { if (!nativeOwnershipPossible(nativeApps)) app.exit(code || 1); }
+  };
   const handleSafeQuit = createNativeSafeQuitHandler({host:nativeApps,retain:retainNativeParent,shutdown,
     prepareQuit:async()=>{try{return await prepareQuit();}catch(error){void diagnostics.recordError('desktop','request_failed',error);return false;}},
-    onReleased:()=>{didClose=true;app.quit();},
-    onRetained:()=>desktopLifecycle.cancelQuit(),
+    onReleased:()=>finishDesktopQuit(),
+    onRetained:()=>{desktopLifecycle.cancelQuit();reopenCancelledWindow();},
     onBlocked:async error=>{shutdownPromise=null;desktopLifecycle.cancelQuit();void diagnostics.recordError('native-apps','parent_retained',error);if(nativeOwnershipPossible(nativeApps))await retainNativeParent().catch(hideError=>diagnostics.recordError('native-apps','hide_failed',hideError));},
-    onFailure:error=>{console.error('BLACKICE shutdown:',error.message);didClose=true;app.quit();},
+    onFailure:error=>{console.error('BLACKICE shutdown:',error.message);finishDesktopQuit(1);},
     onTimeoutBlocked:()=>{void diagnostics.recordError('native-apps','detach_unconfirmed',new Error('Quit is waiting for the existing native application session to release.'));},
     onTimeout:async()=>{
       // A provider that fails to acknowledge cancellation must not keep the app alive.
@@ -469,11 +507,18 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
           Promise.resolve(harness?.runtime.close?.()),
           new Promise(resolve => setTimeout(resolve, 3_000)),
         ]);
-      } catch (error) { await diagnostics.recordError('desktop', 'stop_failed', error); }
+      } catch (error) { void diagnostics.recordError('desktop', 'stop_failed', error); }
       finally { await Promise.race([diagnostics.flush(), new Promise(resolve => setTimeout(resolve, 1000))]); if(!nativeOwnershipPossible(nativeApps))app.exit(1); }
     }
   });
-  app.on('before-quit', event => {if(!didClose)void handleSafeQuit(event);});
+  requestPlannedShutdown = () => { void handleSafeQuit({ preventDefault() {} }); };
+  app.on('before-quit', event => {
+    if (didClose) return;
+    // Pending preparation owns close negotiation. A second quit cannot
+    // tear down its server or arm a second handoff.
+    if (!restartClosing && !maintenanceScheduled && (desktopRestart?.isPending() || maintenancePromise || plannedQuit)) { event.preventDefault(); desktopLifecycle.cancelQuit(); return; }
+    void handleSafeQuit(event);
+  });
   process.on('SIGTERM', () => app.quit());
   process.on('SIGINT', () => app.quit());
   app.whenReady().then(async () => {
@@ -531,15 +576,18 @@ if (!app.requestSingleInstanceLock({ headless: launch.headless, background: laun
           await saveWindowState();
           await runtimeWriteChain;
           await diagnostics.flush();
+          if (context.signal.aborted) throw Object.assign(new Error('The restart was cancelled.'), { code: 'DESKTOP_RESTART_CANCELLED' });
+          // Negotiate renderer close before writing restarting or arming Electron.
+          await preparePlannedQuit('restart', context.signal);
           return preparation;
         } catch (error) {
           if (preparation?.forceEffects && error && typeof error === 'object') error.forceEffects = preparation.forceEffects;
           throw error;
         }
       },
-      release: () => harness?.endRestart(),
-      relaunch: options => { assertNativeParentUnowned(nativeApps); harness.assertRestartPrepared(); app.relaunch(options); restartClosing = true; },
-      quit: () => app.quit(),
+      release: () => { harness?.endRestart(); releasePlannedQuit('restart'); },
+      relaunch: options => { assertNativeParentUnowned(nativeApps); harness.assertRestartPrepared(); assertPlannedWindowClosed(); app.relaunch(options); restartClosing = true; },
+      quit: requestPlannedShutdown,
     });
     await startup.step(() => desktopRestart.init());
     // A native restart can originate in an older process without the new flag.

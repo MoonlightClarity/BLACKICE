@@ -34,3 +34,29 @@ test('desktop recovery remains active until accepted close, not before renderer 
  const recovery=await readFile(new URL('../desktop/renderer-recovery.mjs',import.meta.url),'utf8');
  assert.match(recovery,/this.listen\(window, 'closed', \(\) => this.stop\(\)\)/);
 });
+
+test('unanswered close times out, late close is owned and cannot authorize quit', async () => {
+ const w=new EventEmitter();w.webContents=new EventEmitter();w.isDestroyed=()=>false;w.close=()=>w.emit('close',{});
+ const late=[];let fire,cleared=0;
+ const gate=createQuitWindowGate({getWindow:()=>w,setTimer:callback=>{fire=callback;return 1;},clearTimer:()=>cleared++,onLateClose:window=>late.push(window)});
+ const pending=gate();assert.equal(gate.ownsClose(w),true);fire();
+ await assert.rejects(pending,{code:'DESKTOP_RESTART_QUIT_TIMEOUT'});
+ assert.equal(gate.ownsClose(w),true,'retired close still owns its late native outcome');
+ w.emit('closed');await Promise.resolve();
+ assert.deepEqual(late,[w]);assert.equal(w.listenerCount('closed'),0);assert.equal(w.webContents.listenerCount('will-prevent-unload'),0);assert.ok(cleared);
+});
+
+test('cancelled negotiation accepts neither a late veto nor an independent later close as approval',async()=>{
+ const w=new EventEmitter();w.webContents=new EventEmitter();w.isDestroyed=()=>false;w.close=()=>w.emit('close',{});
+ const abort=new AbortController();let late=0;const gate=createQuitWindowGate({getWindow:()=>w,onLateClose:()=>late++});
+ const pending=gate({signal:abort.signal});abort.abort();await assert.rejects(pending,{code:'DESKTOP_RESTART_CANCELLED'});
+ w.webContents.emit('will-prevent-unload',{});assert.equal(gate.ownsClose(w),false);
+ const again=new AbortController(),retry=gate({signal:again.signal});again.abort();await assert.rejects(retry,{code:'DESKTOP_RESTART_CANCELLED'});
+ w.emit('close',{});assert.equal(gate.ownsClose(w),false,'a fresh user close is not the retired transaction');w.emit('closed');await Promise.resolve();assert.equal(late,0);
+});
+
+test('cancelled close followed by a fresh accepted negotiation coalesces exactly one decision',async()=>{
+ const w=new EventEmitter();w.webContents=new EventEmitter();w.isDestroyed=()=>false;let closes=0;w.close=()=>{closes++;w.emit('close',{});};
+ const gate=createQuitWindowGate({getWindow:()=>w});const abort=new AbortController();const first=gate({signal:abort.signal});abort.abort();await assert.rejects(first,{code:'DESKTOP_RESTART_CANCELLED'});
+ const retry=gate();assert.equal(retry,gate());w.emit('closed');assert.equal(await retry,true);assert.equal(closes,2);assert.equal(w.listenerCount('closed'),0);
+});

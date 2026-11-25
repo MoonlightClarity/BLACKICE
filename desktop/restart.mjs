@@ -29,6 +29,8 @@ const MESSAGES = {
   DESKTOP_RESTART_RELEASE_FAILED: 'The restart barrier could not be released safely.',
   DESKTOP_RESTART_LAUNCH_INVALID: 'Restart launch options must preserve the current profile and desktop mode.',
   DESKTOP_RESTART_ARM_FAILED: 'The replacement process could not be armed; BLACKICE remains open.',
+  DESKTOP_RESTART_QUIT_VETOED: 'The window declined closing. BLACKICE remains open; save or discard unsaved edits before retrying.',
+  DESKTOP_RESTART_QUIT_TIMEOUT: 'BLACKICE did not receive a window-close decision. It remains open; save any edits and retry.',
   DESKTOP_RESTART_QUIT_UNCONFIRMED: 'Relaunch was armed, but the graceful quit request could not be confirmed.',
   DESKTOP_RESTART_INTERRUPTED: 'The prior process stopped before the restart handoff; this request will not be replayed.',
   DESKTOP_RESTART_MODE_CHANGED: 'BLACKICE reopened in a different desktop mode; this restart request will not be replayed.',
@@ -266,6 +268,8 @@ export class DesktopRestartController {
       return copy(this.receipts.find(value => value.id === active.id));
     } catch (error) {
       if (active.armed) return copy(this.receipts.find(value => value.id === active.id));
+      // Retire late prepare continuations before reopening admissions.
+      active.controller.abort(error);
       if (prepared) {
         try { await this.release(context); }
         catch { this.operationalError = publicError(failure('DESKTOP_RESTART_RELEASE_FAILED')); error = failure('DESKTOP_RESTART_RELEASE_FAILED'); }
