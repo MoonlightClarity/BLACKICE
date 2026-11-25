@@ -94,7 +94,12 @@
     "docs/minicpm-context-vision-runtime-20261120.md",
     "docs/instruction-clarity.md",
     "docs/tool-responsibilities.md",
-    "docs/user-profile-boundaries.md"
+    "docs/user-profile-boundaries.md",
+    "docs/MINICPM-BEHAVIOR-TRACE-20261125.md",
+    "docs/MINICPM-HERETIC-QUALITY-ABLATION-20261125.md",
+    "docs/research/skill-field-tfidf-holdout-2026-11-25.md",
+    "docs/research/skill-infrastructure-2026-11-25.md",
+    "docs/research/skillret-v11-benchmark-2026-11-25.md"
   ],
   "historical": [
     "APPLICATION-COMPATIBILITY.md",

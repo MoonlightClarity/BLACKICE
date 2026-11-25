@@ -23,6 +23,18 @@ natural task descriptions even when the wording differs from skill titles.
   user-approval gates. Native SQLite FTS5 failure falls back to metadata and
   semantic ranking.
 
+## Integrated document and tool reliability fixes
+
+- Preserve original attachment provenance, repair scoped attachment references and
+  local read arguments, and reconstruct document structure before interpretation.
+- Carry an explicitly requested analytical method through follow-up turns instead
+  of substituting a short summary or treating a failed read as a completed review.
+- Retain searchable tool-failure receipts, including native error codes and failed
+  attempts even when a later retry succeeds.
+- Include reproducible MiniCPM diagnostic and reversible weight-edit research
+  tools as **experimental evidence**, not as a trained-model improvement claim.
+- Keep the newer bounded, sparse skill selection and resource-allocation
+  applicability behavior when combining the document-analysis branch.
 ## Verification
 
 Added a reproducible paraphrase-retrieval fixture (12 positive tasks and five
