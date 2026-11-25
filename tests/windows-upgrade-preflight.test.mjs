@@ -63,17 +63,24 @@ test('native in-place upgrade releases abandoned helper processes, without stopp
     const otherExe = path.join(otherDir, 'BLACKICE.exe');
     await fs.copyFile(process.execPath, otherExe);
     const unrelated = await start(otherExe, [script]);
+    const inspect = () => spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'BLACKICE.exe' } | Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress"
+    ], { encoding: 'utf8', windowsHide: true, timeout: 12000 });
+    const before = inspect();
+    assert.equal(before.status, 0, 'Process inventory unavailable: '+before.stderr);
+    assert.ok(before.stdout.toLowerCase().includes('blackice.exe'),
+      'The native fixture was not visible to Win32_Process: '+before.stdout);
     const result = spawnSync('powershell.exe', [
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
       '-File', fileURLToPath(helper), '-InstallRoot', installRoot,
     ], { env: { ...process.env, LOCALAPPDATA: home, APPDATA: path.join(home, 'profile') },
       encoding: 'utf8', windowsHide: true, timeout: 20000 });
-    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.status, 0, result.stderr + '\nCIM before='+before.stdout + '\nCIM after='+inspect().stdout);
     const hasExited = async child => {
       if (child.exitCode !== null || child.signalCode !== null) return true;
       return Promise.race([new Promise(resolve => child.once('exit', () => resolve(true))), pause(2000).then(() => false)]);
     };
-    assert.equal(await hasExited(worker), true, 'orphaned remote helper exited');
+    assert.equal(await hasExited(worker), true, 'orphaned remote helper exited; CIM before='+before.stdout+'; CIM after='+inspect().stdout);
     assert.equal(await hasExited(crashpad), true, 'orphaned crash handler exited');
     assert.equal(unrelated.exitCode, null, 'different installation was untouched');
     assert.equal(unrelated.signalCode, null, 'different installation was not signaled');
