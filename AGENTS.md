@@ -2,7 +2,7 @@
 
 ## Preserve the maintainer's intended behavior
 
-The maintainer owns product and release decisions. Do not silently replace existing functionality with a more restrictive workflow, security precaution, approval gate, or manual step. If a concrete concern exists, describe it and preserve the requested behavior unless a real higher-priority limitation prevents it. A change to both an implementation and its tests can still be a regression when it changes the user's requirements.
+The maintainer owns product and release decisions. Do not silently replace existing functionality with a more restrictive workflow, security precaution, approval gate, or manual step. If a concrete concern exists, describe it and preserve the requested behavior unless a real higher-priority limitation prevents it. A change to both an implementation and its tests can still be a regression when it changes the user's requirements. When asked to integrate, release, or clean up, perform that task through the existing workflow. Do not invent release checklists, extra full-suite reruns, stand-alone validation scripts, audits, archival rules, or new prerequisites; investigate concrete failures directly, and do not turn routine maintenance into a process project without an explicit request.
 
 ## Windows release publication contract
 
