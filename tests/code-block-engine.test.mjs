@@ -214,9 +214,9 @@ test('v2 Planning and effective skills compose with exact code save, honest chec
  assert.ok(!prep[0].body.tools?.length);
  assert.deepEqual(f.run.planningModuleReceipts.map(row=>[row.moduleId,row.phase]),[['builtin-decomposition','started'],['builtin-decomposition','completed']]);
  const main=f.requests.filter(row=>row.kind==='main');
- assert.ok(main[0].body.messages.some(message=>typeof message.content==='string'&&message.content.includes(f.method.content)));
+ assert.ok(!main[0].body.messages.some(message=>typeof message.content==='string'&&message.content.includes(f.method.content)),'skill content is read via actual relay_skills, not injected at admission');
  const submitted=f.run.skillLoadReceipts.filter(row=>row.type==='skill_context_submitted'&&row.skillId===f.method.id);
- assert.equal(submitted.length,1);assert.equal(submitted[0].source,'user');assert.equal(submitted[0].sourceRevision,f.method.revision);
+ assert.equal(submitted.length,0,'there is no implicit skill submission');
  assert.ok(f.run.skillLoadReceipts.some(row=>row.type==='skill_loaded'&&row.skillId===f.method.id));
  assert.equal(f.value('skill-read').entry.content,f.method.content);
  assert.ok(f.value('skill-search').entries.some(row=>row.id===f.method.id));
@@ -402,7 +402,7 @@ test('v2 native Codex delegates through real ProviderRuntime with native default
  assert.equal(f.preflights.length,1,'Fresh model/workspace scope needs one host-only preflight');
  assert.equal(f.delegations.filter(options=>options.responseOnly).length,1);
  assert.equal(f.delegations.filter(options=>!options.responseOnly).length,1);
- assert.ok(f.run.skillLoadReceipts.some(row=>row.type==='skill_context_submitted'&&row.skillId==='library-modular-development'));
+ assert.equal(f.run.skillLoadReceipts.some(row=>row.type==='skill_context_submitted'&&row.skillId==='library-modular-development'),false,'delegates do not auto-load the method');
  assert.ok(f.run.skillLoadReceipts.some(row=>row.type==='skill_loaded'&&row.skillId==='library-modular-development'));
  const ledger=(await f.engine.actionDirectories.get(f.run.id,'Fixture')).read();
  assert.equal(ledger.actions[0].authority,'planning');assert.equal(ledger.actions[0].state,'observed');

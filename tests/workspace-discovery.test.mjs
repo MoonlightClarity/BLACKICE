@@ -34,12 +34,12 @@ test('large Documents listing switches to native filename search from observed t
  const resumed=createWorkspaceToolHandler({cwd});const found=parsed(await resumed(find({path:checkpoint.directory,query:checkpoint.query})));
  assert.equal(found.searchComplete,true);const file=found.matches[0].path;assert.equal(file,path.join(documents,'Z Synthetic Resume.txt'));
  assert.match(parsed(await resumed(call({action:'read',path:file}))).content,/verified outside large listing/);assert.equal(await readFile(path.join(cwd,'USER.md'),'utf8'),'');
- assert.match(WORKSPACE_TOOL.description,/filenames or paths use relay_find_files/);assert.match(WORKSPACE_INSTRUCTIONS,/same query and returned cursor/);
+ assert.match(WORKSPACE_TOOL.description,/relay_find_files locates unknown filenames and paths/);assert.match(WORKSPACE_INSTRUCTIONS,/same query and returned cursor/);
 });
 test('model guidance exposes native filename discovery without profile facts or new permissions',async()=>{
  // Source-specific routing and search coverage remain; global policy no longer lives in this addendum.
- assert.match(WORKSPACE_TOOL.description,/absolute paths are supported/);
- assert.match(WORKSPACE_TOOL.description,/filenames or paths use relay_find_files/);
+ assert.match(WORKSPACE_TOOL.description,/[Aa]bsolute paths are supported/);
+ assert.match(WORKSPACE_TOOL.description,/relay_find_files locates unknown filenames and paths/);
  assert.match(WORKSPACE_TOOL.description,/search matches one literal string inside files/);
  assert.match(FIND_FILES_TOOL.description,/searchComplete.*errors.*skippedCount.*roots/);
  assert.deepEqual(WORKSPACE_TOOL.inputSchema.properties.action.enum,['list','read','stat','write','append','patch','patch_history','undo_patch','search','run']);

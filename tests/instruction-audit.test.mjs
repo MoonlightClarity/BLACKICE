@@ -158,7 +158,7 @@ test('engine audits owner skill replacements, deleted overlays, active SOUL and 
  assert.equal(snapshot.captureStage,'adapter-prepared');assert.equal(snapshot.delivery,'accepted');
  assert.equal(snapshot.sections.filter(item=>item.layer==='developer').map(item=>item.text).join(''),runtime.calls[0].developerInstructions+'\nFIXTURE_ADAPTER');
  assert.equal(snapshot.sections.find(item=>item.id==='soul').revision,firstSoul.revision);
- assert.equal(snapshot.sections.find(item=>item.id==='skill-'+skillId).revision,firstSkill.revision);
+ assert.equal(snapshot.sections.some(item=>item.id==='skill-'+skillId),false,'the prior owner procedure is not ambient');
  assert.doesNotMatch(JSON.stringify(snapshot),/PRIVATE_PROFILE_MARKER|GENERAL ANALYTICAL METHOD/);
  const secondSoul=await identity.update({kind:'soul',content:'# Owner behavior\nSECOND_ACTIVE_SOUL',expectedRevision:firstSoul.revision,expectedHash:firstSoul.diskHash});
  const secondSkill=await catalog.save({id:skillId,value:{expectedRevision:firstSkill.revision,content:'# Owner procedure\nSECOND_OWNER_SKILL\n'+'x'.repeat(21000)+'\nEND_OF_OWNER_SKILL'}});
@@ -169,8 +169,7 @@ test('engine audits owner skill replacements, deleted overlays, active SOUL and 
  const later=engine.getRun(second.id).nodes.agent.instructionAudit;
  assert.equal(later.sections.find(item=>item.id==='soul').revision,secondSoul.revision);
  assert.match(later.sections.find(item=>item.id==='soul').text,/SECOND_ACTIVE_SOUL/);
- assert.match(later.sections.find(item=>item.id==='skill-'+skillId).text,/SECOND_OWNER_SKILL/);
- assert.match(later.sections.find(item=>item.id==='skill-'+skillId).text,/END_OF_OWNER_SKILL/);
+ assert.ok(!later.sections.some(item=>item.id==='skill-'+skillId),'the latest skill revision is available only on demand');
  assert.doesNotMatch(JSON.stringify(later),/FIRST_ACTIVE_SOUL|FIRST_OWNER_SKILL/);
  await catalog.delete({id:skillId,value:{expectedRevision:secondSkill.revision}});
  const third=engine.startRun({workflow,input:{task:'Explain the last fixture.',directoryMode:'off'}});await engine.executions.get(third.id);
@@ -180,7 +179,7 @@ test('engine audits owner skill replacements, deleted overlays, active SOUL and 
  const intent=await catalog.detail({id:'library-intent-inference'});
  const longIntent='# Owner intent method\n'+'a'.repeat(21000)+'\nINTENT_TAIL_SENT';
  await catalog.save({id:intent.id,value:{expectedRevision:intent.revision,content:longIntent}});
- const selected=engine.startRun({workflow:{...workflow,id:'mission_chat_audit_fixture',description:'A focused task started from Mission.'},input:{task:'Use the intent inference skill. Explain its steps.',directoryMode:'off'}});
+ const selected=engine.startRun({workflow:{...workflow,id:'mission_chat_audit_fixture',description:'A focused task started from Mission.'},input:{task:'Use the Owner intent method skill. Explain its steps.',directoryMode:'off'}});
  await engine.executions.get(selected.id);assert.equal(engine.getRun(selected.id).status,'completed',engine.getRun(selected.id).error);
  assert.match(runtime.calls.at(-1).prompt,/INTENT_TAIL_SENT/);
  assert.match(engine.getRun(selected.id).nodes.agent.instructionAudit.sections.find(item=>item.id==='skill-library-intent-inference').text,/INTENT_TAIL_SENT/);
@@ -230,12 +229,12 @@ test('delegated execution has a separate exact audit with frozen SOUL and assign
  assert.equal(delegate.audit.sections.find(item=>item.id==='core').revision,ownerCore.revision);
  assert.equal(parent.sections.find(item=>item.id==='core').text,ownerCore.content);
  assert.doesNotMatch(childCall.developerInstructions,/FUTURE_WORKER_CORE/);
- assert.match(childCall.prompt,/DELEGATE_FROZEN_SOUL|OWNER_SHARED_COMPLETION/);
- assert.doesNotMatch(childCall.prompt,/PRIVATE_DELEGATE_PROFILE|OWNER_JOB_ONLY/);
+ assert.match(childCall.prompt,/DELEGATE_FROZEN_SOUL/);
+ assert.doesNotMatch(childCall.prompt,/PRIVATE_DELEGATE_PROFILE|OWNER_JOB_ONLY|OWNER_SHARED_COMPLETION/);
  assert.match(parent.sections.find(item=>item.id==='skill-library-job-search').text,/OWNER_JOB_ONLY/);
  assert.equal(parent.delegates.length,2);
  assert.deepEqual(new Set(parent.delegates.map(item=>item.id)),new Set(['review','reference']));
- assert.match(delegate.audit.sections.find(item=>item.id==='inherited-skill-library-what-makes-done').text,/OWNER_SHARED_COMPLETION/);
+ assert.equal(delegate.audit.sections.some(item=>item.id==='inherited-skill-library-what-makes-done'),false,'delegates do not inherit generic ambient skills');
  assert.doesNotMatch(parent.sections.map(item=>item.text).join(''),/CHILD_ADAPTER/);
  assert.ok(delegate.audit.sections.some(item=>item.source==='lib/subagents.mjs'));
 });

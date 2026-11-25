@@ -101,9 +101,8 @@ test('ambiguous fresh deadline gets a tool-free advice pass without committing a
  assert.doesNotMatch(main.input,/For a fresh search or application, go to the sources needed for the task\./);
  assert.doesNotMatch(main.input,/Do not inventory open browser tabs for a fresh task; open the relevant source directly\./);
  const intentAudit=active.run.nodes.agent.instructionAudit.preparations.find(row=>row.id===id).audit;
- const method=intentAudit.sections.find(row=>row.id==='skill-library-intent-inference');
- assert.equal(method.source,'Bundled skill: library-intent-inference');
- assert.ok(infer[0].input.includes(method.text));
+ assert.equal(intentAudit.sections.some(row=>row.id==='skill-library-intent-inference'),false,'planning response never imports implicit skill text');
+ assert.ok(intentAudit.sections.some(row=>row.id==='planning-artifact'),'effective planning protocol is still captured');
  assert.equal(intentAudit.captureStage,'engine-prepared');
  assert.equal(active.run.goal?.deadlineAt,undefined);
  assert.deepEqual(active.run.planningModuleReceipts.filter(x=>x.moduleId===id).map(x=>x.phase),['started','completed']);

@@ -8,7 +8,7 @@ import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {RuntimeSettingsStore} from '../lib/runtime-settings.mjs';
-const lightweightDefault=policy=>PLANNING_ONTOLOGY_MODULES.filter(m=>!['subagents','time_management'].includes(m.id)).every(m=>policy.modules[m.id]===false)&&policy.modules.time_management===true;
+const lightweightDefault=policy=>PLANNING_ONTOLOGY_MODULES.filter(m=>m.id!=='subagents').every(m=>policy.modules[m.id]===false)&&policy.modules.subagents===true;
 test('unconfigured Chat has no Directory or automatic module policy while legacy normalization remains deterministic',()=>{
  const options=normalizeChatOptions(),policy=normalizePlanningOntology();
  assert.deepEqual(options,{model:'default',effort:'default',serviceTier:'default',planningMode:'off',planningExecutionMode:'automatic'});

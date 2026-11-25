@@ -20,7 +20,7 @@ test('retained historical policy parser preserves records; new chat does not exp
   const base=normalizePlanningOntology();
   assert.equal(base.version,2);assert.equal(Object.hasOwn(base,'autoSelect'),false);
   assert.equal(PLANNING_ONTOLOGY_MODULES.length,10);
-  assert.ok(PLANNING_ONTOLOGY_MODULES.every(module=>base.modules[module.id]===(module.id==='subagents'||module.id==='time_management')));
+  assert.ok(PLANNING_ONTOLOGY_MODULES.every(module=>base.modules[module.id]===(module.id==='subagents')));
   const legacy={version:1,autoSelect:false,modules:{inference:'mandatory',decomposition:'forbidden',subagents:'forbidden'}};
   const before=structuredClone(legacy),custom=normalizePlanningOntology(legacy);
   assert.deepEqual(legacy,before,'Historical input is not rewritten.');
@@ -35,7 +35,7 @@ test('retained historical policy parser preserves records; new chat does not exp
   for(const module of PLANNING_ONTOLOGY_MODULES){
     const policy=normalizePlanningOntology({version:2,modules:{[module.id]:false}});
     const automatic=module.id==='subagents';
-    assert.equal(policy.modules[module.id],automatic);assert.equal(Object.values(policy.modules).filter(v=>v===false).length,module.id==='time_management'?9:8);
+    assert.equal(policy.modules[module.id],automatic);assert.equal(Object.values(policy.modules).filter(v=>v===false).length,9);
   }
   for(const value of [{modules:{unknown:true}},{modules:{inference:'forced'}},{autoSelect:'yes'},
     {version:3},{version:2,autoSelect:false},{version:2,modules:{inference:'mandatory'}}])

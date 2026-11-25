@@ -211,7 +211,7 @@ test('effective staged source skill executes neutral reconstruction and challeng
  const {createSkillsCatalog}=await import('../lib/skills-catalog.mjs');
  const catalog=createSkillsCatalog({dataDir:f.engine.dataDir});
  let skill;try{skill=await catalog.create({value:{content:'---\nactivation: [substantive-analysis]\nanalysis_protocol: source-reconstruction-v1\n---\n# Source First\n\nReconstruct the source before judging.'}});}finally{await catalog.close();}
- const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Analyze the attached report. Show the complete reverse outline.',attachmentIds:[ids.pdf],planningMode:'off',chatPlanning:'off',directoryActions:'off'}}).id);
+ const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Use the Source First skill. Analyze the attached report. Show the complete reverse outline.',attachmentIds:[ids.pdf],planningMode:'off',chatPlanning:'off',directoryActions:'off'}}).id);
  completed(run);
  assert.equal(calls.length,5);assert.equal(run.nodes.agent.sourceReconstruction.status,'stages-returned');
  assert.equal(run.nodes.agent.sourceReconstruction.semanticVerification,'not-established');
@@ -226,23 +226,38 @@ test('effective staged source skill executes neutral reconstruction and challeng
 
 test('employer reader role propagates into analysis and analyze-it continuation reuses the source instead of summarizing',async t=>{
  const phases=[],model='local_llamacpp::fixture';
+ let firstDone=false;
  const f=await fixture(t,async(options,number)=>{
   options.onPromptAccepted(options.prompt);
   const prompt=options.prompt;
-  const kind=prompt.includes('SOURCE-FIRST ANALYSIS:')?'direct-source-analysis':prompt.includes('FINAL ANALYSIS FOR USER.')?'synthesis':prompt.includes('INDEPENDENT COUNTER-ASSESSMENT.')?'challenge':prompt.includes('INITIAL ASSESSMENT.')?'initial-assessment':prompt.includes('NEUTRAL SUMMARY ONLY.')?'neutral-summary':'unexpected';
+  const kind=prompt.includes('RECONSTRUCTION ONLY.')?'reverse-outline':prompt.includes('SOURCE-FIRST ANALYSIS:')?'direct-source-analysis':prompt.includes('FINAL ANALYSIS FOR USER.')?'synthesis':prompt.includes('INDEPENDENT COUNTER-ASSESSMENT.')?'challenge':prompt.includes('INITIAL ASSESSMENT.')?'initial-assessment':prompt.includes('NEUTRAL SUMMARY ONLY.')?'neutral-summary':'unexpected';
   phases.push({kind,promptChars:prompt.length,prompt});
   assert.equal(options.responseOnly,true);
   assert.deepEqual(options.dynamicTools,[]);
   assert.equal(options.sandbox,'read-only');
+  if(kind==='reverse-outline'){
+   assert.doesNotMatch(prompt,/requested analytical perspective: hiring-side reviewer/i,'source-only reconstruction precedes any role judgment');
+   const outline=[
+    {id:1,parent:0,summary:'Profile heading',function:'Section'},
+    {id:2,parent:1,summary:'Candidate professional with research work',function:'Context'},
+    {id:3,parent:0,summary:'Experience heading',function:'Section'},
+    {id:4,parent:3,summary:'Research Group analyst position',function:'Evidence'},
+    {id:5,parent:4,summary:'Remote contract employment',function:'Qualification'},
+    {id:6,parent:4,summary:'Evaluated expert reports and identified reasoning errors',function:'Evidence'},
+    {id:7,parent:4,summary:'Repository URL',function:'Evidence'},
+    {id:8,parent:0,summary:'Education heading and university information',function:'Section'}
+   ];
+   return{output:JSON.stringify({outline}),threadId:'provider_phase_'+number,usage:{totalTokens:7}};
+  }
   if(kind==='neutral-summary'){
-   assert.doesNotMatch(prompt,/requested analytical perspective: hiring-side reviewer/i,'source-only pass should not anchor to a hiring judgment');
+   assert.doesNotMatch(prompt,/requested analytical perspective: hiring-side reviewer/i,'source-only summary should not anchor to a hiring judgment');
    const key=/"key":"(g\d+)"/.exec(prompt)?.[1];
-   assert.ok(key,'source group key missing');
-   return {output:JSON.stringify({summaries:{[key]:'The source records a position, its responsibilities, and any qualifications or referenced project.'}}),threadId:'provider_phase_'+number,usage:{totalTokens:7}};
+   assert.ok(key,'neutral source group key is required');
+   return {output:JSON.stringify({summaries:{[key]:'The source describes analytical research work and an evaluated-report responsibility, without confirming conventional management tenure.'}}),threadId:'provider_phase_'+number,usage:{totalTokens:7}};
   }
   assert.match(prompt,/Requested analytical perspective: hiring-side reviewer/);
   assert.match(prompt,/Source subject: candidate described in the résumé/);
-  assert.match(prompt,/Original user request: "Analyze the following resume as employer/);
+  assert.match(prompt,/Original user request: "Use the Source-first analysis method skill\. Analyze the following resume as employer/);
   assert.doesNotMatch(prompt,/Source subject: employer/);
   if(kind==='direct-source-analysis'){
    assert.equal(options.outputSchema,undefined);
@@ -254,7 +269,7 @@ test('employer reader role propagates into analysis and analyze-it continuation 
   let artifact;
   if(kind==='initial-assessment')artifact={claims:[{claim:'The candidate describes source-grounded evaluation experience, relevant to evaluating complex work.',basis:'inference',refs:[6],reasoning:'The cited responsibility supports analytical review, not automatically people management.',assumptions:'This is a self-reported résumé assertion, not externally verified.'}]};
   else if(kind==='challenge')artifact={review:[{id:1,challenge:'The source describes evaluating subject-matter work but does not establish scale of line management.',counterRefs:[6],disposition:'retain',revised:{claim:'The résumé reports evaluation responsibilities; conventional people-management tenure is not established.',basis:'inference',refs:[6],reasoning:'A source-grounded review skill may be relevant to certain analytical roles; this cannot prove formal management experience.',assumptions:'There is no specific vacancy or independent verification.'}}],additional:[]};
-  else if(kind==='synthesis')artifact={answer:'From a hiring perspective, the résumé describes substantive evaluation work: the candidate reports reviewing evidence and identifying reasoning errors. That is relevant to analytical quality roles, but it does not by itself establish conventional line-management experience. I would examine examples of completed evaluations rather than infer competence from a job title.',sourceRefs:[6]};
+  else if(kind==='synthesis')artifact={answer:firstDone?'After examining the earlier conclusion, the source supports analytical review, but the actual quality of the delivered work is not independently established.':'From a hiring perspective, the résumé describes substantive evaluation work: the candidate reports reviewing evidence and identifying reasoning errors. That is relevant to analytical quality roles, but it does not by itself establish conventional line-management experience. I would examine examples of completed evaluations rather than infer competence from a job title.',sourceRefs:[6]};
   else assert.fail('Unexpected phase '+kind);
   return {output:JSON.stringify(artifact),threadId:'provider_phase_'+number,usage:{totalTokens:7}};
  },{model,threadId:'provider_phase_mock'});
@@ -282,12 +297,12 @@ test('employer reader role propagates into analysis and analyze-it continuation 
  const catalog=createSkillsCatalog({dataDir:f.engine.dataDir});
  try{await catalog.create({value:{content:'---\nactivation: [substantive-analysis]\nanalysis_protocol: source-reconstruction-v1\n---\n# Source-first analysis method\n\nConstruct the source before evaluating its subject.'}});}
  finally{await catalog.close();}
- const first=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Analyze the following resume as employer',attachmentIds:[ids.pdf],planningMode:'off',chatPlanning:'off',directoryActions:'off'}}).id);
- completed(first);
+ const first=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Use the Source-first analysis method skill. Analyze the following resume as employer',attachmentIds:[ids.pdf],planningMode:'off',chatPlanning:'off',directoryActions:'off'}}).id);
+ completed(first);firstDone=true;
  const firstReceipt=first.nodes.agent.sourceReconstruction;
  assert.equal(firstReceipt.intent.subject,'candidate described in the résumé');
  assert.equal(firstReceipt.intent.perspective.label,'hiring-side reviewer');
- assert.equal(firstReceipt.status,'response-returned');
+ assert.equal(firstReceipt.status,'stages-returned');
  assert.ok(firstReceipt.outline.length>=8);
  assert.equal(firstReceipt.outlineOrigin,'observed-source-layout');
  assert.match(first.output,/From a hiring perspective/);
@@ -296,18 +311,18 @@ test('employer reader role propagates into analysis and analyze-it continuation 
  assert.doesNotMatch(first.output,/## Reverse outline|## Neutral source summary/);
  const firstSummaryPhases=phases.filter(p=>p.kind==='neutral-summary').length;
  const firstReads=reads;
- assert.equal(firstSummaryPhases,0);
- assert.equal(firstReceipt.phases.filter(p=>p.kind==='direct-source-analysis').length,1);
- assert.equal(first.nodes.agent.documentAnalysisOutcome,'compact-source-response-not-semantic-verification');
- assert.ok(first.nodes.agent.sourceReconstruction.routeMethodSelections?.length);
- assert.ok(first.nodes.agent.sourceReconstruction.routeMethodSelections.every(x=>x.providerDelivery==='not-injected'));
- const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'analyze it'}).id);
+ assert.ok(firstSummaryPhases>=1,'neutral summary is performed for each actual source group before a hiring perspective');
+ assert.equal(firstReceipt.phases.filter(p=>p.kind==='direct-source-analysis').length,0);
+ assert.equal(first.nodes.agent.documentAnalysisOutcome,'staged-response-returned-not-semantic-verification');
+ assert.equal(first.nodes.agent.sourceReconstruction.routeMethodSelections,undefined,'a staged method is not a compact metadata-only selection');
+ assert.ok(first.skillLoadReceipts?.some(row=>row.type==='skill_context_submitted'&&row.contentMode==='full'),'explicitly selected method is delivered to the applicable staged phase');
+ const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'Use the Source-first analysis method skill. Analyze it.'}).id);
  completed(next);
  assert.equal(next.nodes.agent.sourceReconstruction.intent.inheritedFromPrevious,true);
  assert.equal(next.nodes.agent.sourceReconstruction.intent.perspective.label,'hiring-side reviewer');
  assert.equal(next.nodes.agent.sourceReconstruction.reusedSourceRunId,first.id);
  assert.equal(phases.filter(p=>p.kind==='neutral-summary').length,firstSummaryPhases,'follow-up should not rerun neutral summary');
- assert.deepEqual(phases.slice(-2).map(p=>p.kind),['direct-source-analysis','direct-source-analysis']);
+ assert.deepEqual(phases.slice(-3).map(p=>p.kind),['initial-assessment','challenge','synthesis']);
  assert.ok(reads>firstReads,'verify current original source before reuse');
  assert.match(next.output,/After examining the earlier conclusion/);
  assert.ok(next.output.length<1000);
@@ -335,7 +350,7 @@ test('malformed local JSON falls back once to ordinary source-grounded analysis 
  const {createSkillsCatalog}=await import('../lib/skills-catalog.mjs');
  const catalog=createSkillsCatalog({dataDir:f.engine.dataDir});
  try{await catalog.create({value:{content:'---\nactivation: [substantive-analysis]\nanalysis_protocol: source-reconstruction-v1\n---\n# Source First\n\nDo the real source analysis.'}});}finally{await catalog.close();}
- const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Analyze the attached research report. Show the complete reverse outline.',attachmentIds:[ids.pdf],planningMode:'off',chatPlanning:'off',directoryActions:'off'}}).id);
+ const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Use the Source First skill. Analyze the attached research report. Show the complete reverse outline.',attachmentIds:[ids.pdf],planningMode:'off',chatPlanning:'off',directoryActions:'off'}}).id);
  completed(run);
  assert.equal(calls.length,3);
  assert.equal(run.nodes.agent.sourceReconstruction.status,'fallback-response-returned');
@@ -385,7 +400,7 @@ test('explicit owner analytical skill uses method-bearing staged phases instead 
  const {createSkillsCatalog}=await import('../lib/skills-catalog.mjs');
  const skills=createSkillsCatalog({dataDir:f.engine.dataDir});
  let method;try{method=await skills.create({value:{content:'---\nactivation: [substantive-analysis]\nanalysis_protocol: source-reconstruction-v1\n---\n# Reverse Outline\n\nOWNER_METHOD_DELIVERY_MARKER: challenge conclusions based on the source.'}});}finally{await skills.close();}
- const request='Analyze the attached report using the Reverse Outline and Adversarial Analysis skill.';
+ const request='Use the Reverse Outline skill. Analyze the attached report.';
  const first=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:request,attachmentIds:[ids.pdf],planningMode:'off',chatPlanning:'off',directoryActions:'off'}}).id);
  completed(first);
  assert.deepEqual(calls,['reverse-outline','neutral-summary','initial-assessment','challenge','synthesis']);
@@ -394,7 +409,7 @@ test('explicit owner analytical skill uses method-bearing staged phases instead 
  assert.equal(first.nodes.agent.sourceReconstruction.intent.showWorking,false);
  assert.doesNotMatch(first.output,/## Reverse outline/);
  assert.ok(first.skillLoadReceipts.some(r=>r.skillId===method.id&&r.type==='skill_context_submitted'));
- const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'analyze it'}).id);
+ const next=await f.settled(f.engine.continueRun(first.id,{nodeId:'agent',message:'Use the Reverse Outline skill. Analyze it.'}).id);
  completed(next);
  assert.deepEqual(calls.slice(5),['initial-assessment','challenge','synthesis']);
  assert.equal(next.nodes.agent.sourceReconstruction.intent.explicitMethod,true);

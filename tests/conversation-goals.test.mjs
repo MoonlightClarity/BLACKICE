@@ -48,42 +48,31 @@ for(const isolatedHistory of [false,true])for(const remote of [false,true])test(
   const skillId='library-job-search';
   const {engine,goals,conversations,dataDir,runtime}=await fixture(t,async(options,n)=>{
     const run=[...engine.runs.values()].at(-1);
+    // The Goal is run-bound; no skill method is ambient in the initial turn,
+    // its successor, or an unrelated later conversation.
+    assert.doesNotMatch(options.prompt,/JOB SEARCH \(advisory execution method|ANTI-OVERALIGNMENT \(advisory execution method/);
+    assert.doesNotMatch(options.prompt,/REMOTE_METHOD_BODY_SENTINEL/);
+    assert.equal(run.nodes.agent.skillSelection?.automaticDelivery,false);
+    assert.deepEqual(run.skillLoadReceipts||[],[]);
     if(n===3){
-      assert.doesNotMatch(options.prompt,/ANTI-OVERALIGNMENT \(advisory execution method/,
-        'An unrelated non-Goal chat turn must not inherit a Goal-only method.');
-      assert.doesNotMatch(options.prompt,/JOB SEARCH \(advisory execution method/);
       assert.equal(goals.skillObjectiveForDispatch(run),null);
-      options.onPromptAccepted(options.prompt);
-      assert.ok(!run.skillLoadReceipts?.some(row=>row.skillId===skillId||row.skillId===remoteSkill?.id));
-      assert.doesNotMatch(options.prompt,/REMOTE_METHOD_BODY_SENTINEL/);
-      return output(n);
+    }else{
+      assert.match(options.developerInstructions,/PERSISTENT CONVERSATION GOAL/);
+      assert.ok(options.developerInstructions.includes(objective),'the immutable objective remains in the active Goal contract');
+      if(n===2){
+        assert.equal(goals.skillObjectiveForDispatch(run),objective);
+        const bound=run.goalDispatch;
+        try{
+          for(const change of [{conversationId:'foreign-root'},{goalId:'foreign-goal'},{generation:bound.generation+1},{epoch:bound.epoch+1}]){
+            run.goalDispatch={...bound,...change};
+            assert.equal(goals.skillObjectiveForDispatch(run),null);
+          }
+        }finally{run.goalDispatch=bound;}
+      }
     }
-    assert.ok(options.prompt.includes(heading));
-    assert.match(options.prompt,/Choose live roles by overlap in actual duties and transferable skills/);
-    assert.doesNotMatch(options.prompt,/Check the last completed week on multiple independent sources/,'long owner body is read on demand');
-    assert.ok(!run.skillLoadReceipts?.some(row=>row.skillId===skillId),'prepared is not accepted');
     options.onPromptAccepted(options.prompt);
-    assert.deepEqual(run.skillLoadReceipts.filter(row=>row.skillId===skillId),[
-      {type:'skill_context_submitted',skillId,title:'Job Search',source:'user',contentMode:'brief',sourceRevision:2},
-    ]);
-    assert.equal(run.nodes.agent.instructionAudit.sections.find(row=>row.id==='skill-'+skillId)?.status,'accepted');
-    if(remote){
-      assert.doesNotMatch(options.prompt,/REMOTE_METHOD_BODY_SENTINEL/,'long skill bodies stay available on demand');
-      assert.deepEqual(run.skillLoadReceipts.filter(row=>row.skillId===remoteSkill.id),[
-        {type:'skill_context_submitted',skillId:remoteSkill.id,title:'Remote Job Search',source:'user',contentMode:'brief',sourceRevision:remoteSkill.revision},
-      ]);
-      assert.equal(run.nodes.agent.instructionAudit.sections.find(row=>row.id==='skill-'+remoteSkill.id)?.status,'accepted');
-    }else assert.doesNotMatch(options.prompt,/REMOTE_METHOD_BODY_SENTINEL/);
-    if(n===2){
-      assert.equal(goals.skillObjectiveForDispatch(run),objective);
-      const bound=run.goalDispatch;
-      try{
-        for(const change of [{conversationId:'foreign-root'},{goalId:'foreign-goal'},{generation:bound.generation+1},{epoch:bound.epoch+1}]){
-          run.goalDispatch={...bound,...change};
-          assert.equal(goals.skillObjectiveForDispatch(run),null);
-        }
-      }finally{run.goalDispatch=bound;}
-    }
+    assert.deepEqual(run.skillLoadReceipts||[],[]);
+    if(n===3)return output(n);
     assert.equal((await report(options,n===1?'progress':'complete')).result.success,true);
     return output(n);
   });
@@ -130,93 +119,72 @@ test('bound Goal method selection accepts only the immutable exact source identi
   ])assert.equal(boundGoalMethodObjective(invalid),null);
 });
 
-test('Goal successor uses its immutable bound objective for methods even when mutable current-run lookup is unavailable', async t => {
+test('Goal successor receives the immutable bound objective but no ambient skills when controller lookup is unavailable', async t => {
   const objective='Conduct my real overnight remote job search and submit genuine applications. '+
     'Browse actual job sites, represent the applicant, and resolve forms using truthful answers.';
   let engine,goals,seen=0,lookupCalls=0;
-  const fixtureState=await fixture(t,async(options,n)=>{
+  const state=await fixture(t,async(options,n)=>{
     const run=[...engine.runs.values()].at(-1);
-    if(n===1){
-      assert.ok(run.goal && !run.goalDispatch, 'First provider turn must be the initial admitted Goal.');
-      assert.match(options.prompt,/JOB SEARCH \(advisory execution method; not permission\)/);
-      assert.match(options.prompt,/ANTI-OVERALIGNMENT \(advisory execution method; not permission\)/,
-        'An initial operational Goal must receive generic agency guidance, not only its successor.');
-    }
+    if(n===1)assert.ok(run.goal&&!run.goalDispatch,'initial run has the admitted Goal');
     if(n===2){
       seen++;
-      assert.ok(run.parentRunId,'The inspected provider call must be a Goal successor, not the original run.');
+      assert.ok(run.parentRunId,'second turn is a bound successor');
       assert.match(run.input,/^Resume autonomous execution for the saved conversation goal:/);
       assert.equal(run.workflow.id,'chatgpt_mission_goal-skill-proof');
       assert.equal(run.goalDispatch.goalId,run.goal.id);
-      assert.equal((run.skillLoadReceipts||[]).filter(row=>['library-job-search','builtin-task-grounding'].includes(row.skillId)).length,0,
-        'This is not a fresh delivery if skill receipts already existed before the current provider prompt.');
-      assert.match(options.prompt,/JOB SEARCH \(advisory execution method; not permission\)/,
-        'The exact bound objective must load the operational method.');
-      assert.match(options.prompt,/ANTI-OVERALIGNMENT \(advisory execution method; not permission\)/,
-        'A continuing Goal must receive general agency guidance.');
     }
+    assert.ok(options.developerInstructions.includes(objective),
+      'the immutable source objective remains in the developer Goal contract');
+    assert.match(options.developerInstructions,/PERSISTENT CONVERSATION GOAL/);
+    assert.doesNotMatch(options.prompt,/JOB SEARCH \(advisory execution method|ANTI-OVERALIGNMENT \(advisory execution method/);
+    assert.deepEqual(run.skillLoadReceipts||[],[],'no skill becomes ambient through Goal dispatch');
     options.onPromptAccepted(options.prompt);
+    assert.deepEqual(run.skillLoadReceipts||[],[]);
     if(n===2){
-      const methodIds=(run.skillLoadReceipts||[]).map(row=>row.skillId);
-      assert.ok(methodIds.includes('library-job-search'),'The current Goal turn must independently accept its effective job-search method.');
-      assert.ok(methodIds.includes('builtin-task-grounding'),'The current Goal turn must independently accept general agency guidance.');
-      const accepted=(run.nodes?.agent?.instructionAudit?.sections||[]).filter(row=>row.status==='accepted').map(row=>row.id);
-      assert.ok(accepted.includes('skill-library-job-search'));
-      assert.ok(accepted.includes('skill-builtin-task-grounding'));
+      const goalAudit=run.nodes.agent.instructionAudit.sections.find(row=>row.id==='goal');
+      assert.ok(goalAudit?.text.includes(objective),'audit records the current bound contract');
     }
-    if(n===1)assert.equal((await report(options,'progress',{nextAction:'Continue the authorized application workflow.'})).result.success,true);
-    else assert.equal((await report(options,'complete')).result.success,true);
+    assert.equal((await report(options,n===1?'progress':'complete',
+      n===1?{nextAction:'Continue the authorized application workflow.'}:{})).result.success,true);
     return output(n);
   });
-  ({engine,goals}=fixtureState);
-  // The immutable run snapshot is available even if a mutable controller
-  // generation/current-run lookup has not synchronized at method preparation.
-  assert.strictEqual(engine.goals,goals,'The mock must intercept the controller actually used by the engine.');
+  ({engine,goals}=state);
+  assert.strictEqual(engine.goals,goals);
   goals.skillObjectiveForDispatch=()=>{lookupCalls++;return null;};
   const workflow={...graph(),id:'chatgpt_mission_goal-skill-proof',description:'A focused task started from Mission.'};
   const first=engine.startRun({workflow,input:{task:objective,goal:{objective}}});
   await waitFor(async()=>(await goals.get(first.id))?.status==='completed','goal succeeded');
-  assert.equal(seen,1,'The second, bound Goal turn must actually reach provider validation.');
-  assert.equal(lookupCalls,0,'Method preparation must use the exact run snapshot, not the mutable controller lookup.');
+  assert.equal(seen,1);
+  assert.equal(lookupCalls,0,'bound Goal uses immutable run snapshot, not mutable lookup');
   const runStates=[...engine.runs.values()].filter(item=>item.id===first.id||item.taskId===first.id)
     .map(item=>({id:item.id,status:item.status,error:item.error?.code||item.errorCode}));
-  assert.equal(fixtureState.runtime.calls.length,2,
-    'The test must not pass by recovering silently from an earlier provider assertion: '+JSON.stringify(runStates));
-  assert.ok(runStates.every(item=>item.status==='completed'),
-    'No hidden failed or cancelled Goal turns: '+JSON.stringify(runStates));
+  assert.equal(state.runtime.calls.length,2,
+    'no hidden failed or retried Goal turns: '+JSON.stringify(runStates));
+  assert.ok(runStates.every(item=>item.status==='completed'));
 });
 
-test('an unrelated factual Goal also delivers generic delegated-agency guidance to its exact successor',async t=>{
+test('unrelated factual Goals retain core scope without automatically loading generic method skills',async t=>{
   const objective='Verify the exported invoice and finish independent steps if an outside form asks for a declaration.';
   let engine,goals,seen=0;
-  const fixtureState=await fixture(t,async(options,n)=>{
+  const state=await fixture(t,async(options,n)=>{
     const run=[...engine.runs.values()].at(-1);
-    if(n===1){
-      assert.ok(run.goal && !run.goalDispatch);
-      assert.match(options.prompt,/ANTI-OVERALIGNMENT \(advisory execution method; not permission\)/,
-        'The initial unrelated Goal must receive shared agency guidance.');
-      assert.doesNotMatch(options.prompt,/JOB SEARCH \(advisory execution method/);
-    }
+    if(n===1)assert.ok(run.goal&&!run.goalDispatch);
     if(n===2){
       seen++;
-      assert.ok(run.parentRunId,'This must inspect an actual Goal successor turn.');
+      assert.ok(run.parentRunId,'provider sees the actual Goal successor');
       assert.match(run.input,/^Resume autonomous execution for the saved conversation goal:/);
-      assert.equal((run.skillLoadReceipts||[]).filter(row=>row.skillId==='builtin-task-grounding').length,0,
-        'The unrelated Goal must not inherit an old method receipt as fresh evidence.');
-      assert.match(options.prompt,/ANTI-OVERALIGNMENT \(advisory execution method; not permission\)/);
-      assert.doesNotMatch(options.prompt,/JOB SEARCH \(advisory execution method/);
     }
+    assert.ok(options.developerInstructions.includes(objective));
+    assert.match(options.developerInstructions,/PERSISTENT CONVERSATION GOAL/);
+    assert.doesNotMatch(options.prompt,/ANTI-OVERALIGNMENT \(advisory execution method|JOB SEARCH \(advisory execution method/);
+    assert.deepEqual(run.skillLoadReceipts||[],[]);
     options.onPromptAccepted(options.prompt);
-    if(n===2){
-      const methodIds=(run.skillLoadReceipts||[]).map(row=>row.skillId);
-      assert.ok(methodIds.includes('builtin-task-grounding'),'The unrelated Goal must independently accept its generic agency method.');
-      assert.ok(!methodIds.includes('library-job-search'),'An unrelated Goal must not receive a job-search-specific method.');
-    }
-    if(n===1)assert.equal((await report(options,'progress',{nextAction:'Inspect the remaining fields.'})).result.success,true);
-    else assert.equal((await report(options,'complete')).result.success,true);
+    assert.deepEqual(run.skillLoadReceipts||[],[]);
+    assert.equal((await report(options,n===1?'progress':'complete',
+      n===1?{nextAction:'Inspect remaining fields.'}:{})).result.success,true);
     return output(n);
   });
-  ({engine,goals}=fixtureState);
+  ({engine,goals}=state);
   goals.skillObjectiveForDispatch=()=>null;
   const workflow={...graph(),id:'chatgpt_mission_unrelated-goal',description:'A focused task started from Mission.'};
   const first=engine.startRun({workflow,input:{task:objective,goal:{objective}}});
@@ -224,8 +192,7 @@ test('an unrelated factual Goal also delivers generic delegated-agency guidance 
   assert.equal(seen,1);
   const runStates=[...engine.runs.values()].filter(item=>item.id===first.id||item.taskId===first.id)
     .map(item=>({id:item.id,status:item.status,error:item.error?.code||item.errorCode}));
-  assert.equal(fixtureState.runtime.calls.length,2,
-    'This unrelated Goal must not pass through recovery after a method assertion failure: '+JSON.stringify(runStates));
+  assert.equal(state.runtime.calls.length,2,'no hidden failed provider assertions: '+JSON.stringify(runStates));
   assert.ok(runStates.every(item=>item.status==='completed'));
 });
 
@@ -1167,7 +1134,7 @@ for(const scenario of [{length:46032},{length:48300}]) test('long valid Goal suc
 
 test('explicit owner methods follow the bound Goal across continuations and respect catalog edits and deletion',async t=>{
   const objective='Continue my real overnight remote job search and submit genuine applications. Read and use the current Remote Job Search skill (revision 2) and Job Search skill.';
-  const heading='EXPLICITLY REQUESTED METHOD (current task only; not permission)';
+  const heading='EXPLICITLY REQUESTED METHOD (current turn only; not standing instructions)';
   let method,catalog;
   const {engine,goals,conversations,dataDir}=await fixture(t,async(options,n)=>{
     const run=[...engine.runs.values()].at(-1);
@@ -1178,7 +1145,7 @@ test('explicit owner methods follow the bound Goal across continuations and resp
       assert.equal(options.prompt.split(expected).length,2,'one current method body per turn');
     }else assert.doesNotMatch(options.prompt,/OWNER_DATE_FIRST_METHOD_V[23]/);
     if(n<=3){
-      assert.ok(options.prompt.includes('JOB SEARCH (advisory execution method; not permission)'));
+      assert.ok(options.prompt.includes(heading),'the explicitly selected job-search skill is current for this Goal');
       options.onPromptAccepted(options.prompt);
       assert.equal(run.skillLoadReceipts?.filter(row=>row.skillId===method.id).length,expected?1:0);
       if(expected)assert.equal(run.skillLoadReceipts.find(row=>row.skillId===method.id).sourceRevision,n===1?2:3);
@@ -1204,45 +1171,31 @@ test('explicit owner methods follow the bound Goal across continuations and resp
 });
 
 
-test('automatically discovered owner method follows an unnamed remote job Goal across continuations',async t=>{
-  const objective='Find and apply to fully remote positions posted today. Continue until the requested search cutoff.';
-  let method,catalog;
-  const {engine,goals,conversations,dataDir}=await fixture(t,async(options,n)=>{
-    const run=[...engine.runs.values()].at(-1);
-    const expected=n===1?'UNNAMED_DATE_FIRST_V2':n===2?'UNNAMED_DATE_FIRST_V3':null;
-    if(expected){
-      assert.match(options.prompt,/AUTOMATICALLY DISCOVERED METHOD/);
-      assert.ok(options.prompt.includes(expected));
-      assert.equal(options.prompt.split(expected).length,2);
-    }else assert.doesNotMatch(options.prompt,/UNNAMED_DATE_FIRST_V[23]/);
-    if(n<=3){
-      assert.ok(options.prompt.includes('JOB SEARCH (advisory execution method; not permission)'));
-      assert.ok(!run.skillLoadReceipts?.some(row=>row.skillId===method.id),'metadata and prepared prompts are not receipts');
-      options.onPromptAccepted(options.prompt);
-      const delivered=run.skillLoadReceipts?.filter(row=>row.skillId===method.id)||[];
-      assert.equal(delivered.length,expected?1:0);
-      if(expected){
-        assert.equal(delivered[0].type,'skill_context_submitted');
-        assert.equal(delivered[0].sourceRevision,n===1?2:3);
-      }
-      if(n===1)await catalog.save({id:method.id,value:{expectedRevision:2,content:'# Remote Job Search\nUNNAMED_DATE_FIRST_V3'}});
-      if(n===2)await catalog.delete({id:method.id,value:{expectedRevision:3}});
-      assert.equal((await report(options,n===3?'complete':'progress')).result.success,true);
-    }else{
-      assert.equal(goals.skillObjectiveForDispatch(run),null);
-      assert.doesNotMatch(options.prompt,/UNNAMED_DATE_FIRST_V[23]/);
-    }
-    return output(n);
-  });
-  catalog=createSkillsCatalog({dataDir});t.after(()=>catalog.close());
-  method=await catalog.create({value:{content:'# Remote Job Search\nUNNAMED_DATE_FIRST_V2'}});
-  const workflow={...graph(),id:'mission_chat_auto_owner_method',description:'A focused task started from Mission.'};
-  const first=engine.startRun({workflow,input:{task:objective,goal:{objective}}});
-  await waitFor(async()=>(await goals.get(first.id))?.status==='completed');
-  const family=await conversations.family(first.id);
-  const unrelated=engine.continueRun(family.runs.at(-1).id,{nodeId:'agent',message:'Explain the history of consumer refunds.'},{historyRuns:family.runs});
-  await waitFor(()=>engine.getRun(unrelated.id).settled);
-  assert.equal(engine.getRun(unrelated.id).status,'completed');
+test('unnamed remote job Goals do not automatically inject owner skill revisions across continuations',async t=>{
+ const objective='Find and apply to fully remote positions posted today. Continue until the requested search cutoff.';
+ let method,catalog;
+ const {engine,goals,conversations,dataDir}=await fixture(t,async(options,n)=>{
+   const run=[...engine.runs.values()].at(-1);
+   assert.doesNotMatch(options.prompt,/AUTOMATICALLY DISCOVERED METHOD|UNNAMED_DATE_FIRST_V[23]|JOB SEARCH \(advisory execution method/);
+   assert.deepEqual(run.skillLoadReceipts||[],[],'the catalog is available on demand, not delivered automatically');
+   options.onPromptAccepted(options.prompt);
+   assert.deepEqual(run.skillLoadReceipts||[],[]);
+   if(n<=3){
+     if(n===1)await catalog.save({id:method.id,value:{expectedRevision:2,content:'# Remote Job Search\nUNNAMED_DATE_FIRST_V3'}});
+     if(n===2)await catalog.delete({id:method.id,value:{expectedRevision:3}});
+     assert.equal((await report(options,n===3?'complete':'progress')).result.success,true);
+   }else assert.equal(goals.skillObjectiveForDispatch(run),null);
+   return output(n);
+ });
+ catalog=createSkillsCatalog({dataDir});t.after(()=>catalog.close());
+ method=await catalog.create({value:{content:'# Remote Job Search\nUNNAMED_DATE_FIRST_V2'}});
+ const workflow={...graph(),id:'mission_chat_auto_owner_method',description:'A focused task started from Mission.'};
+ const first=engine.startRun({workflow,input:{task:objective,goal:{objective}}});
+ await waitFor(async()=>(await goals.get(first.id))?.status==='completed');
+ const family=await conversations.family(first.id);
+ const unrelated=engine.continueRun(family.runs.at(-1).id,{nodeId:'agent',message:'Explain the history of consumer refunds.'},{historyRuns:family.runs});
+ await waitFor(()=>engine.getRun(unrelated.id).settled);
+ assert.equal(engine.getRun(unrelated.id).status,'completed');
 });
 
 

@@ -26,6 +26,9 @@ test('analyze it inherits the same task objective; unrelated new requests do not
  const first=resolveSourceAnalysisIntent({input:'analyze the following resume as employer',documentType:'resume'});
  const next=resolveSourceAnalysisIntent({input:'analyze it',documentType:'document',previous:first});
  assert.equal(isSourceAnalysisFollowup('analyze it'),true);
+ assert.equal(isSourceAnalysisFollowup('Use the Reverse Outline skill. Analyze it.'),true,'a current explicit skill selection does not erase the follow-up');
+ assert.equal(isSourceAnalysisFollowup('Use the Source-first analysis method skill. Analyze it.'),true);
+ assert.equal(isSourceAnalysisFollowup('Use the Reverse Outline skill. Analyze the quarterly budget.'),false,'a new source must not inherit the old task');
  assert.equal(next.inheritedFromPrevious,true);
  assert.equal(next.subject,first.subject);
  assert.equal(next.perspective.label,first.perspective.label);

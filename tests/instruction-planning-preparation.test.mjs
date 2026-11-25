@@ -7,10 +7,10 @@ import { createSkillsCatalog } from '../lib/skills-catalog.mjs';
 import { createChatPlanningProviderInvoker } from '../lib/chat-planning-provider.mjs';
 import { CHAT_PLANNING_MODULES } from '../lib/chat-planning-pass.mjs';
 
-for (const module of [CHAT_PLANNING_MODULES[0], CHAT_PLANNING_MODULES[3]]) test('planning preparation honors owner edit and deletion with exact audit: ' + module.id, async t => {
+for (const module of [CHAT_PLANNING_MODULES[0], CHAT_PLANNING_MODULES[3]]) test('planning preparation ignores unrelated skill edits and deletion while preserving an exact audit: ' + module.id, async t => {
   const dataDir = await mkdtemp(path.join(tmpdir(), 'blackice-owner-planning-')), catalog = createSkillsCatalog({ dataDir });
   t.after(async () => { await catalog.close(); await rm(dataDir, { recursive: true, force: true }); });
-  const id = module.skillId || module.id, bundled = await catalog.detail({ id });
+  const id = module.id==='builtin-intent-inference'?'library-intent-inference':module.id, bundled = await catalog.detail({ id });
   const text = '# Owner planning method\nOWNER_METHOD_BODY\n' + 'x'.repeat(31000) + '\nOWNER_METHOD_TAIL';
   const edited = await catalog.save({ id, value: { expectedRevision: bundled.revision, content: text } });
   const scope = { taskId: 't1', runId: 'r1', nodeId: 'n1' }, snapshot = { taskId: 't1', revision: 0, objective: 'PRIVATE_DIRECTORY_DATA', actions: [], receipts: [] };
@@ -27,10 +27,10 @@ for (const module of [CHAT_PLANNING_MODULES[0], CHAT_PLANNING_MODULES[3]]) test(
   await make()(input);
   const first = audits.at(-1), core = first.audit.sections.find(item => item.id === 'core'), method = first.audit.sections.find(item => item.id === 'skill-' + id);
   assert.equal(core.text, instructionSnapshot.content); assert.equal(core.revision, instructionSnapshot.revision);
-  assert.equal(method.text, text); assert.equal(method.revision, edited.revision); assert.equal(method.source, 'Owner skill: ' + id);
+  assert.equal(method,undefined,'planning phase does not import the owner-edited method automatically');
   assert.equal(first.audit.delivery, 'accepted'); assert.equal(first.id, module.id);
   assert.equal(first.audit.sections.filter(item => item.layer === 'developer').map(item => item.text).join(''), calls[0].wireInstructions);
-  assert.ok(calls[0].options.prompt.includes(text)); assert.ok(calls[0].options.prompt.length > 30000);
+  assert.ok(!calls[0].options.prompt.includes(text)); assert.ok(calls[0].options.prompt.length < 30000,'no full owner skill body is injected');
   assert.match(calls[0].options.prompt, /OWNER_PREP_SOUL/); assert.doesNotMatch(calls[0].options.prompt, /PRIVATE_USER_FACTS/);
   assert.doesNotMatch(JSON.stringify(first.audit), /PRIVATE_CURRENT_REQUEST|PRIVATE_DIRECTORY_DATA|PRIVATE_INTENT_REFERENCE|PRIVATE_USER_FACTS/);
   assert.deepEqual(calls[0].options.dynamicTools, []); assert.equal(calls[0].options.responseOnly, true);
@@ -38,8 +38,8 @@ for (const module of [CHAT_PLANNING_MODULES[0], CHAT_PLANNING_MODULES[3]]) test(
   const deleted = await catalog.delete({ id, value: { expectedRevision: edited.revision } });
   await make()(input);
   const absent = audits.at(-1).audit.sections.find(item => item.id === 'skill-' + id);
-  assert.equal(absent.status, 'unavailable'); assert.equal(absent.text, ''); assert.equal(absent.revision, deleted.revision);
-  assert.match(absent.reason, /owner deleted/); assert.doesNotMatch(calls.at(-1).options.prompt, /OWNER_METHOD_BODY|OWNER_METHOD_TAIL/);
+  assert.equal(absent,undefined,'deleted skills do not create implicit planning instructions');
+  assert.doesNotMatch(calls.at(-1).options.prompt, /OWNER_METHOD_BODY|OWNER_METHOD_TAIL/);
   assert.ok(!calls.at(-1).options.prompt.includes(bundled.content));
   assert.deepEqual(first, original);
 });

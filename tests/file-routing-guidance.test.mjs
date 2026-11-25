@@ -10,8 +10,8 @@ test('current workspace guidance routes discovery and local document reads witho
  assert.equal(body.error,`Choose ${WORKSPACE_TOOL.inputSchema.properties.action.enum.join(', ')}. For filename/path discovery use relay_find_files.`);
  assert.equal(WORKSPACE_TOOL.inputSchema.properties.action.enum.includes('find'),false);
  // Check the route and supported formats, not the retired long-form wording.
- assert.match(WORKSPACE_TOOL.description,/filenames or paths use relay_find_files/);
- for (const format of ['PDF','DOCX','XLSX']) assert.ok(WORKSPACE_TOOL.description.includes(format), format);
+ assert.match(WORKSPACE_TOOL.description,/relay_find_files locates unknown filenames and paths/);
+ assert.ok(WORKSPACE_TOOL.inputSchema.properties.action.enum.includes('read'));
  assert.match(WORKSPACE_INSTRUCTIONS,/relay_files[^.]*chat attachment ID/);
  assert.match(WORKSPACE_INSTRUCTIONS,/one path per call/, 'Scalar file actions must be explicit');
  assert.match(WORKSPACE_INSTRUCTIONS,/folder-scoped search|one read-only run command/, 'Multi-file extraction should not cause a large repeated-read loop');

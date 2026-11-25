@@ -313,8 +313,8 @@ test('real compatible continuations preserve temporal scope for new exports and 
   const sharedMethod="Verified effect within the current request's time and count";
   const executionRequests=requests.filter(body=>!outcomeRequest(body));
   const reviewRequests=requests.filter(outcomeRequest);
-  assert.ok(executionRequests.length>0&&executionRequests.every(body=>JSON.stringify(body.messages).includes(sharedMethod)),
-    'the shared completion skill reaches every execution-provider request');
+  assert.ok(executionRequests.length>0&&executionRequests.every(body=>!JSON.stringify(body.messages).includes(sharedMethod)),
+    'no ambient completion skill is injected into the provider; the core and outcome reviews still govern completion');
   assert.ok(reviewRequests.length>0&&reviewRequests.every(body=>!JSON.stringify(body.messages).includes(sharedMethod)),
     'the independent outcome reviewer does not inherit worker-only instructions');
   const reviews=run.events.filter(row=>row.data?.type==='chat.execution-review').map(row=>row.data);

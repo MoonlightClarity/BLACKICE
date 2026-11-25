@@ -76,7 +76,7 @@ test('explicit folder mutation removes orphan placements only, preserving actual
 });
 
 
-test('anti-overalignment delivers concrete blocker checks and delegated decisions once',async()=>{
+test('anti-overalignment remains a readable skill but planning prep does not inject it implicitly',async()=>{
  const {content}=readReleaseSkill('builtin-task-grounding');
  const patterns=[
   /Name the exact action and the observed obstacle/,
@@ -144,18 +144,14 @@ test('anti-overalignment delivers concrete blocker checks and delegated decision
 
  assert.equal(calls.length,1);
  const request=calls[0];
- assert.equal(request.prompt.split(content).length-1,1);
+ assert.equal(request.prompt.includes(content),false,'planning preparation never loads the skill implicitly');
  assert.equal(request.developerInstructions.includes(content),false);
- for(const pattern of patterns)assert.match(request.prompt,pattern);
+ assert.ok(request.prompt.length>30,'a response-only planning artifact remains present without the skill text');
  assert.equal(request.responseOnly,true);
  assert.deepEqual(request.dynamicTools,[]);
 
  const audit=audits.at(-1).audit;
- const method=audit.sections.find(section=>section.id==='skill-'+module.id);
- assert.equal(method.text,content);
- assert.equal(method.source,'Bundled skill: '+module.id);
- assert.equal(method.role,'user');
- assert.equal(method.layer,'prompt');
- assert.equal(method.status,'accepted');
+ assert.equal(audit.sections.some(section=>section.id==='skill-'+module.id),false);
+ assert.ok(audit.sections.some(section=>section.id==='planning-artifact'),'the effective planning artifact is audited');
  assert.equal(audit.delivery,'accepted');
 });
