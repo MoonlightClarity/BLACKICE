@@ -5,15 +5,37 @@ param([Parameter(Mandatory)][string]$InstallRoot)
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 
+# Win32 process ExecutablePath may contain an 8.3 short directory name (for
+# example RUNNER~1) although the installed path uses the long spelling.
+# Compare the actual expanded filesystem paths rather than raw WMI strings.
+Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class BlackiceUpgradeLongPath {
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  private static extern uint GetLongPathNameW(string shortPath, StringBuilder longPath, uint capacity);
+  public static string Expand(string input) {
+    var absolute = System.IO.Path.GetFullPath(input);
+    var buffer = new StringBuilder(32768);
+    uint count = GetLongPathNameW(absolute, buffer, (uint)buffer.Capacity);
+    if (count == 0 || count >= buffer.Capacity)
+      throw new InvalidOperationException("Could not resolve BLACKICE executable identity.");
+    return buffer.ToString().TrimEnd('\\');
+  }
+}
+'@
+
 try {
   $root=[IO.Path]::GetFullPath($InstallRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
   $expected=[IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\BLACKICE')).TrimEnd([IO.Path]::DirectorySeparatorChar)
   if ($root -ine $expected) { throw 'Only the existing per-user BLACKICE installation can be updated.' }
   $exe=Join-Path $root 'BLACKICE.exe'
   if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { exit 0 }
+  $expectedExe=[BlackiceUpgradeLongPath]::Expand($exe)
   function Get-BlackiceProcesses {
     @(Get-CimInstance Win32_Process -Filter "Name='BLACKICE.exe'" -ErrorAction Stop | Where-Object {
-      $_.ExecutablePath -and $_.ExecutablePath -ieq $exe
+      $_.ExecutablePath -and [BlackiceUpgradeLongPath]::Expand($_.ExecutablePath) -ieq $expectedExe
     })
   }
   function Is-BlackiceMain($p) {
@@ -45,7 +67,7 @@ try {
       throw 'BLACKICE was reopened during the update.'
     }
     $current=Get-CimInstance Win32_Process -Filter "ProcessId=$($process.ProcessId)" -ErrorAction SilentlyContinue
-    if (!$current -or $current.ExecutablePath -ine $exe -or $current.CreationDate -ne $process.CreationDate) { continue }
+    if (!$current -or !$current.ExecutablePath -or [BlackiceUpgradeLongPath]::Expand($current.ExecutablePath) -ine $expectedExe -or $current.CreationDate -ne $process.CreationDate) { continue }
     if (!(Is-BlackiceHelper $current)) { throw 'The helper process identity changed.' }
     Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
   }
