@@ -26,6 +26,8 @@ test('NSIS upgrade hook handles existing installs but does not change ordinary d
   assert.match(powershell, /crashpad-handler/);
   assert.match(powershell, /Get-CimInstance Win32_Process/);
   assert.match(builder, /include: desktop\/installer\.nsh/);
+  assert.match(builder, /runAfterFinish: true/);
+  assert.match(signing, /runAfterFinish:true/);
   assert.match(builder, /!desktop\/upgrade-preflight\.ps1/);
   assert.match(signing, /nsis:\{include:'desktop\/installer\.nsh'/);
 });
