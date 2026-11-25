@@ -106,7 +106,7 @@ test('the website sign-in form can focus BLACKICE controls without detaching or 
 });
 
 test('the native adapter retains one WebContents while reparenting and routes browser shortcuts only when attached', () => {
-  const windows = [], shortcuts = [];
+  const windows = [], shortcuts = [], rendering = [];
   class BaseWindow {
     constructor() { this.destroyed = false; this.children = new Set(); this.contentView = {
       addChildView: view => this.children.add(view), removeChildView: view => this.children.delete(view),
@@ -116,11 +116,12 @@ test('the native adapter retains one WebContents while reparenting and routes br
   }
   class WebContentsView {
     constructor(options) { this.options = options; this.webContents = options.webContents || new EventEmitter();
-      if (!options.webContents) Object.assign(this.webContents, { isDestroyed: () => false, close: () => this.webContents.emit('destroyed'), focus() {} }); }
+      if (!options.webContents) Object.assign(this.webContents, { isDestroyed: () => false, close: () => this.webContents.emit('destroyed'), focus() {}, setBackgroundThrottling: value => rendering.push(value) }); }
     getBounds() { return this.bounds; } setBounds(value) { this.bounds = value; } setVisible(value) { this.visible = value; }
   }
   const page = createLiveBrowserWindow({ BaseWindow, WebContentsView, options: { webPreferences: { sandbox: false, offscreen: true, session: 'same-profile' } }, onShortcut: action => shortcuts.push(action) });
   const contents = page.webContents, parent = new BaseWindow();
+  assert.deepEqual(rendering, [false], 'The parked native view must apply the runtime setting after attachment.');
   assert.equal(page.view.options.webPreferences.offscreen, false);
   assert.equal(page.view.options.webPreferences.sandbox, false, 'Windows Chromium sandbox launch error 57 prevents contained views on this host.');
   assert.equal(page.view.options.webPreferences.session, 'same-profile');
@@ -130,9 +131,12 @@ test('the native adapter retains one WebContents while reparenting and routes br
   page.attach(parent, bounds); keyboard(); assert.deepEqual(shortcuts, ['address']); assert.equal(prevented, 1);
   assert.equal(parent.children.has(page.view), true); assert.equal(windows[0].children.has(page.view), false);
   page.hide(); assert.equal(page.webContents, contents); assert.equal(parent.children.size, 0); assert.equal(windows[0].children.has(page.view), true);
+  assert.deepEqual(rendering, [false, false, false], 'Reparenting must preserve active rendering.');
+  contents.emit('dom-ready'); contents.emit('did-stop-loading');
+  assert.deepEqual(rendering, [false, false, false, false, false], 'New documents must reapply the native runtime rendering setting.');
   page.destroy(); assert.equal(windows[0].destroyed, true);
   const popupContents = new EventEmitter();
-  Object.assign(popupContents, { isDestroyed: () => false, close: () => popupContents.emit('destroyed'), focus() {} });
+  Object.assign(popupContents, { isDestroyed: () => false, close: () => popupContents.emit('destroyed'), focus() {}, setBackgroundThrottling: value => rendering.push(value) });
   const popup = createLiveBrowserWindow({ BaseWindow, WebContentsView,
     options: { webContents: popupContents, webPreferences: { session: 'same-profile' } } });
   assert.equal(popup.webContents, popupContents, 'Electron guest creation requires the exact supplied WebContents.');

@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import vm from 'node:vm';
 import { BrowserRouter } from '../desktop/browser-router.mjs';
+import { browserControlDescriptor } from '../desktop/browser-control-identity.mjs';
 
 // The production renderer function and driver method run here; only Electron
 // and the DOM boundary are fixtures. Native acceptance covers actual Chromium.
@@ -83,10 +84,10 @@ test('ordinary snapshots expose account fields consistently before and after a s
   const snapshotSource = source.slice(source.indexOf('function pageSnapshot('), source.indexOf('\nasync function smoothPageScroll('));
   for (const type of ['password','text']) {
     f.context.password.type = type;
-    const result = vm.runInContext(`(${snapshotSource})("__fixture","revised-prefix","")`, f.context);
+    const result = vm.runInContext(`(${snapshotSource})("__fixture","revised-prefix","",false,${browserControlDescriptor.toString()})`, f.context);
     assert.equal(result.elements.find(element => element.name === 'password').value, secret.password);
     assert.equal(result.elements.find(element => element.name === 'username').value, secret.username);
-    const found = vm.runInContext(`(${snapshotSource})("__fixture","revised-again",${JSON.stringify(secret.password)})`, f.context);
+    const found = vm.runInContext(`(${snapshotSource})("__fixture","revised-again",${JSON.stringify(secret.password)},false,${browserControlDescriptor.toString()})`, f.context);
     assert.equal(found.elements.length, 2);
   }
 });

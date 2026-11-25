@@ -19,6 +19,15 @@ export function createLiveBrowserWindow({ WebContentsView, BaseWindow, options, 
     webPreferences: { ...options.webPreferences, sandbox: false, offscreen: false } });
   const handle = new EventEmitter();
   let parent = parking, destroyed = false, attached = false;
+  // Electron 44 may report visible with backgroundThrottling:false in the
+  // construction preferences yet never issue BeginFrames for a parked view.
+  // Apply the supported runtime setting after attaching to its native parent.
+  const keepRendering = () => { if (!view.webContents.isDestroyed()) view.webContents.setBackgroundThrottling(false); };
+  // The renderer may be created/replaced after the native view was attached.
+  // Reapply when the new document is ready; setting the flag only before load
+  // leaves Chromium's first animation frame stalled on this Electron build.
+  view.webContents.on('dom-ready', keepRendering);
+  view.webContents.on('did-stop-loading', keepRendering);
   handle.webContents = view.webContents;
   handle.view = view;
   handle.liveSurface = true;
@@ -30,14 +39,14 @@ export function createLiveBrowserWindow({ WebContentsView, BaseWindow, options, 
   handle.attach = (host, bounds) => {
     if (handle.isDestroyed() || host.isDestroyed()) throw Error('The browser page or its host closed.');
     if (parent !== host) { if (!parent.isDestroyed()) parent.contentView.removeChildView(view); host.contentView.addChildView(view); parent = host; }
-    attached = true; view.setBounds(bounds); view.setVisible(true);
+    attached = true; view.setBounds(bounds); view.setVisible(true); keepRendering();
   };
   handle.position = bounds => { if (!handle.isDestroyed()) view.setBounds(bounds); };
   handle.focus = () => { if (attached && !handle.isDestroyed()) view.webContents.focus(); };
   handle.hide = () => {
     if (handle.isDestroyed() || parking.isDestroyed()) return;
     if (parent !== parking) { if (!parent.isDestroyed()) parent.contentView.removeChildView(view); parking.contentView.addChildView(view); parent = parking; }
-    attached = false; view.setBounds({ x: 0, y: 0, width: 1280, height: 900 }); view.setVisible(true);
+    attached = false; view.setBounds({ x: 0, y: 0, width: 1280, height: 900 }); view.setVisible(true); keepRendering();
   };
   handle.destroy = () => {
     if (destroyed) return;
@@ -63,6 +72,7 @@ export function createLiveBrowserWindow({ WebContentsView, BaseWindow, options, 
   view.webContents.on('context-menu', (_event, params) => { if (attached) onContextMenu?.(view.webContents, params, parent); });
   parking.contentView.addChildView(view);
   view.setBounds({ x: 0, y: 0, width: options.width || 1280, height: options.height || 900 });
+  keepRendering();
   return handle;
 }
 

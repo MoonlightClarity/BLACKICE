@@ -18,6 +18,7 @@ import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { BrowserTabDiagnostics, diagnosticText } from '../lib/browser-tab-diagnostics.mjs';
 import { BrowserProtection, protectionOrigin } from '../lib/browser-protection.mjs';
 import { BrowserSurfaceHost } from './browser-surface.mjs';
+import { browserControlDescriptor, browserPointerHitMatches } from './browser-control-identity.mjs';
 import { performProviderKeySource } from './provider-key-source.mjs';
 import { inspectObservedFormControl, observePageReceiptRecords } from './browser-operation-observation.mjs';
 import { decorateStoppedTabAdoption } from '../lib/browser-stopped-adoption.mjs';
@@ -144,7 +145,7 @@ const bounded = (promise, signal, ms = 12000) => new Promise((resolve, reject) =
 
 // The same function executes inside each frame, including cross-origin frames.
 // No Node APIs, keys or local application handles are exposed to the page.
-function pageSnapshot(key, prefix, query, readContext = false) {
+function pageSnapshot(key, prefix, query, readContext = false, describeControl) {
   let state = globalThis[key];
   if (!state || state.document !== document || state.prefix !== prefix) state = globalThis[key] = { document, prefix, documentId: Math.random().toString(36).slice(2), elements: new Map(), identities: new Map(), descriptors: new WeakMap(), ids: new WeakMap(), next: 0 };
   const items = [], text = []; let scanned = 0, truncated = false, visibleControlsUnderHiddenAncestor = 0;
@@ -200,9 +201,8 @@ function pageSnapshot(key, prefix, query, readContext = false) {
       // large feed. Only controls need boxes and accessible names.
       const box = control ? el.getBoundingClientRect() : null;
       if (box && (box.width > 0 || box.height > 0)) {
-        const labelled = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ');
-        const label = normalized(el.getAttribute('aria-label') || labelled || (el.labels ? [...el.labels].map(l => l.textContent).join(' ') : '') || el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || el.getAttribute('data-placeholder') || el.textContent || el.getAttribute('title') || el.getAttribute('alt')).slice(0, 300);
-        const descriptor = JSON.stringify([el.tagName, el.type || '', role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), label]);
+        const identity = describeControl(el, role), label = identity[3];
+        const descriptor = JSON.stringify(identity);
         let ref = state.ids.get(el);
         if (!ref || state.descriptors.get(el) !== descriptor) {
           if (ref) { state.elements.delete(ref); state.identities.delete(ref); }
@@ -282,7 +282,7 @@ async function smoothPageScroll(target, top, left) {
   return position();
 }
 
-function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
+function elementAction(key, ref, action, args, scrollPage, inspectOperation, describeControl, pointerHitMatches) {
   // This function runs in the renderer, so reject malformed fill preparation
   // here as well as at the host boundary, before focus or selection can change.
   if (['fill', 'fill-ready'].includes(action) && (typeof args?.text !== 'string' || args.value !== undefined)) return { __blackiceElementError: { message: 'Fill requires an explicit text string and does not accept value. Use text:"" to intentionally clear a field; value is only for select.', code: 'BROWSER_VALIDATION', inputDispatched: false } };
@@ -293,10 +293,7 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
   const expected = state.identities?.get(ref);
   if (expected) {
     const style = getComputedStyle(el), box = el.getBoundingClientRect();
-    const role = el.getAttribute('role') || ({ A: 'link', BUTTON: 'button', INPUT: el.type === 'checkbox' ? 'checkbox' : el.type === 'radio' ? 'radio' : 'textbox', TEXTAREA: 'textbox', SELECT: 'combobox', SUMMARY: 'button' }[el.tagName]) || (/^H[1-6]$/.test(el.tagName) ? 'heading' : '');
-    const labelled = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ');
-    const label = String(el.getAttribute('aria-label') || labelled || (el.labels ? [...el.labels].map(l => l.textContent).join(' ') : '') || el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || el.getAttribute('data-placeholder') || el.textContent || el.getAttribute('title') || el.getAttribute('alt') || '').replace(/\s+/g, ' ').trim().slice(0, 300);
-    const descriptor = [el.tagName, el.type || '', role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), label];
+    const descriptor = describeControl(el);
     const cause = style.display === 'none' || style.visibility === 'hidden' ? 'hidden'
       : !(box.width > 0 || box.height > 0) ? 'no-box'
       : JSON.stringify(descriptor) !== expected ? 'identity-changed' : undefined;
@@ -319,9 +316,7 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
   if (el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true') throw new Error('This element is disabled. Inspect what is required first.');
   if (action === 'host-inspect') return inspectOperation(el, state, args);
   if (action === 'pointer-verify') {
-    let hit = args.hit;
-    while (hit?.isConnected && hit !== el && !el.contains(hit) && hit.getRootNode?.()?.host) hit = hit.getRootNode().host;
-    if (!hit?.isConnected || hit !== el && !el.contains(hit)) throw new Error('The current pointer target is not the observed control. Inspect the page before acting.');
+    if (!pointerHitMatches(el, args.hit, args.point)) throw new Error('The current pointer target is not the observed control. Inspect the page before acting.');
     return { verified: true };
   }
   if (action === 'prepare') {
@@ -419,8 +414,8 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation) {
   throw new Error('Unsupported element action.');
 }
 
-async function elementActionResult(run, scrollPage, key, ref, action, args, inspectOperation) {
-  try { return await run(key, ref, action, args, scrollPage, inspectOperation); }
+async function elementActionResult(run, scrollPage, key, ref, action, args, inspectOperation, describeControl, pointerHitMatches) {
+  try { return await run(key, ref, action, args, scrollPage, inspectOperation, describeControl, pointerHitMatches); }
   catch (reason) {
     // Preserve non-enumerable Error.message before the renderer result crosses
     // Electron's process boundary. Unknown failures cannot prove no side effect.
@@ -1469,7 +1464,7 @@ export class ElectronBrowserDriver extends EventEmitter {
           const stamp = this.frameStamp(tab, frame, { mainFrame, throwDisposed: true });
           if (!stamp) { changedRead = true; break; }
           const prefix = `${stamp.mainRevision}-${stamp.lineage.map(value => value.revision).join('_')}-${frameLabel}`;
-          const value = await this.pageWork(tab, frame.executeJavaScript(`(${pageSnapshot.toString()})(${JSON.stringify(this.key)},${JSON.stringify(prefix)},${JSON.stringify(query || '')},${Boolean(readContext)})`), signal, Math.max(1, Math.min(deadline - Date.now(), frame === mainFrame ? 5000 : 500)));
+          const value = await this.pageWork(tab, frame.executeJavaScript(`(${pageSnapshot.toString()})(${JSON.stringify(this.key)},${JSON.stringify(prefix)},${JSON.stringify(query || '')},${Boolean(readContext)},${browserControlDescriptor.toString()})`), signal, Math.max(1, Math.min(deadline - Date.now(), frame === mainFrame ? 5000 : 500)));
           if (!this.frameStampCurrent(tab, stamp)) { changedRead = true; break; }
           if (value.elements.length > remainingElements || value.text.length > remainingText) value.truncated = true;
           value.elements = value.elements.slice(0, remainingElements); value.text = value.text.slice(0, remainingText);
@@ -1521,7 +1516,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     try {
       const main = tab.window.webContents.mainFrame;
       if (frame !== main && !main.framesInSubtree.includes(frame)) throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', actionDispatched: false, browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref, 'frame-changed') });
-      result = await this.pageWork(tab, frame.executeJavaScript(`(${elementActionResult.toString()})(${elementAction.toString()},${smoothPageScroll.toString()},${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })},${inspectObservedFormControl.toString()})`), signal);
+      result = await this.pageWork(tab, frame.executeJavaScript(`(${elementActionResult.toString()})(${elementAction.toString()},${smoothPageScroll.toString()},${JSON.stringify(this.key)},${JSON.stringify(args.ref)},${JSON.stringify(action)},${JSON.stringify({ ...args, ...extra })},${inspectObservedFormControl.toString()},${browserControlDescriptor.toString()},${browserPointerHitMatches.toString()})`), signal);
     } catch (reason) {
       if (disposedFrame(reason)) {
         const diagnostic = this.referenceDiagnostic(tab, args.ref, 'frame-changed');
@@ -1858,8 +1853,8 @@ export class ElectronBrowserDriver extends EventEmitter {
       objectId = resolved.object?.objectId;
       if (!objectId) throw error('The pointer hit document is unavailable.');
       const checked = await this.cdp(tab, 'Runtime.callFunctionOn', { objectId,
-        functionDeclaration: `function(key,ref){return (${elementAction.toString()})(key,ref,'pointer-verify',{hit:this});}`,
-        arguments: [{ value: this.key }, { value: expected.ref }], returnByValue: true }, signal, undefined, sessionId);
+        functionDeclaration: `function(key,ref,point){return (${elementAction.toString()})(key,ref,'pointer-verify',{hit:this,point},undefined,undefined,${browserControlDescriptor.toString()},${browserPointerHitMatches.toString()});}`,
+        arguments: [{ value: this.key }, { value: expected.ref }, { value: expected.pointerLocalPoint || { x: point.x, y: point.y } }], returnByValue: true }, signal, undefined, sessionId);
       if (checked.exceptionDetails || checked.result?.value?.verified !== true) throw error('The pointer no longer hits the exact observed control in its document.');
       const current = (await this.cdp(tab, 'Page.getLayoutMetrics', {}, signal, undefined, sessionId)).cssLayoutViewport;
       if (!current || ['pageX', 'pageY', 'clientWidth', 'clientHeight'].some(key => current[key] !== viewport[key])) throw error('The pointer viewport changed during verification.');
@@ -2044,7 +2039,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     let sessionId, contextId, targetPoint = { x: point.x, y: point.y }, localPoint = targetPoint;
     // Ordinary documents retain the fast root-target path. Only a point that
     // actually hits an iframe needs child-frame inspection or attachment.
-    if (!wc.mainFrame.framesInSubtree.some(frame => frame !== wc.mainFrame)) return { point: targetPoint, guard, close };
+    if (!wc.mainFrame.framesInSubtree.some(frame => frame !== wc.mainFrame)) return { point: targetPoint, localPoint, guard, close };
     const command = (method, params = {}) => this.cdp(tab, method, params, signal, undefined, sessionId);
     try {
       for (let depth = 0; depth < 16; depth++) {
@@ -2052,7 +2047,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         const hit = await command('Runtime.evaluate', { expression: `((x,y)=>{let el=document.elementFromPoint(x,y);while(el?.shadowRoot){const next=el.shadowRoot.elementFromPoint(x,y);if(!next||next===el)break;el=next;}return el&&['IFRAME','FRAME'].includes(el.tagName)?el:null;})(${JSON.stringify(localPoint.x)},${JSON.stringify(localPoint.y)})`, ...(contextId ? { contextId } : {}), returnByValue: false });
         if (hit.exceptionDetails) throw error('The current frame could not be inspected before pointer input.');
         const objectId = hit.result?.objectId;
-        if (!objectId) return { point: targetPoint, guard, sessionId, close };
+        if (!objectId) return { point: targetPoint, localPoint, guard, sessionId, close };
         let frameId, quad;
         try {
           const described = await command('DOM.describeNode', { objectId });
@@ -2069,7 +2064,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         const dx = targetPoint.x - quad[0], dy = targetPoint.y - quad[1], u = (dx * by - dy * bx) / determinant, v = (ax * dy - ay * dx) / determinant;
         // A border click remains on its owner document; it must not be moved
         // into an unrelated point inside the child document.
-        if (u < 0 || u >= 1 || v < 0 || v >= 1) return { point: targetPoint, guard, sessionId, close };
+        if (u < 0 || u >= 1 || v < 0 || v >= 1) return { point: targetPoint, localPoint, guard, sessionId, close };
         const targets = (await command('Target.getTargets')).targetInfos || [];
         const target = targets.find(value => value.type === 'iframe' && value.targetId === frameId);
         if (target) {
@@ -2109,16 +2104,18 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async pointerInput(tab, point, action, signal, expected, reportClickPopup) {
     const target = await this.pointerTarget(tab, point, signal, expected);
+    // Frame-local hit coordinates are host-derived, not supplied by the model.
+    const guard = { ...target.guard, pointerLocalPoint: target.localPoint || target.point };
     try {
-      await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...target.point, button: 'none' }, signal, target.guard, target.sessionId);
+      await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...target.point, button: 'none' }, signal, guard, target.sessionId);
       if (action === 'click') {
         const active = tab.clickPopupObservers ||= new Set();
         const click = { report: reportClickPopup };
         active.add(click);
-        try { await this.clickPoint(tab, target.point, signal, target.guard, target.sessionId); }
+        try { await this.clickPoint(tab, target.point, signal, guard, target.sessionId); }
         finally { active.delete(click); }
       }
-      if (action === 'scroll') await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseWheel', ...target.point, deltaX: expected.deltaX, deltaY: expected.deltaY, button: 'none' }, signal, target.guard, target.sessionId);
+      if (action === 'scroll') await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseWheel', ...target.point, deltaX: expected.deltaX, deltaY: expected.deltaY, button: 'none' }, signal, guard, target.sessionId);
     } finally { await target.close(); }
   }
   async browserPoint(tab, frame, point, signal) {
