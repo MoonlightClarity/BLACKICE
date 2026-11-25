@@ -46,7 +46,7 @@ for(const type of ['openai','anthropic','compatible'])test(`${type}: the engine 
   assert.match(definitions.get('relay_find_files').schema.properties.path.description,/does not read the contents/);
   assert.match(definitions.get('relay_code').description,/check saved source code/);
   assert.match(definitions.get('relay_code').schema.properties.expectedHash.description,/Omit if unknown; never invent a hash/);
-  assert.match(definitions.get('relay_workspace').description,/search literal text inside files/);
+  assert.match(definitions.get('relay_workspace').description,/search matches one literal string inside files/);
   assert.match(definitions.get('relay_control').description,/does not read task files or archived tool-result text/);
   assert.match(definitions.get('relay_agents').description,/Manage saved BLACKICE conversations/);
   assert.match(definitions.get('relay_skills').description,/saved task procedures/);
