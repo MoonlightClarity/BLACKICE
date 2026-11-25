@@ -56,6 +56,7 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:antiCompletionSkill.provenance.revision};
   const automatic={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:completionSkill.provenance.revision};
   const explicit={type:'skill_loaded',skillId,title};
+  const pdfAutomatic={type:'skill_context_submitted',skillId,title,source:'bundled',sourceRevision:pdfSkill.provenance.revision};
   const calls=[
     ['lookup',{action:'search',query:'read PDF for evidence'}],
     ['missing',{action:'read',id:'missing-fixture-skill'}],
@@ -128,11 +129,11 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   assert.match(toolResult(2,'missing'),/not found/i);
   const deliveredSkill=JSON.parse(toolResult(3,'load')).entry;
   assert.equal(deliveredSkill.content,pdfSkill.content);assert.equal(deliveredSkill.provenance.revision,pdfSkill.provenance.revision);
-  assert.deepEqual(observed.slice(0,4),[[],[automatic,antiCompletion],[automatic,antiCompletion],[automatic,antiCompletion]],
+  assert.deepEqual(observed.slice(0,4),[[],[automatic,antiCompletion,pdfAutomatic],[automatic,antiCompletion,pdfAutomatic],[automatic,antiCompletion,pdfAutomatic]],
     'The automatic prompt receipt starts after first acceptance; discovery, a miss, and a not-yet-accepted body do not emit a skill-loaded receipt.');
   const projected=projectFamily({rootId:done.id,runs:[done]}).runs[0];
   for(const receipts of [observed[4],done.skillLoadReceipts,projected.skillLoadReceipts]){
-    assert.deepEqual(receipts,[automatic,antiCompletion,explicit], 'The accepted tool body adds one distinct receipt even after the repeat.');
+    assert.deepEqual(receipts,[automatic,antiCompletion,pdfAutomatic,explicit], 'The accepted automatically submitted body and explicit tool read have distinct receipts, even after the repeat.');
     assert.ok(receipts.every(receipt=>!('content' in receipt)));
   }
 
