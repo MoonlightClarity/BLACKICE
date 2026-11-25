@@ -68,7 +68,7 @@ test('a failed folder edit does not disable local disclosure',async t=>{
  const f=await fixture(t,{count:2,folders:[{id:'parent',name:'Methods',parentId:null}],assignments:{'builtin-fixture-1':'parent'},rejectFolderWrite:true});
  const arrow='[data-folder-toggle="parent"]',skill='[data-skill-id="builtin-fixture-1"]';
  await f.click(arrow);assert.ok(f.$(skill));
- await f.click('.skills-folder-remove');await until(()=>f.$('#skills-status').textContent.includes('Refresh before another folder edit'));
+ await f.click('.skills-folder-remove');await f.click('#skills-folder-delete-yes');await until(()=>f.$('#skills-status').textContent.includes('Refresh before another folder edit'));
  assert.equal(f.$('.skills-folder-remove').disabled,true);
  assert.equal(f.$(arrow).disabled,false);
  await f.click(arrow);assert.equal(f.$(arrow).getAttribute('aria-expanded'),'false');assert.equal(f.$(skill),null);
@@ -98,4 +98,22 @@ test('default groups and alphabetizes unfiled skills without changing real folde
  await f.input('#skills-query','review');await until(()=>f.$('#skills-status').textContent==='2 skills.');
  assert.deepEqual(categories(),[]);assert.deepEqual(visible(),['library-zebra','library-alpha'],'Search results keep their returned order.');
  assert.ok(f.calls.every(x=>x.method==='GET'),'Catalog folder disclosure never writes owner folders or assignments.');
+});
+
+test('Skills UI explicitly confirms populated folder deletion and preserves contents',async t=>{
+ const f=await fixture(t,{count:2,folders:[{id:'parent',name:'Methods',parentId:null}],
+   assignments:{'builtin-fixture-1':'parent'}});
+ assert.equal(f.$('#skills-folder-delete-confirm').hidden,true);
+ await f.click('.skills-folder-remove');
+ assert.equal(f.$('#skills-folder-delete-confirm').hidden,false);
+ assert.match(f.$('#skills-folder-delete-confirm').textContent,/No skill documents are deleted/);
+ assert.equal(f.calls.filter(call=>call.method==='POST').length,0,'opening confirmation has no mutation');
+ await f.click('#skills-folder-delete-cancel');
+ assert.equal(f.calls.filter(call=>call.method==='POST').length,0);
+ await f.click('.skills-folder-remove');
+ await f.click('#skills-folder-delete-yes');
+ await until(()=>f.calls.some(call=>call.method==='POST'));
+ assert.deepEqual(f.calls.find(call=>call.method==='POST').body,{
+  action:'remove',id:'parent',relocateContents:true,expectedRevision:0
+ });
 });

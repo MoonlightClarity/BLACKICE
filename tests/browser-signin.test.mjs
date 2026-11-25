@@ -57,7 +57,8 @@ test('email-route preflight keeps the website usable instead of falsely recordin
   assert.match(BROWSER_SIGNIN_INSTRUCTIONS,/Credential helpers are optional/);
   const verification=await handler({name:'relay_browser_signin',arguments:{site:'https://jobs.lever.co/',reason:'verification',evidence:'verification-page'}});
   assert.equal(verification.success,true);
-  assert.equal(reports.length,1,'a CAPTCHA is not solved merely by an email-login alternative on another site');
+  assert.equal(reports.length,0,'an observed CAPTCHA does not record a hard blocker before native visual interaction');
+  assert.equal(JSON.parse(verification.contentItems[0].text).recorded,false);
   assert.equal(inspected,1,'a verification challenge does not trigger the social-login preflight');
 });
 

@@ -229,7 +229,7 @@ test('PF2 planning puts the current request first once and preserves every artif
   const catalog = createSkillsCatalog();
   try {
     for (const selected of CHAT_PLANNING_MODULES) {
-      const method = await catalog.detail({ id: selected.skillId || selected.id });
+      assert.ok(selected.brief,'planning module is self-contained and never imports a hidden skill');
       const artifact = selected.artifact === 'intent-advice'
         ? { status: 'proposed', interpretation: 'Inspect the named prerequisites first.', reason: 'The current request names them.' }
         : { status: 'needs-evidence', reason: 'The prerequisites have not been inspected.', sourceRefs: [], focus: null,
@@ -257,9 +257,9 @@ test('PF2 planning puts the current request first once and preserves every artif
       assert.match(options.prompt, /this response-only phase does not perform reads/);
       const soulWire = 'SOUL_DOCUMENT=' + JSON.stringify(soul);
       assert.equal(options.prompt.split(soulWire).length - 1, 1);
-      assert.equal(options.prompt.split('\n\nSELECTED PLANNING METHOD\n' + method.content).length - 1, 1);
+      assert.equal(options.prompt.includes('SELECTED PLANNING METHOD'),false,'response-only planning cannot silently load a skill');
       assert.ok(options.prompt.indexOf(prefix) < options.prompt.indexOf(soulWire));
-      assert.ok(options.prompt.indexOf(soulWire) < options.prompt.indexOf('SELECTED PLANNING METHOD\n'));
+      assert.ok(options.prompt.indexOf(soulWire) > options.prompt.indexOf(prefix),'the current SOUL revision follows the request');
       if (selected.artifact === 'intent-advice') {
         assert.ok(options.prompt.endsWith('\nHOST REFERENCE FOR THE CURRENT REQUEST (data): ' + JSON.stringify(hostReference)));
         assert.doesNotMatch(options.prompt, /CURRENT DIRECTORY PROJECTION/);
@@ -280,8 +280,39 @@ test('PF2 planning puts the current request first once and preserves every artif
       const protocol = audit.sections.find(row => row.id === 'planning-artifact').text;
       assert.ok(options.prompt.startsWith(prefix + protocol));
       assert.equal(audit.sections.find(row => row.id === 'soul').text, soul.content);
-      assert.equal(audit.sections.find(row => row.id === 'skill-' + method.id).text, method.content);
+      assert.equal(audit.sections.some(row=>row.id.startsWith('skill-')),false,'the preparation phase has no automatic skill body');
       assert.doesNotMatch(JSON.stringify(audit), /PF2_PREREQUISITE/);
     }
   } finally { await catalog.close(); }
+});
+
+test('editable planning layers replace model guidance without changing host artifact validation or importing skills',async()=>{
+ const module=CHAT_PLANNING_MODULES[0];
+ let captured,audit;
+ const changes={
+  'planning':'OWNER_PLANNING_ADVISORY_8899',
+  'preparation-contract':'OWNER_PREPARATION_CONTRACT_1188',
+  'planning-artifact':'OWNER_PLANNING_ARTIFACT_4411'
+ };
+ const executionLayers={project(id,text){return{enabled:true,text:changes[id]??text}}};
+ const invoke=createChatPlanningProviderInvoker({
+  runtime:{runAgent:async options=>{
+   captured=options;
+   options.onPromptAccepted(options.prompt);
+   return{output:JSON.stringify({artifact:{status:'needs-evidence',reason:'Need observed source',sourceRefs:[],focus:null,actions:[]}})};
+  }},
+  ...scope,cwd:'planning-fixture',model:'api1::model1',
+  assertAdmission:()=>{},executionLayers,
+  onInstructionAudit:entry=>{audit=entry.audit;}
+ });
+ await invoke({module,...scope,snapshot,decision:'Inspect current instructions.'});
+ assert.match(captured.developerInstructions,/OWNER_PLANNING_ADVISORY_8899/);
+ assert.match(captured.developerInstructions,/OWNER_PREPARATION_CONTRACT_1188/);
+ assert.match(captured.prompt,/OWNER_PLANNING_ARTIFACT_4411/);
+ assert.doesNotMatch(captured.prompt,/SELECTED PLANNING METHOD/);
+ assert.deepEqual(captured.outputSchema,chatPlanningArtifactSchema(module,snapshot));
+ assert.equal(audit.sections.find(row=>row.id==='planning').text,changes.planning);
+ assert.equal(audit.sections.find(row=>row.id==='preparation-contract').text,changes['preparation-contract']);
+ assert.equal(audit.sections.find(row=>row.id==='planning-artifact').text,changes['planning-artifact']);
+ assert.equal(audit.sections.some(row=>row.id.startsWith('skill-')),false);
 });

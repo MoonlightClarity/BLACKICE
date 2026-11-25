@@ -31,6 +31,32 @@
       "bodyFile": "browser-navigation.md"
     },
     {
+      "id": "library-browser-captcha",
+      "title": "Visual CAPTCHA Handling",
+      "description": "Inspect a visible CAPTCHA with the model’s own vision, interact with current browser controls, and verify the outcome without solver APIs.",
+      "tags": [
+        "browser",
+        "captcha",
+        "visual",
+        "challenge",
+        "verification",
+        "interaction"
+      ],
+      "aliases": [
+        "visual captcha handling",
+        "solve website captcha",
+        "hcaptcha challenge",
+        "recaptcha challenge",
+        "website verification challenge",
+        "visual verification puzzle"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "vision-ui-20261125"
+      },
+      "bodyFile": "browser-captcha.md"
+    },
+    {
       "id": "library-pdf-evidence",
       "title": "Read a PDF for evidence",
       "description": "Read a PDF's relevant pages, verify table labels and units, and cite the evidence used in the answer.",

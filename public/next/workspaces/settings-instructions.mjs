@@ -1,5 +1,6 @@
 import {renderInstructionAudit, instructionAuditText} from './instruction-audit.mjs';
 import {createInstructionEditor} from './settings-instruction-editor.mjs';
+import {createExecutionLayerSettings} from './settings-execution-layers.mjs';
 
 const make = (doc, tag, value = '', className = '') => {
   const node = doc.createElement(tag); node.textContent = value;
@@ -23,10 +24,10 @@ export function createInstructionSettings({mount, api, onSelectFile}) {
   current.id = 'next-instructions-core';
   const editor = createInstructionEditor({mount:current, api});
   const layer = make(doc,'section','','next-instruction-editor');
-  const title = make(doc,'h4','Developer / system layer');
-  const help = make(doc,'p','Save a replacement for the complete developer instruction text sent on future executions. Restore automatic instructions to use the generated text again.','next-help');
+  const title = make(doc,'h4','Developer/System override (optional)');
+  const help = make(doc,'p','Optional complete replacement of BLACKICE-generated developer instructions. When active, this takes precedence over individual developer execution layers. Restore generation to use the editable layers below.','next-help');
   const text = make(doc,'textarea','','next-field next-identity-content');
-  text.id='next-developer-layer-text';text.rows=15; text.setAttribute('aria-label','Developer / system layer');
+  text.id='next-developer-layer-text';text.rows=9; text.setAttribute('aria-label','Developer / system layer');
   const save = make(doc,'button','Save developer layer'), reset = make(doc,'button','Restore automatic instructions');
   const notice = make(doc,'p','','next-help'), location = make(doc,'code');
   notice.setAttribute('role','status'); save.type=reset.type='button';
@@ -56,6 +57,9 @@ export function createInstructionSettings({mount, api, onSelectFile}) {
     if(writing)return;
     text.value=value;dirty=true;notice.textContent='Captured layer loaded as a draft. Save to apply it to future executions.';text.focus();
   }
+  const executionLayersMount=make(doc,'section','','next-instruction-editor');
+  executionLayersMount.id='next-execution-layers-editor';
+  const executionLayersEditor=createExecutionLayerSettings({mount:executionLayersMount,api});
   const label = make(doc, 'h3', 'Captured executions');
   const explanation = make(doc, 'p',
     'Inspect the instructions captured for a particular execution, including their source and layer. Later edits do not rewrite a saved snapshot.', 'next-help');
@@ -74,7 +78,7 @@ export function createInstructionSettings({mount, api, onSelectFile}) {
   const status = make(doc, 'p', '', 'next-help'), content = make(doc, 'div', '', 'next-instruction-content');
   status.id = 'next-instructions-status'; status.setAttribute('role', 'status');
   content.id = 'next-instructions-content';
-  mount.replaceChildren(heading, description, sourceLinks, current, layer, label, explanation, form, nodeControls, status, content);
+  mount.replaceChildren(heading, description, sourceLinks, current, layer, executionLayersMount, label, explanation, form, nodeControls, status, content);
   let active = false, destroyed = false, indexRead = 0, auditRead = 0, indexController = null, auditController = null, record = null;
   function invalidate() {
     indexRead++; auditRead++; indexController?.abort(); auditController?.abort();
@@ -157,8 +161,8 @@ export function createInstructionSettings({mount, api, onSelectFile}) {
     finally { link.remove(); setTimeout(() => urlApi.revokeObjectURL(url), 1000); }
   });
   return {
-    enter() { if (active || destroyed) return; active = true; editor.enter(); void layerRequest('GET'); void loadIndex(); },
-    leave() { active = false; invalidate(); editor.leave(); },
-    destroy() { this.leave(); destroyed = true; editor.destroy(); mount.replaceChildren(); },
+    enter() { if (active || destroyed) return; active = true; editor.enter(); executionLayersEditor.enter(); void layerRequest('GET'); void loadIndex(); },
+    leave() { active = false; invalidate(); editor.leave(); executionLayersEditor.leave(); },
+    destroy() { this.leave(); destroyed = true; editor.destroy(); executionLayersEditor.destroy(); mount.replaceChildren(); },
   };
 }

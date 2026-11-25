@@ -131,9 +131,9 @@ test('a saved assignment flag does not remove ordinary credential capabilities',
   assert.equal(f.generated.length, 1);
 });
 
-test('a recorded human MFA challenge prevents credential mutations while metadata remains inspectable', async t => {
+test('a recorded sign-in requirement prevents credential mutations while metadata remains inspectable', async t => {
   const f = await fixture(t, async options => {
-    const reported = await options.onToolCall({ name: 'relay_browser_signin', arguments: { site: 'https://credentials.example.com/challenge', reason: 'verification', evidence: 'verification-page' } });
+    const reported = await options.onToolCall({ name: 'relay_browser_signin', arguments: { site: 'https://credentials.example.com/login', reason: 'sign-in', evidence: 'login-form' } });
     assert.equal(reported.success, true);
     const generated = await call(options, generation); assert.equal(generated.success, false); assert.match(generated.contentItems[0].text, /requires a human action/);
     assert.equal((await call(options, { action: 'list', origin })).success, true);

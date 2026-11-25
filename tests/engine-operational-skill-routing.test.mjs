@@ -160,29 +160,20 @@ async function fixture(t, { responses, files = {} } = {}) {
   return { catalog, invoke, instructions: engine.instructionSettings };
 }
 
-function requireSkillHeader(result, skill) {
-  const section = result.sections.find(row => row.id === 'skill-' + skill.id);
-  assert.ok(section, 'the effective skill has an instruction section');
-  const lines = section.text.split('\n');
-  const identityPrefix = 'Skill: ', readPrefix = 'To read this skill, call relay_skills with ';
-  const identity = JSON.parse(lines.find(line => line.startsWith(identityPrefix)).slice(identityPrefix.length));
-  const read = JSON.parse(lines.find(line => line.startsWith(readPrefix)).slice(readPrefix.length));
-  const revision = skill.source === 'user' ? skill.revision : (skill.provenance?.revision ?? skill.revision);
-  assert.notEqual(revision, undefined, 'the header must expose an existing effective revision');
-  assert.deepEqual(identity, {id:skill.id, revision,
-    source:skill.source === 'user' ? 'owner-edited' : 'bundled'});
-  assert.deepEqual(read, {action:'read', id:skill.id});
-  const mode=section.text.endsWith(skill.content + '\n')?'full':'brief';
-  if(mode==='brief') {
-    assert.ok(section.text.includes('Complete skill remains available through relay_skills read'),
-      'the concise projection preserves an explicit full-body recovery route');
-    assert.ok(section.text.length < 1800, 'automatic guidance must stay bounded');
-  }
-  assert.ok(result.prompt.includes(JSON.stringify(section.text).slice(1, -1)),
-    'the exact projected header reaches the provider');
-  assert.deepEqual(result.receipts.filter(row => row.skillId === skill.id).map(row => [row.type,row.contentMode]),
-    [['skill_context_submitted',mode]],'the receipt states whether the provider received a full body or a brief');
-  return read;
+function requireSkillHeader(result,skill) {
+ const section=result.sections.find(row=>row.id==='skill-'+skill.id);
+ assert.ok(section,'explicitly selected skill has a captured instruction section');
+ const line=section.text.split('\n').find(row=>row.startsWith('Effective skill: '));
+ assert.ok(line,'the effective source identity is recorded');
+ const identity=JSON.parse(line.slice('Effective skill: '.length));
+ const revision=skill.source==='user'?skill.revision:(skill.provenance?.revision??skill.revision);
+ assert.deepEqual(identity,{id:skill.id,revision,source:skill.source==='user'?'owner-edited':'bundled'});
+ assert.ok(section.text.includes(skill.content),'the current effective skill body is delivered in full');
+ assert.ok(section.text.includes('supersedes earlier versions'));
+ assert.ok(result.prompt.includes(JSON.stringify(section.text).slice(1,-1)),'provider receives the exact audited skill block');
+ assert.deepEqual(result.receipts.filter(row=>row.skillId===skill.id).map(row=>[row.type,row.contentMode,row.sourceRevision]),
+   [['skill_context_submitted','full',revision]]);
+ return{action:'read',id:skill.id};
 }
 
 function requireOperational(result, expectedSource) {
@@ -222,46 +213,36 @@ for(const task of [
  }
 });
 
-test('direct and Mission application entry points deliver the same operational skill bodies and receipts', { timeout: 20000 }, async t => {
-  const f = await fixture(t);
-  const mission = await f.invoke('mission');
-  const direct = await f.invoke('direct');
-  for (const result of [mission, direct]) {
-    const core = result.sections.find(section => section.id === 'core');
-    assert.equal(core.status, 'accepted');
-    assert.match(core.text, /An ordinary request delegates the actions and choices needed to complete it/);
-    assert.match(core.text, /A required agreement, attestation or legal effect is not by itself a new permission requirement/);
-    assert.ok(result.prompt.includes(JSON.stringify(core.text).slice(1, -1)), 'the accepted default reached the real compatible-provider request');
-    assert.equal(result.run.input, application, 'the admitted task remains the exact ordinary application request');
-  }
-  requireOperational(mission, 'bundled');
-  requireOperational(direct, 'bundled');
-  for (const id of operationalIds) {
-    const skill = await f.catalog.detail({ id });
-    requireSkillHeader(mission, skill);
-    requireSkillHeader(direct, skill);
-    assert.ok(mission.prompt.includes('Complete skill remains available through relay_skills read'), id + ' available on demand in Mission');
-    assert.ok(direct.prompt.includes('Complete skill remains available through relay_skills read'), id + ' available on demand in direct');
-  }
-  assert.deepEqual(
-    direct.receipts.filter(row => operationalIds.includes(row.skillId)),
-    mission.receipts.filter(row => operationalIds.includes(row.skillId)),
-  );
+test('direct and Mission applications use the same owner core without automatically injecting skills', {timeout:20000}, async t=>{
+ const f=await fixture(t),mission=await f.invoke('mission'),direct=await f.invoke('direct');
+ for(const result of [mission,direct]){
+  const core=result.sections.find(section=>section.id==='core');
+  assert.equal(core.status,'accepted');
+  assert.match(core.text,/An ordinary request delegates the actions and choices needed to complete it/);
+  assert.ok(result.prompt.includes(JSON.stringify(core.text).slice(1,-1)));
+  assert.equal(result.run.input,application);
+  requireAbsent(result);
+  assert.deepEqual(result.receipts,[]);
+  assert.equal(result.run.nodes.agent.skillSelection.automaticDelivery,false);
+ }
+ assert.deepEqual(direct.receipts,mission.receipts);
 });
 
 
-test('injected Modular Development exposes an exact usable read route without claiming a tool read', { timeout: 20000 }, async t => {
-  const f = await fixture(t);
-  const result = await f.invoke('mission', 'Use Modular Development to review src/index.cjs.');
-  const skill = await f.catalog.detail({id:'library-modular-development'});
-  const args = requireSkillHeader(result, skill);
-  const handler = createRetrievalToolHandler({cwd:process.cwd(), skillsCatalog:f.catalog});
-  const read = await handler({name:'relay_skills', arguments:args});
-  const entry = JSON.parse(read.contentItems[0].text).entry;
-  assert.equal(entry.id, skill.id);
-  assert.equal(entry.content, skill.content, 'the injected ID reads the same full effective body');
-  assert.equal(entry.provenance.revision, skill.provenance.revision);
+test('explicit Modular Development selection delivers its current effective body and a usable read route', {timeout:20000}, async t=>{
+ const f=await fixture(t);
+ const result=await f.invoke('mission','Use the Modular Development skill. Review src/index.cjs.');
+ const skill=await f.catalog.detail({id:'library-modular-development'});
+ const args=requireSkillHeader(result,skill);
+ const handler=createRetrievalToolHandler({cwd:process.cwd(),skillsCatalog:f.catalog});
+ const read=await handler({name:'relay_skills',arguments:args});
+ const entry=JSON.parse(read.contentItems[0].text).entry;
+ assert.equal(entry.id,skill.id);
+ assert.equal(entry.content,skill.content);
+ assert.equal(entry.provenance.revision,skill.provenance.revision);
+ assert.equal(result.receipts.filter(r=>r.skillId===skill.id).length,1,'prompt acceptance is not a tool-read receipt');
 });
+
 
 test('ordinary Find then Apply request continues from real local evidence and withholds the unfinished final', { timeout: 20000 }, async t => {
   const unfinished = 'I found the résumé filename but have not read it, searched for a role, or applied.';
@@ -296,52 +277,37 @@ test('ordinary Find then Apply request continues from real local evidence and wi
   assert.ok(decisions.every(row => row.outcomeVerification === 'not-evaluated'));
 });
 
-test('both application entry points deliver current owner core and skill revisions instead of bundled fallbacks', { timeout: 20000 }, async t => {
-  const f = await fixture(t);
-  const priorCore = await f.instructions.read();
-  const ownerCore = await f.instructions.update({
-    content: "OWNER_COMMON_INSTRUCTIONS\nPreserve the user's current limits.",
-    expectedRevision: priorCore.revision, expectedHash: priorCore.hash,
-  });
-  const contents = new Map([
-    ['builtin-task-grounding', '# Anti-Overalignment\nOwner method: continue authorized work using observable results.'],
-    ['library-job-search', '# Job Search\nOwner method: verify the requested application outcome.'],
-  ]);
-  for (const [id, content] of contents) {
-    const prior = await f.catalog.detail({ id });
-    await f.catalog.save({ id, value: { expectedRevision: prior.revision, content } });
-  }
-  for (const route of ['mission', 'direct']) {
-    const result = await f.invoke(route);
-    requireOperational(result, 'user');
-    const core = result.sections.find(section => section.id === 'core');
-    assert.equal(core.text, ownerCore.content);
-    assert.equal(core.revision, ownerCore.revision);
-    assert.equal(core.sourceHash, ownerCore.hash);
-    assert.equal(core.status, 'accepted');
-    assert.ok(result.prompt.includes(JSON.stringify(ownerCore.content).slice(1, -1)));
-    assert.doesNotMatch(result.prompt, /An ordinary request delegates the actions and choices needed to complete it/, 'source defaults do not silently override saved owner Instructions');
-    for (const [id, content] of contents) {
-      const current = await f.catalog.detail({ id });
-      requireSkillHeader(result, current);
-      assert.equal(result.receipts.find(row => row.skillId === id).sourceRevision, current.revision);
-      assert.equal(result.receipts.find(row => row.skillId === id).contentMode,'brief');
-    }
-  }
+test('both entry points honor saved owner core and explicitly chosen current skill revisions', {timeout:20000}, async t=>{
+ const f=await fixture(t);
+ const prior=await f.instructions.read();
+ const ownerCore=await f.instructions.update({content:"OWNER_COMMON_INSTRUCTIONS\nPreserve the user's current limits.",expectedRevision:prior.revision,expectedHash:prior.hash});
+ const previous=await f.catalog.detail({id:'library-job-search'});
+ const skill=await f.catalog.save({id:'library-job-search',value:{expectedRevision:previous.revision,content:'# Job Search\nOwner method: verify the actual application result.'}});
+ for(const route of ['mission','direct']){
+  const ambient=await f.invoke(route);requireAbsent(ambient);
+  const core=ambient.sections.find(section=>section.id==='core');
+  assert.equal(core.text,ownerCore.content);
+  assert.equal(core.revision,ownerCore.revision);
+  assert.equal(core.sourceHash,ownerCore.hash);
+  assert.ok(ambient.prompt.includes(JSON.stringify(ownerCore.content).slice(1,-1)));
+  assert.doesNotMatch(ambient.prompt,/Owner method: verify the actual application result/);
+  const explicit=await f.invoke(route,'Use the Job Search skill. Prepare a role-fit checklist.');
+  requireSkillHeader(explicit,skill);
+  assert.equal(explicit.receipts.find(row=>row.skillId===skill.id).sourceRevision,skill.revision);
+  assert.equal(explicit.receipts.find(row=>row.skillId===skill.id).contentMode,'full');
+ }
 });
 
-test('deleted operational skills remain absent through both application entry points', { timeout: 20000 }, async t => {
-  const f = await fixture(t);
-  for (const id of operationalIds) {
-    const prior = await f.catalog.detail({ id });
-    await f.catalog.delete({ id, value: { expectedRevision: prior.revision } });
-  }
-  for (const route of ['mission', 'direct']) {
-    const result = await f.invoke(route);
-    requireAbsent(result);
-    assert.ok(result.receipts.some(row => row.skillId === 'library-what-makes-done'));
-  }
+
+test('deleted operational skills are not resurrected by ordinary or explicit application turns', {timeout:20000}, async t=>{
+ const f=await fixture(t);
+ for(const id of operationalIds){const prior=await f.catalog.detail({id});await f.catalog.delete({id,value:{expectedRevision:prior.revision}});}
+ for(const route of ['mission','direct']){
+  requireAbsent(await f.invoke(route));
+  requireAbsent(await f.invoke(route,'Use the Job Search skill. Prepare a role-fit checklist.'));
+ }
 });
+
 
 test('unrelated explanatory requests do not acquire job operational skills through either entry point', { timeout: 20000 }, async t => {
   const f = await fixture(t);
@@ -383,18 +349,17 @@ test('ordinary browser work delivers native cleanup in the actual provider tool 
   }
 });
 
-test('composed methods reach the provider with exact effective revisions across origins',async t=>{
+test('explicit skill selection uses the current edited document without auto-selecting competing methods',async t=>{
  const f=await fixture(t);
- const bundled=await f.catalog.detail({id:'builtin-structured-analysis'});
  const base=await f.catalog.detail({id:'builtin-decomposition'});
  const overlay=await f.catalog.save({id:base.id,value:{expectedRevision:base.revision,content:base.content+'\nOwner decomposition fixture.\n'}});
  const created=await f.catalog.create({value:{content:'---\nactivation: [judgment]\n---\n# Evaluate Claims\n\nCheck evidence before judging.'}});
- const result=await f.invoke('mission','Analyze the evidence in this report.');
- for(const skill of [bundled,overlay,created]){
-  requireSkillHeader(result,skill);
-  const decision=result.run.nodes.agent.skillSelection.decisions.find(d=>d.id===skill.id);
-  assert.equal(decision.decision,'selected');
-  assert.equal(decision.reason,'declared-applicability');
-  assert.equal(decision.delivery,'accepted-provider-request');
- }
+ const ordinary=await f.invoke('mission','Analyze the evidence in this report.');
+ assert.ok(!ordinary.sections.some(section=>section.id.startsWith('skill-')));
+ assert.equal(ordinary.run.nodes.agent.skillSelection.automaticDelivery,false);
+ const selected=await f.invoke('mission','Use the Evaluate Claims skill. Analyze the evidence in this report.');
+ requireSkillHeader(selected,created);
+ assert.ok(!selected.sections.some(section=>section.id==='skill-'+overlay.id));
+ assert.equal(selected.run.nodes.agent.skillSelection.automaticDelivery,false);
+ assert.deepEqual(selected.run.nodes.agent.skillSelection.explicit.map(item=>item.id),[created.id]);
 });

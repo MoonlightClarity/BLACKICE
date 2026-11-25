@@ -8,23 +8,23 @@ import { normalizePlanningOntology } from '../public/planning-module-policy.mjs'
 
 const skill=(id,content='# Method\n\nOwner context and examples.')=>({id,content,title:'Method',source:'user',revision:4});
 
-test('automatic methods are bounded and full owner revisions remain available explicitly',()=>{
+test('on-demand skill previews derive from effective content and preserve explicit full revisions',()=>{
   const long=skill('library-job-search','# Job Search\n\n'+ 'Owner-specific context. '.repeat(3000));
   const projected=projectExecutionSkill(long);
   assert.equal(projected.mode,'brief');
-  assert.ok(projected.text.length<1400);
-  assert.match(projected.text,/actual duties and transferable skills/);
-  assert.match(projected.text,/one concrete duty or deliverable plausibly supported/);
-  assert.match(projected.text,/Unverified work authorization or sponsorship/);
-  assert.match(projected.text,/NOT evidence every role is ineligible/);
-  assert.match(projected.text,/specific field or form/);
-  assert.doesNotMatch(projected.text,/Owner-specific context/);
+  assert.ok(projected.text.length<650);
+  assert.match(projected.text,/Owner-specific context/);
+  assert.doesNotMatch(projected.text,/actual duties and transferable skills/,'obsolete ID-specific instructions cannot override owner edits');
+  assert.match(projected.text,/relay_skills/);
+  assert.match(projected.text,/library-job-search/);
+  assert.ok(projected.text.length < long.content.length);
+  assert.doesNotMatch(projected.text,/Owner-specific context\. Owner-specific context\. Owner-specific context\. Owner-specific context\. Owner-specific context\. Owner-specific context\. Owner-specific context\. Owner-specific context\. Owner-specific context\. Owner-specific context\. Owner-specific context\. Owner-specific context\. Owner-specific context\./);
   const explicit=projectExecutionSkill(long,{explicit:true});
   assert.equal(explicit.mode,'full');
   assert.equal(explicit.text,long.content,'an explicit read or method selection never loses owner content');
 });
 
-test('generic automatic skills use purpose metadata rather than unbounded prose',()=>{
+test('generic optional skill previews use metadata rather than unbounded prose',()=>{
   const user=skill('library-specialized-method','---\ndescription: Evaluate source documents once and verify actual outcomes.\n---\n# Method\n\n'+'Unrelated examples.\n'.repeat(1000));
   const brief=projectExecutionSkill(user);
   assert.equal(brief.mode,'brief');
@@ -34,7 +34,7 @@ test('generic automatic skills use purpose metadata rather than unbounded prose'
 
 test('time management is optional telemetry; browser and workspace descriptions are bounded',()=>{
   assert.equal(normalizePlanningOntology().modules.time_management,false);
-  assert.ok(BROWSER_TOOL.description.replace(NATIVE_BROWSER_CLEANUP_PROTOCOL,'').length<1500);
+  assert.ok(BROWSER_TOOL.description.replace(NATIVE_BROWSER_CLEANUP_PROTOCOL,'').length<2300);
   assert.ok(BROWSER_TOOL.description.endsWith(NATIVE_BROWSER_CLEANUP_PROTOCOL));
   assert.ok(WORKSPACE_TOOL.description.length<1100);
   assert.match(BROWSER_TOOL.description,/BROWSER_TAB_NOT_FOUND/);

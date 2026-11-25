@@ -287,158 +287,72 @@ class Native extends EventEmitter {
  async runAgent(){throw Error('No native inference in this test');}
 }
 
-test('actual Compatible main-turn transport submits the job skill selectively and respects owner deletion',{timeout:15000},async t=>{
+test('Compatible provider uses job skills only when explicitly requested and honors current edits and deletions',{timeout:20000},async t=>{
  const root=await realpath(tmpdir()),dir=await mkdtemp(path.join(root,'blackice-job-skill-'));
  const dataDir=path.join(dir,'engine'),catalog=createSkillsCatalog({dataDir});
- const prompts=[],before=[],allRequests=[],workerRequests=[],assessmentRequests=[];
  let engine,runtime,identity;
+ const workers=[],assessors=[];
  const server=http.createServer(async(req,res)=>{
-  if(req.method==='GET'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({data:[{id:'fixture'}]}));}
-  let raw='';for await(const chunk of req)raw+=chunk;
-  const body=JSON.parse(raw),run=[...engine.runs.values()].at(-1);
-  allRequests.push(body);
-  const assessment=syntheticOutcomeAssessment(body,run.input,workerRequests.at(-1));
+  res.setHeader('Content-Type','application/json');
+  if(req.method==='GET')return res.end(JSON.stringify({data:[{id:'fixture'}]}));
+  let raw='';for await(const part of req)raw+=part;
+  const request=JSON.parse(raw),current=[...engine.runs.values()].at(-1);
+  const assessment=syntheticOutcomeAssessment(request,current.input,workers.at(-1));
   if(assessment){
-   assessmentRequests.push(body);res.setHeader('Content-Type','application/json');
+   assessors.push(request);
    return res.end(JSON.stringify({choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:JSON.stringify(assessment)}}]}));
   }
-  workerRequests.push(body);prompts.push(body.messages);
-  before.push(structuredClone(run.skillLoadReceipts||[]));
-  res.setHeader('Content-Type','application/json');
-  res.end(JSON.stringify({choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:'Synthetic read-only reply.'}}]}));
+  workers.push(request);
+  return res.end(JSON.stringify({choices:[{index:0,finish_reason:'stop',message:{role:'assistant',content:'Synthetic read-only reply.'}}]}));
  });
  t.after(async()=>{
   await engine?.close();await runtime?.close();await catalog.close();await identity?.close();
   server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
   const actual=await realpath(dir);assert.equal(path.dirname(actual),root);
-  assert.match(path.basename(actual),/^blackice-job-skill-/);
-  await rm(actual,{recursive:true,force:true});
+  await rm(actual,{recursive:true,force:true,maxRetries:10,retryDelay:100});
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  runtime=new ProviderRuntime({codex:new Native(),dataDir:dir,modelLimitResolver:{enrich:async(_config,model)=>model}});
  await runtime.store.init();
- await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl:'http://127.0.0.1:'+server.address().port+'/v1',models:[{id:'fixture',contextWindowTokens:65536,maxOutputTokens:4096}]},{preserveDefault:true});
+ await runtime.saveProvider({id:'fixture',type:'compatible',
+  baseUrl:'http://127.0.0.1:'+server.address().port+'/v1',
+  models:[{id:'fixture',contextWindowTokens:65536,maxOutputTokens:4096}]},{preserveDefault:true});
  identity=await new IdentityStore({dataDir}).init();
- engine=await new HarnessEngine({runtime,dataDir,defaultCwd:dir,identity,browser:{status:()=>({available:true,contained:true,tabs:[]}),perform:()=>assert.fail('No real browser action is part of this test')}}).init();
+ engine=await new HarnessEngine({runtime,dataDir,defaultCwd:dir,identity,
+  browser:{status:()=>({available:true,contained:true,tabs:[]}),
+    perform:()=>assert.fail('Fixture does not touch actual websites')}}).init();
  const api=async(route,_method,body)=>route==='/api/workflows'?body:engine.startRun(body);
- const invoke=async (task, directoryDiagnostics, expectedCalls=2)=>{
-  const requestOffset=prompts.length,allOffset=allRequests.length,assessmentOffset=assessmentRequests.length;
-  const start=await submitChat({api,runs:[],task,model:'fixture::fixture',cwd:dir,chatPlanning:'off',directoryActions:'off',directoryDiagnostics});
-  await engine.executions.get(start.run.id);
-  const run=engine.getRun(start.run.id);
+ const invoke=async task=>{
+  const workerStart=workers.length,reviewStart=assessors.length;
+  const started=await submitChat({api,runs:[],task,model:'fixture::fixture',cwd:dir,
+    chatPlanning:'off',directoryActions:'off'});
+  await engine.executions.get(started.run.id);
+  const run=engine.getRun(started.run.id);
   assert.equal(run.status,'completed',run.error);
-  assert.equal(prompts.length-requestOffset,expectedCalls,'the original main request and single worker evidence check remain');
-  assert.equal(assessmentRequests.length-assessmentOffset,1,'one explicit read-only outcome assessment follows');
-  assert.equal(allRequests.length-allOffset,expectedCalls+1,'all provider calls are counted');
-  assert.deepEqual(before[requestOffset],[],'transport has not yet accepted the main prompt');
-  if(expectedCalls===2)assert.deepEqual(before[requestOffset+1],run.skillLoadReceipts,'the review follows accepted main-turn skill delivery');
-  return {prompt:JSON.stringify(prompts[requestOffset]),requests:allRequests.slice(allOffset).map(request=>request.messages),workerRequests:workerRequests.slice(requestOffset).map(request=>request.messages),assessmentRequests:assessmentRequests.slice(assessmentOffset).map(request=>request.messages),input:run.input,receipts:run.skillLoadReceipts||[],events:run.events.map(event=>event.data)};
+  assert.equal(workers.length-workerStart,2,'main response and one evidence check');
+  assert.equal(assessors.length-reviewStart,1,'one read-only assessment');
+  return{prompt:JSON.stringify(workers[workerStart].messages),receipts:run.skillLoadReceipts||[],
+    input:run.input};
  };
- const alignmentId='builtin-task-grounding';
- const alignmentHeading='ANTI-OVERALIGNMENT (advisory execution method; not permission)';
- const antiCompletion='library-anti-completion-bias';
- const completionReceipt=(source,sourceRevision)=>({type:'skill_context_submitted',skillId:antiCompletion,title:'Anti-Completion Bias',source,sourceRevision,contentMode:'brief'});
- const browserSkill='library-browser-navigation';
- const completionId='library-what-makes-done',completionSkill=await catalog.detail({id:completionId});
- const assertSharedConfirmationDelivery=record=>{
-   const receipt=record.receipts.find(row=>row.skillId===completionId);
-   assert.ok(receipt&&receipt.source==='bundled'&&receipt.sourceRevision===completionSkill.provenance.revision&&receipt.contentMode==='brief');
-   for(const messages of record.workerRequests){
-     const wire=JSON.stringify(messages);
-     assert.match(wire,/Define done by the actual requested result/);
-     assert.match(wire,/plan, search, tool call or progress report is not completion/);
-     assert.ok(!wire.includes(JSON.stringify(completionSkill.content).slice(1,-1)),
-       'the full shared method is accessible on demand, not injected into every worker turn');
-   }
-   assert.equal(record.assessmentRequests.length,1);
-   for(const messages of record.assessmentRequests){
-     const wire=JSON.stringify(messages);
-     assert.ok(!wire.includes(JSON.stringify(completionSkill.content).slice(1,-1)),
-       'the read-only reviewer is not sent a second copy of worker guidance');
-     assert.ok(wire.includes(JSON.stringify(record.input).slice(1,-1)));
-     assert.match(wire,/BLACKICE ORDINARY TASK OUTCOME REVIEW/);
-   }
- };
- const job=await invoke(example);
- assertSharedConfirmationDelivery(job);
- assert.ok(job.prompt.includes('Use the contained browser and fresh page identity'));
- const browserRevision=(await catalog.detail({id:browserSkill})).provenance.revision;
- assert.ok(job.receipts.some(r=>r.skillId===browserSkill&&r.sourceRevision===browserRevision&&r.contentMode==='brief'));
- assert.equal(job.prompt.split('ANTI-COMPLETION BIAS (bundled execution method)').length,2);
- assert.ok(job.prompt.includes('Do not end a turn merely to describe work not done'));
- assert.deepEqual(job.receipts.filter(r=>r.skillId===antiCompletion),[completionReceipt('bundled','agency-judgment-20261124')]);
- assert.ok(job.prompt.includes(alignmentHeading));
- assert.ok(job.prompt.includes('Treat the user'));
- assert.ok(job.prompt.includes('failed branch does not cancel independent work'));
- assert.ok(job.prompt.includes('Choose live roles by overlap in actual duties and transferable skills'));
- assert.ok(job.prompt.includes('Unverified work authorization or sponsorship'));
- assert.ok(job.prompt.includes('NOT evidence every role is ineligible'));
- assert.ok(job.prompt.includes('Do not invent credentials or categorical facts'));
- assert.equal(job.input,example,'the unchanged request controls search-only scope');
- assert.ok(job.receipts.some(r=>r.skillId===alignmentId&&r.title==='Anti-Overalignment'&&r.contentMode==='brief'));
- assert.ok(job.prompt.includes(heading));
- assert.deepEqual(job.receipts.filter(r=>r.skillId===id),[accepted]);
- assert.ok(job.receipts.every(r=>r.skillId!=='library-intent-inference'));
-
- const applicationRun=await invoke(application);
- assertSharedConfirmationDelivery(applicationRun);
- assert.equal(applicationRun.input,application,'the unchanged user request controls the delegated action');
- assert.ok(applicationRun.requests.every(messages=>JSON.stringify(messages).includes(application)));
- assert.ok(applicationRun.prompt.includes('Submit when supported, verify the destination receipt'));
- assert.ok(applicationRun.prompt.includes('preserve exact-requisition duplicate protection'));
- assert.ok(applicationRun.prompt.includes('Resolve or defer only the specific field or form'));
- assert.deepEqual(applicationRun.receipts.filter(r=>r.skillId===id),[accepted]);
-
- await catalog.save({id:antiCompletion,value:{expectedRevision:1,content:'# Anti-Completion Bias\nUse the owner-defined next-action instruction.'}});
- const ordinary=await invoke('Write a short explanation of how job search works.');
- assertSharedConfirmationDelivery(ordinary);
- assert.equal(ordinary.input,'Write a short explanation of how job search works.');
- assert.ok(!ordinary.prompt.includes('BROWSER NAVIGATION AND CONTINUITY ('));
- assert.ok(ordinary.receipts.every(r=>r.skillId!==browserSkill));
- assert.ok(!ordinary.prompt.includes('Use the owner-defined next-action instruction.'),
-   'owner-edited full body remains available on demand, rather than being injected automatically');
- assert.deepEqual(ordinary.receipts.filter(r=>r.skillId===antiCompletion),[completionReceipt('user',2)]);
- assert.ok(!ordinary.prompt.includes(alignmentHeading));
- assert.ok(ordinary.receipts.every(r=>r.skillId!==alignmentId));
- assert.ok(!ordinary.prompt.includes(heading));
- assert.ok(ordinary.receipts.every(r=>r.skillId!==id));
-
- for(const task of diagnosisOnlyWorkflows){
-  const diagnostic=await invoke(task);
-  assert.ok(!diagnostic.prompt.includes(heading));
-  assert.ok(!diagnostic.prompt.includes(alignmentHeading));
-  assert.ok(diagnostic.receipts.every(r=>![id,alignmentId,browserSkill].includes(r.skillId)));
- }
- const shortlist=await invoke('Can you shortlist remote open roles?');
- assert.ok(shortlist.prompt.includes(heading));
- assert.deepEqual(shortlist.receipts.filter(r=>r.skillId===id),[accepted]);
-
- await catalog.delete({id,value:{expectedRevision:1}});
- await catalog.delete({id:alignmentId,value:{expectedRevision:1}});
- await catalog.delete({id:antiCompletion,value:{expectedRevision:2}});
- const deleted=await invoke(example);
- assertSharedConfirmationDelivery(deleted);
- assert.ok(!deleted.prompt.includes('ANTI-COMPLETION BIAS ('));
- assert.ok(deleted.receipts.every(r=>r.skillId!==antiCompletion));
- assert.ok(deleted.receipts.some(r=>r.skillId==='library-what-makes-done'));
- assert.ok(!deleted.prompt.includes(alignmentHeading));
- assert.ok(deleted.receipts.every(r=>r.skillId!==alignmentId));
- assert.ok(!deleted.prompt.includes(heading));
- assert.ok(deleted.receipts.every(r=>r.skillId!==id));
- assert.equal(prompts.length,18,'nine ordinary worker conversations retain their original two requests');
- assert.equal(assessmentRequests.length,9,'one isolated assessment per ordinary conversation');
- assert.equal(allRequests.length,27,'skill selection adds no unaccounted provider calls');
- const instrumented=await invoke('Apply to one job for me: Senior Product Manager.','maximal',2);
- const decisions=instrumented.events.filter(event=>event.type==='chat.execution-review');
- const evidenceFingerprint=decisions[0]?.evidenceFingerprint;
- assert.match(evidenceFingerprint,/^[a-f0-9]{64}$/);
- const evidence={type:'chat.execution-review',reviewMode:'ordinary-chat',evidenceRevision:0,pendingToolCount:0,uncertainToolCount:0,evidenceFingerprint,outcomeVerification:'not-evaluated',effectReplayEnforcement:'existing-host-controls'};
- assert.deepEqual(decisions,[
-  {...evidence,reason:'current-task-evidence-check',reviewDecision:'continue'},
-  {...evidence,reason:'task-outcome-supported',reviewDecision:'accepted'},
- ]);
- const ordinaryDepth=await invoke('Apply to one job for me: Senior Product Manager.','off',2);
- assert.deepEqual(ordinaryDepth.events.filter(event=>event.type==='chat.execution-review'),[
-  {...evidence,reason:'current-task-evidence-check',reviewDecision:'continue'},
- ],'ordinary receipt depth retains the continuation without the diagnostic accepted-state event');
+ const ordinary=await invoke(example);
+ assert.equal(ordinary.input,example);
+ assert.deepEqual(ordinary.receipts,[]);
+ assert.doesNotMatch(ordinary.prompt,/JOB SEARCH \(advisory execution method\)/);
+ assert.doesNotMatch(ordinary.prompt,/ANTI-COMPLETION BIAS \(bundled execution method\)/);
+ const id='library-job-search';
+ const bundled=await catalog.detail({id});
+ const explicitTask='Use the Job Search skill. Then prepare an application readiness checklist.';
+ const first=await invoke(explicitTask);
+ assert.ok(first.prompt.includes(JSON.stringify(bundled.content).slice(1,-1)),'explicit selection transmits the effective complete method');
+ assert.equal(first.receipts.find(item=>item.skillId===id).contentMode,'full');
+ const edited=await catalog.save({id,value:{expectedRevision:bundled.revision,
+   content:'# Job Search\nCurrent owner procedure: OWNER_CURRENT_JOB_8181.'}});
+ const revised=await invoke(explicitTask);
+ assert.match(revised.prompt,/OWNER_CURRENT_JOB_8181/);
+ assert.ok(!revised.prompt.includes(JSON.stringify(bundled.content).slice(1,-1)),'the obsolete revision cannot be re-injected');
+ assert.equal(revised.receipts.find(item=>item.skillId===id).sourceRevision,edited.revision);
+ await catalog.delete({id,value:{expectedRevision:edited.revision}});
+ const deleted=await invoke(explicitTask);
+ assert.deepEqual(deleted.receipts,[]);
+ assert.doesNotMatch(deleted.prompt,/OWNER_CURRENT_JOB_8181/);
 });

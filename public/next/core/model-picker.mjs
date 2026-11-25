@@ -20,7 +20,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
   const current=create('p','next-model-picker-current'),results=create('div','next-model-picker-results'),summary=create('p','next-model-picker-summary');summary.setAttribute('role','status');summary.setAttribute('aria-live','polite');
   panel.append(header,search,current,results,summary);panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label',`Choose ${label.toLowerCase()}`);panel.id=`${select.id||'next-model'}-picker`;trigger.setAttribute('aria-haspopup','dialog');trigger.setAttribute('aria-expanded','false');trigger.setAttribute('aria-controls',panel.id);doc.body.append(panel);
   const wasHidden=select.hidden;select.hidden=true;
-  let opened=false,destroyed=false,models=[],status={},selected=select.value,signature='',expanded=new Map(),limits=new Map(),activating=null,activationError='',openRevision=0,unavailable={};
+  let opened=false,destroyed=false,models=[],status={},selected=select.value,signature='',expanded=new Map(),hiddenExpanded=false,limits=new Map(),activating=null,activationError='',openRevision=0,unavailable={};
   const providerOptions=()=>({providers:[...(status.providers||[]),...(status.subscriptionProviders||[])],defaultProviderId:'codex'});
   const hiddenProviders=()=>Array.isArray(status.runtimeSettings?.hiddenModelProviders)?status.runtimeSettings.hiddenModelProviders:[];
   let pendingAction=false,actionMessage='',visibilityRevision=0;
@@ -186,7 +186,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
         if(provider.id!=='codex'&&!canRefresh(provider.id)&&!withModels.has(provider.id))continue;
         shown.add(provider.id);const empty=create('div','next-model-picker-empty-provider');empty.append(create('span','',providerLabel(provider.id)),providerActions(provider.id));results.append(empty);
       }
-      if(hiddenProviders().length){const hidden=create('details','next-model-picker-hidden'),caption=create('summary','', 'Hidden providers ('+hiddenProviders().length+')');hidden.append(caption);hidden.open=true;for(const id of hiddenProviders()){const item=create('div','next-model-picker-empty-provider');item.append(create('span','',providerLabel(id)),actionButton(id,'restore','Restore'));hidden.append(item);}results.append(hidden);}
+      if(hiddenProviders().length){const hidden=create('details','next-model-picker-hidden'),caption=create('summary','', 'Hidden providers ('+hiddenProviders().length+')');hidden.append(caption);hidden.open=hiddenExpanded;hidden.addEventListener('toggle',event=>{if(event.target===hidden)hiddenExpanded=hidden.open;});for(const id of hiddenProviders()){const item=create('div','next-model-picker-empty-provider');item.append(create('span','',providerLabel(id)),actionButton(id,'restore','Restore'));hidden.append(item);}results.append(hidden);}
     }
     summary.textContent=activationError||actionMessage||(activating?(activating.startsWith('remove:')?'Removing local model.':activating.startsWith('setup:')?'Opening model settings.':'Preparing the selected model.'):entries.length?`${entries.length} model${entries.length===1?'':'s'} in ${allGroups.length} provider${allGroups.length===1?'':'s'}.`:connections.length?'Set up a native account connection to load its model catalog.':'No matching models. Try another search.');
     if(restore){const target=focusValue?Array.from(results.querySelectorAll('[data-model-value]')).find(node=>node.dataset.modelValue===focusValue):focusProvider?Array.from(results.querySelectorAll('summary')).find(node=>node.dataset.modelProvider===focusProvider):focusSetup?Array.from(results.querySelectorAll('[data-model-setup-provider]')).find(node=>node.dataset.modelSetupProvider===focusSetup):focusRemove?Array.from(results.querySelectorAll('[data-model-remove]')).find(node=>node.dataset.modelRemove===focusRemove):null;(target||search).focus({preventScroll:true});}
@@ -201,7 +201,7 @@ export function createGroupedModelPicker({select,label='Model',onEnableProvider,
       unavailable=result||{};render();
     }catch{/* Keep the prior check; the backend will still validate a load. */}
   }
-  function open(){if(destroyed||select.disabled)return;if(opened){close();return;}opened=true;openRevision++;activationError='';actionMessage='';expanded=new Map();limits=new Map();search.value='';panel.hidden=false;trigger.setAttribute('aria-expanded','true');render();search.focus({preventScroll:true});void refreshAvailability(openRevision);}
+  function open(){if(destroyed||select.disabled)return;if(opened){close();return;}opened=true;openRevision++;activationError='';actionMessage='';expanded=new Map();hiddenExpanded=false;limits=new Map();search.value='';panel.hidden=false;trigger.setAttribute('aria-expanded','true');render();search.focus({preventScroll:true});void refreshAvailability(openRevision);}
   const onTrigger=event=>{event.preventDefault();open();};
   const onTriggerKey=event=>{if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();if(!opened)open();}};
   const onFilter=()=>{expanded.clear();limits.clear();render();};

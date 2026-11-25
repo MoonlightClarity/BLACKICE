@@ -39,6 +39,26 @@ function fixture(t,{models=catalog,selected='default',hidden=[],modelProviders=p
   };
 }
 
+
+test('hidden-provider restore section starts collapsed and preserves deliberate expansion only while open',async t=>{
+ const f=fixture(t,{hidden:['alpha'],api:async()=>({hiddenModelProviders:[]})});
+ await f.open();
+ let hidden=f.panel().querySelector('details.next-model-picker-hidden');
+ assert.ok(hidden,'hidden provider controls are discoverable');
+ assert.equal(hidden.open,false,'hidden provider section must not be expanded initially');
+ assert.equal(hidden.querySelector('[data-provider-action="restore"]').dataset.providerId,'alpha');
+ hidden.open=true;
+ await hidden.dispatch('toggle',{},true);
+ f.update({providers:[...providers,{id:'extra',name:'Extra'}]});
+ hidden=f.panel().querySelector('details.next-model-picker-hidden');
+ assert.equal(hidden.open,true,'a deliberate expansion should persist through a picker repaint');
+ f.picker.close();
+ await f.open();
+ hidden=f.panel().querySelector('details.next-model-picker-hidden');
+ assert.equal(hidden.open,false,'each fresh picker opening resets hidden providers to collapsed');
+ assert.deepEqual(f.changes,[],'inspecting hidden providers must not change the selected model');
+});
+
 test('provider groups are sorted and collapsed initially, with bounded rows added only when opened',async t=>{
   const many=Array.from({length:121},(_,index)=>model('alpha::model-'+String(index).padStart(3,'0')));
   const f=fixture(t,{models:[model('zeta::first'),...many]});await f.open();

@@ -1,3 +1,5 @@
+import {ToolDescriptionOverrides} from './lib/tool-description-overrides.mjs';
+import {ExecutionLayerOverrides} from './lib/execution-layer-overrides.mjs';
 import {handleTaskActionDirectoryHttp} from './lib/task-action-directory-http.mjs';
 import {handleTurnReceiptsHttp} from './lib/turn-receipts-http.mjs';
 import {BLACKICE_CLIENT_INFO} from './lib/harness-identity.mjs';
@@ -172,6 +174,12 @@ export async function createHarnessServer(options = {}) {
   const engine = options.engine || new HarnessEngine({ ownerRecovery, runtime, dataDir, defaultCwd, desktop, browser, identity, instructionSettings, connections, tasks, attachments, email, ...(options.maxConcurrentRuns !== undefined ? {maxConcurrentRuns:options.maxConcurrentRuns} : {}) });
   engine.ownerRecovery=ownerRecovery;
   engine.instructionSettings=instructionSettings;
+  const toolDescriptions=options.toolDescriptions||engine.toolDescriptions||new ToolDescriptionOverrides({dataDir});
+  await toolDescriptions.init();
+  engine.toolDescriptions=toolDescriptions;
+  const executionLayers=options.executionLayers||engine.executionLayers||new ExecutionLayerOverrides({dataDir});
+  await executionLayers.init();
+  engine.executionLayers=executionLayers;
   const activeBrowserCleanupRunIds = () => {
     const ids = new Set(engine.executionStatus().activeRunIds || []);
     // Live/unsettled work protects the entire task. A *settled* failed or
@@ -1403,6 +1411,42 @@ export async function createHarnessServer(options = {}) {
         attempt(()=>browser.cancel());
         const results=await Promise.allSettled(pending),failures=results.filter(result=>result.status==='rejected').map(result=>String(result.reason?.message||result.reason));
         return json(res,failures.length?500:200,{cancelled,...(restartCancellationRequested?{restartCancellationRequested:true}:{}),...(failures.length?{error:'Some stop actions need attention.',details:failures}:{})});
+      }
+      if(pathname==='/api/execution-layers'){
+        if(Object.hasOwn(req.headers,'x-blackice-remote')&&req.method!=='GET')
+          return json(res,403,{error:'Edit execution layers locally in Config.'});
+        const runId=new URL(req.url,'http://localhost').searchParams.get('runId');
+        let observed=[];
+        if(runId){
+          if(!/^[a-zA-Z0-9_-]{1,120}$/.test(runId))
+            return json(res,400,{error:'Invalid execution ID.'});
+          const saved=await conversations.get(runId);
+          observed=Object.values(saved?.nodes||{}).flatMap(node=>node?.instructionAudit?.sections||[])
+            .filter(section=>['developer','prompt'].includes(section?.layer)
+              &&section.id!=='effective-developer'&&section.id!=='adapter-addendum');
+        }
+        const definitions=await engine.executionLayerDefinitions(observed);
+        if(req.method==='GET')return json(res,200,executionLayers.list(definitions));
+        if(req.method==='PUT'){
+          const input=await body(req);
+          const result=await mutateStorage(()=>executionLayers.save(input,definitions));
+          sendEvent({type:'execution-layers.updated',data:{revision:result.revision,affected:result.affected},at:new Date().toISOString()});
+          return json(res,200,result);
+        }
+        return json(res,405,{error:'Use GET or PUT.'});
+      }
+      if(pathname==='/api/tool-descriptions'){
+        if(Object.hasOwn(req.headers,'x-blackice-remote')&&req.method!=='GET')
+          return json(res,403,{error:'Edit tool descriptions locally in Config.'});
+        const definitions=engine.nativeToolDefinitions?.()||[];
+        if(req.method==='GET')return json(res,200,toolDescriptions.list(definitions));
+        if(req.method==='PUT'){
+          const value=await body(req);
+          const updated=await mutateStorage(()=>toolDescriptions.save(value,definitions));
+          sendEvent({type:'tool-descriptions.updated',data:{revision:updated.revision,name:value?.name},at:new Date().toISOString()});
+          return json(res,200,updated);
+        }
+        return json(res,405,{error:'Use GET or PUT.'});
       }
       if(pathname==='/api/instructions/developer-layer'){
         if(req.method==='GET')return json(res,200,await readDeveloperLayer(dataDir));

@@ -35,7 +35,7 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
   const read={name:'relay_skills',arguments:{action:'read',id},callId:'read-1'};
   const search={...read,callId:'search-1',arguments:{action:'search',query:'word'}};
   const invalid={...read,callId:'invalid',arguments:{action:'read',id:'no-such-skill'}};
-  const before=()=>assert.deepEqual([...engine.runs.values()][0].skillLoadReceipts,[automatic,antiCompletion]);
+  const before=()=>assert.deepEqual([...engine.runs.values()][0].skillLoadReceipts||[],[],'searches, failed reads and prompt acceptance do not load skills automatically');
   // The UI's catalog detail endpoint uses the same reader independently.
   const catalogEntry=await createSkillsCatalog({dataDir:engineDir}).detail({id});
   const catalogBody=catalogEntry.content;
@@ -47,7 +47,7 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
       assert.equal([...engine.runs.values()][0].skillLoadReceipts,undefined);
       onPromptAccepted('An unrelated prompt');
       assert.equal([...engine.runs.values()][0].skillLoadReceipts,undefined);
-      assert.ok(prompt.includes('Define done by the actual requested result'));
+      assert.ok(!prompt.includes('Define done by the actual requested result'),'no standing skill summary is sent');
       assert.ok(!prompt.includes(catalogBody),'automatic brief does not inject the full skill');
       onPromptAccepted(prompt);onPromptAccepted(prompt);
       before();
@@ -81,7 +81,7 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
   assert.equal(run?.settled,true);
   assert.equal(run.status,'completed',run.error);
   const receipt={type:'skill_loaded',skillId:id,title};
-  assert.deepEqual(run.skillLoadReceipts,[automatic,antiCompletion,receipt]);
+  assert.deepEqual(run.skillLoadReceipts,[receipt]);
   const evidence=run.events.filter(e=>e.data?.type==='skill_loaded');
   assert.equal(evidence.length,1);
   assert.deepEqual(evidence[0].data,receipt);
@@ -91,12 +91,12 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
   await archive.capture(engine.getRun(started.id));await archive.close();
   const raw=await readFile(path.join(archiveDir,'conversations',started.id+'.json'),'utf8');
   const persisted=JSON.parse(raw),capturedAudit=persisted.nodes.agent.instructionAudit;
-  assert.ok(capturedAudit.sections.some(section=>section.id==='skill-'+id && section.text.includes('Define done by the actual requested result')),'the audit retains the exact projected skill and its identity');
+  assert.ok(capturedAudit.sections.some(section=>section.role==='tool' && section.source.endsWith(id) && section.text===catalogBody),'the accepted tool read is captured with the exact effective body');
   const metadataOnly=JSON.stringify(persisted,(key,value)=>key==='instructionAudit'?undefined:value);
   assert.ok(!metadataOnly.includes(JSON.stringify(catalogBody).slice(1,-1)),'skill receipt metadata and ordinary archived fields do not duplicate the skill body');
-  assert.deepEqual(persisted.skillLoadReceipts,[automatic,antiCompletion,receipt]);
+  assert.deepEqual(persisted.skillLoadReceipts,[receipt]);
   const reopened=await new ConversationArchive({dataDir:archiveDir,engine:new EmptyEngine()}).init();archives.push(reopened);
   const saved=(await reopened.family(started.id)).runs[0];
-  assert.deepEqual(saved.skillLoadReceipts,[automatic,antiCompletion,receipt]);
+  assert.deepEqual(saved.skillLoadReceipts,[receipt]);
   assert.deepEqual(saved.nodes.agent.instructionAudit,capturedAudit,'archive reopen preserves the captured instruction snapshot');
 });

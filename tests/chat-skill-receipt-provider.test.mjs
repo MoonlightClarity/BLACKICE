@@ -129,19 +129,19 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   assert.match(toolResult(2,'missing'),/not found/i);
   const deliveredSkill=JSON.parse(toolResult(3,'load')).entry;
   assert.equal(deliveredSkill.content,pdfSkill.content);assert.equal(deliveredSkill.provenance.revision,pdfSkill.provenance.revision);
-  assert.deepEqual(observed.slice(0,4),[[],[automatic,antiCompletion,pdfAutomatic],[automatic,antiCompletion,pdfAutomatic],[automatic,antiCompletion,pdfAutomatic]],
-    'The automatic prompt receipt starts after first acceptance; discovery, a miss, and a not-yet-accepted body do not emit a skill-loaded receipt.');
+  assert.deepEqual(observed.slice(0,4),[[],[],[],[]],
+    'No skill enters the prompt automatically; discovery and misses do not emit loaded receipts.');
   const projected=projectFamily({rootId:done.id,runs:[done]}).runs[0];
   for(const receipts of [observed[4],done.skillLoadReceipts,projected.skillLoadReceipts]){
-    assert.deepEqual(receipts,[automatic,antiCompletion,pdfAutomatic,explicit], 'The accepted automatically submitted body and explicit tool read have distinct receipts, even after the repeat.');
+    assert.deepEqual(receipts,[explicit], 'Only the verified full tool read is recorded, even after a repeat.');
     assert.ok(receipts.every(receipt=>!('content' in receipt)));
   }
 
   const completion=automatic.skillId,wire=index=>requests[index].messages.map(item=>item.content).join('\n');
   const assertCore=text=>{assert.match(text,/EXECUTION COMPLETION/);assert.ok(text.includes(EXECUTION_COMPLETION_RULE));};
   assertCore(wire(0));
-  assert.match(wire(0),/WHAT MAKES DONE \(bundled execution method\)/);
-  assert.ok(wire(0).includes('Define done by the actual requested result'));
+  assert.doesNotMatch(wire(0),/WHAT MAKES DONE \(bundled execution method\)/);
+  assert.ok(!wire(0).includes('Define done by the actual requested result'));
   assert.ok(!wire(0).includes(completionSkill.content),'full automatic skill is available only on demand');
   catalog=createSkillsCatalog({dataDir:path.join(dir,'engine')});
   const packaged=await catalog.detail({id:completion});
@@ -151,14 +151,14 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   const editedWire=wire(turns.get(editedRun.id).workerStart);
   assertCore(editedWire);
   // Both task execution and supported model skill lookup use the owner-facing choice.
-  assert.match(editedWire,/WHAT MAKES DONE \(owner-edited execution method\)[\s\S]*local revision 2/);
+  assert.doesNotMatch(editedWire,/WHAT MAKES DONE \(owner-edited execution method\)/);
   assert.ok(!editedWire.includes('Owner completion fixture 9321'),'owner body remains available on demand');
   assert.ok(!editedWire.includes(completionSkill.content));
-  assert.ok(wire(0).includes('packaged revision '+completionSkill.provenance.revision+'.'));
+  assert.ok(!wire(0).includes('packaged revision '+completionSkill.provenance.revision+'.'));
   assert.ok(!wire(0).includes(completionSkill.content));
   const ownerReceipt={...automatic,source:'user',sourceRevision:2};
-  assert.deepEqual(editedRun.skillLoadReceipts,[ownerReceipt,antiCompletion]);
-  assert.deepEqual(projectFamily({rootId:editedRun.id,runs:[editedRun]}).runs[0].skillLoadReceipts,[ownerReceipt,antiCompletion]);
+  assert.deepEqual(editedRun.skillLoadReceipts||[],[]);
+  assert.deepEqual(projectFamily({rootId:editedRun.id,runs:[editedRun]}).runs[0].skillLoadReceipts||[],[]);
 
   const removed=await catalog.delete({id:completion,value:{expectedRevision:edited.revision}});
   const deletedRun=await run('Keep the core completion contract only.');
@@ -166,7 +166,7 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   assertCore(deletedWire);
   assert.doesNotMatch(deletedWire,/WHAT MAKES DONE \((?:bundled|owner-edited) execution method\)|Owner completion fixture 9321/);
   assert.ok(!deletedWire.includes(completionSkill.content));
-  assert.deepEqual(deletedRun.skillLoadReceipts,[antiCompletion]);
+  assert.deepEqual(deletedRun.skillLoadReceipts||[],[]);
   await assert.rejects(catalog.detail({id:completion}),{status:404});
   const restored=await catalog.restore({id:completion,value:{expectedRevision:removed.revision}});
   assert.equal(restored.content,edited.content);

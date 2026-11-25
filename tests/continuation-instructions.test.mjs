@@ -42,10 +42,10 @@ test('revised continuation instructions reach the native turn on the same provid
   assert.equal(resumes[0].params.threadId,threadId);
   assert.equal(turns[1].params.threadId,threadId);
   const sent=turns[1].params.input.map(item=>item.text||'').join('\n');
-  for(const turn of turns)assert.ok(turn.params.input[0].text.includes(projectExecutionSkill(injected).text));
+  for(const turn of turns)assert.ok(!turn.params.input[0].text.includes(projectExecutionSkill(injected).text),'old skill is not auto-injected into either turn');
   for(const runId of [first.id,next.id]){
-    const run=engine.getRun(runId);assert.deepEqual(run.skillLoadReceipts,[receipt,antiCompletion]);
-    assert.equal(run.events.filter(event=>event.data.type===receipt.type).length,2);
+    const run=engine.getRun(runId);assert.deepEqual(run.skillLoadReceipts||[],[]);
+    assert.equal(run.events.filter(event=>event.data.type===receipt.type).length,0);
   }
   assert.ok(sent.includes(prompt),'the actual native turn request carries the new brief');
   assert.ok(!sent.includes('ORIGINAL_AGENT_BRIEF'),'the resumed turn does not resend superseded instructions');
