@@ -16,7 +16,7 @@ async function readCurrentGuidance(id){
  const expectedRevisions={
   'library-what-makes-done':'agency-efficiency-20261125',
   'library-simplest-complete-path':'clarity-20261121',
-  'library-long-term-judgment':'clarity-20261121',
+  'library-long-term-judgment':'skill-allocation-20261125',
  };
  assert.ok(Object.hasOwn(expectedRevisions,id),'guidance has an explicit current revision expectation');
  assert.equal(skill.provenance.revision,expectedRevisions[id]);
