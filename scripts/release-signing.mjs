@@ -33,7 +33,7 @@ export async function publicSigningConfiguration(environment = process.env, { re
 export function publicBuilderConfiguration(signing, { source, output, requireCodeSigning = false }) {
   if (!signing?.configured && (requireCodeSigning || signing?.requested || signing?.errors?.length)) throw Error(`Signing was requested but its explicit publisher and certificate configuration is incomplete or invalid. ${[...(signing?.missing || []),...(signing?.errors || [])].join(' ')}`);
   const builder = signing?.configured ? signing.builder : {forceCodeSigning:false,win:{signExecutable:false,signAndEditExecutable:true,verifyUpdateCodeSignature:false}};
-  return { extends:path.join(source,'desktop/electron-builder.yml'), ...builder, directories:{output}, artifactName:'Blackice-${version}-Setup.${ext}', win:{...builder.win,target:[{target:'nsis',arch:['x64']}]}, nsis:{include:'desktop/installer.nsh',oneClick:false,perMachine:false,allowElevation:false,allowToChangeInstallationDirectory:false,createDesktopShortcut:true,shortcutName:'BLACKICE',deleteAppDataOnUninstall:false} };
+  return { extends:path.join(source,'desktop/electron-builder.yml'), ...builder, directories:{output}, artifactName:'Blackice-${version}-Setup.${ext}', win:{...builder.win,target:[{target:'nsis',arch:['x64']}]}, nsis:{include:'desktop/installer.nsh',runAfterFinish:true,oneClick:false,perMachine:false,allowElevation:false,allowToChangeInstallationDirectory:false,createDesktopShortcut:true,shortcutName:'BLACKICE',deleteAppDataOnUninstall:false} };
 }
 
 export async function verifyPublisherSignature(file, publisher, { platform = process.platform, execute = executeFile } = {}) {
