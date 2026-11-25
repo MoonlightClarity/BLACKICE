@@ -5,9 +5,22 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+// Reject only the known forms of accumulated development history, not useful guides,
+// runtime skills, licensing, or test fixtures. Git history retains removed records.
+export function obsoleteDocumentationPaths(paths) {
+  return paths.filter(p =>
+    /^RELEASE-NOTES-\d+(?:\.\d+){1,2}\.md$/i.test(p) ||
+    p === 'docs/document-status.json' || p === 'docs/README.md' ||
+    /^docs\/(?:history|research|verification|design)\//i.test(p) ||
+    /^docs\/[^/]*[-_]20(?:\d{6}|\d{2}[-_]\d{2}[-_]\d{2})[^/]*\.(?:md|json)$/i.test(p) ||
+    /^verification\/[^/]+\.(?:tap|jsonl)$/i.test(p) ||
+    /^tests\/(?:retired|legacy)\//i.test(p)
+  );
+}
+
 const tracked=execFileSync('git',['ls-files','-z'],{cwd:root,encoding:'utf8'}).split('\0').filter(Boolean);
 const documents=tracked.filter(p=>p.endsWith('.md')&&!p.startsWith('lib/vendor/')&&!p.startsWith('tests/fixtures/')&&!p.startsWith('verification/')&&fs.existsSync(path.join(root,p)));
-const failures=[];
+const failures=obsoleteDocumentationPaths(tracked).map(p=>'obsolete tracked development material: '+p);
 let checked=0;
 for(const p of documents){
   const file=path.join(root,p);

@@ -4,22 +4,34 @@ on:
   pull_request:
     paths:
       - '**/*.md'
+      - 'docs/**'
+      - 'verification/*.tap'
+      - 'verification/*.jsonl'
+      - 'tests/retired/**'
+      - 'tests/legacy/**'
       - 'package.json'
       - 'scripts/check-documentation.mjs'
       - '.github/workflows/check-documentation.yml'
       - '.github/workflows/publish-windows-release.yml'
       - '.github/release-request.json'
+      - 'tests/check-documentation.test.mjs'
       - 'tests/release-publication-contract.test.mjs'
       - 'tests/release-request.test.mjs'
   push:
     branches: [main]
     paths:
       - '**/*.md'
+      - 'docs/**'
+      - 'verification/*.tap'
+      - 'verification/*.jsonl'
+      - 'tests/retired/**'
+      - 'tests/legacy/**'
       - 'package.json'
       - 'scripts/check-documentation.mjs'
       - '.github/workflows/check-documentation.yml'
       - '.github/workflows/publish-windows-release.yml'
       - '.github/release-request.json'
+      - 'tests/check-documentation.test.mjs'
       - 'tests/release-publication-contract.test.mjs'
       - 'tests/release-request.test.mjs'
 
@@ -32,5 +44,6 @@ jobs:
         with:
           node-version: '22'
       - run: npm run docs:check
+      - run: node --test tests/check-documentation.test.mjs
       - name: Preserve the requested automatic release behavior
         run: node --test tests/release-publication-contract.test.mjs
