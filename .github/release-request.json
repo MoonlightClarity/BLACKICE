@@ -2,6 +2,6 @@
     "format":  1,
     "version":  "2.40.82",
     "publish":  true,
-    "appFingerprint":  "b9acfcbf2136502eb0d7840ef9484add90886c064da27e9d623dd9b1a9bfbd9e",
+    "appFingerprint":  "b20307d0cb0467c3324a905b5d115218e2d5a743513be730987a0d8a943ab6c1",
     "sourceTestReceipt":  "verification/windows-source-publication-2.40.82-integration.json"
 }
