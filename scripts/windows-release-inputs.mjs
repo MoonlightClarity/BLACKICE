@@ -45,7 +45,7 @@ export function nativeRestartCLIOutcome(log, exitCode) {
 }
 
 export function forbiddenWindowsPackagePath(relative) {
-  return relative === 'desktop/build-icon.mjs' || relative.endsWith('.test.mjs') || relative.includes('.currents-backup-') || relative.split('/').some(part => part.endsWith('.ownership-backup')) || /(^|\/)(\.git|\.env(?:\..*)?|data|workspace|tests|node_modules)(\/|$)/.test(relative);
+  return relative === 'desktop/build-icon.mjs' || relative === 'desktop/upgrade-preflight.ps1' || relative.endsWith('.test.mjs') || relative.includes('.currents-backup-') || relative.split('/').some(part => part.endsWith('.ownership-backup')) || /(^|\/)(\.git|\.env(?:\..*)?|data|workspace|tests|node_modules)(\/|$)/.test(relative);
 }
 
 

@@ -36,7 +36,7 @@ test('long evidence fixture is reproducible, multi-shard, and has a passing inde
  await applyEventReplayGold(write);
  await write('test/hidden-acceptance.test.mjs',hidden);
  const childEnv={...process.env};delete childEnv.NODE_TEST_CONTEXT;
- const accepted=spawnSync(process.execPath,['--test','test/public.test.mjs','test/hidden-acceptance.test.mjs'],{cwd:root,encoding:'utf8',timeout:30000,env:childEnv});
+ const accepted=spawnSync(process.execPath,['--test','--test-reporter=tap','test/public.test.mjs','test/hidden-acceptance.test.mjs'],{cwd:root,encoding:'utf8',timeout:30000,env:childEnv});
  assert.equal(accepted.status,0,(accepted.stdout||'').slice(-3200)+'\n'+(accepted.stderr||'').slice(-700));
  assert.match(accepted.stdout,/# pass 21/);
  t.diagnostic('Long evidence corpus: '+manifest.bytes+' UTF-8 bytes across 8 independent diagnostic shards; gold solution 21/21.');
