@@ -1,6 +1,6 @@
 # Analytical fidelity: isolated benchmark record
 
-**Scope:** Isolated branch \`fix/analysis-intent-continuity-1124\`, based on \`f36d06bc\`, with implementation \`5c27af2f\`. This report does not authorize a production installation, merge, or model substitution. It excludes the underlying private source document, contact details, full prompts, and unredacted model transcripts.
+**Scope:** Isolated branch `fix/analysis-intent-continuity-1124`, based on `f36d06bc`, with implementation `5c27af2f`. This report does not authorize a production installation, merge, or model substitution. It excludes the underlying private source document, contact details, full prompts, and unredacted model transcripts.
 
 ## Demonstrated repair
 
@@ -20,6 +20,12 @@ The original two failure modes were (a) interpreting an evaluator persona as a p
 | Exact compact-analysis user prompt control | GPT-6 Luna through authenticated Codex CLI, same 8,577-character source + neutral-summary prompt | Completed in about 12 s; connected evidence across positions, distinguished reported practice from proven outcomes, and treated missing evidence mainly as interview questions | **Better, not certified**. Some weaker claims and awkward chronology remain |
 
 All tested model calls were read-only. MiniCPM used a temporary local llama.cpp server, then that server was explicitly stopped. Luna used a separate Codex CLI transport with subscription authentication, so the last row is **not a transport-controlled model-only ablation**. No paid API key was passed. Both source content and model responses remain in untracked private local receipts, not in the Git commit.
+
+## Additional control: omit the neutral summary
+
+A fresh GPT-6 Luna run used the same original text and analytical instruction as the compact comparison but omitted the separate neutral model summary. It completed in about 12 seconds and connected the reported analytical work, product responsibilities, and practical interview questions. It also leaned more heavily on contract duration when questioning leadership scope, without a vacancy requiring conventional tenure. The version with the neutral summary was somewhat better calibrated in this specific comparison, but one sample does not establish a causal effect.
+
+The comparison also exposes a limitation of this experiment: the strong model used an authenticated Codex CLI transport with different hidden system context. The input source and user task were held constant, but provider transport and model changed. Do not treat the results as a controlled model-only estimate or a requirement to use a subscription.
 
 ## Conclusion and decision
 
