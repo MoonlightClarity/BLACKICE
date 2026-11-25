@@ -34,6 +34,8 @@ test('compact source analysis preserves real source layout and returns one direc
   assert.match(phase.prompt,/Source subject: candidate described in the résumé/);
   assert.match(phase.prompt,/Repository: https:\/\/example.test\/project/);
   assert.match(phase.prompt,/B.A.S., Administration/);
+  const actualPage=JSON.parse(grounding.records[0].result.contentItems[0].text).pages[0].text;
+  assert.ok(phase.prompt.includes(actualPage),'the model must receive exact original page text, including line breaks');
   assert.doesNotMatch(phase.prompt,/NEUTRAL SUMMARY \(model interpretation\)/);
   return {output:'The source describes evaluating expert work; an interview should examine actual review quality. The linked repository is source evidence of a project, not independent proof of its quality.',threadId:'provider_direct_mock',usage:{totalTokens:58}};
  },onUpdate:r=>changes.push(r.status)});
