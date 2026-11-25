@@ -7,6 +7,7 @@ import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
 import {wantsIntentInferenceSkill} from '../lib/chat-intent-inference.mjs';
 import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
+import {projectExecutionSkill} from '../lib/execution-skill-brief.mjs';
 import {createMissionWorkflow} from '../public/mission-model.mjs';
 
 const id='library-intent-inference';
@@ -79,10 +80,11 @@ test('Planning Off execution gets only the accepted, effective Intent Inference 
  };
  const defaultRun=await invoke(jobs,'on');
  assert.ok(defaultRun.prompt.includes(block));
- assert.ok(defaultRun.prompt.includes(bundledIntentBody),'the complete current bundled body reaches execution');
+ assert.ok(defaultRun.prompt.includes(projectExecutionSkill({id,content:bundledIntentBody,description:bundledIntent.description}).text),'bounded current method projection reaches execution');
+ assert.ok(!defaultRun.prompt.includes(bundledIntentBody),'full method is read on demand');
  assert.equal(defaultRun.prompt.split(block).length,2);
  assert.deepEqual(defaultRun.receipts.filter(r=>r.skillId===id),
-  [{type:'skill_context_submitted',skillId:id,title:'Intent Inference',source:'bundled',sourceRevision:bundledIntent.source.revision}]);
+  [{type:'skill_context_submitted',skillId:id,title:'Intent Inference',source:'bundled',sourceRevision:bundledIntent.source.revision,contentMode:'brief'}]);
 
  const resumeSeed=await invoke(jobs);
  const continued=engine.continueRun(resumeSeed.id,{nodeId:'agent',message:jobs,directoryActions:'off',chatPlanning:'off'});
@@ -99,10 +101,11 @@ test('Planning Off execution gets only the accepted, effective Intent Inference 
  const ownerMethod='# Owner method\nOwner method controls what may be repeated.';
  const edited=await catalog.save({id,value:{expectedRevision:1,content:ownerMethod}});
  const custom=await invoke(reporting);
- assert.ok(custom.prompt.includes(ownerMethod),'the complete owner override reaches execution');
+ assert.ok(custom.prompt.includes('Owner method controls what may be repeated.'),'the owner-defined purpose reaches execution');
+ assert.ok(!custom.prompt.includes(ownerMethod),'full owner body is available for on-demand read');
  assert.ok(!custom.prompt.includes(bundledIntentBody));
  assert.doesNotMatch(custom.prompt,/^# Intent Inference$/m);
- assert.deepEqual(custom.receipts.find(r=>r.skillId===id),{type:'skill_context_submitted',skillId:id,title:'Owner method',source:'user',sourceRevision:2});
+ assert.deepEqual(custom.receipts.find(r=>r.skillId===id),{type:'skill_context_submitted',skillId:id,title:'Owner method',source:'user',sourceRevision:2,contentMode:'brief'});
 
  accept=false;
  const unaccepted=await invoke(reporting);

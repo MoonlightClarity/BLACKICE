@@ -86,7 +86,7 @@ const jobConfirmationContract=[
 ];
 const assertJobConfirmationMethod=content=>{for(const expected of jobConfirmationContract)assert.ok(content.includes(expected),expected);};
 const heading='JOB SEARCH (advisory execution method; not permission)';
-const accepted={type:'skill_context_submitted',skillId:id,title:'Job Search',source:'bundled',sourceRevision:'agency-efficiency-20261125'};
+const accepted={type:'skill_context_submitted',skillId:id,title:'Job Search',source:'bundled',sourceRevision:'agency-efficiency-20261125',contentMode:'brief'};
 
 test('current actionable job requests select only the job skill, not the general intent skill',()=>{
  for(const input of [example,'Apply for jobs until 6 AM EST.','Apply for the Circana Senior Product Manager, AI Evaluation & Quality position.','Apply to this job opening.','Job search for me. Stop at 3 jobs.','Can you shortlist remote open roles?','Please load the Job Search skill.','Search job boards for research roles.']){
@@ -337,72 +337,71 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  const alignmentId='builtin-task-grounding';
  const alignmentHeading='ANTI-OVERALIGNMENT (advisory execution method; not permission)';
  const antiCompletion='library-anti-completion-bias';
- const completionReceipt=(source,sourceRevision)=>({type:'skill_context_submitted',skillId:antiCompletion,title:'Anti-Completion Bias',source,sourceRevision});
+ const completionReceipt=(source,sourceRevision)=>({type:'skill_context_submitted',skillId:antiCompletion,title:'Anti-Completion Bias',source,sourceRevision,contentMode:'brief'});
  const browserSkill='library-browser-navigation';
-  const completionId='library-what-makes-done',completionSkill=await catalog.detail({id:completionId});
-  const assertSharedConfirmationDelivery=record=>{
-   assert.ok(record.receipts.some(receipt=>receipt.skillId===completionId&&receipt.source==='bundled'&&receipt.sourceRevision===completionSkill.provenance.revision));
+ const completionId='library-what-makes-done',completionSkill=await catalog.detail({id:completionId});
+ const assertSharedConfirmationDelivery=record=>{
+   const receipt=record.receipts.find(row=>row.skillId===completionId);
+   assert.ok(receipt&&receipt.source==='bundled'&&receipt.sourceRevision===completionSkill.provenance.revision&&receipt.contentMode==='brief');
    for(const messages of record.workerRequests){
-    const wire=JSON.stringify(messages);
-    assert.ok(wire.includes(JSON.stringify(completionSkill.content).slice(1,-1)),'the complete shared confirmation method reaches every operational worker request');
-    for(const expected of sharedConfirmationContract)assert.ok(wire.includes(expected),expected);
+     const wire=JSON.stringify(messages);
+     assert.match(wire,/Define done by the actual requested result/);
+     assert.match(wire,/plan, search, tool call or progress report is not completion/);
+     assert.ok(!wire.includes(JSON.stringify(completionSkill.content).slice(1,-1)),
+       'the full shared method is accessible on demand, not injected into every worker turn');
    }
    assert.equal(record.assessmentRequests.length,1);
    for(const messages of record.assessmentRequests){
-    const wire=JSON.stringify(messages);
-    assert.ok(!wire.includes(JSON.stringify(completionSkill.content).slice(1,-1)),'the bundled worker-only operational manual is not duplicated into the read-only reviewer');
-    assert.ok(wire.includes(JSON.stringify(record.input).slice(1,-1)),'the original user request reaches the reviewer');
-    assert.match(wire,/BLACKICE ORDINARY TASK OUTCOME REVIEW/);
-    assert.match(wire,/actual user limits|current user limits/);
+     const wire=JSON.stringify(messages);
+     assert.ok(!wire.includes(JSON.stringify(completionSkill.content).slice(1,-1)),
+       'the read-only reviewer is not sent a second copy of worker guidance');
+     assert.ok(wire.includes(JSON.stringify(record.input).slice(1,-1)));
+     assert.match(wire,/BLACKICE ORDINARY TASK OUTCOME REVIEW/);
    }
-  };
+ };
  const job=await invoke(example);
-  assertSharedConfirmationDelivery(job);
- assert.ok(job.prompt.includes('An empty tab list means there is no tab to reuse'));
- assert.ok(job.prompt.includes('the link opened a new tab'));
+ assertSharedConfirmationDelivery(job);
+ assert.ok(job.prompt.includes('Use the contained browser and fresh page identity'));
  const browserRevision=(await catalog.detail({id:browserSkill})).provenance.revision;
- assert.ok(job.receipts.some(r=>r.skillId===browserSkill&&r.sourceRevision===browserRevision));
+ assert.ok(job.receipts.some(r=>r.skillId===browserSkill&&r.sourceRevision===browserRevision&&r.contentMode==='brief'));
  assert.equal(job.prompt.split('ANTI-COMPLETION BIAS (bundled execution method)').length,2);
- assert.ok(job.prompt.includes('Compare the request with the last result you actually observed'));
+ assert.ok(job.prompt.includes('Do not end a turn merely to describe work not done'));
  assert.deepEqual(job.receipts.filter(r=>r.skillId===antiCompletion),[completionReceipt('bundled','agency-judgment-20261124')]);
  assert.ok(job.prompt.includes(alignmentHeading));
- assert.ok(job.prompt.includes('Take the simplest route that delivers the whole result'));
- assert.ok(job.prompt.includes('Name the exact action and the observed obstacle'));
- assert.ok(job.prompt.includes('Make the best supported decision and take the step'));
- assert.doesNotMatch(job.prompt,/sponsor/i,'built-in instructions do not give away the unrelated factual form case');
- assert.equal(job.input,example,'built-in agreement policy does not alter the ordinary user request');
- assert.doesNotMatch(job.input,/sponsor|arbitrat/i,'the ordinary user request contains no form-answer coaching');
- assert.ok(job.receipts.some(r=>r.skillId===alignmentId&&r.title==='Anti-Overalignment'&&r.type==='skill_context_submitted'));
- assert.ok(job.prompt.includes(heading));assert.ok(job.prompt.includes('rolling last seven days'));assert.ok(job.prompt.includes('## Verify the exact vacancy'));
- assert.ok(job.prompt.includes('seek another legitimate intake or completion route for the'));
+ assert.ok(job.prompt.includes('Treat the user'));
+ assert.ok(job.prompt.includes('failed branch does not cancel independent work'));
+ assert.ok(job.prompt.includes('Choose live roles by overlap in actual duties and transferable skills'));
+ assert.ok(job.prompt.includes('Unverified work authorization or sponsorship'));
+ assert.ok(job.prompt.includes('NOT evidence every role is ineligible'));
+ assert.ok(job.prompt.includes('Do not invent credentials or categorical facts'));
+ assert.equal(job.input,example,'the unchanged request controls search-only scope');
+ assert.ok(job.receipts.some(r=>r.skillId===alignmentId&&r.title==='Anti-Overalignment'&&r.contentMode==='brief'));
+ assert.ok(job.prompt.includes(heading));
  assert.deepEqual(job.receipts.filter(r=>r.skillId===id),[accepted]);
  assert.ok(job.receipts.every(r=>r.skillId!=='library-intent-inference'));
 
  const applicationRun=await invoke(application);
-  assertSharedConfirmationDelivery(applicationRun);
-  assertJobConfirmationMethod(applicationRun.prompt);
- assert.equal(applicationRun.input,application,'the admitted task remains the unchanged ordinary request');
- assert.ok(applicationRun.requests.every(messages=>JSON.stringify(messages).includes(application)),'the unchanged user task reaches each real provider request');
- assertHistoryMethod(applicationRun.prompt);
- assert.doesNotMatch(applicationRun.input,/sponsor|arbitrat/i,'the unchanged ordinary apply request contains no agreement-answer coaching');
- assertAgreementMethod(applicationRun.prompt);
- assertJobSearchCalibrationMethod(applicationRun.prompt);
- assertJobSearchCalibrationMethod(job.prompt);
+ assertSharedConfirmationDelivery(applicationRun);
+ assert.equal(applicationRun.input,application,'the unchanged user request controls the delegated action');
+ assert.ok(applicationRun.requests.every(messages=>JSON.stringify(messages).includes(application)));
+ assert.ok(applicationRun.prompt.includes('Submit when supported, verify the destination receipt'));
+ assert.ok(applicationRun.prompt.includes('preserve exact-requisition duplicate protection'));
+ assert.ok(applicationRun.prompt.includes('Resolve or defer only the specific field or form'));
  assert.deepEqual(applicationRun.receipts.filter(r=>r.skillId===id),[accepted]);
 
  await catalog.save({id:antiCompletion,value:{expectedRevision:1,content:'# Anti-Completion Bias\nUse the owner-defined next-action instruction.'}});
  const ordinary=await invoke('Write a short explanation of how job search works.');
-  assertSharedConfirmationDelivery(ordinary);
-  assert.equal(ordinary.input,'Write a short explanation of how job search works.','the unrelated ordinary task remains unchanged');
+ assertSharedConfirmationDelivery(ordinary);
+ assert.equal(ordinary.input,'Write a short explanation of how job search works.');
  assert.ok(!ordinary.prompt.includes('BROWSER NAVIGATION AND CONTINUITY ('));
  assert.ok(ordinary.receipts.every(r=>r.skillId!==browserSkill));
- assert.ok(ordinary.prompt.includes('Use the owner-defined next-action instruction.'));
- assert.ok(!ordinary.prompt.includes('Compare the request with the last result you actually observed'));
+ assert.ok(!ordinary.prompt.includes('Use the owner-defined next-action instruction.'),
+   'owner-edited full body remains available on demand, rather than being injected automatically');
  assert.deepEqual(ordinary.receipts.filter(r=>r.skillId===antiCompletion),[completionReceipt('user',2)]);
  assert.ok(!ordinary.prompt.includes(alignmentHeading));
- assert.ok(ordinary.prompt.includes('Take the simplest route that delivers the whole result'));
  assert.ok(ordinary.receipts.every(r=>r.skillId!==alignmentId));
- assert.ok(!ordinary.prompt.includes(heading));assert.ok(ordinary.receipts.every(r=>r.skillId!==id));
+ assert.ok(!ordinary.prompt.includes(heading));
+ assert.ok(ordinary.receipts.every(r=>r.skillId!==id));
 
  for(const task of diagnosisOnlyWorkflows){
   const diagnostic=await invoke(task);
@@ -418,13 +417,14 @@ test('actual Compatible main-turn transport submits the job skill selectively an
  await catalog.delete({id:alignmentId,value:{expectedRevision:1}});
  await catalog.delete({id:antiCompletion,value:{expectedRevision:2}});
  const deleted=await invoke(example);
-  assertSharedConfirmationDelivery(deleted);
+ assertSharedConfirmationDelivery(deleted);
  assert.ok(!deleted.prompt.includes('ANTI-COMPLETION BIAS ('));
  assert.ok(deleted.receipts.every(r=>r.skillId!==antiCompletion));
  assert.ok(deleted.receipts.some(r=>r.skillId==='library-what-makes-done'));
  assert.ok(!deleted.prompt.includes(alignmentHeading));
  assert.ok(deleted.receipts.every(r=>r.skillId!==alignmentId));
- assert.ok(!deleted.prompt.includes(heading));assert.ok(deleted.receipts.every(r=>r.skillId!==id));
+ assert.ok(!deleted.prompt.includes(heading));
+ assert.ok(deleted.receipts.every(r=>r.skillId!==id));
  assert.equal(prompts.length,18,'nine ordinary worker conversations retain their original two requests');
  assert.equal(assessmentRequests.length,9,'one isolated assessment per ordinary conversation');
  assert.equal(allRequests.length,27,'skill selection adds no unaccounted provider calls');

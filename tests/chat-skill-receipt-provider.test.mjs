@@ -53,10 +53,10 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   const requests=[],observed=[],turns=new Map();
   const skillId='library-pdf-evidence', title='Read a PDF for evidence';
   const [pdfSkill,completionSkill,antiCompletionSkill]=await Promise.all([readBundledSkill(skillId),readBundledSkill('library-what-makes-done'),readBundledSkill('library-anti-completion-bias')]);
-  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:antiCompletionSkill.provenance.revision};
-  const automatic={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:completionSkill.provenance.revision};
+  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:antiCompletionSkill.provenance.revision,contentMode:'brief'};
+  const automatic={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:completionSkill.provenance.revision,contentMode:'brief'};
   const explicit={type:'skill_loaded',skillId,title};
-  const pdfAutomatic={type:'skill_context_submitted',skillId,title,source:'bundled',sourceRevision:pdfSkill.provenance.revision};
+  const pdfAutomatic={type:'skill_context_submitted',skillId,title,source:'bundled',sourceRevision:pdfSkill.provenance.revision,contentMode:'brief'};
   const calls=[
     ['lookup',{action:'search',query:'read PDF for evidence'}],
     ['missing',{action:'read',id:'missing-fixture-skill'}],
@@ -141,7 +141,8 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   const assertCore=text=>{assert.match(text,/EXECUTION COMPLETION/);assert.ok(text.includes(EXECUTION_COMPLETION_RULE));};
   assertCore(wire(0));
   assert.match(wire(0),/WHAT MAKES DONE \(bundled execution method\)/);
-  assert.ok(wire(0).includes(completionSkill.content));
+  assert.ok(wire(0).includes('Define done by the actual requested result'));
+  assert.ok(!wire(0).includes(completionSkill.content),'full automatic skill is available only on demand');
   catalog=createSkillsCatalog({dataDir:path.join(dir,'engine')});
   const packaged=await catalog.detail({id:completion});
   assert.equal(packaged.provenance.revision,completionSkill.provenance.revision);
@@ -150,10 +151,11 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   const editedWire=wire(turns.get(editedRun.id).workerStart);
   assertCore(editedWire);
   // Both task execution and supported model skill lookup use the owner-facing choice.
-  assert.match(editedWire,/WHAT MAKES DONE \(owner-edited execution method\)[\s\S]*local revision 2[\s\S]*Owner completion fixture 9321/);
+  assert.match(editedWire,/WHAT MAKES DONE \(owner-edited execution method\)[\s\S]*local revision 2/);
+  assert.ok(!editedWire.includes('Owner completion fixture 9321'),'owner body remains available on demand');
   assert.ok(!editedWire.includes(completionSkill.content));
   assert.ok(wire(0).includes('packaged revision '+completionSkill.provenance.revision+'.'));
-  assert.ok(wire(0).includes(completionSkill.content));
+  assert.ok(!wire(0).includes(completionSkill.content));
   const ownerReceipt={...automatic,source:'user',sourceRevision:2};
   assert.deepEqual(editedRun.skillLoadReceipts,[ownerReceipt,antiCompletion]);
   assert.deepEqual(projectFamily({rootId:editedRun.id,runs:[editedRun]}).runs[0].skillLoadReceipts,[ownerReceipt,antiCompletion]);

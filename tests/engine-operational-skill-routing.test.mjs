@@ -172,10 +172,16 @@ function requireSkillHeader(result, skill) {
   assert.deepEqual(identity, {id:skill.id, revision,
     source:skill.source === 'user' ? 'owner-edited' : 'bundled'});
   assert.deepEqual(read, {action:'read', id:skill.id});
-  assert.ok(section.text.endsWith(skill.content + '\n'), 'the full effective body is preserved after the header');
-  assert.ok(result.prompt.includes(JSON.stringify(section.text).slice(1, -1)), 'the complete header and body reach the actual provider');
-  assert.deepEqual(result.receipts.filter(row => row.skillId === skill.id).map(row => row.type), ['skill_context_submitted'],
-    'a visible read route does not fabricate a tool-read receipt');
+  const mode=section.text.endsWith(skill.content + '\n')?'full':'brief';
+  if(mode==='brief') {
+    assert.ok(section.text.includes('Complete skill remains available through relay_skills read'),
+      'the concise projection preserves an explicit full-body recovery route');
+    assert.ok(section.text.length < 1800, 'automatic guidance must stay bounded');
+  }
+  assert.ok(result.prompt.includes(JSON.stringify(section.text).slice(1, -1)),
+    'the exact projected header reaches the provider');
+  assert.deepEqual(result.receipts.filter(row => row.skillId === skill.id).map(row => [row.type,row.contentMode]),
+    [['skill_context_submitted',mode]],'the receipt states whether the provider received a full body or a brief');
   return read;
 }
 
@@ -234,8 +240,8 @@ test('direct and Mission application entry points deliver the same operational s
     const skill = await f.catalog.detail({ id });
     requireSkillHeader(mission, skill);
     requireSkillHeader(direct, skill);
-    assert.ok(mission.prompt.includes(JSON.stringify(skill.content).slice(1, -1)), id + ' body reached Mission provider');
-    assert.ok(direct.prompt.includes(JSON.stringify(skill.content).slice(1, -1)), id + ' body reached direct provider');
+    assert.ok(mission.prompt.includes('Complete skill remains available through relay_skills read'), id + ' available on demand in Mission');
+    assert.ok(direct.prompt.includes('Complete skill remains available through relay_skills read'), id + ' available on demand in direct');
   }
   assert.deepEqual(
     direct.receipts.filter(row => operationalIds.includes(row.skillId)),
@@ -319,7 +325,7 @@ test('both application entry points deliver current owner core and skill revisio
       const current = await f.catalog.detail({ id });
       requireSkillHeader(result, current);
       assert.equal(result.receipts.find(row => row.skillId === id).sourceRevision, current.revision);
-      assert.ok(result.prompt.includes(JSON.stringify(content).slice(1, -1)), route + ' receives the edited body');
+      assert.equal(result.receipts.find(row => row.skillId === id).contentMode,'brief');
     }
   }
 });
@@ -370,8 +376,9 @@ test('ordinary browser work delivers native cleanup in the actual provider tool 
     requireAbsent(result);
     const browser = result.requests[0].tools.find(tool => tool.function?.name === 'relay_browser')?.function;
     assert.ok(browser, 'the actual provider request must carry relay_browser');
-    assert.match(browser.description, /BROWSER TAB CLEANUP:/);
-    for (const required of ['incrementally', 'unfinished forms', 'pending effects', 'inUse', 'action:"close"', 'native tool result', 'action:"tabs"', 'verify removal', 'already absent']) assert.ok(browser.description.includes(required), required);
+    assert.match(browser.description, /BROWSER_TAB_NOT_FOUND/);
+    for (const required of ['tabs', 'snapshot', 'upload', 'take_ownership', 'actionDispatched:false']) assert.ok(browser.description.includes(required), required);
+    for(const action of ['close','suspend','tab_mark','tabs']) assert.ok(browser.parameters.properties.action.enum.includes(action),action);
     assert.doesNotMatch(browser.description, /blackice_browser_action|blackice_get_job/);
   }
 });

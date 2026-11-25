@@ -59,18 +59,18 @@ for(const isolatedHistory of [false,true])for(const remote of [false,true])test(
       return output(n);
     }
     assert.ok(options.prompt.includes(heading));
-    assert.match(options.prompt,/Check the last completed week on multiple independent sources/);
-    assert.doesNotMatch(options.prompt,/rolling last seven days/,'the owner skill replaces bundled content');
+    assert.match(options.prompt,/Choose live roles by overlap in actual duties and transferable skills/);
+    assert.doesNotMatch(options.prompt,/Check the last completed week on multiple independent sources/,'long owner body is read on demand');
     assert.ok(!run.skillLoadReceipts?.some(row=>row.skillId===skillId),'prepared is not accepted');
     options.onPromptAccepted(options.prompt);
     assert.deepEqual(run.skillLoadReceipts.filter(row=>row.skillId===skillId),[
-      {type:'skill_context_submitted',skillId,title:'Job Search',source:'user',sourceRevision:2},
+      {type:'skill_context_submitted',skillId,title:'Job Search',source:'user',contentMode:'brief',sourceRevision:2},
     ]);
     assert.equal(run.nodes.agent.instructionAudit.sections.find(row=>row.id==='skill-'+skillId)?.status,'accepted');
     if(remote){
-      assert.match(options.prompt,/REMOTE_METHOD_BODY_SENTINEL/);
+      assert.doesNotMatch(options.prompt,/REMOTE_METHOD_BODY_SENTINEL/,'long skill bodies stay available on demand');
       assert.deepEqual(run.skillLoadReceipts.filter(row=>row.skillId===remoteSkill.id),[
-        {type:'skill_context_submitted',skillId:remoteSkill.id,title:'Remote Job Search',source:'user',sourceRevision:remoteSkill.revision},
+        {type:'skill_context_submitted',skillId:remoteSkill.id,title:'Remote Job Search',source:'user',contentMode:'brief',sourceRevision:remoteSkill.revision},
       ]);
       assert.equal(run.nodes.agent.instructionAudit.sections.find(row=>row.id==='skill-'+remoteSkill.id)?.status,'accepted');
     }else assert.doesNotMatch(options.prompt,/REMOTE_METHOD_BODY_SENTINEL/);
@@ -255,10 +255,10 @@ test('Goal instruction text preserves counterparty reasoning across non-job-sear
   const goal={id:'vendor-goal',status:'active',objective:'Complete authorized vendor onboarding',turns:0};
   const goals=new ConversationGoals({engine:{runs:new Map()},conversations:{states:{root:{goal}}},autoStart:false});
   const instructions=goals.instructions({id:'initial-turn',taskId:'root',goal:{id:goal.id}});
-  assert.match(instructions,/Evaluate counterparty requirements and preferences rather than treating them as automatic vetoes\./);
-  assert.match(instructions,/make the most reasonable factual inference from available context/);
-  assert.match(instructions,/Complete independent fields and attachments now/);
-  assert.match(instructions,/An agent-reported blocker is not observed prevention/);
+  assert.match(instructions,/Unknown counterparty preferences or missing wording are not new user exclusions/);
+  assert.match(instructions,/current evidence/);
+  assert.match(instructions,/continue independent work/);
+  assert.match(instructions,/genuinely blocked/);
   assert.doesNotMatch(instructions,/Treat counterparties When handing off/);
 });
 
@@ -267,7 +267,7 @@ test('one goal continues for three turns in the same conversation and finishes w
     assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_goal'));
     assert.ok(options.dynamicTools.every(tool => tool.type === 'function'), 'Native dynamic tool catalog must be consistently canonical, including relay_goal');
     assert.match(options.developerInstructions,/PERSISTENT CONVERSATION GOAL/);
-    assert.match(options.developerInstructions,/Evaluate counterparty requirements and preferences rather than treating them as automatic vetoes\./,
+    assert.match(options.developerInstructions,/Unknown counterparty preferences or missing wording are not new user exclusions/,
       'Initial and continued Goals must receive usable delegated-agency guidance, not an incomplete instruction.');
     assert.doesNotMatch(options.developerInstructions,/Treat counterparties When handing off/);
     if (n > 1) {

@@ -30,8 +30,8 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
   });
   const id='library-what-makes-done',title='What Makes Done';
   const [completionSkill,antiCompletionSkill]=await Promise.all([readBundledSkill(id),readBundledSkill('library-anti-completion-bias')]);
-  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:antiCompletionSkill.provenance.revision};
-  const automatic={type:'skill_context_submitted',skillId:id,title,source:'bundled',sourceRevision:completionSkill.provenance.revision};
+  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:antiCompletionSkill.provenance.revision,contentMode:'brief'};
+  const automatic={type:'skill_context_submitted',skillId:id,title,source:'bundled',sourceRevision:completionSkill.provenance.revision,contentMode:'brief'};
   const read={name:'relay_skills',arguments:{action:'read',id},callId:'read-1'};
   const search={...read,callId:'search-1',arguments:{action:'search',query:'word'}};
   const invalid={...read,callId:'invalid',arguments:{action:'read',id:'no-such-skill'}};
@@ -47,7 +47,8 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
       assert.equal([...engine.runs.values()][0].skillLoadReceipts,undefined);
       onPromptAccepted('An unrelated prompt');
       assert.equal([...engine.runs.values()][0].skillLoadReceipts,undefined);
-      assert.ok(prompt.includes(catalogBody));
+      assert.ok(prompt.includes('Define done by the actual requested result'));
+      assert.ok(!prompt.includes(catalogBody),'automatic brief does not inject the full skill');
       onPromptAccepted(prompt);onPromptAccepted(prompt);
       before();
       const metadata=await onToolCall(search);
@@ -90,7 +91,7 @@ test('skill receipt requires delivery of a body read in the same turn and surviv
   await archive.capture(engine.getRun(started.id));await archive.close();
   const raw=await readFile(path.join(archiveDir,'conversations',started.id+'.json'),'utf8');
   const persisted=JSON.parse(raw),capturedAudit=persisted.nodes.agent.instructionAudit;
-  assert.ok(capturedAudit.sections.some(section=>section.text===catalogBody),'the instruction audit retains the exact delivered skill body');
+  assert.ok(capturedAudit.sections.some(section=>section.id==='skill-'+id && section.text.includes('Define done by the actual requested result')),'the audit retains the exact projected skill and its identity');
   const metadataOnly=JSON.stringify(persisted,(key,value)=>key==='instructionAudit'?undefined:value);
   assert.ok(!metadataOnly.includes(JSON.stringify(catalogBody).slice(1,-1)),'skill receipt metadata and ordinary archived fields do not duplicate the skill body');
   assert.deepEqual(persisted.skillLoadReceipts,[automatic,antiCompletion,receipt]);

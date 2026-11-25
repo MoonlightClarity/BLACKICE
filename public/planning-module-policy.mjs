@@ -14,7 +14,7 @@ export const PLANNING_ONTOLOGY_MODULES = Object.freeze([
 ]);
 export const DEFAULT_PLANNING_ONTOLOGY = Object.freeze({
   version: 2,
-  modules: Object.freeze(Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id}) => [id, id === 'subagents' || id === 'time_management']))),
+  modules: Object.freeze(Object.fromEntries(PLANNING_ONTOLOGY_MODULES.map(({id}) => [id, id === 'subagents']))),
 });
 const ids = new Set(PLANNING_ONTOLOGY_MODULES.map(({id}) => id));
 const validRecord = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -53,7 +53,7 @@ export function planningModuleEnabled(policy,id){return Boolean(policy&&normaliz
  * This does not add a host gate, extra approval or model round trip.
  */
 export const ANTI_OVERALIGNMENT_STOP_CALIBRATION = Object.freeze(["When one operation cannot proceed, record its specific missing input or observed failure and continue independent requested work.","Use relevant context and supported ordinary inference for routine decisions. A required field, missing resume phrase, preference or untested concern is not a new user constraint.","Check a missing fact when it can change the next action. Reuse an answer to a shared prerequisite instead of repeatedly parking equivalent tasks.","Use the user's stated constraints. Treat qualification lists and other parties' preferences as evidence to weigh. Make the best supported choice without adding per-step approval questions.","If a previous submission may have succeeded, inspect its destination or receipt before repeating it. Keep that uncertainty separate from uncertainty about an answer.","Report completed outcomes, unresolved effects and remaining work accurately."]);
-export const TIME_MANAGEMENT_INSTRUCTIONS = "Choose the amount of work needed for the requested result and the user's priorities. Spend effort on uncertainties that can change the outcome; reduce repeated inspection and polishing that cannot. For repeatable work, check the requested filters, act on suitable options and verify the result. Reassess after a concrete error, new evidence or user correction. Use observed clock time for deadlines. A plan, tool-call count or elapsed time is not a completed outcome. This method changes the work approach, not model settings, permissions or stopping limits.";
+export const TIME_MANAGEMENT_INSTRUCTIONS = 'Record timing as host telemetry only. Do not use elapsed time, a tool-call count or a depth heuristic to terminate an unfinished user request.';
 const descriptions = {
   time_management:TIME_MANAGEMENT_INSTRUCTIONS,
   inference:'identify user intent and real constraints before acting',

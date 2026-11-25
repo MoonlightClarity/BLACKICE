@@ -12,7 +12,7 @@ const policy=()=>normalizePlanningOntology();
 
 test('canonical module schema is Boolean On/Off with no Auto or Optional choices',()=>{
  const p=policy();assert.equal(p.version,2);assert.deepEqual(PLANNING_MODULE_STATES,['on','off']);
- assert.equal(Object.keys(p.modules).length,PLANNING_ONTOLOGY_MODULES.length);assert.ok(Object.entries(p.modules).every(([id,value])=>value===(id==='subagents'||id==='time_management')));
+ assert.equal(Object.keys(p.modules).length,PLANNING_ONTOLOGY_MODULES.length);assert.ok(Object.entries(p.modules).every(([id,value])=>value===(id==='subagents')));
  assert.equal('autoSelect' in p,false);
  for(const state of ['auto','optional','mandatory','forbidden','on','off'])assert.throws(()=>normalizePlanningOntology({version:2,modules:{inference:state}}),{code:'PLANNING_ONTOLOGY_INVALID'});
  assert.throws(()=>normalizePlanningOntology({version:2,autoSelect:false,modules:{}}),{code:'PLANNING_ONTOLOGY_INVALID'});

@@ -15,7 +15,8 @@ function projectSkillLoadReceipt(value){
   const source=value.type==='skill_context_submitted'&&['bundled','user'].includes(value.source)?value.source:undefined;
   const revision=value.sourceRevision,sourceRevision=source==='user'&&Number.isSafeInteger(revision)&&revision>=2?revision:
     source==='bundled'&&typeof revision==='string'&&/^[A-Za-z0-9_.-]{1,128}$/.test(revision)?revision:undefined;
-  return {type:value.type,skillId,title,...(source?{source}:{}),...(sourceRevision!==undefined?{sourceRevision}:{})};
+  const contentMode=value.type==='skill_context_submitted'&&['brief','full'].includes(value.contentMode)?value.contentMode:undefined;
+  return {type:value.type,skillId,title,...(source?{source}:{}),...(sourceRevision!==undefined?{sourceRevision}:{}),...(contentMode?{contentMode}:{})};
 }
 export function projectSkillLoadReceipts(values){
   if(!Array.isArray(values))return [];

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HarnessEngine } from '../lib/engine.mjs';
 import { readBundledSkill } from '../lib/skill-library.mjs';
+import {projectExecutionSkill} from '../lib/execution-skill-brief.mjs';
 import { CodexRuntime } from '../lib/codex.mjs';
 
 test('revised continuation instructions reach the native turn on the same provider thread', async t => {
@@ -14,7 +15,7 @@ test('revised continuation instructions reach the native turn on the same provid
   const runtime=new CodexRuntime({command:process.execPath,args:[fixture],cwd:directory,requestTimeoutMs:5000,runTimeoutMs:8000});
   const requests=[],request=runtime._request.bind(runtime);
   const injected=await readBundledSkill('library-what-makes-done');
-  const submitted=entry=>({type:'skill_context_submitted',skillId:entry.id,title:entry.title,source:entry.source,sourceRevision:entry.provenance.revision});
+  const submitted=entry=>({type:'skill_context_submitted',skillId:entry.id,title:entry.title,source:entry.source,sourceRevision:entry.provenance.revision,contentMode:'brief'});
   const antiCompletion=submitted(await readBundledSkill('library-anti-completion-bias'));
   const receipt=submitted(injected);
   let rejectTurn=false;
@@ -41,7 +42,7 @@ test('revised continuation instructions reach the native turn on the same provid
   assert.equal(resumes[0].params.threadId,threadId);
   assert.equal(turns[1].params.threadId,threadId);
   const sent=turns[1].params.input.map(item=>item.text||'').join('\n');
-  for(const turn of turns)assert.ok(turn.params.input[0].text.includes(injected.content));
+  for(const turn of turns)assert.ok(turn.params.input[0].text.includes(projectExecutionSkill(injected).text));
   for(const runId of [first.id,next.id]){
     const run=engine.getRun(runId);assert.deepEqual(run.skillLoadReceipts,[receipt,antiCompletion]);
     assert.equal(run.events.filter(event=>event.data.type===receipt.type).length,2);

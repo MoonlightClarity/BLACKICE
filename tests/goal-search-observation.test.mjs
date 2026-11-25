@@ -274,3 +274,17 @@ test('native confirmed commit receipts count once as intermediate progress, not 
  assert.equal(goal.noProgressTurns,1);assert.equal(goal.milestones.length,1);
  assert.equal(goal.status,'active');
 });
+
+test('an explicit admission of unfinished work triggers one bounded Goal continuation even without a recorded nextAction',async()=>{
+ const f=fixture();
+ await f.turn(search(null),receipt(cursor(1),100),{beforeSettle:async run=>{
+   run.startedAt=new Date().toISOString();
+   run.goalProgress=undefined;
+   run.goalEvidence=[];
+   const candidate={output:'No application was submitted. This turn ended before I could reconcile application history, check the resume or find current openings.'};
+   const first=f.goals.beforeCheckpoint(run,candidate);
+   assert.equal(first?.continue,true);
+   assert.match(first.prompt,/Execute the next useful available action/);
+   assert.equal(f.goals.beforeCheckpoint(run,candidate),null,'a second corrective admission would loop');
+ }});
+});

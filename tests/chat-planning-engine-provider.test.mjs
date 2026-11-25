@@ -81,10 +81,10 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   assert.match(requests[0].allText,/OWNER_PROVIDER_CORE/);
   assert.doesNotMatch(requests[0].body.messages[0].content,/EXECUTION COMPLETION|BLACKICE AGENT HARNESS/);
   assert.match(requests[0].allText,/WHAT MAKES DONE \(bundled execution method\)/);
-  assert.ok(receivedText(0).includes(completionSkill.content));
+  assert.ok(receivedText(0).includes('Define done by the actual requested result'));
   assert.equal(off.planningModuleReceipts,undefined);
-  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:antiCompletionSkill.provenance.revision};
-  const bundled={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:completionSkill.provenance.revision};
+  const antiCompletion={type:'skill_context_submitted',skillId:'library-anti-completion-bias',title:'Anti-Completion Bias',source:'bundled',sourceRevision:antiCompletionSkill.provenance.revision,contentMode:'brief'};
+  const bundled={type:'skill_context_submitted',skillId:'library-what-makes-done',title:'What Makes Done',source:'bundled',sourceRevision:completionSkill.provenance.revision,contentMode:'brief'};
   assert.deepEqual(off.skillLoadReceipts,[bundled,antiCompletion]);
   const on=await done(await start('Check the startup route',{chatPlanning:'on'}));
   assert.equal(on.status,'completed',on.error);
@@ -108,7 +108,7 @@ test('explicit Chat Planning reaches a real compatible provider and advances the
   assert.match(requests[2].allText,/ADVISORY PLANNING CHOICE/);
   assert.match(requests[1].allText,/OWNER_PREPARATION_METHOD/);
   assert.match(requests[2].allText,/WHAT MAKES DONE \(bundled execution method\)/);
-  assert.ok(receivedText(2).includes(completionSkill.content));
+  assert.ok(receivedText(2).includes('Define done by the actual requested result'));
   assert.doesNotMatch(requests[1].allText,/CRITICAL PATH|LONG-TERM JUDGMENT/);
   const parentAudit=on.nodes.agent.instructionAudit,preparation=parentAudit.preparations[0];
   assert.equal(parentAudit.preparations.length,1);
