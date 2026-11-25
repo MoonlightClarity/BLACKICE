@@ -285,6 +285,7 @@ test('employer reader role propagates into analysis and analyze-it continuation 
  assert.equal(firstReceipt.outlineOrigin,'observed-source-layout');
  assert.match(first.output,/From a hiring perspective/);
  assert.ok(first.output.length<1000,'default answer should not dump full source');
+ assert.doesNotMatch(first.output,/Source: page 1/,'host must not automatically certify model-proposed reference IDs');
  assert.doesNotMatch(first.output,/## Reverse outline|## Neutral source summary/);
  const firstSummaryPhases=phases.filter(p=>p.kind==='neutral-summary').length;
  const firstReads=reads;
@@ -300,4 +301,36 @@ test('employer reader role propagates into analysis and analyze-it continuation 
  assert.match(next.output,/From a hiring perspective/);
  assert.ok(next.output.length<1000);
  assert.match(next.nodes.agent.sourceReconstruction.source.sourceSha256,/^[a-f0-9]{64}$/);
+});
+
+test('malformed local JSON falls back once to ordinary source-grounded analysis in an isolated engine turn',async t=>{
+ const calls=[];
+ const f=await fixture(t,async options=>{
+  calls.push(options);
+  options.onPromptAccepted(options.prompt);
+  if(options.prompt.includes('ANALYSIS RECOVERY')){
+   assert.equal(options.outputSchema,undefined);
+   assert.equal(options.responseOnly,true);
+   assert.deepEqual(options.dynamicTools,[]);
+   return {output:'The supplied research report includes a project repository; lack of external adoption figures does not establish that the project does not exist.',threadId:'local_plain_'+calls.length};
+  }
+  return {output:'{"summaries":',threadId:'local_schema_'+calls.length};
+ },{model:'local_llamacpp::fixture'});
+ f.workflow.id='mission_chat_source_fallback_fixture';
+ const entry={...f.attachments.entries.get(ids.pdf),name:'research_report.pdf',pageCount:1};
+ f.attachments.entries.set(ids.pdf,entry);
+ const text='REPORT\nResearch project — Analysis\n• Completed a research report.\nRepository: https://example.test/project';
+ f.attachments.read=async()=>({attachment:entry,format:'pdf',totalPages:1,pages:[{page:1,startChar:0,text,totalChars:text.length,nextChar:null,textAvailable:true}],nextPage:null,nextChar:null});
+ const {createSkillsCatalog}=await import('../lib/skills-catalog.mjs');
+ const catalog=createSkillsCatalog({dataDir:f.engine.dataDir});
+ try{await catalog.create({value:{content:'---\nactivation: [substantive-analysis]\nanalysis_protocol: source-reconstruction-v1\n---\n# Source First\n\nDo the real source analysis.'}});}finally{await catalog.close();}
+ const run=await f.settled(f.engine.startRun({workflow:f.workflow,input:{task:'Analyze the attached research report',attachmentIds:[ids.pdf],planningMode:'off',chatPlanning:'off',directoryActions:'off'}}).id);
+ completed(run);
+ assert.equal(calls.length,3);
+ assert.equal(run.nodes.agent.sourceReconstruction.status,'fallback-response-returned');
+ assert.equal(run.nodes.agent.documentAnalysisOutcome,'best-effort-fallback-not-semantic-verification');
+ assert.match(run.nodes.agent.output,/includes a project repository/);
+ assert.doesNotMatch(run.nodes.agent.output,/Reverse outline of the source/);
+ assert.equal(run.nodes.agent.sourceReconstruction.semanticVerification,'not-established');
+ assert.equal(run.nodes.agent.sourceReconstruction.phases.filter(x=>x.kind==='fallback-analysis').length,1);
 });

@@ -53,10 +53,13 @@ test('real staged execution reconstructs before summary, only then sees the eval
  const result=await runSourceReconstructionAnalysis({grounding,input:actualTask,invoke,onUpdate:r=>updates.push(r)});
  assert.deepEqual(calls.map(x=>x.kind),['reverse-outline','neutral-summary','initial-assessment','challenge','synthesis']);
  assert.equal(result.receipt.status,'stages-returned');assert.equal(result.receipt.semanticVerification,'not-established');
+ assert.equal(result.receipt.claimReview.semanticVerification,'not-established');
+ assert.equal(result.receipt.claimReview.status,'inspected');
  assert.ok(result.receipt.phases.every(p=>p.delivery==='accepted-provider-request'&&p.status==='artifact-returned'));
  assert.doesNotMatch(result.output,/\n    - \*\*U3/);assert.match(result.receipt.outline[2].summary,/The reviewer, not the reviewed experts/);
  assert.ok(result.output.length<1200);
  assert.doesNotMatch(result.output,/## Neutral source summary/);
+ assert.doesNotMatch(result.output,/Source: page|Source: line/,'model-supplied reference IDs are not independent proof');
  assert.match(result.output,/real repository link/);
  assert.match(result.receipt.source.units[3].text,/Repository: https:\/\/example.test\/a/);
  assert.doesNotMatch(result.output,/No repository is documented/);
@@ -99,4 +102,41 @@ test('matched source layout retains literal branches, including numeric grades u
  assert.ok(outline);
  assert.deepEqual(outline.map(r=>r.parent),[0,1,2,2,2,0,6,7,7]);
  assert.deepEqual(outlineSummaryGroups(outline,src).flatMap(g=>g.units.map(u=>u.id)),src.units.map(u=>u.id));
+});
+
+test('malformed strict artifacts trigger one bounded plain-language source analysis instead of claiming completion',async()=>{
+ const calls=[],updates=[];
+ const result=await runSourceReconstructionAnalysis({grounding,input:'Analyze the document from its actual content',onFailureTryFallback:true,invoke:async phase=>{
+  calls.push({kind:phase.kind,hasSchema:Boolean(phase.outputSchema)});
+  phase.onAccepted();
+  if(phase.kind==='fallback-analysis'){
+   assert.equal(phase.outputSchema,undefined);
+   assert.match(phase.prompt,/ANALYSIS RECOVERY/);
+   assert.match(phase.prompt,/Repository: https:\/\/example.test\/a/);
+   return {output:'The supplied source describes reviewing expert work, not the reviewed experts diagnosing the candidate. It includes a repository link, but the repository contents are not independently checked.'};
+  }
+  return {output:'{}'};
+ },onUpdate:x=>updates.push(x.status)});
+ assert.equal(result.receipt.status,'fallback-response-returned');
+ assert.equal(result.receipt.semanticVerification,'not-established');
+ assert.equal(result.receipt.claimReview.semanticVerification,'not-established');
+ assert.deepEqual(calls.map(x=>x.kind),['reverse-outline','reverse-outline','fallback-analysis']);
+ assert.match(result.output,/reviewing expert work/);
+ assert.doesNotMatch(result.output,/Reverse outline of the source/);
+ assert.equal(result.receipt.phases.filter(x=>x.kind==='fallback-analysis').length,1);
+ assert.ok(updates.includes('partial'));
+});
+test('an empty fallback remains incomplete and never masquerades as analysis',async()=>{
+ const result=await runSourceReconstructionAnalysis({grounding,input:'Analyze the document',onFailureTryFallback:true,invoke:async phase=>({output:phase.kind==='fallback-analysis'?'   ':'{}'})});
+ assert.equal(result.receipt.status,'partial');
+ assert.equal(result.receipt.fallbackOutput,undefined);
+ assert.match(result.output,/analysis did not finish/i);
+});
+
+test('task instructions cannot be substituted for a source interpretation',()=>{
+ const instruction='Analyze the resume from the viewpoint of an employer';
+ assert.throws(()=>validateInitial({claims:[claim(instruction,'inference',[2])]},source.units),/imperative request/);
+ const validManual=[{id:1,text:'Analyze the user input before parsing the file.'}];
+ assert.deepEqual(validateInitial({claims:[claim('Analyze the user input before parsing the file.','source-assertion',[1])]},validManual)[0].claim,'Analyze the user input before parsing the file.');
+ assert.throws(()=>validateChallenge({review:[{id:1,challenge:instruction,counterRefs:[2],disposition:'retain',revised:claim('A valid interpretation','inference',[2])}],additional:[]},initial,source.units),/imperative request/);
 });
