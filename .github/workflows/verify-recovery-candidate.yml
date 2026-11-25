@@ -1,7 +1,7 @@
 name: Verify recovery and startup source candidate
 on:
   push:
-    branches: [codex/recovery-startup-2.39.96]
+    branches: [codex/recovery-startup-2.39.96, fix/windows-upgrade-detached-helpers-1125]
   workflow_dispatch:
 permissions:
   contents: read
@@ -20,6 +20,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: npm ci
+      - run: node --test tests/windows-upgrade-preflight.test.mjs
       - run: node scripts/source-suite-receipt.mjs source-suite-evidence
       - uses: actions/upload-artifact@v7
         if: always()
