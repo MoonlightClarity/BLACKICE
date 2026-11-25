@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import vm from 'node:vm';
+import { browserControlDescriptor, browserAssociatedFileInput } from '../desktop/browser-control-identity.mjs';
 
 // Exercise the production renderer function and public driver read path. Only
 // Electron and DOM boundaries are fixtures; no website or native app is opened.
@@ -30,7 +31,7 @@ function domFixture(children, protectedFields = []) {
   const key = '__snapshot_fixture', document = { forms: [], title: 'Role fixture', readyState: 'complete', documentElement: { children: [element('body', '', { children })] }, getElementById: () => null,
     querySelectorAll: selector => selector === 'input,select,textarea' ? descendants(children).filter(node => ['INPUT', 'SELECT', 'TEXTAREA'].includes(node.tagName)) : [] };
   const context = vm.createContext({ document, location: { href: 'https://jobs.example.test/role' }, getComputedStyle: el => ({ display: el.hidden ? 'none' : 'block', visibility: el.invisible ? 'hidden' : 'visible' }), [key]: { document, prefix: 'old', credentialFields: new WeakSet(protectedFields) } });
-  const run = (query = '', readContext = false) => JSON.parse(JSON.stringify(vm.runInContext(`(${snapshotSource})(${JSON.stringify(key)},"current",${JSON.stringify(query)},${readContext})`, context)));
+  const run = (query = '', readContext = false) => JSON.parse(JSON.stringify(vm.runInContext(`(${snapshotSource})(${JSON.stringify(key)},"current",${JSON.stringify(query)},${readContext},${browserControlDescriptor.toString()},${browserAssociatedFileInput.toString()})`, context)));
   return { key, context, run };
 }
 function roleFixture() {

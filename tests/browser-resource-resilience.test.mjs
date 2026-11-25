@@ -2,6 +2,7 @@ import {tabMarkChange,restoredTabMark,assertTabNotInUse} from '../lib/browser-in
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import { browserControlDescriptor, browserAssociatedFileInput } from '../desktop/browser-control-identity.mjs';
 import { readFile } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { createHash, randomUUID } from 'node:crypto';
@@ -247,18 +248,19 @@ test('query snapshots retain recent observed DOM refs within a bounded document 
   const context = vm.createContext({ document, location: { href: 'https://example.test/' }, getComputedStyle: () => ({ display: 'block', visibility: 'visible' }) });
   const start = source.indexOf('function pageSnapshot('), end = source.indexOf('\nfunction elementAction(', start);
   vm.runInContext(source.slice(start, end), context);
+  vm.runInContext("globalThis.pageSnapshotWithIdentity = (key, prefix, query, readContext = false) => pageSnapshot(key, prefix, query, readContext, (" + browserControlDescriptor.toString() + "), (" + browserAssociatedFileInput.toString() + "))", context);
   for (let group = 0; group < 15; group++) {
-    const result = context.pageSnapshot('snapshotState', 'doc-1', `group-${group} `);
+    const result = context.pageSnapshotWithIdentity('snapshotState', 'doc-1', `group-${group} `);
     assert.equal(result.elements.length, 100);
     assert.equal(context.snapshotState.elements.size, Math.min((group + 1) * 100, 800));
     assert.ok(result.elements.every(item => context.snapshotState.elements.has(item.ref)), 'Current observations are available for actions.');
     if (group >= 8) assert.ok([...context.snapshotState.elements.values()].every(element => !element.textContent.startsWith(`group-${group - 8} `)), 'Oldest observations are evicted when the cap is exceeded.');
   }
-  context.pageSnapshot('snapshotState', 'doc-1', 'no-match');
+  context.pageSnapshotWithIdentity('snapshotState', 'doc-1', 'no-match');
   assert.equal(context.snapshotState.elements.size, 800, 'An empty filtered read does not invalidate earlier observations.');
-  const unfiltered = context.pageSnapshot('snapshotState', 'doc-1', '');
+  const unfiltered = context.pageSnapshotWithIdentity('snapshotState', 'doc-1', '');
   assert.equal(unfiltered.elements.length, 300);
   assert.equal(context.snapshotState.elements.size, 800);
-  context.pageSnapshot('snapshotState', 'doc-2', 'group-0 ');
+  context.pageSnapshotWithIdentity('snapshotState', 'doc-2', 'group-0 ');
   assert.equal(context.snapshotState.elements.size, 100, 'A new document identity retires previous references.');
 });
