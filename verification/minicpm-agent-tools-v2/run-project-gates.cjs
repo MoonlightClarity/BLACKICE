@@ -43,7 +43,6 @@ async function documentationIndex() {
     for(const entry of await fs.readdir(absolute, {withFileTypes:true}))
       if(entry.isFile() && entry.name.endsWith('.md'))names.add(path.posix.join(directory, entry.name));
   }
-  names.add('docs/document-status.json');
   const records = [];
   for(const file of [...names].sort())records.push({relative:file, ...await ref(path.join(ROOT, file))});
   return {sha256:sha(JSON.stringify(records)), records};

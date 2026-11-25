@@ -16,7 +16,7 @@ This file indexes the preserved notices and provenance records. It is not a subs
 
 The source archive in `adblock-source.json` stores its original `records` and `files` objects in the `data` field, encoded as base64-compressed gzip. Decoding that field and decompressing it exposes the preserved source files and their licenses. The filter-list snapshots use a separate losslessly compressed bundle. Preserve both bundles and their notices when redistributing these components.
 
-The Apache license for BLACKICE-authored integration code does not change the MPL, MIT, or CC BY-SA terms of these bundled components. [BROWSER-PROTECTION.md](BROWSER-PROTECTION.md) describes the integration and its source provenance.
+The Apache license for BLACKICE-authored integration code does not change the MPL, MIT, or CC BY-SA terms of these bundled components. The bundled components retain their upstream licensing obligations.
 
 ## Catalyst reference catalog
 

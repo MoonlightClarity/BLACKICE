@@ -144,7 +144,7 @@ jobs:
           $setup=Join-Path $env:BLACKICE_DISTRIBUTION "Blackice-$env:RELEASE_VERSION-Setup.exe"
           $manifest=Join-Path $env:BLACKICE_DISTRIBUTION 'blackice-public-release.json'
           $checksums=Join-Path $env:BLACKICE_DISTRIBUTION 'SHA256SUMS.txt'
-          gh release create $env:RELEASE_TAG $setup $manifest $checksums --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --title "BLACKICE $env:RELEASE_VERSION" --notes-file "RELEASE-NOTES-$env:RELEASE_VERSION.md"
+          gh release create $env:RELEASE_TAG $setup $manifest $checksums --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --title "BLACKICE $env:RELEASE_VERSION" --notes-file RELEASE-NOTES.md
           if ($LASTEXITCODE -ne 0) { throw 'Draft creation or asset upload failed; inspect before retrying.' }
           $raw=gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json databaseId
           if ($LASTEXITCODE -ne 0) { throw 'Draft receipt lookup failed.' }

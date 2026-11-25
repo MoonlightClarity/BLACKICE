@@ -13,7 +13,7 @@ test('release requests retain the exact source and require an explicit publicati
   assert.equal(validateReleaseRequest(request()).publish, false);
   assert.equal(validateReleaseRequest({ ...request(), publish: true }).publish, true);
   assert.equal(validateReleaseRequest(request()).tag, 'v9.8.7');
-  assert.equal(validateReleaseRequest(request()).notes, 'RELEASE-NOTES-9.8.7.md');
+  assert.equal(validateReleaseRequest(request()).notes, 'RELEASE-NOTES.md');
   for (const value of [undefined, null, 'true', 1]) assert.throws(() => validateReleaseRequest({ ...request(), publish: value }), /explicitly/);
 });
 
@@ -274,7 +274,7 @@ test('exact source verification rejects matching-index partial receipts and prov
   const files = ['tests/first.test.mjs', 'tests/second.test.mjs'];
   for (const file of files) await fs.writeFile(path.join(directory, file), '/* isolated source inventory fixture */\n');
   await fs.mkdir(path.join(directory, 'verification'));
-  await fs.writeFile(path.join(directory, 'RELEASE-NOTES-' + value.version + '.md'), 'Synthetic release validation fixture.\n');
+  await fs.writeFile(path.join(directory, 'RELEASE-NOTES.md'), 'Synthetic release validation fixture.\n');
   value.appFingerprint = await appFingerprint(directory);
   const index = await releaseSourceIndex(directory);
   const receipt = { format: 1, product: 'BLACKICE', scope: 'source-publication', version: value.version,

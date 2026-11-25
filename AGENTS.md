@@ -15,3 +15,7 @@ The maintainer owns product and release decisions. Do not silently replace exist
 - After committing a release request, verify an actual GitHub Actions run with event `push` for that commit. A green local test is not proof that publication started; preserve existing evidence and investigate if the run is missing.
 
 The fast behavior check is a functional regression check, **not** an additional release approval or security gate. Only an explicit maintainer request changes this contract.
+
+## Documentation hygiene
+
+Keep tracked documentation small and current. Do not commit temporary investigations, model experiments, run logs, handoffs, per-version release-note files, or documentation-status inventories as permanent reference. Update existing guidance only when a user or maintainer actually needs it; otherwise let tests and Git history record development. No special documentation release or recurring review ritual is required.

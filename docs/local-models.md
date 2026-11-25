@@ -107,7 +107,7 @@ Under **Config → Models → Local models → llama.cpp → Advanced runtime & 
 The requested target is not a measured usable context. Use only a model that documents YaRN compatibility, and allow for additional memory use and potential quality loss. Verify the model's actual runtime context after loading before relying on the extension.
 ### Validation scope
 
-The adapter is covered by controlled HTTP and UI fixtures, including single-server mode, router lifecycle, context admission, image capabilities, and per-slot context metadata. A bounded MiniCPM-V 4.7 check also verified real managed-router startup and image-tool delivery with a full 262,144-token allocation; see [the measured profile and validation limits](minicpm-context-vision-runtime-20261120.md). This does not establish maximum-window recall or general coding quality. Sleeping processes are shown as sleeping rather than resident in memory; inference can wake them.
+The adapter is covered by controlled HTTP and UI fixtures, including single-server mode, router lifecycle, context admission, image capabilities, and per-slot context metadata. A bounded MiniCPM-V 4.7 check also verified real managed-router startup and image-tool delivery with a full 262,144-token allocation in a bounded test. This does not establish maximum-window recall or general coding quality. Sleeping processes are shown as sleeping rather than resident in memory; inference can wake them.
 
 Bundled-runtime implementation and provenance: [Bundled llama.cpp](BUNDLED-LLAMA.md). The published 2.40.75 installer passed packaging and native installation checks; that does not establish a reproducible MiniCPM benchmark or model performance on another host.
 

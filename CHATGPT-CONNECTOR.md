@@ -1,314 +1,34 @@
-# BLACKICE direct ChatGPT connector
+# Connect ChatGPT to BLACKICE
 
-## Architecture and setup
+ChatGPT can call BLACKICE's authenticated tools over MCP while BLACKICE runs on your Windows computer. The ChatGPT conversation does the reasoning; ordinary direct file, command, browser, and task operations do not launch another BLACKICE model. Explicit start-chat or goal tools can launch one.
 
-ChatGPT owns the calling conversation and reasoning. BLACKICE supplies tools for local files and commands, contained and connected native browsers, browser profile imports, durable action receipts, and saved planning data. Ordinary direct operations do not start a BLACKICE model or depend on ChatGPT Work computer tools. Explicit tools for starting a saved Chat, Goal, or Planning module can start the selected BLACKICE model; the current catalog and status identify those tools. The experimental BLACKICE-to-ChatGPT browser provider has been removed; the supported direction is ChatGPT calling BLACKICE.
+## Connect
 
-1. Keep BLACKICE and Tailscale running. In **Config → App connections → ChatGPT**, choose **Prepare this computer** and confirm public publication when requested. Copy the displayed server URL ending in `/mcp/chatgpt`. Reuse a healthy existing connection.
-2. In the intended ChatGPT account **on the web**, open **Plugins → + → Add custom MCP server**. Name it **BLACKICE connection**, paste this computer's URL, and choose **OAuth** with client metadata discovery (**CIMD**). Discovery should populate BLACKICE's authorization and token endpoints. No manual client ID, client secret or Owner login key is needed.
-3. Review the host's warning, choose **Create as a plugin**, then **Connect BLACKICE connection**. Complete **Install** if the host offers that separate step; some flows make the connection available automatically. Do not create another copy just because there is no Install button.
-4. On the authorization page, match its request code with the pending request in **BLACKICE → Config → App connections → ChatGPT**. Choose **Connect with full BLACKICE access**. The connection authorizes the complete BLACKICE tool catalog; there are no per-capability checkboxes. The browser returns to ChatGPT after the connection decision.
-5. Start a new conversation in ordinary **Chat mode**. Type `@BLACKICE` and choose **Plugins → BLACKICE connection**. A typed name, uploaded source archive, package listing, or Files-only picker does not attach this computer's tools.
-6. Send the setup guide's unique status-check prompt in that conversation. Verify the returned nonce, `app: "BLACKICE"`, `mode: "direct-execution"`, `available: true`, `modelStarted: false` and `providerTurns: false`. Check the actual `connectionId`, `grantedScopes`, and live tool count. The compatibility OAuth scope `read` does not limit the connected tool catalog. Only after seeing that actual matching result, choose **I see the matching result in ChatGPT** in BLACKICE.
+1. Start BLACKICE and sign in to Tailscale. Open **Config → App connections → ChatGPT**, select **Prepare this computer**, and explicitly confirm publishing the authenticated endpoint if needed.
+2. Copy the exact address BLACKICE displays (ending in /mcp/chatgpt). Do not guess the hostname or port.
+3. In ChatGPT on the web, open **Plugins → Add custom MCP server**. Use the displayed address, OAuth and client metadata discovery. Create/connect the custom BLACKICE plugin.
+4. When ChatGPT redirects for authorization, compare its request code with **BLACKICE → Config → App connections → ChatGPT**. Approve only the matching request. The current connection grants the available BLACKICE tool catalog; there are no per-tool approval checkboxes.
+5. Attach the installed BLACKICE plugin in the intended ChatGPT conversation. Send the unique status prompt from the BLACKICE setup panel.
+6. Confirm that the real tool response returns a matching nonce, app BLACKICE, mode direct-execution, available true, and modelStarted false. OAuth authorization or a displayed tool list alone does not establish a working connection.
 
-**Command access (`commands:run`):** Run a shell command in the configured workspace. Supports cancellation and saved results.
+A connection stays associated with its address and grant. Reuse a healthy one; do not repeatedly create duplicate plugins. If ChatGPT shows old tools, use **Refresh tools** in the existing plugin settings.
 
-These host setup and authentication concepts are covered by [OpenAI's custom MCP setup](https://developers.openai.com/api/docs/guides/custom-mcp-server) and [OAuth/CIMD documentation](https://developers.openai.com/plugins/build/auth). The official setup flow currently uses ChatGPT on the web. Account and workspace policy can affect which controls are available; an installed plugin can subsequently be used on other supported surfaces.
+## Address and startup
 
-New profiles use standard HTTPS port **443**, displayed without a port suffix. When 443 and 8443 are already owned by other services, the local CLI can opt into Tailscale Funnel HTTPS **10000** using `BLACKICE chatgpt prepare --confirm-public --https-port=10000`. This creates a separate owned endpoint at `https://<hostname>:10000/mcp/chatgpt`, leaves both existing ports untouched, and does not relax OAuth, route-ownership or publication consent. Saved **8443** profiles retain their existing URL. Use the exact displayed address; changing the origin invalidates the old grant and requires authorization again. BLACKICE refuses to adopt an unowned root route automatically. A reviewed, explicitly authorized migration must preserve other paths, unrelated routes and their existing public/private exposure. See [Remote access](REMOTE-ACCESS.md).
+New public configurations normally use HTTPS 443 through Tailscale Funnel. An existing configuration can retain its saved port. If both 443 and 8443 are occupied, an explicitly configured port 10000 can be used without replacing unrelated routes. Use the actual address shown by BLACKICE.
 
-The installed app also supports `BLACKICE chatgpt --help` from a command line. With BLACKICE running and Tailscale installed and signed in, `BLACKICE chatgpt status` inspects setup; `BLACKICE chatgpt prepare --confirm-public` publishes the authenticated endpoint and enables access; and `BLACKICE chatgpt check` tests public discovery. Status reports the address and pending authorization requests. After matching the code shown on the ChatGPT authorization page, use `BLACKICE chatgpt approve --code=CODE --scope=read` with `read` as the compatibility transport scope. A completed connector authorization grants the entire BLACKICE tool catalog; additional capability selections are no longer required. `BLACKICE chatgpt startup` configures available Windows startup prerequisites. These commands do not create or attach the ChatGPT plugin, sign in to Tailscale, or verify a result inside ChatGPT. Use `--profile-dir=PATH` for a custom running profile.
+The Windows host and BLACKICE must be running for tools to work. Tailscale unattended mode and BLACKICE's Windows sign-in startup option are independent; verify each if you need availability after a restart. Closing BLACKICE does not turn this into a cloud-hosted agent.
 
-If the Windows GUI executable does not attach its output to the terminal, the bundled command-line helper can be run with Electron's Node mode:
+## Tools and recovery
 
-```powershell
-$env:ELECTRON_RUN_AS_NODE = '1'
-& "$env:LOCALAPPDATA\Programs\BLACKICE\BLACKICE.exe" "$env:LOCALAPPDATA\Programs\BLACKICE\resources\app\scripts\chatgpt-cli.mjs" chatgpt status
-Remove-Item Env:ELECTRON_RUN_AS_NODE
-```
+- Read the tool catalog and granted scopes from a live status result, not an old note or screenshot.
+- Local commands and file changes run on the user's host. Treat their effects as real, including when a model incorrectly claims failure.
+- Long actions return durable job IDs. Read their settled results before retrying an operation; an interrupted response does not prove the effect failed.
+- Browser actions require current page identity and observed controls. After a stale-page rejection, take a new snapshot; if dispatch was uncertain, inspect the destination before repeating it.
+- Changing the published address or revoking the OAuth grant can require a fresh connection. Disconnecting one external client does not automatically revoke another client's independent grant.
 
-The connector retains `chatSurfaceVerification: "not-recorded"`; it cannot independently inspect a ChatGPT conversation. The separate setup guide labels its final state as user-confirmed and stores only a nonce, server address, grant identifier, status receipt time and explicit confirmation time in `chatgpt-setup.json`. It stores no access token, refresh token, cookie, authorization code or password. Matching evidence survives an ordinary restart, but is cleared when its grant is no longer active or its address changes. Damaged optional guide history is preserved before regenerating it, without replacing OAuth storage. No authenticated external-account result is assumed by isolated acceptance checks.
+For optional API and local-model settings *inside* BLACKICE, use **Config → Models**. These are distinct from incoming ChatGPT tool access.
 
-### ChatGPT plans and hosted schedules
+## Limits
 
-Custom MCP connection creation is available across personal tiers. A Free-account creation check was reported on **2026-11-22**, consistent with prior Plus and Pro use. Qualify each BLACKICE account/endpoint route with its own end-to-end connection and tool receipts:
-
-1. In the intended ChatGPT account **on the web**, open **Plugins → + → Add custom MCP server**.
-2. Add the endpoint displayed by BLACKICE, choose **OAuth**, and complete local owner approval in BLACKICE. Attach the connection in ordinary Chat and verify that its tools appear.
-3. Run a fresh status check and a harmless command, such as PowerShell `Write-Output 'BLACKICE connection check'`. Read the settled command result and record the matching connection/job receipt. Record any error at the step where it occurs.
-
-The [custom MCP setup guide](https://developers.openai.com/plugins/deploy/connect-chatgpt) and [plugin availability guidance](https://help.openai.com/en/articles/20001256-plugins-in-chatgpt) provide setup context. Use the observed controls and BLACKICE receipts to document the exact account route. Published-plugin installation and product-specific hosting routes are separate checks.
-
-BLACKICE-specific ordinary-Chat endpoint setup, OAuth authorization, and actual command/file results still need a matching end-to-end receipt. Once connected, BLACKICE exposes the same tool catalog and authorization contract; host setup availability does not redefine the server's tools. Owner authorization and revocation controls remain unchanged. The public [Remote Desktop Commander listing](https://openai.com/business/plugins/remote-desktop-commander/) demonstrates an ordinary-Chat file/command route. An approved BLACKICE public listing is a separate possible distribution route, not part of this release or a promise of zero-cost access.
-
-[Hosted ChatGPT Tasks](https://help.openai.com/en/articles/10291617-scheduled-tasks-in-chatgpt) can use supported connected apps for reads and actions; approvals can pause a run. BLACKICE-specific hosted scheduled execution is unverified. Native BLACKICE Cronjobs and Work/Codex results do not establish hosted Task compatibility. [Issue #25](https://github.com/MoonlightClarity/BLACKICE/issues/25) tracks the exact setup surfaces and the missing BLACKICE-specific qualification.
-
-### Refresh cached tool metadata
-
-When ChatGPT shows retired tools, missing tools, or fields that differ from the running server, open the existing BLACKICE app's settings and select **Refresh tools**. Open **View details** afterward to inspect the saved tool list and descriptions. This refreshes metadata on the existing app connection. It does not require a new OAuth grant or another copy of the app.
-
-Compare the refreshed list with the live **toolCatalog.toolCount** and **toolCatalog.sha256** reported by **blackice_direct_status**. An already-running client turn can retain the descriptors attached when it started; refreshing the saved app catalog does not itself replace that active turn's attachment or replay an action.
-
-### Other MCP clients and independent authorization
-
-These steps are **specific to ChatGPT**. The same published MCP endpoint supports **Google Gemini → BLACKICE** and **Claude → BLACKICE** with independent OAuth grants. Manage them in **Config → App connections → Gemini** and **Config → App connections → Claude**, respectively. Disconnecting one client does not revoke the others. See [Gemini setup](docs/GEMINI-CONNECTOR.md) and [Claude setup](docs/CLAUDE-CONNECTOR.md).
-## MCP authorization
-
-BLACKICE exposes MCP Streamable HTTP and OAuth at the displayed server URL ending in `/mcp/chatgpt`. It supports dynamic client registration with public, HTTP Basic and POST client authentication, alongside ChatGPT's verified CIMD identity and Claude's independently verified published OAuth client identity. Each client receives its own grant; registering another client does not replace an existing grant or change its request and job identifiers.
-
-Existing ChatGPT grants and registered-client grants survive normal token renewal and app restart. The local availability helper upgrades on native startup after its prior application releases it, retaining the same public port and stored grants.
-
-## Models inside BLACKICE
-
-For work inside BLACKICE, **Mistral Vibe Code** is a native account connection under **Config → Models → Accounts**. Sign in through BLACKICE's browser and refresh its models; only the catalog reported by the authenticated official CLI supplies its model choices. This native connection does not use the incoming MCP gateway.
-
-**Mistral API**, **OpenRouter** and compatible endpoints are optional API connections, configured separately with credentials when required. Native account connections and API connections keep the existing model default and saved chat identities when added. See [native Mistral compatibility](docs/mistral-acp-compatibility.md) and [API connection setup](docs/API-PROVIDERS.md).
-
-## Production startup on Windows
-
-In **Config → App connections → ChatGPT**, inspect **After Windows restarts** in the preparation step. Startup setup is included in the Windows desktop app. Its checks distinguish two prerequisites:
-
-| Check | What must be configured |
-| --- | --- |
-| **Tailscale at Windows startup** | The Tailscale Windows service is **Automatic** and **Running**, and `tailscale get unattended` reports `true`. Current network connectivity alone does not establish unattended startup. |
-| **BLACKICE at Windows sign-in** | An enabled entry launches this exact application and profile with `--background` when the current Windows account signs in. BLACKICE remains a desktop application; this entry does not start it before account sign-in. |
-
-Use the offered **Enable automatic connection startup** action, or its Tailscale-only/BLACKICE-only variant, when a missing setting can be configured. Reading or refreshing the checks never changes Windows settings or opens an elevation prompt. Repeated reads share a cached result; an explicit setup action rereads the settings and changes only missing prerequisites. Windows may request administrator credentials if changing or starting the Tailscale service is denied to the current account. This is Windows service authorization, separate from BLACKICE's existing connector scopes and per-tool execution.
-
-The setup preserves the current Tailscale account and other preferences, existing routes, OAuth grants, and unrelated startup entries. It uses the narrow unattended setting in the original user's context, even if a different administrator supplies service-repair credentials. It does not run a broad `tailscale up` command or change node-key expiry. An existing related scheduled task, a disabled or changed BLACKICE startup entry, or an unreadable startup inventory is reported for local inspection rather than overwritten or duplicated. Other repairable prerequisites can still be configured; unresolved checks remain visible.
-
-The **checked at** time records observed settings, not a completed reboot test. Verify the actual connection after the next intended Windows restart and account sign-in with a fresh `blackice_direct_status` nonce in ChatGPT. Keep the computer awake and connected while using BLACKICE. On an ordinary **clean** BLACKICE restart, previously enabled and unpaused schedules now resume automatically. The scheduler remains paused after an explicit Stop, an uncertain or interrupted run, or a recovery-storage problem; inspect its receipts before choosing **Resume** (or **Resume schedules and inbox**) in **Cronjobs**. Missed occurrences are accounted for without burst replay. Enabling Windows startup does not bypass these safety checks.
-
-For read-only troubleshooting in PowerShell:
-
-```powershell
-Get-CimInstance Win32_Service -Filter "Name='Tailscale'" | Select-Object Name, StartMode, State
-& "$env:ProgramFiles\Tailscale\tailscale.exe" get unattended
-```
-
-Tailscale documents how Windows unattended mode retains the enabling user's configured profile across sign-out and restart in [Run unattended](https://tailscale.com/docs/how-to/run-unattended). The narrow inspection and settings commands are documented in the [Tailscale CLI reference](https://tailscale.com/docs/reference/tailscale-cli). An unavailable inspection command is an unresolved prerequisite, not evidence that unattended mode is enabled.
-
-## Package installation and native registration
-
-Registering the server through **Add custom MCP server** creates its native ChatGPT App connection. Uploading plugin source or installing a portable MCP package alone does not establish that registration or prove ordinary Chat tool availability. If the picker offers only Files or a different integration, check the native connection in this same account and workspace.
-
-The 1.1.1 private package format can retain portable MCP compatibility while adding the verified native App dependency. Preserve the original package identity, scope and private audience. Copy the exact App mapping returned by verified host discovery; never derive it from a display name, plugin ID or another integration. Public directory submission is a separate workflow, with its own packaging and review requirements. See [OpenAI's packaging guidance](https://developers.openai.com/plugins/build/plugins).
-
-## Repeat use and recovery
-
-Keep the desktop app running while ChatGPT uses it. Ordinary reloads, token refresh and app restarts reuse the existing grant; the setup guide never revokes it merely to retry preparation or open the browser. Reopening a completed authorization URL starts a fresh local decision rather than redirecting with an already consumed code. Direct code replay still triggers the existing replay protection.
-
-Browser launch, route preparation, public checks and confirmation show their actual pending state and a retryable error. Setup opens ChatGPT Plugins in the normal browser. Browser profiles keep their own credentials and sessions. The supported direction is ChatGPT calling BLACKICE tools. The experimental BLACKICE-to-ChatGPT browser provider has been removed. Human ChatGPT conversation tabs and legacy reserved tabs remain excluded from agent and direct connector browser tools.
-
-Concurrent native workers receive task folders and host-owned pages scoped to their task, run and worker node. Related pages can form nested parent/child trees, and each worker keeps its own active-tab selection. Finished workers suspend idle pages while retaining the tree and metadata; pending interactions or downloads can keep a page live. Physical browser actions still run through one serialized queue, and contained pages share the saved website sign-in session. The folders organize ownership; they do not provide separate Windows desktops or isolated website accounts. Direct connector pages use their authenticated grant's ownership scope, independently of native task workers.
-
-An undecided native consent request has no fixed elapsed-time deadline while its browser-bound session and server request remain available. Restarting BLACKICE or losing that browser session can invalidate an unfinished request. Authorization codes and access/refresh tokens retain their normal expiry and replay protections. Existing approved grants survive an ordinary restart; an unfinished consent page is a different state.
-
-## Native restart from a command
-
-Use the installed BLACKICE executable with a stable request ID. In PowerShell, with `$blackiceExe` and `$profileDir` set to the intended installation and profile:
-
-```powershell
-& $blackiceExe --restart --request-id=restart-example-001 --profile-dir=$profileDir
-```
-
-The JSON reply acknowledges a saved scheduling receipt. `scheduled` is not completed restart: the originating direct command must exit successfully and its durable job receipt must be saved before BLACKICE prepares the profile and calls Electron's native relaunch. End the command after this acknowledgement. Do not wait for completion inside the same originating command.
-
-After reconnecting, inspect the restart receipt through `blackice_direct_status`, then match the request ID and replacement process identity. For a restart submitted from an ordinary local terminal, use:
-
-```powershell
-& $blackiceExe --restart-status --request-id=restart-example-001 --profile-dir=$profileDir
-& $blackiceExe --cancel-restart --request-id=restart-example-001 --profile-dir=$profileDir
-```
-
-Receipts are owner scoped. A restart submitted inside `blackice_run_command` belongs to that authenticated connection; read it through that connection's status and cancel the exact originating job through `blackice_cancel_job` or the local connector interface. The command's opaque origin binding is supplied by BLACKICE; do not copy it or supply a job ID as an exemption. Cancellation, Stop and grant revocation remain effective until native relaunch is armed. A late cancellation does not rewrite a command that already succeeded.
-
-If the scheduling reply is lost, keep the same request ID. Inspect its receipt and retry that same ID when appropriate; a different ID requests a different restart. A saved failure is returned on an identical retry and does not replay the action. Other unfinished jobs, browser interactions and downloads still block restart. A stale `awaiting_input` job whose browser interaction was already resolved must be inspected and explicitly cancelled; genuine pending interactions must be resolved before retrying.
-
-For an explicitly requested restart that should stop cancellable work, add `--force`:
-
-```powershell
-& $blackiceExe --restart --force --request-id=restart-force-example-001 --profile-dir=$profileDir
-```
-
-The receipt saves `force: true`. After the scheduling acknowledgement and any originating command's durable success, BLACKICE blocks new starts, pauses automatic queues, cancels active runs and all unfinished direct actions through their owners, and waits for their executors and writes to settle. This includes saved actions waiting for input under older connections; cancellation retains their audit receipts and cannot undo previous effects. Automatic queues remain paused even if preparation later fails. Forced restart still refuses private application sessions, unresolved browser interactions or downloads, unhealthy storage, and work whose cancellation cannot be confirmed. It uses the same graceful native relaunch with the current profile and mode; it never kills the BLACKICE process.
-
-`--force` is valid only with `--restart`. The force choice is part of the saved request identity: retry an uncertain request with the same ID and same force choice. Changing that choice behind an existing ID is rejected; use a new ID only for a deliberate new restart intent. Status and cancellation commands omit `--force`. Busy receipts include a fixed blocker category, such as `direct_actions`, without exporting job IDs, owners or action contents.
-
-Only the current durable restart protocol is supported. Verify the replacement process and the same request receipt after reconnecting; replacing files or reloading the interface does not by itself restart the running application.
-
-## Find the failing step
-
-| What you see | Check and recovery |
-| --- | --- |
-| **Couldn't discover**, before any consent page | Check the exact displayed URL, public route and host policy. Compare actual ChatGPT discovery with the local gateway's bounded discovery trace. Local endpoint checks alone do not prove ChatGPT reachability. |
-| Public checks report **Needs attention** at the protected resource | A protected MCP endpoint normally answers an unauthenticated discovery probe with HTTP 401 and a Bearer `resource_metadata` challenge. The metadata URL must match the configured protected resource. This expected challenge can pass discovery; it does not verify an OAuth grant or a tool call. An empty, Basic, or mismatched challenge remains a failure. |
-| A bare probe returns **406** | Check the request's MCP method and Accept headers. One ordinary browser/HTTP probe is not an MCP handshake. Validate the real catalog exchange and authenticated tool POST before declaring a transport failure. |
-| Only **Files**, Avalon, or another integration appears | Register and connect the native **BLACKICE connection** in the intended account, then select it in a new Chat. A package/source upload or similarly named integration is insufficient. |
-| A client secret, manual client ID or **Owner login key** seems necessary | Check that this is the native BLACKICE OAuth/CIMD connection. This flow uses none of those manual credentials; a legacy integration's key is a separate authentication system. |
-| DOT cannot start a desktop task, or shows **Status unavailable**, while your computer is **Connected** and BLACKICE’s status check succeeds | Keep the working BLACKICE connection and save DOT’s error reference privately. This result alone does not mean BLACKICE authorization expired. Check DOT’s task startup separately; give the reference to support if it continues. The error does not identify its cause. |
-| Authorization is invalid or expired | Record whether failure occurred on the consent page, callback, token exchange or tool call. A supplied expired access token receives HTTP 401 so the client can refresh the existing grant. Compare `connectionId` and the connector's `authDiagnostics` before replacing authorization; a host permission failure may never reach BLACKICE. |
-| A capability is missing after approval | Inspect the actual connection's `grantedScopes`. A connected client has access to the complete published BLACKICE tool catalog. Check the actual tool listing and the client application's own tool-use approval controls; BLACKICE does not offer per-capability checkboxes. |
-| Tool actions repeatedly ask for permission | Check ChatGPT's per-tool confirmation setting. BLACKICE has no local per-action approval setting; actions use the connection's existing scopes. OAuth access consent and website sign-in interactions are separate. Do not reconnect a healthy grant that already has the needed scopes. |
-| Public preparation reports an occupied root | Preserve the existing route. Automatic setup refuses unowned roots; replacing a previous service requires explicit migration review and preservation of other paths and exposure. |
-| BLACKICE records status, but the result is absent from Chat | Keep verification incomplete. Read the actual result in the intended conversation before confirming the guide. |
-
-In one diagnosed setup, ChatGPT's form failed discovery on the same hostname at **8443** without a completed native discovery trace; standard **443** discovered the native metadata successfully. This is an observed failure before completed native discovery, not an official claim that all nonstandard ports are unsupported. The successful path still required native registration, human consent and a matching authenticated status result in ordinary Chat. Neither a generic authorization error nor a bare 406 response identified that failure by itself.
-
-## Connection checks and reuse
-
-Discover the available BLACKICE tools and their actual schemas. When connection health or identity is unknown, after a restart or authorization change, or when a result reports a connection problem, call `blackice_direct_status` with a fresh harmless nonce through the existing authenticated connection. Reuse a known healthy connection across follow-up actions; a new turn alone does not require another status check or authorization. Check the matching nonce, `mode: "direct-execution"`, and actual availability before using the needed tool. The authenticated result includes the caller's own `connectionId` and `grantedScopes`. The verified connection grants access to the full published tool catalog; the wire `read` scope is for OAuth compatibility. `supportedScopes` lists legacy capability categories, not separate approvals required during connection.
-
-Reuse a valid connection and refresh its access token when needed; do not require a new authorization ceremony for every request. Retain the current `connectionId` alongside action IDs so that a later authorization replacement is detectable. An unavailable tool or insufficient grant is a prerequisite to resolve, not permission to substitute a BLACKICE worker or another execution path. This plugin workflow does not automatically attach tools to every ChatGPT conversation. The intended surface must actually discover and invoke the connector.
-
-The status check does not bypass credential validity, browser ownership checks, or explicit completion receipts. BLACKICE rechecks authorization at dispatch; a successful earlier status response does not make a revoked or narrowed grant valid for later actions. `localMutationApproval: false` reports that BLACKICE adds no per-action approval prompt. ChatGPT's own permission controls remain separate.
-
-## Transport and authorization
-
-The connector provides stateless MCP Streamable HTTP POST. Clients accept both `application/json` and `text/event-stream`; responses use JSON. The current per-request protocol and supported initialized protocol variants are advertised through discovery. Long actions use durable job polling rather than holding a single HTTP request open or assuming automatic updates into an idle ChatGPT conversation.
-
-OAuth uses the exact owned HTTPS issuer, protected-resource metadata, a resource-bound audience, authorization code with S256 PKCE, and refresh-token rotation. The allowed ChatGPT CIMD identity is `https://chatgpt.com/oauth/client.json`; callback validation uses the metadata's exact redirect URI. The server supports the public-client `none` token authentication method advertised in ChatGPT's current `token_endpoint_auth_methods_supported`, even when its legacy singular preference names `private_key_jwt`. It does not accept an arbitrary client URL, dynamic client registration, a client secret, or a client assertion as a substitute.
-
-OAuth access decisions occur in the authenticated local BLACKICE interface. The public consent page polls using its own cookie-bound pending request and returns the original state and issuer after approval or denial. Permission checks occur again at tool dispatch and before execution. Once connected, requested actions within the granted scopes execute directly without a separate BLACKICE approval choice or prompt. Credentials are never returned by the host management UI; the main authorization store contains only token hashes. Each grant is individually revocable, and disabling the connector revokes its grants. Existing grants survive an ordinary restart; changing the owned resource origin invalidates them. Corrupt authorization storage is preserved and fails closed.
-
-### Access-token renewal during work
-
-Access tokens last up to 15 minutes within a grant's 30-day lifetime. An invalid or expired supplied bearer token receives HTTP 401 with `WWW-Authenticate`, allowing the client to renew credentials. BLACKICE reserves the tool-level OAuth linking signal for missing authorization and additional scopes. Ordinary token renewal preserves the grant ID, scopes, running jobs, and their request IDs.
-
-Concurrent refreshes and retries after a lost response share a 60-second retry window. An identical retry receives the same replacement credentials, with the remaining access-token lifetime. A recently superseded refresh cannot revoke the current connection. Older replay, explicit revocation, and the grant's expiry retain their existing behavior.
-
-On the desktop, this short retry receipt is encrypted with the existing operating-system credential storage and saved before committing token rotation. Restart recovery validates it against the current hashed grant; an uncommitted receipt cannot authorize anything. Without protected storage, retry recovery is memory-only. The optional cache cannot replace or disable valid grants if it is damaged. Status reports the recovery mode and process-local authentication challenge counts without credentials or tool arguments. See the [MCP authorization requirements](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization) and [OpenAI token verification guidance](https://developers.openai.com/plugins/build/auth).
-
-| Scope | Capability |
-| --- | --- |
-| `read` | Connection status, saved plans/groups, and this connection's permitted action receipts |
-| `planning:write` | Edit, rename, and group saved plans with revision checks |
-| `files:read` | List, read, search, and inspect patch history at requested local paths |
-| `files:write` | File writes, patches, undo, and selected attachment imports |
-| `commands:run` | Command execution on the host |
-| `browser:read` | Inspect ordinary contained tabs and saved-credential metadata for an exact HTTPS origin; the owned ChatGPT calling tab is excluded |
-| `browser:write` | Contained-browser actions, supported dialog decisions, folder/tab organization, optional filtering changes, password generation and opaque credential filling; upload also requires `files:read` |
-
-The configured working folder supplies the default for relative file paths and command execution. File and upload tools also accept explicit local paths outside that folder. Files and commands use the Windows account's operating-system permissions; the working folder is not a sandbox. Connecting an MCP client grants command access as part of the complete BLACKICE tool catalog; the Windows account's operating-system permissions still apply. Website sign-in can reuse the native browser's existing session, an imported profile when its protected state remains usable, or the saved-credential path described below. BLACKICE does not decrypt or return passwords from native browser profile files.
-
-## Schedules and cronjobs
-
-Recurring single-agent cron/interval work with a compatible model and nonparallel overlap uses the prior settled run's conversation and existing Planning task rather than creating an unrelated new conversation on each scan. Each execution still keeps its own immutable run and job receipt. Where prior thread compatibility cannot be proved (e.g., parallel schedules or a changed agent workflow), BLACKICE starts a separate run rather than merging unrelated histories. Existing standalone historical runs are not automatically merged.
-
-Planning decision criteria are user-authored, revision-checked metadata, visible in the Planning workspace. A criterion may be a hard gate, deep skill, learnable skill, preference, employer wishlist, or unverified detail; the source and factual basis are retained. A job advertisement labeling something "required" is not sufficient on its own to create a non-negotiable gate. This is a reusable decision rubric, not proof that a posting or an applicant qualifies.
-
-
-
-Open **Cronjobs** to inspect each schedule's full instructions, trigger, timezone, next execution, saved model/workflow, revision, limits, and recent job receipts. Choose **Inspect / edit → Edit schedule** to change task text, model for a single-agent workflow, enabled state, cron or interval, concurrency/overlap policy, retries, and lifetime limits. **Preview next runs** checks the live backend parser but does not save or execute. **Save changes** uses the exact revision read when the editor opened. If another editor changed that revision, the unsaved draft remains visible until you explicitly reload and reconcile it. Changing a schedule never retroactively changes admitted jobs or overwrites their history.
-
-Native scheduling in BLACKICE adds no permission layer or approval prompts. The external ChatGPT connector retains its existing OAuth scope checks solely for compatibility: schedule reading uses the existing read capability, and remote editing or manual triggering uses the already-granted command capability. No new OAuth scopes, consent controls, or reauthorization requirements are introduced. Edits still use `scheduleId`, `expectedRevision`, and a bounded `patch`; manual runs use a stable idempotency key and return an admission receipt, not a completion claim. Multi-agent workflow editing is under **Cronjobs → Manage saved workflows**. Credentials and webhook secrets are not exposed by inspection.
-
-On a clean restart the scheduler preserves the user's prior enabled/paused choice. A stopped or ambiguous execution remains paused until its receipts are inspected and the user explicitly resumes it. Scheduled work still requires BLACKICE to remain running and the host awake. New scheduled jobs save a durable local result receipt when the job settles, separate from the job's execution outcome. In **Cronjobs**, expand a cronjob's **Result conversations** and choose **View conversation** where a run has a linked conversation. The current workspace does not expose the former standalone Results tab. Local availability does not imply delivery to ChatGPT or another remote service. An already connected ChatGPT client can inspect result receipts with the read-only `blackice_list_schedule_results` tool (filter by schedule and local availability state). Reading a result does not record human acknowledgement; recorded review state remains separate from the run.
-
-Cron reliability checks now expose a last-successful-tick clock separately from the attempted tick and an error/paused/stale state. When a scheduled time is missed, the durable occurrence journal explains whether one due run was admitted, busy work forced a skip, or a backlog was collapsed. No missed-time burst replay occurs on startup or resume. Future changes and removals have source-labelled revision audit entries; removed schedules remain readable as sanitized historical records under **Cronjobs → Removed schedules (audit history)** or through read-only `blackice_list_schedules` with `includeRemoved: true`. Older removal records may have no actor (reported as `not-recorded` instead of guessing). The normal agent configuration gateway is unavailable to agents dispatched **by** a schedule, preventing recursive scheduling through that tool. These are independent BLACKICE implementations informed by the MIT-licensed [NousResearch/hermes-agent cron reference](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/cron-internals.md); they do not implement Hermes's multi-channel delivery queue, one-shot formats, or multiple scheduler replicas.
-
-## Protected website credentials
-
-When protected storage is available, discovery adds `blackice_credentials_list`, `blackice_credentials_generate`, and `blackice_credentials_fill`. List returns metadata for one exact HTTPS origin under `browser:read`. Generate and fill require `browser:write`. Their execution uses the existing durable job and same-grant request identity rules.
-
-For an authorized signup, generate and durably save a password before filling the form; the user does not need to invent or type one. Keep the returned credential ID and revision. After inspecting the page, fill the exact HTTPS origin, ordinary contained tab, current URL, current document token, and observed password field reference. A confirmation field and saved username field are optional. The host verifies all target fields before decryption and again before writing, and rechecks authorization after queued work. The reserved human ChatGPT conversation tab cannot be a target.
-
-Credential responses contain metadata and execution receipts, never password text. Filling does not click, submit, reset an account, prove registration, or write an external browser password store. Submit only as a separate authorized action and inspect any uncertain outcome before retrying. Existing-account login uses a saved credential; it must not silently generate a replacement password. MFA, website challenges and a missing existing credential can still require the user.
-
-Outbound copying to Chrome, Firefox or Neo is a separate local Password manager action with a temporary native-import file. It is not exposed as a connector tool and does not establish an imported session or independent browser-sync proof. See [BROWSER-PASSWORDS.md](BROWSER-PASSWORDS.md).
-
-## Action identity, recovery, and cancellation
-
-Every asynchronous execution action includes a caller-chosen `requestId`. The durable ledger binds it to the OAuth grant and exact argument digest before dispatch. **An identical retry returns the existing job only within that same grant.** Reusing that ID with changed arguments fails. ChatGPT should retain the authenticated `connectionId`, original request ID, and returned job ID across a connection loss.
-
-An ordinary access-token refresh preserves the grant; a newly approved or replacement authorization has a different `connectionId`. Recheck that identity before retrying an uncertain action. Revoking or replacing access does not transfer the old grant's idempotency identities to the new one: submitting the same `requestId` through a new connection can create another job. Do not replay an uncertain mutation after the connection changes. Inspect the original receipt and resulting effects in BLACKICE first, then decide whether any new work is needed. Possessing an old job ID does not authorize a new grant to read that grant's protected results.
-
-States are explicit: `queued`, `awaiting_input`, `running`, `cancelling`, `succeeded`, `failed`, `cancelled`, or `interrupted`. Only a settled receipt establishes the action's result. Browser interaction handling and cancellation are separate from completion. Call `blackice_get_job` to read the actual receipt, and `blackice_cancel_job` to request cancellation. A dropped HTTP connection is not a cancellation request.
-
-Writes, imports, browser mutations, uploads, and commands execute directly under the existing connection's scopes. BLACKICE has no local action approval setting. Revoked or insufficient permissions prevent execution. Historical pending approval receipts remain unexecuted and can be cancelled; the change never releases or replays them. Active process and browser operations retain their ownership until they actually settle. A cancellation can stop further work but cannot undo already completed effects; a late successful publication is retained as evidence. Restarted uncertain actions become interrupted and are never silently rerun.
-
-Pending browser interactions appear in the actual job and browser receipt. Authorized ChatGPT tools can resolve supported interactions; a required native authentication or unsupported runtime step may still need the person. Acknowledgment never replays the original action. ChatGPT must inspect the current page and prior effects after resolution. A tab, URL, or document mismatch invalidates stale input ownership. The separate resolution job records its own outcome; an older `awaiting_input` action is not silently relabelled as successful and can be cancelled after inspection.
-
-## Browser grants and controls
-
-The contained browser grants Electron's web permission requests, permission checks and device permissions by default. BLACKICE adds no per-site agent permission prompt. These defaults do not replace operating-system permissions, website sign-in, browser connection consent, hardware selection or missing runtime adapters. Native device and display-capture workflows need their actual selection implementation; a granted permission alone does not establish that they work.
-
-`blackice_browser_action` exposes `interaction`, `folder_create`, `folder_rename`, `folder_close`, `tab_move` and `suspend`, as well as ordinary page actions. These use the existing `browser:write` grant. Folder operations require the applicable observed folder or tab; `tab_move` accepts `parentTabId: null` to make a root tab. Task, worker, descendant and caller-tab ownership remain checked immediately before dispatch. A direct connector may use ordinary personal tabs as well as its own task pages; the human ChatGPT calling tab remains reserved.
-
-For a supported dialog, use `action: "interaction"` with the exact `tabId`, `interactionId`, `expectedUrl`, `expectedDocumentId` and `decision` from a fresh observation. Decisions are `accept`, `dismiss` or `acknowledge`, according to the observed interaction state. Bounded `promptText` is for an ordinary JavaScript prompt, never passwords or authentication secrets. Prompt responses remain in process memory and are omitted from durable job arguments and page-content receipts. Use the dedicated opaque credential tools for account passwords. A previously cancelled dialog can only be acknowledged; it cannot be accepted retroactively.
-
-Network filtering is an explicit preference and browsing starts unfiltered. Read its status with `blackice_browser_read` and `action: "protection"` under `browser:read`. Change it with `blackice_browser_action`, `action: "protection"` and `operation: "global"`, `"site"` or `"refresh"` under `browser:write`. Global/site changes include `enabled`; a site change also needs the observed `tabId` and exact `origin`. Missing or failing filters allow requests to continue. Existing site exceptions survive migration, while older ambiguous enabled-by-default state is loaded as disabled. New explicit opt-ins persist. See [Browser protection](BROWSER-PROTECTION.md).
-
-The MCP/plugin schema is generated from the runtime direct-tool catalog. An existing ChatGPT conversation may retain an older cached schema until the host refreshes discovery; inspect the actually advertised schema before sending a newly added action. Updating the runtime does not authorize inventing arguments that the current host has not exposed.
-
-## Dialogs, uploads, and sign-in
-
-The contained browser captures file-chooser requests, including buttons connected to hidden file inputs. Chromium does not attach an input node to `showOpenFilePicker()` protocol events, so the contained browser translates that already-supported API at document start into a private file input. The page receives read-only file handles only after the user chooses files through BLACKICE; it receives no local path or host API. Explicit local file selection uses the existing native picker. Upload requires the exact current chooser or an inspected input reference, checks its tab/document ownership, and validates file paths again at the serialized dispatch boundary. ChatGPT-originated uploads require both `browser:write` and `files:read`.
-
-JavaScript dialogs reported by Chromium are kept pending for guarded accept/dismiss decisions instead of being automatically cancelled. The native Electron 44.7.2 check confirmed that an observed `confirm()` can be accepted through CDP and return `true` to the page even when `hasBrowserHandler` is true. Electron's own `window.prompt()` can throw before any dialog event; that is a runtime compatibility gap, separate from permission grants. Bounded prompt text applies only when the runtime exposes an actual pending prompt. HTTP authentication still lacks the credential-callback adapter and is reported as unsupported; granting web permissions does not implement that authentication flow.
-
-`blackice_import_file` accepts ChatGPT's file object metadata through `openai/fileParams`, saves a bounded attachment in `blackice-imports` inside the configured working folder, and returns its path, size, and SHA-256 receipt. Public HTTPS download destinations are validated and DNS-pinned; redirects, credentials, private addresses, and oversized transfers are rejected. Temporary download links are excluded from persisted action arguments. Importing an attachment and uploading a file to a website are distinct scoped actions.
-
-The embedded ChatGPT view is optional. Automatic read-only preview recovery follows delayed redirects, same-URL document replacements, and asynchronous form updates. It does not replay uncertain clicks, Enter, or text. This improves native input continuity but does not establish compatibility with every identity provider, browser challenge, or external ChatGPT account.
-
-## Native browser sessions and profile import
-
-`blackice_connected_browser_read` discovers configured native browser connections and their actual tool schemas. `blackice_connected_browser_action` connects the existing Chrome session or calls a discovered browser tool. Chrome, Neo, and imported profiles use the same connection gateway as BLACKICE agents. The existing Chrome connection keeps the original browser profile, extensions, and live site state. Chrome controls its native debugging setup and connection prompt; BLACKICE adds no per-site or per-action approval layer.
-
-`blackice_profile_list` discovers installed Chromium profiles and completed imports. `blackice_profile_import` copies the selected whole profile and relevant root state into a separate managed directory. `blackice_profile_connect` launches that copy with its source browser executable and exposes it through the connected-browser gateway. Imported profiles include extensions and site storage. The source is unchanged; locked or changing sources fail without replacing a completed import. Native encrypted or device-bound data may be unusable in a copied profile, so successful copying and connection never imply website authentication.
-
-Connected-browser discovery requires `browser:read`; arbitrary native browser calls require `browser:write`, `files:read`, and `files:write`, since discovered tools include uploads and screenshots. Profile listing requires `files:read`, copying requires `files:read` and `files:write`, and launching an imported profile requires `browser:write` and `commands:run`. These are the connector's existing OAuth scopes, not additional local approval prompts. Each command returns the same durable job and idempotency behavior as other direct tools.
-
-The local `BLACKICE browser` command line reaches the same host-owned tools and saved jobs. Use `browser --help` for discovery, profile import, native connection, and result inspection commands. It uses BLACKICE's ordinary local session and does not read stored authentication keys.
-
-**Import into Neo…** remains a native browser-data chooser for category-based import. Data imported there belongs to Neo. Connected-browser tools can use that Neo session; contained Electron tabs continue to have their own profile. See [BROWSER-IMPORT.md](BROWSER-IMPORT.md).
-
-## Planning and swarms
-
-In **canonical contract v2** (shipped in 2.39.23), the connector reads the same authoritative plan of cohesive work items, criteria, dependencies, revisions and host-owned execution evidence as the desktop. A direct plan edit does not become an operation receipt. For canonical tasks, use the returned current revision with the sole `replace_contract` operation and omit host-owned `planEpoch`; older tasks retain their actual legacy graph-edit contract. See the [Planning contract v2 implementation reference](docs/planning-contract-v2-20261105.md).
-
-The connector reads the same durable plan outline, dependencies, groups, and revisions as the desktop. Active plans are the default. Renaming or regrouping changes organization metadata separately from plan content; stale revisions fail with a conflict rather than overwriting another edit. Editing a plan does not start a worker, clear a stopped worker's interruption, or create a false execution receipt. Swarm summaries expose bounded task/attempt metadata; detailed saved output is retrieved separately.
-
-## Verification boundaries
-
-Isolated acceptance exercises real local HTTP transport, OAuth validation and consent endpoints, durable execution without local action prompts, revocation, and native interface behavior using disposable profiles and deterministic fixtures. These checks do not sign in to a user's ChatGPT account, send email, create a remote worker, or prove discovery and tool invocation from the ordinary ChatGPT conversation.
-
-Local UI and browser fixtures can exercise setup, selection, callback handling and preserved drafts using disposable profiles or owned localhost pages. They cannot prove a signed-in external ChatGPT round trip.
-
-Verify each boundary separately:
-
-| Evidence | What it establishes |
-| --- | --- |
-| Local metadata/catalog checks | Those endpoints responded from the checking computer. |
-| ChatGPT's form discovers the native endpoints | The host's discovery step worked; no grant or tool result is implied. |
-| **Connect with full BLACKICE access** in BLACKICE | The owner made the local consent decision; callback and token exchange must still finish. |
-| Matching authenticated `blackice_direct_status` result in the intended Chat | That connection completed the direct tool round trip with its reported scopes and availability. |
-| **I see the matching result in ChatGPT** | The person confirmed that observed result; BLACKICE does not independently inspect the conversation. |
-
-A status result with all seven `grantedScopes` establishes those permissions for that call. It does not prove that a write, command, browser action or publication completed. Those operations need their own actual receipts. If account policy or client authentication prevents the exchange, report the limitation rather than substituting a worker or endpoint-only test.
-
-Official integration requirements: [ChatGPT custom MCP servers](https://developers.openai.com/api/docs/guides/custom-mcp-server), [plugin authentication](https://developers.openai.com/plugins/build/auth), [connecting a plugin](https://developers.openai.com/plugins/deploy/connect-chatgpt), and [file input metadata](https://developers.openai.com/plugins/reference).
-
-## Availability while BLACKICE is closed
-
-An enabled BLACKICE profile keeps a small availability responder and its existing owned HTTPS route after the application exits. The main application still owns all execution, model work, browser sessions and OAuth writes. The responder only forwards requests while that application is connected, or returns its availability status. It never starts the application, queues work, replays actions or starts at Windows boot by itself. Explicitly disabling remote access removes the route and stops the responder.
-
-Release qualification controllers can use the tracked [availability-retirement helper](SIGNING-AND-RELEASE.md#release-qualification-and-the-availability-responder) when an installer needs the matching, already-offline responder to exit. Its caller must prove the process and profile identity, record the stop intent, and observe retirement. It does not change normal app shutdown or disable the saved remote-access configuration.
-
-Authenticated connector status distinguishes `closed`, `starting`, `closing` and `unreachable`. A refused HTTP connection alone does not establish that the application is closed. A local lifetime connection clears the proxy target when its owning application disconnects; reopening attaches the new application generation to the same responder and route. Existing grant IDs and scopes are preserved.
-
-An offline action response reports that no action was admitted when the request was never sent. If the connection was lost after delivery may have begun, its outcome, model-start and provider-turn fields are unknown. Read the existing durable job after BLACKICE returns, or retry identical arguments with the same request ID under the same grant. The responder does not replay the request.
-
-Offline authentication reads the existing access-token hashes. Token refresh returns `temporarily_unavailable` until BLACKICE reopens; the responder does not rotate or revoke credentials. The computer and Tailscale must remain reachable for these messages to arrive. Shutdown, sleep, account logoff or a network failure can still prevent an application-level response.
-
-### Authorized SSO login associations
-
-The optional password manager supports `blackice_credentials_associate` (native `relay_credentials` action `associate`) for redirects to a separate login host. Supply the exact original `origin`, `username`, `credentialId`, `revision`, target `loginOrigin`, `operation: "allow"`, current `expectedRevision` from list, and a stable `requestId`. This changes only encrypted credential metadata, never returns or copies a password, and never submits a login. Existing user authorization for the account and destination can be used without another prompt; site content cannot grant permission. Do not substitute an unrelated account merely because it uses the same identity-provider host.
-
-After association, use its returned credential revision and the destination as `origin` in fill/authenticate with fresh observed refs. List at either origin finds the same account and includes `loginOrigins`. The browser still verifies the exact page, frame, document and destination. Unassociated origins retain exact-origin behavior; no wildcard or automatic redirect grants exist. `operation: "remove"` revokes one association. Account/password updates clear associations, requiring deliberate re-association. Normal export/mirror selection remains source-origin-only. The local management endpoint is `/api/browser-credentials/associate`; no live associations are created by installing the feature.
-
-Compatibility/rollback: credential entries retain the exact pre-SSO schema. Associations are stored in an optional encrypted top-level `loginAssociations` extension that the .104 reader preserves without interpreting. Public `loginOrigins` is virtual metadata, never an extra entry field. Each association is bound to credential ID, revision, source origin and username; account updates/deletions by old or new versions make stale associations unusable. Synthetic tests run the exact original .104 vault implementation against linked, cleared, legacy-edited and legacy-deleted fixtures. Ordinary original-origin logins remain readable in the tested .104 downgrade round-trips; SSO association behavior requires a version supporting this feature. Installation/read alone writes no migration. No live vault migration or backup restore is performed.
-
-## Saved execution context
-
-A connected client can call `blackice_execution_context` to read the applicable saved Instructions, owner identity context, or effective Skills. Use skill search to find a method, then read its returned ID. The current user request governs the turn. A context lookup does not start a BLACKICE model and is optional for direct actions.
+The connector does not guarantee that every ChatGPT plan supports the same plugin controls, that every model can use tools reliably, or that external websites accept every action. Verify actual destination results. BLACKICE's browser-provider experiment that attempted to run ChatGPT as an internal model is retired; this document describes ChatGPT calling BLACKICE.

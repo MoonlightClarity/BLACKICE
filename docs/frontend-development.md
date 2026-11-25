@@ -1,6 +1,6 @@
 # Native frontend development
 
-> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details. See [documentation map](README.md).
+> **Status: Engineering reference.** This describes a source implementation or internal contract, **not a guarantee for every installed or published version**. Verify the relevant source revision and release notes before applying operational details.
 
 `blackice_frontend` operates the actual BLACKICE desktop window and Electron main
 process. It is registered by the desktop host through the existing direct

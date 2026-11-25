@@ -22,7 +22,7 @@ export function validateReleaseRequest(value, context = {}) {
   check(typeof value.publish === 'boolean', 'Set publish explicitly to true or false.');
   return { format: 1, version: value.version, sourceCommit, appFingerprint: value.appFingerprint,
     sourceTestReceipt: value.sourceTestReceipt, publish: value.publish, tag: 'v' + value.version,
-    notes: 'RELEASE-NOTES-' + value.version + '.md' };
+    notes: 'RELEASE-NOTES.md' };
 }
 
 const optionalWindowsSourceTests = new Set([

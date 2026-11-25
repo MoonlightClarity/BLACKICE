@@ -1,29 +1,9 @@
-import { promises as fs, readFileSync } from 'node:fs';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 
-const topLevelFiles = new Set(['package.json', 'LICENSE', 'NOTICE', 'THIRD-PARTY-NOTICES.md', 'server.mjs', 'CHATGPT-BRIDGE.md', 'CHATGPT-CONNECTOR.md', 'CHAT-MODE.md', 'PLANNING-ORGANIZATION.md', 'REMOTE-ACCESS.md', 'BROWSER-PROTECTION.md', 'BROWSER-IMPORT.md', 'EMAIL.md', 'PLANNING-AWARENESS.md', ...['2.30.0', '2.31.0', '2.31.1', '2.32.0', '2.33.5', '2.33.6', '2.33.7', '2.33.8', '2.33.9', '2.33.10', '2.33.11', '2.33.12', '2.33.13', '2.34.0', '2.34.1', '2.34.2', '2.34.3', '2.34.4'].map(version => `RELEASE-NOTES-${version}.md`)]);
+const topLevelFiles = new Set(['package.json', 'LICENSE', 'NOTICE', 'THIRD-PARTY-NOTICES.md', 'server.mjs', 'CHATGPT-CONNECTOR.md', 'REMOTE-ACCESS.md', 'RELEASE-NOTES.md']);
 const check = (condition, message) => { if (!condition) throw new Error(message); };
-topLevelFiles.add('RELEASE-NOTES-2.35.0.md');
-topLevelFiles.add('RELEASE-NOTES-2.35.1.md');
-topLevelFiles.add('RELEASE-NOTES-2.35.2.md');
-topLevelFiles.add('RELEASE-NOTES-2.35.3.md');
-topLevelFiles.add('RELEASE-NOTES-2.35.4.md');
-topLevelFiles.add('RELEASE-NOTES-2.35.5.md');
-topLevelFiles.add('RELEASE-NOTES-2.35.6.md');
-topLevelFiles.add('RELEASE-NOTES-2.36.0.md');
-topLevelFiles.add('RELEASE-NOTES-2.36.1.md');
-topLevelFiles.add('RELEASE-NOTES-2.37.0.md');
-topLevelFiles.add('RELEASE-NOTES-2.38.0.md');
-topLevelFiles.add('RELEASE-NOTES-2.39.0.md');
-topLevelFiles.add('RELEASE-NOTES-2.39.1.md');
-for (const patch of [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]) topLevelFiles.add('RELEASE-NOTES-2.39.' + patch + '.md');
-// Retain the one reviewed 2.39.97 release note explicitly packaged alongside 2.39.98; do not allow arbitrary neighboring versions.
-topLevelFiles.add('RELEASE-NOTES-2.39.97.md');
-// .104 preserves the explicitly shipped .103 recovery note.
-topLevelFiles.add('RELEASE-NOTES-2.39.103.md');
-// .105 retains the explicitly packaged .104 browser and startup note.
-topLevelFiles.add('RELEASE-NOTES-2.39.104.md');
 
 // Match the existing installer inputs without admitting arbitrary native helpers.
 const packagedNativeHelpers = new Set([
@@ -69,39 +49,11 @@ export function forbiddenWindowsPackagePath(relative) {
 }
 
 
-// Exact numeric top-level builder entries are the source of truth for retained
-// notes, never globs, adjacent files, traversal, or non-note installer entries.
-const numericVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-const numericReleaseNote = /^RELEASE-NOTES-((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))\.md$/;
-export function explicitWindowsReleaseNotes(builderConfig) {
-  if (typeof builderConfig !== 'string') return [];
-  const section = /^files:\r?\n([\s\S]*?)(?=^\S|(?![\s\S]))/m.exec(builderConfig)?.[1] || '';
-  return [...new Set(section.split(/\r?\n/).flatMap(line => {
-    let value = /^  - (.+?)\s*$/.exec(line)?.[1];
-    if (!value) return [];
-    if (/^(['"]).*\1$/.test(value)) value = value.slice(1, -1);
-    return numericReleaseNote.test(value) ? [value] : [];
-  }))];
-}
-export function approvedExplicitWindowsReleaseNote(relative, version, explicitNotes) {
-  const note = typeof relative === 'string' && numericReleaseNote.exec(relative);
-  if (!note || typeof version !== 'string' || !numericVersion.test(version) ||
-      !Array.isArray(explicitNotes) || !explicitNotes.includes(relative)) return false;
-  const actual = note[1].split('.').map(BigInt), target = version.split('.').map(BigInt);
-  for (let i = 0; i < 3; i++) {
-    if (actual[i] < target[i]) return true;
-    if (actual[i] > target[i]) return false;
-  }
-  return true;
-}
-const explicitlyPackagedReleaseNotes = Object.freeze(explicitWindowsReleaseNotes(
-  readFileSync(new URL('../desktop/electron-builder.yml', import.meta.url), 'utf8')));
-
 /** The installed-file verifier uses the same runtime families as electron-builder. */
 export function approvedWindowsPackageFile(relative, version) {
   if (typeof relative === 'string' && /^(?:lib\/(?:workbench-|windows-workbench\.mjs)|desktop\/workbench-|scripts\/(?:workbench-|install-workbench-|package-workbench-|verify-workbench-)|resources\/(?:workbench-native|guest)\/|public\/next\/(?:workbench\.css|workspaces\/workbench))/.test(relative)) return false;
   if (typeof relative !== 'string' || relative.includes('\\') || relative.startsWith('/') || relative.split('/').some(part => !part || part === '.' || part === '..') || forbiddenWindowsPackagePath(relative)) return false;
-  return topLevelFiles.has(relative) || approvedExplicitWindowsReleaseNote(relative, version, explicitlyPackagedReleaseNotes) || relative === 'docs/GOAL-MODE.md' || relative === 'docs/instruction-audit.md' || packagedNativeHelpers.has(relative) || (/^\d+\.\d+\.\d+$/.test(version) && relative === `RELEASE-NOTES-${version}.md`) || /^(lib|public)\//.test(relative) || /^desktop\/.*\.(mjs|cjs)$/.test(relative) || relative.startsWith('desktop/browser-compatibility/') || relative === 'desktop/icon.ico' || relative === 'desktop/password-manager/index.html' || relative === 'desktop/password-manager/style.css' || relative === 'scripts/repair-shortcuts.ps1' || /^scripts\/(generate-noir-background\.mjs|noir-scene\.config\.json|chatgpt-bridge\.mjs|email-oauth-token\.mjs|remote-access-cli\.mjs|browser-cli\.mjs|chatgpt-cli\.mjs)$/.test(relative);
+  return topLevelFiles.has(relative) || relative === 'docs/GOAL-MODE.md' || relative === 'docs/instruction-audit.md' || packagedNativeHelpers.has(relative) || /^(lib|public)\//.test(relative) || /^desktop\/.*\.(mjs|cjs)$/.test(relative) || relative.startsWith('desktop/browser-compatibility/') || relative === 'desktop/icon.ico' || relative === 'desktop/password-manager/index.html' || relative === 'desktop/password-manager/style.css' || relative === 'scripts/repair-shortcuts.ps1' || /^scripts\/(generate-noir-background\.mjs|noir-scene\.config\.json|chatgpt-bridge\.mjs|email-oauth-token\.mjs|remote-access-cli\.mjs|browser-cli\.mjs|chatgpt-cli\.mjs)$/.test(relative);
 }
 
 /** Read existing, tracked evidence; never synthesize a passing source-test receipt. */

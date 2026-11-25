@@ -29,4 +29,4 @@ Execution occurs on the running BLACKICE host. Long actions use durable job rece
 - **BLACKICE closed or endpoint offline:** start BLACKICE and check Tailscale/publication. The availability responder cannot run tools while the app is closed.
 - **ChatGPT still connected:** expected. Each client has an independent grant and can be disconnected separately.
 
-See [2.39.27 release notes](../RELEASE-NOTES-2.39.27.md), [remote access](../REMOTE-ACCESS.md), [Claude connector](CLAUDE-CONNECTOR.md), [ChatGPT-specific setup](../CHATGPT-CONNECTOR.md) and [API providers](API-PROVIDERS.md).
+For related setup, see [remote access](../REMOTE-ACCESS.md), [ChatGPT connection](../CHATGPT-CONNECTOR.md), and [API providers](API-PROVIDERS.md).

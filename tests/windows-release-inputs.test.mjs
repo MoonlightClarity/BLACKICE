@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { approvedWindowsPackageFile, explicitWindowsReleaseNotes, approvedExplicitWindowsReleaseNote, forbiddenWindowsPackagePath, readWindowsSourceTestReceipt, nativeRestartCLIOutcome } from '../scripts/windows-release-inputs.mjs';
+import { approvedWindowsPackageFile, forbiddenWindowsPackagePath, readWindowsSourceTestReceipt, nativeRestartCLIOutcome } from '../scripts/windows-release-inputs.mjs';
 
 test('native restart diagnostics retain only the exit code and an enumerated error code from noisy private logs', () => {
   const log = ['Native warning: C:\\private\\profile Bearer private-token', 'not JSON ACCESS_RUNTIME_OWNERSHIP', '{broken', JSON.stringify({ error: 'Private message C:\\private\\profile Bearer private-token', code: 'ACCESS_HOST_NOT_RUNNING', requestId: 'private-request', token: 'private-token' })].join('\r\n');
@@ -24,27 +24,17 @@ test('native restart diagnostics ignore unknown codes, non-error JSON, malformed
   assert.deepEqual(nativeRestartCLIOutcome('noise', 'private-token'), { exitCode: null });
 });
 
-test('Windows installer inventory accepts the new runtime assets and the selected release notes', () => {
-  assert.equal(approvedWindowsPackageFile('skills/autonomy/SKILL.md','9.8.7'),false);
-  assert.equal(approvedWindowsPackageFile('skills/autonomy/unreviewed.md','9.8.7'),false);
-  for (const file of ['BROWSER-IMPORT.md', 'CHATGPT-CONNECTOR.md', 'scripts/browser-cli.mjs', 'scripts/repair-shortcuts.ps1', 'desktop/browser-compatibility/manifest.json', 'desktop/browser-compatibility/main.js', 'desktop/browser-compatibility.mjs', 'lib/browser-profile.mjs', 'public/browser-ui.mjs', 'RELEASE-NOTES-9.8.7.md', 'RELEASE-NOTES-2.33.8.md', 'RELEASE-NOTES-2.33.9.md', 'RELEASE-NOTES-2.33.10.md', 'RELEASE-NOTES-2.33.11.md', 'RELEASE-NOTES-2.33.12.md', 'RELEASE-NOTES-2.33.13.md', 'RELEASE-NOTES-2.34.0.md']) {
-    assert.equal(approvedWindowsPackageFile(file, '9.8.7'), true, file);
-  }
-  for (const file of ['README.md', 'scripts/browser-profile-smoke.mjs', 'scripts/windows-release-inputs.mjs', 'RELEASE-NOTES-9.8.6.md', 'RELEASE-NOTES-2.33.14.md', 'desktop/unknown.json', 'desktop/build-icon.mjs', 'lib/example.test.mjs', 'public/.env', 'lib/node_modules/unsafe.mjs', 'lib/.currents-backup-file.mjs', 'lib/browser.mjs.ownership-backup', 'public/assets.ownership-backup/private.mjs', 'desktop/old.ownership-backup/worker.mjs', 'scripts/other-shortcuts.ps1', 'skills/planning/../private.md', 'skills/unapproved/SKILL.md', '../lib/file.mjs', 'lib/../private.txt', 'lib\\file.mjs']) {
-    assert.equal(approvedWindowsPackageFile(file, '9.8.7'), false, file);
-  }
-  for (const directory of ['data', 'lib/node_modules', 'public/.git', 'tests']) assert.equal(forbiddenWindowsPackagePath(directory), true, directory);
+test('Windows package inventory contains runtime and current documentation, not historical notes', () => {
+  for(const file of ['CHATGPT-CONNECTOR.md','REMOTE-ACCESS.md','RELEASE-NOTES.md','scripts/browser-cli.mjs','scripts/repair-shortcuts.ps1','desktop/browser-compatibility/manifest.json','desktop/browser-compatibility/main.js','desktop/browser-compatibility.mjs','lib/browser-profile.mjs','public/browser-ui.mjs']) assert.equal(approvedWindowsPackageFile(file,'9.8.7'),true,file);
+  for(const file of ['README.md','BROWSER-IMPORT.md','CHATGPT-BRIDGE.md','CHAT-MODE.md','RELEASE-NOTES-9.8.7.md','RELEASE-NOTES-2.40.81.md','RELEASE-NOTES-custom.md','scripts/browser-profile-smoke.mjs','scripts/windows-release-inputs.mjs','desktop/unknown.json','desktop/build-icon.mjs','lib/example.test.mjs','public/.env','lib/node_modules/unsafe.mjs','lib/.currents-backup-file.mjs','lib/browser.mjs.ownership-backup','public/assets.ownership-backup/private.mjs','desktop/old.ownership-backup/worker.mjs','scripts/other-shortcuts.ps1','skills/unapproved/SKILL.md','../lib/file.mjs','lib/../private.txt']) assert.equal(approvedWindowsPackageFile(file,'9.8.7'),false,file);
+  for(const dir of ['data','lib/node_modules','public/.git','tests']) assert.equal(forbiddenWindowsPackagePath(dir),true,dir);
 });
 
-test('2.33.14 permits its current notes and preserved 2.33.13 notes without approving arbitrary release documents', () => {
-  for (const file of ['RELEASE-NOTES-2.33.13.md', 'RELEASE-NOTES-2.33.14.md']) assert.equal(approvedWindowsPackageFile(file, '2.33.14'), true, file);
-  for (const file of ['RELEASE-NOTES-2.33.15.md', 'RELEASE-NOTES-9.8.6.md', 'RELEASE-NOTES-custom.md', 'RELEASE-NOTES.md']) assert.equal(approvedWindowsPackageFile(file, '2.33.14'), false, file);
+test('versioned release notes no longer enter future packages', () => {
+  for(const file of ['RELEASE-NOTES-2.33.13.md','RELEASE-NOTES-2.39.97.md','RELEASE-NOTES-2.40.82.md']) assert.equal(approvedWindowsPackageFile(file,'2.40.82'),false,file);
 });
 
-test('2.39.98 installer retains exactly its current and reviewed 2.39.97 notes without opening neighboring versions', () => {
-  for (const file of ['RELEASE-NOTES-2.39.97.md', 'RELEASE-NOTES-2.39.98.md']) assert.equal(approvedWindowsPackageFile(file, '2.39.98'), true, file);
-  for (const file of ['RELEASE-NOTES-2.39.96.md', 'RELEASE-NOTES-2.39.99.md', 'RELEASE-NOTES-2.39.98.md.bak', 'RELEASE-NOTES-custom.md']) assert.equal(approvedWindowsPackageFile(file, '2.39.98'), false, file);
-});
+
 
 test('Windows installer native helpers use exact approved paths without permitting arbitrary PowerShell or C# files', async () => {
   for (const file of ['desktop/make-icon.ps1', 'desktop/native-window-host.cs', 'desktop/native-window-host.ps1', 'desktop/installed-app-icons.cs', 'desktop/native-app-launcher.cs', 'desktop/native-foreground-guard.cs']) {
@@ -104,7 +94,7 @@ test('every explicit installer file is approved for the current release', async 
     .map(rule => rule.replace(/^(['"])(.*)\1$/, '$2'));
   const files = rules.filter(rule => !rule.startsWith('!') && !/[*?\[\]{}]/.test(rule));
   assert.ok(files.includes('package.json'), 'explicit installer file rules were found');
-  assert.ok(files.includes('RELEASE-NOTES-' + version + '.md'), 'the installer includes current release notes');
+  assert.ok(files.includes('RELEASE-NOTES.md'), 'the installer includes current release notes');
   assert.ok(files.includes('docs/GOAL-MODE.md'), 'the installer includes the Goal mode guide');
   assert.ok(files.includes('docs/instruction-audit.md'), 'the installer includes the instruction audit guide');
   for (const file of files) assert.equal(approvedWindowsPackageFile(file, version), true, file);
@@ -254,42 +244,11 @@ test('retired built-in skill files and neighboring paths are never approved pack
  for (const file of ['skills/planning/SKILL.md','skills/planning/CONTRACT-V2.md','skills/planning/references/evidence-preserving-execution.md','skills/autonomy/SKILL.md','skills/browser/SKILL.md','skills/job-search/SKILL.md','skills/planning/CONTRACT-V3.md','skills/planning/SKILL.md.bak','skills/unapproved/SKILL.md']) assert.equal(approvedWindowsPackageFile(file, '2.40.3'), false, file);
 });
 
-test('.104 retains only its selected .103 recovery note alongside the current release',()=>{
- for(const f of ['RELEASE-NOTES-2.39.103.md','RELEASE-NOTES-2.39.104.md'])assert.equal(approvedWindowsPackageFile(f,'2.39.104'),true,f);
- for(const f of ['RELEASE-NOTES-2.39.102.md','RELEASE-NOTES-2.39.105.md','RELEASE-NOTES-2.39.103.md.bak'])assert.equal(approvedWindowsPackageFile(f,'2.39.104'),false,f);
-});
 
-test('retained release notes derive only from exact numeric top-level builder files entries', () => {
-  const config = [
-    'extraResources:', '  - RELEASE-NOTES-9.8.0.md', 'files:',
-    '  - RELEASE-NOTES-2.39.105.md', '  - "RELEASE-NOTES-2.39.106.md"',
-    "  - 'RELEASE-NOTES-3.0.0.md'", '  - RELEASE-NOTES-2.39.*.md',
-    '  - docs/private.md', '  - ../RELEASE-NOTES-2.39.104.md',
-    '  - docs/RELEASE-NOTES-2.39.104.md', '  - RELEASE-NOTES-02.39.104.md',
-    '  - !RELEASE-NOTES-2.39.104.md', '  - RELEASE-NOTES-2.39.105.md.bak',
-    '  - RELEASE-NOTES-custom.md', 'win:', '  - RELEASE-NOTES-9.8.1.md',
-  ].join('\n');
-  assert.deepEqual(explicitWindowsReleaseNotes(config), [
-    'RELEASE-NOTES-2.39.105.md', 'RELEASE-NOTES-2.39.106.md', 'RELEASE-NOTES-3.0.0.md',
-  ]);
-  for (const config of [null, '', 'files:\n  - lib/**/*\nwin:\n', 'files:\n  - "RELEASE-NOTES-2.39.105.md\'\nwin:\n'])
-    assert.deepEqual(explicitWindowsReleaseNotes(config), []);
-});
-test('explicit retained note approval survives future version bumps without admitting arbitrary neighbors', () => {
-  const notes = explicitWindowsReleaseNotes('files:\n  - RELEASE-NOTES-2.39.105.md\n  - RELEASE-NOTES-2.39.106.md\n  - RELEASE-NOTES-2.39.107.md\n  - RELEASE-NOTES-3.0.0.md\nwin:\n');
-  for (const current of ['2.39.106', '2.39.107', '3.0.0']) {
-    assert.equal(approvedExplicitWindowsReleaseNote('RELEASE-NOTES-2.39.105.md', current, notes), true);
-    assert.equal(approvedExplicitWindowsReleaseNote('RELEASE-NOTES-2.39.106.md', current, notes), true);
-    for (const file of ['RELEASE-NOTES-2.39.104.md','RELEASE-NOTES-4.0.0.md','RELEASE-NOTES-custom.md','docs/private.md','../RELEASE-NOTES-2.39.105.md'])
-      assert.equal(approvedExplicitWindowsReleaseNote(file, current, notes), false, file);
-  }
-  assert.equal(approvedExplicitWindowsReleaseNote('RELEASE-NOTES-2.39.107.md', '2.39.106', notes), false);
-  assert.equal(approvedExplicitWindowsReleaseNote('RELEASE-NOTES-3.0.0.md', '2.39.107', notes), false);
-  for (const bad of [null, '2.39', '2.39.106-beta', '../2.39.106'])
-    assert.equal(approvedExplicitWindowsReleaseNote('RELEASE-NOTES-2.39.105.md', bad, notes), false);
-  assert.equal(approvedWindowsPackageFile('RELEASE-NOTES-2.39.105.md','2.39.106'), true);
-  assert.equal(approvedWindowsPackageFile('RELEASE-NOTES-2.39.107.md','2.39.106'), false);
-});
+
+
+
+
 
 test('disposable native fixture excludes foreign restart origin without altering parent environment', async () => {
   const { disposableDesktopFixtureEnvironment } = await import('../scripts/windows-release-inputs.mjs');
