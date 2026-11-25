@@ -215,3 +215,62 @@ test('same-scope resets alternating across turns cannot repeatedly credit old co
  }
  assert.equal(f.goals.raw('root').status,'active');
 });
+
+test('candidate discovery retains its frontier without requiring another search',async()=>{
+ const f=fixture(),next=cursor(1);
+ await f.turn(search(null),receipt(next,100,{matches:[{path:'C:\\fixture\\resume.pdf'}]}));
+ let goal=f.goals.raw('root');
+ assert.equal(goal.searchProgress[0].nextCursor,next);
+ assert.equal(goal.searchProgress[0].hasCandidates,true);
+ assert.equal(goal.lastSettlementAssessment.searchContinuation,undefined);
+ await f.goals.dispatch('root');
+ assert.doesNotMatch(f.dispatched.at(-1).message,/continue with relay_find_files using these saved arguments/);
+});
+test('subsequent useful work supersedes the pending empty-page suggestion',async()=>{
+ const f=fixture(),next=cursor(1);
+ await f.turn([[search(null),receipt(next,100)],[{name:'relay_workspace',arguments:{action:'read',path:'C:\\fixture\\known.pdf'}},{success:true,contentItems:[{type:'inputText',text:'known document'}]}]]);
+ const goal=f.goals.raw('root');
+ assert.equal(goal.searchProgress[0].nextCursor,next);
+ assert.equal(goal.lastSettlementAssessment.searchContinuation,undefined);
+});
+test('short active Goal handoff gets one bounded action correction without a new scheduled turn',async()=>{
+ const f=fixture();
+ await f.turn(search(null),receipt(cursor(1),100),{beforeSettle:async run=>{
+  run.startedAt=new Date().toISOString();
+  const candidate={output:'The next step is to read the available source.'};
+  const result=f.goals.beforeCheckpoint(run,candidate);
+  assert.equal(result?.continue,true);
+  assert.match(result.prompt,/Execute the next useful available action/);
+  assert.equal(f.goals.beforeCheckpoint(run,candidate),null);
+  assert.equal(f.dispatched.length,0);
+ }});
+});
+test('checkpoint correction cannot override explicit budgets, completed work, or stopped Goals',async()=>{
+ for(const variant of ['budget','complete','stopped','long','aborted','incomplete']){
+  const f=fixture();
+  await f.turn(search(null),receipt(cursor(1),100),{beforeSettle:async run=>{
+   run.startedAt=new Date(Date.now()-(variant==='long'?121000:0)).toISOString();
+   const candidate={output:'The next step is to read the available source.'};
+   if(variant==='budget') await f.goals.save('root',{...f.goals.raw('root'),maxTurns:2});
+   if(variant==='complete') run.goalCompletion={summary:'Finished'};
+   if(variant==='stopped') await f.goals.save('root',{...f.goals.raw('root'),status:'paused'});
+   if(variant==='aborted') candidate.signal=AbortSignal.abort();
+   if(variant==='incomplete') candidate.incomplete=true;
+   assert.equal(f.goals.beforeCheckpoint(run,candidate),null,variant);
+  }});
+ }
+});
+test('native confirmed commit receipts count once as intermediate progress, not Goal completion',async()=>{
+ const f=fixture(),proof={adapter:'relay_browser',effect:'commit',effectKey:'fixture-submission',operationId:'native:fixture'};
+ const op={name:'fixture_observation',arguments:{action:'read'}},result={success:true,contentItems:[]};
+ await f.turn(op,result,{beforeSettle:run=>{f.goals.observeConfirmedCommit(run,proof);f.goals.observeConfirmedCommit(run,proof);}});
+ let goal=f.goals.raw('root');
+ assert.equal(goal.noProgressTurns,0);
+ assert.equal(goal.lastProgressBasis,'host_confirmed_commit');
+ assert.equal(goal.milestones.length,1);
+ assert.equal(goal.completionEvidence,null);
+ await f.turn(op,result,{beforeSettle:run=>f.goals.observeConfirmedCommit(run,proof)});
+ goal=f.goals.raw('root');
+ assert.equal(goal.noProgressTurns,1);assert.equal(goal.milestones.length,1);
+ assert.equal(goal.status,'active');
+});

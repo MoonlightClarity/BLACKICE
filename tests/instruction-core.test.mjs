@@ -52,7 +52,8 @@ test('local file routing follows the attached schema instead of advertising a re
   assert.doesNotMatch(legacy, /relay_find_files/);
   const paths = capabilityGuidance([tool('relay_find_files')]);
   assert.doesNotMatch(paths, /relay_workspace/);
-  assert.match(paths, /Continue while a cursor is returned, even after an empty page/);
+  assert.match(paths, /If the intended source is not established and more coverage is useful, continue with the same query and returned cursor/i);
+  assert.match(paths, /Stop discovery once the needed source is established/);
 });
 
 test('archived text and outcome feedback have distinct current-task routing only when attached', () => {

@@ -326,3 +326,25 @@ test('provider and host share closed mutually exclusive action contracts',async 
   }
   assert.equal((await store.handle({arguments:{action:'search',needle:'target'}})).success,true);
 });
+
+test('archived browser observations expose only a bounded exact subset of current controls',async t=>{
+ const {store}=await fixture(t);
+ const page={tabId:'tab-1',documentId:'doc-2',url:'https://example.test/apply',frames:[{frame:'main',elements:[
+  {ref:'file-7',name:'Resume',tag:'input',type:'file',hidden:true,uploadOnly:true,required:true,value:'sensitive path'},
+  {ref:'pwd-1',name:'Password',tag:'input',type:'password',value:'secret'},
+  ...Array.from({length:50},(_,i)=>({ref:'field-'+i,name:'Question '+i,tag:'input',type:'text',value:'hidden value '+i,options:['A','B']}))
+ ]}]};
+ const full=JSON.stringify(page),call={name:'relay_browser',arguments:{action:'snapshot',tabId:'tab-1'},callId:'browser-1'};
+ const response=parsed(await store.archiveResult(call,result(full))),compact=response.browserObservation;
+ assert.equal(response.externalContext,true);
+ assert.equal(compact.tabId,page.tabId);assert.equal(compact.documentId,page.documentId);assert.equal(compact.url,page.url);
+ assert.equal(compact.partial,true);
+ const controls=compact.frames.flatMap(f=>f.elements);
+ assert(controls.length<=24);assert(controls.some(e=>e.ref==='file-7'&&e.uploadOnly&&e.hidden));
+ assert(!controls.some(e=>e.type==='password'||Object.hasOwn(e,'value')||Object.hasOwn(e,'options')));
+ assert(Buffer.byteLength(JSON.stringify(compact),'utf8')<=5200);
+ assert(controls.every(e=>page.frames[0].elements.some(original=>original.ref===e.ref&&original.name===e.name)));
+ assert.match(response.nextAction,/Use the included exact browser controls/);
+ const protectedResponse=parsed(await store.archiveResult({...call,callId:'browser-2'},result(JSON.stringify({...page,protectedContent:true}))));
+ assert.equal(protectedResponse.browserObservation,undefined);
+});

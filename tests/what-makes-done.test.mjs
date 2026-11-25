@@ -14,7 +14,7 @@ async function readCurrentGuidance(id){
  const skill=await readBundledSkill(id);
  assert.deepEqual(skill.provenance,declaration.source);
  const expectedRevisions={
-  'library-what-makes-done':'agency-judgment-20261124',
+  'library-what-makes-done':'agency-efficiency-20261125',
   'library-simplest-complete-path':'clarity-20261121',
   'library-long-term-judgment':'clarity-20261121',
  };

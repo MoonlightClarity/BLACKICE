@@ -200,7 +200,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "agency-judgment-20261124"
+        "revision": "agency-efficiency-20261125"
       },
       "bodyFile": "job-search.md"
     },
@@ -568,7 +568,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "agency-judgment-20261124"
+        "revision": "agency-efficiency-20261125"
       },
       "bodyFile": "what-makes-done.md"
     },

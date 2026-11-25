@@ -71,4 +71,4 @@ Check the exact target and operation in current authorized records when there is
 
 Respect the current Past Chats setting. A current service record or separately authorized task ledger can establish an effect without looking up old conversations.
 
-Examples: a submitted application ends at employer acceptance, not an eventual hiring decision. An export containing 40 of 61 required batches is partial; fetch the other 21. An empty file-search page with a cursor calls for the next page. A stale click rejected before dispatch calls for a fresh snapshot.
+Examples: a submitted application ends at employer acceptance, not an eventual hiring decision. An export containing 40 of 61 required batches is partial; fetch the other 21. An empty file-search page with a cursor calls for the next page only when the source or coverage is still needed; read a promising candidate directly and stop discovery when the source is established. A stale click rejected before dispatch calls for a fresh snapshot.

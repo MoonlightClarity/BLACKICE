@@ -1303,3 +1303,21 @@ test('a newer owner objective revokes finishing-turn recovery without giving old
  await waitFor(()=>engine.getRun(first.id).settled);
  assert.equal(runtime.calls.length,1);
 });
+
+test('ordinary Chat Goal review corrects a deferred action in the admitted provider work period',async t=>{
+ let corrected=false,callbackError;
+ const {engine,goals,runtime}=await fixture(t,async(options,n)=>{
+  try { assert.equal(n,1);
+  const p=await report(options,'progress',{nextAction:'Inspect the known document.'});assert.equal(p.result.success,true);
+  assert.equal(typeof options.onBeforeFinal,'function');
+  const correction=await options.onBeforeFinal({output:'The next step is to inspect the known document.'});
+  assert.equal(correction?.continue,true);corrected=true;
+  const c=await report(options,'complete',{evidence:'The fixture inspected the requested known document and verified its contents.'});assert.equal(c.result.success,true);
+  assert.ok((await options.onBeforeFinal({output:'The document was inspected and verified.'}))==null);
+  return output(n); } catch(error){callbackError=error;throw error;}
+ });
+ const workflow={...graph(),id:'mission_chat_checkpoint_test',description:'A focused task started from Mission.'};
+ const run=engine.startRun({workflow,input:{task:'Inspect the known document.',goal:{objective:'Inspect the known document.'}}});
+ await waitFor(()=>{if(callbackError)throw callbackError;return goals.view(run.id)?.status==='completed';},'checkpoint Goal completion');
+ assert.equal(corrected,true);assert.equal(runtime.calls.length,1);
+});
