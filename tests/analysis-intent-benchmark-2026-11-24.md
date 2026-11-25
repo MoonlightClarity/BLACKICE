@@ -64,3 +64,29 @@ The previous 14-stage route was compared against shorter alternatives on the sam
 The full isolated regression suite after the compact implementation passed **147 tests, zero failures**, and focused tests passed after clarifying routing-only skill receipts. Neither the installed BLACKICE app nor main was modified. The local user source and full model outputs remain in untracked local receipts, not in this committed report.
 
 Source fidelity refinement: the compact prompt now reads the original page strings from the verified attachment record, checks each page against its source hash, and preserves line breaks and blank lines rather than concatenating inspection units. The expanded suite passed 147 tests after the change. This is exact-text transport verification, not semantic verification.
+
+## Instruction-layer and counterfactual controls
+
+The actual compact prompt was reconstructed directly from the isolated source-analysis entrypoint and tested with MiniCPM-V-4.7-1B-heretic-Q4_K_S on an isolated local llama.cpp server. Temperature was fixed at zero. The three conditions changed only instruction delivery:
+
+| Condition | System instruction text | Additional method text | Latency | Observed behavior |
+|---|---:|---:|---:|---|
+| Minimal analytical authority | 119 characters | None | 27.2 s | Multiple source sections covered, but claimed self-reported work *validated* expertise |
+| BLACKICE standard execution authority | 3,570 characters | None | 37.3 s | More verbose; conflated described architecture and team coordination with independently established engineering rigor |
+| Standard authority plus structured-analysis method | 3,570 characters | 2,500 characters | 20.2 s | Shorter, but shifted to generic role fit and mistook problems investigated in an agent platform for evidence of candidate unreliability |
+
+These are single-run deterministic-prompt observations, **not a statistically controlled estimate** of instruction-effect size. None supported the hypothesis that adding longer instructions or the selected structured-analysis skill, by itself, repairs the actual inferential failures. Method selection and prompt delivery remain distinct, inspectable facts.
+
+A separate **six-pair / twelve-case synthetic counterfactual probe** used short text about who identified unsupported conclusions, whether a repository link appeared, whether all participants improved, whether a causal effect was established, personal implementation versus coordination, and line management versus review. The local MiniCPM model chose the evidence-consistent option in **all twelve** cases. This shows the model can resolve these *explicit, local distinctions*; it does not prove it can select the right questions or synthesize them over a longer document.
+
+The same model then received **seven explicit source-specific checks on the original résumé**, once with relevant source excerpts preceding the proposed conclusion and once with the conclusion first. It answered **13/14** in the expected direction: **7/7 source-first**, **6/7 claim-first**. With the conclusion placed first, it incorrectly accepted that approximately 3,000 assessments had been independently certified accurate. This is a concrete anchoring failure despite successful local evidence interpretation under the opposite ordering.
+
+Finally, a continuation test held the exact original résumé, previous answer, current user follow-up, selected model, system instructions and generation budget constant, and changed only the order of (a) the previous fallible answer and (b) the original source. Neither ordering produced a genuine substantive challenge. The replies repeated unsupported technical-leadership and capability claims. **Reordering the context alone is not a fix.**
+
+A reusable local-only CLI benchmark is now included in `scripts/semantic-contrast-benchmark.mjs` with synthetic cases in `tests/semantic-contrast-fixtures.mjs`. It records decisions and explanations, detects incomplete observations, and explicitly labels results **diagnostic, not semantic verification**. To run it against an existing local server:
+
+```
+node scripts/semantic-contrast-benchmark.mjs --model MODEL_ID --url http://127.0.0.1:8080/v1 --output local-contrast-results.json
+```
+
+**Implication for development:** The current bottleneck is not simply tokenizer budget, refusal, skill-registration failures, or a complete inability to compare evidence. It includes **selecting salient inferential questions and holding the source above attractive prior conclusions during long-context synthesis**. A possible next experiment is model-generated answer candidates subjected to narrow, localized evidence questions *before* synthesis, but those checks should not automatically rewrite an answer or declare it verified until end-to-end source-fidelity tests demonstrate a real quality improvement. Do not silently substitute models or overwrite the user's selected provider.
