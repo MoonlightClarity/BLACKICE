@@ -465,3 +465,16 @@ test('novel reasoning without host evidence is a useful report but does not rese
  assert.equal(result.progress,false);
  assert.equal(result.observedMilestone,null);
 });
+
+test('typed native fill pre-input refusals remain recoverable without forgiving unknown key dispatch',()=>{
+ const operation=call('relay_browser',{action:'fill',tabId:'form',ref:'field',text:'test'});
+ for(const code of ['BROWSER_INPUT_FOCUS_CHANGED','BROWSER_INPUT_SELECTION_FAILED','BROWSER_FIELD_READ_ONLY','BROWSER_FIELD_DISABLED','BROWSER_FIELD_NOT_EDITABLE','BROWSER_VALIDATION']){
+  const safe=result(false,code,{code,inputDispatched:false,keyboardStage:'pre-key-input'});
+  const row=observeGoalToolOutcome(operation,safe);assert.equal(row.kind,'recoverable_no_input',code);
+  assert.equal(row.inputDispatched,false);assert.equal(row.actionDispatched,null);
+  assert.equal(detectUnknownEffectReplay([row],operation),null);
+  for(const untrusted of [result(false,code,{code,inputDispatched:false}),result(false,code,{code,inputDispatched:true,keyboardStage:'pre-key-input'}),
+     result(false,code,{code,inputDispatched:false,keyboardStage:'pre-key-input',actionDispatched:true})])
+    assert.equal(observeGoalToolOutcome(operation,untrusted).kind,'uncertain_external_effect',code);
+ }
+});
