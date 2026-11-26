@@ -47,3 +47,28 @@ test('native render synchronization respects identity, cancellation, and the ove
  const invalid=fake(()=>image);invalid.executeJavaScriptInIsolatedWorld=async()=>false;
  await assert.rejects(captureHiddenPage(invalid),{code:'BROWSER_CAPTURE_RENDER_UNAVAILABLE'});assert.equal(invalid.calls,0);
 });
+
+test('parked native views do not make a throttled animation frame a capture prerequisite',async()=>{
+ let frames=0;const contents=fake(()=>image);
+ contents.isOffscreen=()=>false;
+ contents.executeJavaScriptInIsolatedWorld=()=>{frames++;return new Promise(()=>{});};
+ const started=Date.now(),result=await captureHiddenPage(contents,{timeoutMs:400,retryDelays:[0,0]});
+ assert.equal(result.image,image);assert.equal(contents.calls,1);assert.equal(frames,0);
+ assert.ok(Date.now()-started<300);
+});
+
+test('parked native views retry a transient compositor failure without an animation wait',async()=>{
+ let frames=0;const contents=fake(call=>{if(call===1)throw Error('UnknownVizError');return image;});
+ contents.isOffscreen=()=>false;
+ contents.executeJavaScriptInIsolatedWorld=()=>{frames++;return new Promise(()=>{});};
+ const result=await captureHiddenPage(contents,{timeoutMs:800,retryDelays:[30,0]});
+ assert.equal(result.image,image);assert.equal(result.retries,1);assert.equal(contents.calls,2);assert.equal(frames,0);
+});
+
+test('true offscreen rendering retains its frame freshness boundary',async()=>{
+ const order=[],contents=fake(()=>{order.push("bitmap");return image;});
+ contents.isOffscreen=()=>true;
+ contents.executeJavaScriptInIsolatedWorld=async()=>{order.push("render-boundary");return true;};
+ await captureHiddenPage(contents,{timeoutMs:1000});
+ assert.deepEqual(order,["render-boundary","bitmap"]);
+});
