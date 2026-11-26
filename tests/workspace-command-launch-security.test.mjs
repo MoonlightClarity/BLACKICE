@@ -52,6 +52,7 @@ test('PowerShell receives ordinary inline command without hidden/policy switches
   const launch = f.launches[0]; assert.equal(launch.executable, 'powershell.exe');
   assert.deepEqual(Array.from(launch.args.slice(0, 4)), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command']);
   assert.equal(launch.args.length, 5); assert.ok(launch.args[4].endsWith('\nWrite-Output "quotes; $literal"'));
+  assert.ok(launch.args[4].includes("$PSDefaultParameterValues['Get-Content:Encoding']='UTF8'"),'UTF-8 default must be scoped to the command process');
   assert.ok(!launch.args.some(arg => /Bypass|EncodedCommand|WindowStyle|ExecutionPolicy/i.test(arg)));
   assert.equal(launch.options.windowsHide, true); // Only suppress console-window creation; captured output is retained.
   assert.equal(launch.options.env.BLACKICE_RESTART_ORIGIN, undefined);

@@ -415,3 +415,48 @@ test('native select pre-input refusal does not create an unknown external effect
   }
   assert.equal(observeGoalToolOutcome(call('relay_browser',{action:'click',tabId:'form',ref:'control'}),receipt).kind,'uncertain_external_effect');
 });
+
+test('pre-pointer identity classification requires the host receipt marker; unmarked or conflicting failures remain uncertain',()=>{
+ for(const code of ['BROWSER_REF_STALE','BROWSER_INPUT_DOCUMENT_CHANGED']){
+  const op=call('relay_browser',{action:'click',ref:'control',tabId:'page'});
+  const marked=result(false,code,{code,inputDispatched:false,pointerStage:'pre-pointer-identity'});
+  const row=observeGoalToolOutcome(op,marked);
+  assert.equal(row.kind,'recoverable_no_input');
+  assert.equal(row.actionDispatched,null);
+  assert.equal(observeGoalToolOutcome(op,result(false,code,{code,inputDispatched:false})).kind,'uncertain_external_effect');
+  assert.equal(observeGoalToolOutcome(op,{...marked,actionDispatched:true}).kind,'uncertain_external_effect');
+ }
+});
+
+
+test('stale field refusals do not block a different current host-observed field in the same document', async()=>{
+ const manager=new ConversationGoals({engine:{runs:new Map()},conversations:{states:{fixture:{}}},autoStart:false});
+ manager.raw=()=>({lastToolEvidence:[]});
+ const run={taskId:'fixture',goal:{id:'goal'},goalEvidence:[]};
+ const url='https://example.test/form';
+ const edit=(ref,extra={})=>call('relay_browser',{action:'fill',tabId:'form',expectedUrl:url,expectedDocumentId:'form:1',ref,text:'inert',...extra});
+ let adapterCalls=0;
+ const guarded=manager.wrapTools(run,'agent',async({arguments:args})=>{
+  if(args.action==='snapshot')return result(true,null,{tabId:'form',url,documentId:'form:1',frames:[{elements:[{ref:'new-field'},{ref:'stale-field'}]}]});
+  adapterCalls++;
+  if(args.ref==='stale-field')return {...result(false,'BROWSER_REF_STALE'),actionDispatched:false};
+  return result(true,null,{receipt:{filled:true}});
+ });
+ for(let i=0;i<3;i++)assert.equal((await guarded(edit('stale-field',{requestId:'r'+i}))).code,'BROWSER_REF_STALE');
+ assert.equal((await guarded(edit('new-field'))).code,'GOAL_REPLAN_REQUIRED','unobserved reference must not reset denial');
+ await new Promise(resolve=>setTimeout(resolve,5));
+ await guarded(call('relay_browser',{action:'snapshot',tabId:'form'}));
+ assert.equal((await guarded(edit('guessed-field'))).code,'GOAL_REPLAN_REQUIRED');
+ assert.equal((await guarded(edit('stale-field'))).code,'GOAL_REPLAN_REQUIRED','same rejected ref remains blocked');
+ assert.equal((await guarded(edit('new-field'))).success,true);
+ assert.equal(adapterCalls,4);
+});
+
+test('novel reasoning without host evidence is a useful report but does not reset verified progress',()=>{
+ const report={summary:'Investigated new source',evidence:'Different reasoning narrative without a completed application or other outcome',nextAction:'Search elsewhere'};
+ const result=assessGoalProgress({previousProgressEvidence:'Prior narrative'},{goalEvidence:[],goalProgress:report});
+ assert.equal(result.provisionalReasoning,true);
+ assert.equal(result.progressKind,'provisional_reasoning');
+ assert.equal(result.progress,false);
+ assert.equal(result.observedMilestone,null);
+});
