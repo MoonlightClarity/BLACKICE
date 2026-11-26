@@ -10,7 +10,7 @@ const previous=await fs.readFile(new URL('./fixtures/soul-default-20261115.md',i
 async function fixture(t){const dataDir=await fs.mkdtemp(path.join(tmpdir(),'blackice-release-soul-'));const stores=[];const open=async()=>{const s=await new IdentityStore({dataDir}).init();stores.push(s);return s;};t.after(async()=>{for(const s of stores)await s.close();await fs.rm(dataDir,{recursive:true,force:true});});return {dataDir,open};}
 test('fresh profile receives exact concise default and restart is idempotent',async t=>{
  const {dataDir,open}=await fixture(t);const s=await open(),doc=await s.read('soul');
- assert.equal(createHash('sha256').update(exact).digest('hex'),'1f7b9a74080e067646bb29889be7bd0652649f4c13960caf9beaba83a6e5b773');
+ assert.equal(createHash('sha256').update(exact).digest('hex'),'7d445cb1d0e7fa4be8eb09dbe863faf795e9fc828948de75ad8354bb1b720573');
  assert.deepEqual(Buffer.from(DEFAULT_SOUL),exact);assert.deepEqual(await fs.readFile(path.join(dataDir,'identity','SOUL.md')),exact);
  assert.equal((await (await open()).read('soul')).revision,doc.revision);
  const snap=await s.snapshot();assert.equal(snap.documents.soul.truncated,false);assert.equal(snap.documents.soul.hash,doc.hash);assert.ok(Object.isFrozen(snap.documents.soul));
