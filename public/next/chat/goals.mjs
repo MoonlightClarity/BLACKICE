@@ -95,6 +95,7 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
       view.goalObjective.textContent=current.objective;view.goalProgress.textContent=current.progress;
       view.goalDeadline.textContent=goal?.deadlineAt?'Stop time: '+new Date(goal.deadlineAt).toLocaleString()+' (computer local); originally '+(goal.deadlineTimeZone||'UTC')+' · '+goal.deadlineAt:'';
       view.goalDeadline.hidden=!goal?.deadlineAt;
+       if(view.goalDeadlineBrief){view.goalDeadlineBrief.textContent=goal?.deadlineAt?'Stops '+new Date(goal.deadlineAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';view.goalDeadlineBrief.hidden=!goal?.deadlineAt;}
       view.goalReason.textContent=current.reason;view.goalReason.hidden=!current.reason;
       view.goalPause.hidden=!current.canPause;view.goalResume.hidden=!current.canResume;
       for(const control of [view.goalEdit,view.goalPause,view.goalResume,view.goalClear])control.disabled=busy||locked||readonly;
@@ -211,7 +212,7 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
       const target=context.conversationId||'new',changed=target!==owner;
       readonly=Boolean(context.readonly);locked=Boolean(context.busy);working=Boolean(context.running);
       if(changed){
-        ++readToken;owner=target;goal=null;loading=false;readError='';closeEditor();
+        ++readToken;owner=target;goal=null;loading=false;readError='';closeEditor();if(view.goalDetails)view.goalDetails.open=false;
         if(owner!=='new')void refresh();
       }
       paint();
