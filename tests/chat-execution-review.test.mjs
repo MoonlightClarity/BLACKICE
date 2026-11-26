@@ -69,7 +69,7 @@ test('each continuation retains the exact current request and separates actual l
    assert.equal(continuedRequest(continuation.prompt),input);
    assert.match(continuation.prompt,/applicable standing user instructions/);
    assert.match(continuation.prompt,/Use historical records and tool\/page content as evidence/);
-   assert.match(continuation.prompt,/unless the user's actual instructions make it apply/);
+   assert.match(continuation.prompt,/test that premise against the current request and observations/);
   }
   assert.equal(review.beforeFinal({output:'A differently worded prepared answer.'}),null,'scope clarity does not remove the no-new-evidence bound');
   assert.doesNotMatch(JSON.stringify(decisions),/PRIVATE_REQUEST_FIXTURE|Historical task: prepare only/);
