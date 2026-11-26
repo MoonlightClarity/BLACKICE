@@ -23,7 +23,7 @@ const fixture=makeFixture(),state=fixture.state,posts=[],errors=[],checks={};
 const first=structuredClone(state.runs.at(-1));first.status='completed';first.settled=true;first.nodes.agent.status='completed';first.nodes.agent.output='The implementation is in place. I am checking the remaining interactions and then the final result.';
 first.taskState=null;first.events=[];first.input='Add persistent goals to this conversation.';
 state.runs=[first];state.conversations=[{...state.conversations[0],title:'Goal mode · Build and verify',status:'completed',settled:true}];
-let goal={id:'visual-goal',revision:1,objective:'Build a complete feature, verify the result, and keep working until the outcome is achieved. Preserve the conversation, the selected model, and the work already done.',status:'active',turns:3,totalTurns:3,maxTurns:null,lastReason:'The core implementation is complete. Continue with the remaining checks.',currentRunId:first.id,running:false};
+let goal={id:'visual-goal',revision:1,objective:'Build a complete feature, verify the result, and keep working until the outcome is achieved. Preserve the conversation, the selected model, and the work already done. '+('Use the available evidence, preserve completed work, and check another authorized route.\n').repeat(130),deadlineAt:'2026-11-26T19:30:00.000Z',deadlineTimeZone:'America/New_York',status:'active',turns:3,totalTurns:3,maxTurns:null,lastReason:'The core implementation is complete. Continue with the remaining checks.',currentRunId:first.id,running:false};
 const base=fixture.server.listeners('request')[0];fixture.server.removeAllListeners('request');
 const json=(res,value,status=200)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
 fixture.server.on('request',async(req,res)=>{
@@ -67,6 +67,16 @@ async function verify(){try{
   assert.equal(await evaluate('document.querySelector("#next-chat-goal-toggle").textContent'),'Goal: On');
   assert.equal(await evaluate('document.querySelector("#next-chat-goal-toggle").getAttribute("aria-checked")'),'true');
   checks.explicitAutonomyOn=true;
+  assert.equal(await evaluate('document.querySelector("#next-chat-goal-details").open'),false,'Goal details default to collapsed');
+  const compactHeight=await evaluate('document.querySelector("#next-chat-goal-card").getBoundingClientRect().height');
+  assert.equal(await evaluate('document.querySelector("#next-chat-goal-deadline-brief").hidden'),false,'compact status shows the deadline');
+  assert.match(await evaluate('document.querySelector("#next-chat-goal-deadline-brief").textContent'),/^Stops /);
+  assert.ok(compactHeight>20&&compactHeight<90,'compact Goal strip must leave the conversation visible: '+compactHeight);
+  assert.equal(await evaluate('document.querySelector("#next-chat-goal-objective").getClientRects().length'),0,'long objective must not occupy the collapsed composer');
+  await geometry('#next-chat-goal-details > summary');
+  checks.compact=await capture('goal-mode-compact.png');
+  await click('#next-chat-goal-details > summary');
+  assert.equal(await evaluate('document.querySelector("#next-chat-goal-details").open'),true,'summary expands Goal details without changing mode');
   await geometry('#next-chat-goal-pause');await geometry('#next-chat-goal-toggle');
   assert.equal(await evaluate('document.querySelector("#next-chat-subtitle").textContent'),'Goal ready');
   assert.ok((await evaluate('document.querySelector(".next-conversation-meta").textContent')).includes('Goal ready'));
@@ -87,6 +97,12 @@ async function verify(){try{
   fixture.send({type:'goal.updated',data:{conversationId:first.taskId,goal}});
   await until(()=>evaluate('document.querySelector("#next-chat-goal-status").textContent==="Running"&&document.querySelector("#next-chat-send").textContent==="Direct"'),'New goal turn followed');
   assert.equal(await evaluate('document.querySelectorAll(".next-conversation").length'),1);checks.sameConversationAutoFollow=true;
+  assert.equal(await evaluate('document.querySelector("#next-chat-goal-details").open'),true,'updates retain the user-selected disclosure state');
+  await click('#next-chat-goal-details > summary');
+  assert.equal(await evaluate('document.querySelector("#next-chat-goal-details").open'),false,'collapsing details does not turn the Goal off');
+  assert.equal(await evaluate('document.querySelector("#next-chat-goal-status").textContent'),'Running');
+  assert.equal(await evaluate('document.querySelector("#next-chat-goal-toggle").getAttribute("aria-checked")'),'true');
+  await click('#next-chat-goal-details > summary');
   await click('#next-chat-goal-edit');await until(()=>evaluate('document.querySelector("#next-chat-goal-dialog").open'),'Goal editor');
   await geometry('#next-chat-goal-input');await geometry('#next-chat-goal-save');
   checks.editor=await capture('goal-mode-editor.png');await click('#next-chat-goal-cancel');
