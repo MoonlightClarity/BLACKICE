@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {TOOL_FAILURE_LIMITS,repeatedToolFailure} from '../lib/tool-failure-loop.mjs';
+import {TOOL_FAILURE_LIMITS,repeatedToolFailure,hostToolStopCode} from '../lib/tool-failure-loop.mjs';
 
 const result=(code='INVALID_TASK_VIEW',extra={})=>({success:false,code,contentItems:[{type:'inputText',text:'Host tool rejected invalid cursor'}],...extra});
 const call=(name='relay_task',action='read',extra={})=>({name,arguments:{action,offset:10,...extra}});
@@ -47,4 +47,9 @@ test('dedicated Directory recovery receives an extra bounded window but cannot s
  }
  assert.equal(state.dynamicToolFailure.total,16);
  repeatedToolFailure(state,call(),{success:true,contentItems:[]});assert.equal(state.dynamicToolFailure,null);
+});
+test('only host-enforced tool-loop/limit codes avoid provider generation-health penalties',()=>{
+ assert.equal(hostToolStopCode('TOOL_FAILURE_LOOP'),true);assert.equal(hostToolStopCode('TOOL_CALL_LIMIT'),true);
+ for(const code of ['PROVIDER_NETWORK','PROVIDER_MODEL','BROWSER_REF_STALE','WORKSPACE_ERROR','INVALID_TASK_VIEW'])
+   assert.equal(hostToolStopCode(code),false);
 });

@@ -217,3 +217,14 @@ test('compatible Directory focus recovery remains bounded after the injected cur
  assert.equal(calls,16);assert.equal(f.requests.length,16);assert.equal(hook>0,true);
  assert.equal(f.events.filter(event=>event.type==='tool.result'&&event.code==='DIRECTORY_FOCUS').length,16);
 });
+
+test('shared host tool limit does not label a healthy provider or model as failed generation',async t=>{
+ const f=await fixture(t,{type:'compatible',reply:(_body,index)=>index<=9?callsResponse('compatible',[call('repeat-'+index,'read')]):final('compatible')});
+ let marked=0;const original=f.runtime.generationCheck.bind(f.runtime);
+ f.runtime.generationCheck=(...args)=>{marked++;return original(...args);};
+ await assert.rejects(f.run({onToolCall:()=>({success:false,code:'INVALID_TASK_VIEW',contentItems:[{type:'inputText',text:'invalid'}]})}),{code:'TOOL_FAILURE_LOOP'});
+ assert.equal(marked,0,'BLACKICE host tool-loop refusal must not degrade model/provider generation health');
+ assert.equal(f.requests.length,8);
+ const status=f.runtime.listProviders().find(provider=>provider.id==='fixture');
+ assert.equal(status?.modelChecks?.fixture?.lastGenerationOk,undefined);
+});
