@@ -668,3 +668,7 @@ test('guarded browser reads verify the observed document instead of rejecting th
  await assert.rejects(browser.perform({...call,expectedDocumentId:undefined},{source:'user'}),{code:'BROWSER_VALIDATION'});
  assert.equal(calls.length,1,'Incomplete identity guards must not reach the driver');
 });
+test('same-tab mutation dependency explicitly prevents stale batch instruction',()=>{
+ assert.match(BROWSER_TOOL.description,/Do not batch several same-tab form mutations/);
+ assert.match(BROWSER_TOOL.description,/A successful input can invalidate later refs even if the URL is unchanged/);
+});
