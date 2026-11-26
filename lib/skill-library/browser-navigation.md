@@ -6,7 +6,7 @@ Use when opening a page, following navigation, inspecting visual or embedded obs
 
 For a fresh task, open the supplied URL or find the relevant source. An empty tab list means there is no tab to reuse; open the target. For a continuation, reuse the task's matching tab or reopen its last confirmed URL.
 
-Before multi-step interaction, inspect the page and make a brief outline of its main sections, navigation, and relevant controls. Wait for the effect of one action before sending the next; avoid rapid clicks on a changing page. Refresh the page when access or loading is stuck, then inspect it again.
+Before multi-step interaction, inspect the page and make a brief outline of its main sections, navigation, and relevant controls. Every mutating action may invalidate controls or change what becomes required; schedule dependent input as **observe → one mutation → observe its result → next dependent mutation**. Do not batch fills, clicks, selects or uploads on the same tab from one older snapshot, even when a form initially shows many fields. Parallelize only independent reads or work on different pages with independent preconditions. After a rejected stale input, refresh the observation and choose a current control rather than replaying remaining calls from that stale batch. Refresh the page when access or loading is stuck, then inspect it again.
 
 After navigation, check the current URL, title, and expected content. If a click leaves the original page unchanged, check whether the link opened a new tab and inspect that destination. Wait briefly for expected loading content, then use a confirmed direct link or the site's search if necessary.
 
