@@ -67,6 +67,7 @@ test('real compatible adapter continues after settled tools, then accepts the ob
     response({content:"I haven't submitted it. Can you confirm that I should continue?"}),
     tool('fill',{action:'fill',tabId:'fixture-tab',ref:'name-ref',text:'Ada'}),
     response({content:"I filled the name but couldn't submit; there is no confirmation."}),
+    tool('observe',{action:'snapshot',tabId:'fixture-tab'}),
     tool('submit',{action:'click',tabId:'fixture-tab',ref:'submit-ref'}),
     response({content:'Application received. Confirmation fixture-receipt-1.'}),
     response({content:'Application received. Confirmation fixture-receipt-1.'}),
@@ -76,7 +77,17 @@ test('real compatible adapter continues after settled tools, then accepts the ob
     if(req.method==='GET'){res.end(JSON.stringify({data:[{id:'fixture'}]}));return;}
     let raw='';for await(const chunk of req)raw+=chunk;requests.push(JSON.parse(raw));
     if(outcomeRequest(requests.at(-1))){res.end(JSON.stringify(syntheticOutcomeResponse(requests.at(-1))));return;}
-    const reply=script[index++];
+    let reply=script[index++];
+    const fn=reply?.choices?.[0]?.message?.tool_calls?.[0]?.function;
+    if(fn?.name==='relay_browser'){
+      const args=JSON.parse(fn.arguments);
+      if(args.action==='click'){
+        const receipts=JSON.stringify(requests.at(-1).messages).match(/obs-[a-f0-9-]{36}/g)||[];
+        assert.ok(receipts.length,'The provider must have received a fresh observation before its next same-tab input.');
+        reply=structuredClone(reply);
+        reply.choices[0].message.tool_calls[0].function.arguments=JSON.stringify({...args,observationReceipt:receipts.at(-1)});
+      }
+    }
     if(!reply){res.statusCode=500;res.end(JSON.stringify({error:{message:'Unexpected extra fixture request'}}));return;}
     res.end(JSON.stringify(reply));
   });
@@ -109,7 +120,7 @@ test('real compatible adapter continues after settled tools, then accepts the ob
   const run=await settled(engine,begin(engine,cwd));
   assert.equal(run.status,'completed',run.error||run.nodes.agent.error);
   assert.equal(run.runtimeSettings.executionGuardrails,false);
-  assert.equal(requests.length,9,'eight worker requests plus one read-only outcome assessment');
+  assert.equal(requests.length,10,'nine worker requests including reobservation plus one read-only outcome assessment');
   assert.equal(requests.filter(outcomeRequest).length,1);
   assert.equal(actions.filter(row=>row.action==='fill').length,1,JSON.stringify(requests.at(-1)?.messages.filter(row=>row.role==='tool')));
   assert.equal(actions.filter(row=>row.action==='click').length,1,'controller does not replay the confirmed effect');
@@ -125,7 +136,7 @@ test('real compatible adapter continues after settled tools, then accepts the ob
   for(const message of continuations){
     assert.equal(continuedRequest(message.content),task);
     assert.match(message.content,/applicable standing user instructions/);
-    assert.match(message.content,/unless the user's actual instructions make it apply/);
+    assert.match(message.content,/If a purported restriction follows from an earlier interpretation/);
   }
   assert.ok(requests.every(body=>JSON.stringify(body.messages).includes(JSON.stringify(standing).slice(1,-1))),'the actual owner Instructions stay in every provider request');
   });

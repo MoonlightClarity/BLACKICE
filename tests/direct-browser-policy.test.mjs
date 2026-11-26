@@ -20,6 +20,7 @@ async function fixture(t, { pending = null, inspect = false } = {}) {
     status: () => ({ available: true, contained: true, tabs: structuredClone(tabs), activeTab: 'one', folders: [{ id: 'personal', kind: 'user' }, { id: 'other', kind: 'task', taskId: 'other' }, { id: 'calling', kind: 'user' }] }),
     async perform(args) {
       calls.push(structuredClone(args));
+      if (['snapshot','read','screenshot'].includes(args.action)) return {tabId:args.tabId,url:args.tabId==='one'?'https://example.test/':'https://other.test/',documentId:args.tabId+':1',frames:[{frameId:'fixture-main',elements:[{ref:'name-field',role:'textbox'},{ref:'observed-control',role:'combobox'}]}],tabs:structuredClone(tabs)};
       if (args.action === 'interaction') {
         if (!pending || args.interactionId !== pending.id || args.expectedDocumentId !== pending.documentId || args.expectedUrl !== pending.url) throw Object.assign(new Error('The observed interaction changed.'), { code: 'BROWSER_INTERACTION_CHANGED' });
         pending = null;
@@ -58,6 +59,12 @@ test('MCP discovery preserves browser schemas and advertises transport scope wit
   const tool = api.tools().find(tool => tool.name === 'blackice_browser_action');
   for (const action of ['interaction', 'folder_create', 'folder_rename', 'folder_close', 'tab_move', 'suspend', 'protection']) assert.ok(tool.inputSchema.properties.action.enum.includes(action));
   assert.equal(tool.inputSchema.properties.password, undefined);
+  assert.ok(tool.inputSchema.properties.observationReceipt,'Direct mutations must expose the shared host causality receipt.');
+  const upload=api.tools().find(tool=>tool.name==='blackice_browser_upload');
+  assert.ok(upload.inputSchema.properties.observationReceipt,'Direct uploads must support the same post-mutation observation contract.');
+  assert.equal(validDirectArguments({requestId:'causal-click',action:'click',tabId:'one',ref:'observed-control',observationReceipt:'obs-11111111-1111-4111-8111-111111111111'},tool.inputSchema),true);
+  assert.equal(validDirectArguments({requestId:'causal-click',action:'click',tabId:'one',ref:'observed-control',observationReceipt:''},tool.inputSchema),false);
+  assert.equal(validDirectArguments({requestId:'causal-upload',tabId:'one',expectedUrl:'https://example.test/',expectedDocumentId:'one:1',ref:'observed-control',paths:['C:\\fixture.txt'],observationReceipt:'obs-11111111-1111-4111-8111-111111111111'},upload.inputSchema),true);
   assert.equal(validDirectArguments({ requestId: 'null-parent', action: 'tab_move', tabId: 'one', parentTabId: null }, tool.inputSchema), true);
   assert.equal(validDirectArguments({ requestId: 'bad-parent', action: 'tab_move', tabId: 'one', parentTabId: {} }, tool.inputSchema), false);
   assert.equal(validDirectArguments({ requestId: 'long-prompt', action: 'interaction', promptText: 'x'.repeat(4097) }, tool.inputSchema), false);
@@ -124,19 +131,33 @@ test('direct browser bridge rejects malformed fills, normalizes value-only fills
   const replay = await api.call('blackice_browser_action', aliasedRequest, client);
   assert.equal(replay.existing, true); assert.equal(replay.jobId, aliased.jobId);
   assert.equal(calls.length, 1, 'Replaying the original durable request must not dispatch another fill.');
-  const job = await api.call('blackice_browser_action', { requestId: 'intentional-empty-fill', ...target, text: '' }, client);
+  const observed=await api.call('blackice_browser_read',{requestId:'after-value-fill',action:'snapshot',tabId:'one'},client);
+  const fresh=await waitJob(api,observed.jobId);
+  assert.equal(fresh.status,'succeeded',JSON.stringify(fresh));
+  const token=JSON.parse(fresh.result.text.text).observationReceipt;
+  assert.match(token,/^obs-[a-f0-9-]{36}$/);
+  const job = await api.call('blackice_browser_action', { requestId: 'intentional-empty-fill', ...target, text: '',observationReceipt:token }, client);
   const result = await waitJob(api, job.jobId);
-  assert.equal(result.status, 'succeeded'); assert.deepEqual(calls, [{ ...target, text: 'Sample Operator' }, { ...target, text: '' }]);
+  assert.equal(result.status, 'succeeded'); assert.deepEqual(calls, [{ ...target, text: 'Sample Operator' }, { action:'snapshot',browser:'relay',tabId:'one' }, { ...target, text: '' }]);
 });
 
 test('direct form fills, selections and hover retain complete optional guards and deduplicate execution', async t => {
   const { api, calls } = await fixture(t);
   const guard = { tabId: 'one', expectedUrl: 'https://example.test/', expectedDocumentId: 'one:1' };
+  let mutationSeen=false;
   for (const action of ['fill', 'select', 'hover']) {
     const args = { requestId: `guarded-${action}`, ...guard, action, ref: 'observed-control', ...(action === 'fill' ? { text: 'Owned draft' } : action === 'select' ? { value: 'available-option' } : {}) };
+    if(mutationSeen){
+      const observation=await api.call('blackice_browser_read',{requestId:'reobserve-'+action,action:'snapshot',tabId:'one'},client);
+      const observed=await waitJob(api,observation.jobId);
+      assert.equal(observed.status,'succeeded',JSON.stringify(observed));
+      args.observationReceipt=JSON.parse(observed.result.text.text).observationReceipt;
+      assert.match(args.observationReceipt,/^obs-[a-f0-9-]{36}$/);
+    }
     const job = await api.call('blackice_browser_action', args, client), done = await waitJob(api, job.jobId);
     assert.equal(done.status, 'succeeded', JSON.stringify(done));
-    assert.deepEqual(calls.at(-1), { ...Object.fromEntries(Object.entries(args).filter(([key]) => key !== 'requestId')), browser: 'relay' });
+    assert.deepEqual(calls.at(-1), { ...Object.fromEntries(Object.entries(args).filter(([key]) => !['requestId','observationReceipt'].includes(key))), browser: 'relay' });
+    mutationSeen=true;
     const count = calls.length, repeated = await api.call('blackice_browser_action', args, client);
     assert.equal(repeated.jobId, job.jobId); assert.equal(repeated.existing, true); assert.equal(calls.length, count);
     for (const [index, missing] of ['expectedUrl', 'expectedDocumentId'].entries()) {
@@ -144,11 +165,11 @@ test('direct form fills, selections and hover retain complete optional guards an
       await assert.rejects(api.call('blackice_browser_action', incomplete, client), { code: 'DIRECT_REQUEST_INVALID' });
     }
   }
-  assert.equal(calls.length, 3);
-  assert.equal((await api.listJobs(client)).total, 3, 'Incomplete guards never create durable jobs.');
+  assert.equal(calls.length, 5);
+  assert.equal((await api.listJobs(client)).total, 5, 'Incomplete guards never create durable jobs; two fresh observations are counted.');
   await assert.rejects(api.call('blackice_browser_action', { requestId: 'guarded-foreign', action: 'fill', ...guard, tabId: 'other', ref: 'observed-control', text: 'Owned draft' }, client), { code: 'BROWSER_TAB_OWNERSHIP' });
   await assert.rejects(api.call('blackice_browser_action', { requestId: 'guarded-no-write', action: 'fill', ...guard, ref: 'observed-control', text: 'Owned draft' }, { ...client, scopes: ['read', 'browser:read'] }), { code: 'DIRECT_SCOPE_REQUIRED' });
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 5);
 });
 
 test('an exact direct dialog decision resolves the pending interaction without replaying its original click or storing prompt text', async t => {

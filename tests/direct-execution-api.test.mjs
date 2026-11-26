@@ -239,18 +239,19 @@ test('direct browser fill repairs value-only spelling once while preserving the 
 test('browser failures keep actionable durable messages, uncertainty and exact replay across reload', async t => {
   const stale = 'This element ref is stale. Take a new snapshot and choose its current ref.', calls = [];
   const browser = new BrowserWorkspace({ driver: {
-    status: () => ({ available: true, contained: true, tabs: [{ tabId: 'one' }], activeTab: 'one' }),
+    status: () => ({ available: true, contained: true, tabs: [{ tabId: 'one',url:'https://example.test/form',documentId:'one:1' }], activeTab: 'one' }),
     perform: async args => {
       calls.push({action:args.action,tabId:args.tabId,...(args.ref?{ref:args.ref}:{})});
-      if(args.action==='snapshot')return {tabId:'one',frames:[{elements:[{ref:'current-control',role:'button',name:'Synthetic button'}]}]};
+      if(args.action==='snapshot')return {tabId:'one',url:'https://example.test/form',documentId:'one:1',frames:[{elements:[{ref:'current-control',role:'button',name:'Synthetic button'}]}]};
       if(args.ref==='detached')throw Object.assign(new Error(stale),{code:'BROWSER_REF_STALE',actionDispatched:false});
       throw stale;
     },
     close: async () => {},
   } }); t.after(() => browser.close());
   const { api, dataDir, cwd } = await harness(t, { browser }), completed = [];
+  let observationReceipt;
   for (const [ref, possible] of [['detached', false], ['unknown-boundary', true]]) {
-    const request = { requestId: `failure-${ref}`, action: 'click', tabId: 'one', ref };
+    const request = { requestId: `failure-${ref}`, action: 'click', tabId: 'one', ref, ...(observationReceipt ? {observationReceipt} : {}) };
     const pending = await api.call('blackice_browser_action', request, client), done = await waitJob(api, pending.jobId);
     assert.equal(done.status, 'failed'); assert.equal(done.error.code, 'DIRECT_TOOL_FAILED');
     const receipt = JSON.parse(done.result.text.text);
@@ -265,8 +266,15 @@ test('browser failures keep actionable durable messages, uncertainty and exact r
     const replay = await api.call('blackice_browser_action', request, client);
     assert.equal(replay.existing, true); assert.equal(replay.jobId, pending.jobId);
     completed.push({ request, jobId: pending.jobId, text: done.result.text.text, possible });
+    if(!possible){
+      const inspected=await api.call('blackice_browser_read',{requestId:'fresh-after-stale',action:'snapshot',tabId:'one'},client);
+      const observed=await waitJob(api,inspected.jobId);
+      assert.equal(observed.status,'succeeded');
+      observationReceipt=JSON.parse(observed.result.text.text).observationReceipt;
+      assert.match(observationReceipt,/^obs-[a-f0-9-]{36}$/);
+    }
   }
-  const expected=[{action:'click',tabId:'one',ref:'detached'},{action:'snapshot',tabId:'one'},{action:'click',tabId:'one',ref:'unknown-boundary'}];
+  const expected=[{action:'click',tabId:'one',ref:'detached'},{action:'snapshot',tabId:'one'},{action:'snapshot',tabId:'one'},{action:'click',tabId:'one',ref:'unknown-boundary'}];
   assert.deepEqual(calls,expected,'Only the proven pre-dispatch rejection may refresh by observation.'); await api.close();
   const reopened = new DirectExecutionAPI({ dataDir, allowedRoot: cwd, browser }); t.after(() => reopened.close()); await reopened.init();
   for (const { request, jobId, text, possible } of completed) {
@@ -300,15 +308,24 @@ test('contained page text is kept only in memory and public job metadata never e
 test('fill and select receipts omit echoed page values, URLs, images and dialog text from durable history', async t => {
   const secret = 'private-input-marker-847', observed = [];
   const browser = new BrowserWorkspace({ driver: { status: () => ({ contained: true, available: true, tabs: [{ tabId: 'one' }], activeTab: 'one' }), perform: async args => {
-    observed.push(args.text || args.value);
+    if(args.action!=='snapshot') observed.push(args.text || args.value);
     if (args.action === 'type') throw Error(`A page error echoed ${secret}`);
     return { tabId: 'one', documentId: 'one:1', title: secret, url: `https://example.test/?value=${secret}`, imageUrl: `data:image/png;base64,${Buffer.from(secret).toString('base64')}`,
       frames: [{ text: secret, elements: [{ value: secret, label: secret }] }], receipt: args.action === 'fill' ? { filled: true, characters: secret.length } : { selected: secret },
       ...(args.action === 'select' ? { actionDispatched: true, pendingInteraction: { id: 'browser_input_11111111-1111-4111-8111-111111111111', kind: 'javascript_dialog', status: 'pending', tabId: 'one', documentId: 'one:1', message: secret, url: `https://example.test/${secret}` } } : {}) };
   }, close: async () => {} } }); t.after(() => browser.close());
   const { api, dataDir } = await harness(t, { browser });
+  let previousMutation=false;
   for (const action of ['fill', 'select', 'type']) {
     const args = { requestId: `private-${action}`, action, tabId: 'one', ...(action === 'type' ? { expectedUrl: `https://example.test/?private=${secret}`, expectedDocumentId: 'one:1', text: secret } : { ref: 'observed-control', [action === 'select' ? 'value' : 'text']: secret }) };
+    if(previousMutation){
+      const inspect=await api.call('blackice_browser_read',{requestId:'fresh-private-'+action,action:'snapshot',tabId:'one'},client);
+      const saved=await waitJob(api,inspect.jobId);
+      assert.equal(saved.status,'succeeded');
+      args.observationReceipt=JSON.parse(saved.result.text.text).observationReceipt;
+      assert.match(args.observationReceipt,/^obs-[a-f0-9-]{36}$/);
+    }
+    previousMutation=true;
     const job = await api.call('blackice_browser_action', args, client), done = await waitJob(api, job.jobId, value => value.settled || value.status === 'awaiting_input');
     const raw = stored(dataDir,job.jobId);
     assert.doesNotMatch(raw, new RegExp(secret)); assert.doesNotMatch(raw, new RegExp(Buffer.from(secret).toString('base64')));
@@ -388,7 +405,8 @@ test('fresh attenuated grants cannot retrieve or enumerate saved results and err
 
 test('uploads admit exactly one observed ref or chooser with both document guards and carry trusted path checks', async t => {
   const calls = [], checked = [];
-  const browser = new BrowserWorkspace({ driver: { status: () => ({ contained: true, available: true, tabs: [{ tabId: 'one' }], activeTab: 'one' }), perform: async (args, options) => {
+  const browser = new BrowserWorkspace({ driver: { status: () => ({ contained: true, available: true, tabs: [{ tabId: 'one',url:'https://example.test/',documentId:'one:7' }], activeTab: 'one' }), perform: async (args, options) => {
+    if(args.action==='snapshot')return {tabId:'one',url:'https://example.test/',documentId:'one:7',frames:[{elements:[{ref:'observed-file',role:'file-input'}]}]};
     assert.equal(typeof options.validateUploadPath, 'function');
     for (const file of args.paths) { await options.validateUploadPath(file); checked.push(file); }
     calls.push(args); return { tabId: args.tabId, receipt: { uploaded: [{ name: 'chosen.txt', size: 4 }] } };
@@ -402,6 +420,9 @@ test('uploads admit exactly one observed ref or chooser with both document guard
   await assert.rejects(api.call('blackice_browser_upload', base, { ...client, scopes: ['read', 'browser:write'] }), { scope: 'files:read' });
   const chosen = await api.call('blackice_browser_upload', base, client); assert.equal((await waitJob(api, chosen.jobId)).status, 'succeeded');
   const ref = { ...base, requestId: 'ref-upload', ref: 'observed-file' }; delete ref.chooserId;
+  const inspected=await api.call('blackice_browser_read',{requestId:'fresh-upload-observation',action:'snapshot',tabId:'one'},client);
+  const observed=await waitJob(api,inspected.jobId);assert.equal(observed.status,'succeeded');
+  ref.observationReceipt=JSON.parse(observed.result.text.text).observationReceipt;assert.match(ref.observationReceipt,/^obs-[a-f0-9-]{36}$/);
   const regular = await api.call('blackice_browser_upload', ref, client); assert.equal((await waitJob(api, regular.jobId)).status, 'succeeded');
   assert.equal(calls.length, 2); assert.equal(calls[0].chooserId, base.chooserId); assert.equal(calls[1].ref, 'observed-file');
   assert.deepEqual(checked, [path.join(cwd, 'chosen.txt'), path.join(cwd, 'chosen.txt')]); assert.equal(calls[0].beforeDispatch, undefined);
@@ -457,10 +478,18 @@ test('a browser action waiting in the serialized queue rechecks refreshed scopes
 
 test('real browser handoff receipts retain dialog kinds and never claim an undispatched input completed', async t => {
   const kinds = ['javascript_dialog', 'http_auth', 'file_chooser']; let calls = 0;
-  const browser = new BrowserWorkspace({ driver: { status: () => ({ contained: true, available: true, tabs: [{ tabId: 'one' }], activeTab: 'one' }), perform: async args => ({ tabId: args.tabId, actionDispatched: false, pendingInteraction: { id: `input-native-${calls}`, kind: kinds[calls++], tabId: args.tabId, documentId: 'one:4', status: 'blocked' } }), close: async () => {} } }); t.after(() => browser.close());
-  const { api, dataDir, cwd } = await harness(t, { browser }); const ids = [];
+  const browser = new BrowserWorkspace({ driver: { status: () => ({ contained: true, available: true, tabs: [{ tabId: 'one',url:'https://example.test/',documentId:'one:4' }], activeTab: 'one' }), perform: async args => args.action==='snapshot' ? { tabId:'one',url:'https://example.test/',documentId:'one:4',frames:[{elements:[{ref:'observed-ref',role:'button'}]}] } : ({ tabId: args.tabId, actionDispatched: false, pendingInteraction: { id: `input-native-${calls}`, kind: kinds[calls++], tabId: args.tabId, documentId: 'one:4', status: 'blocked' } }), close: async () => {} } }); t.after(() => browser.close());
+  const { api, dataDir, cwd } = await harness(t, { browser }); const ids = [];let priorInput=false;
   for (const kind of kinds) {
-    const job = await api.call('blackice_browser_action', { requestId: `blocked-${kind}`, action: 'click', tabId: 'one', ref: 'observed-ref' }, client), waiting = await waitJob(api, job.jobId, value => value.status === 'awaiting_input');
+    const args={requestId:`blocked-${kind}`,action:'click',tabId:'one',ref:'observed-ref'};
+    if(priorInput){
+      const observed=await api.call('blackice_browser_read',{requestId:'fresh-dialog-'+kind,action:'snapshot',tabId:'one'},client);
+      const confirmed=await waitJob(api,observed.jobId);assert.equal(confirmed.status,'succeeded');
+      args.observationReceipt=JSON.parse(confirmed.result.text.text).observationReceipt;
+      assert.match(args.observationReceipt,/^obs-[a-f0-9-]{36}$/);
+    }
+    priorInput=true;
+    const job = await api.call('blackice_browser_action', args, client), waiting = await waitJob(api, job.jobId, value => value.status === 'awaiting_input');
     ids.push(job.jobId); assert.equal(waiting.interaction.kind, kind); assert.equal(waiting.interaction.documentId, 'one:4'); assert.equal(waiting.interaction.status, 'blocked');
     assert.deepEqual(waiting.effects, { possible: false, confirmed: false }); assert.equal((await api.jobs.get(job.jobId)).dispatched, false);
   }

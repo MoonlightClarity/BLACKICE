@@ -733,7 +733,8 @@ test('Directory serializes parallel form preparation before receipt reservation 
    status:()=>({available:true,contained:true,tabs:tab?[tab]:[]}),
    async perform(args,{owner}){
     if(args.action==='open'){tab={tabId:'fixture-tab',documentId:'fixture-document',url:'https://example.test/form',owner};return tab;}
-    seen.push(args.action+':'+args.ref);
+    if(args.action==='snapshot')return {...tab,frames:[{frameId:'main',elements:[{ref:'first',role:'textbox',name:'First'},{ref:'second',role:'combobox',name:'Second'}]}]};
+     seen.push(args.action+':'+args.ref);
     if(args.ref==='first'){started();await holdFirst;if(uncertain)firstSignal.abort();}
     return tab;
    }
@@ -760,9 +761,17 @@ test('Directory serializes parallel form preparation before receipt reservation 
     assert.deepEqual(seen,['fill:first']);
    }else{
     assert.equal(a.success,true);
-    assert.equal(b.success,true);
+    assert.equal(b.success,false,'An in-flight same-tab fill cannot authorize a speculative select.');
+    assert.ok(['BROWSER_REOBSERVE_REQUIRED','DIRECTORY_UNKNOWN'].includes(b.code),JSON.stringify(b));
+    assert.equal(b.actionDispatched,false,'No speculative select reaches the browser.');
+    const observed=await call('relay_browser',{action:'snapshot',tabId:'fixture-tab'});
+    assert.equal(observed.success,true,JSON.stringify(observed));
+    const token=JSON.parse(observed.contentItems[0].text).observationReceipt;
+    assert.match(token,/^obs-[a-f0-9-]{36}$/);
+    const corrected=await o.onToolCall({name:'relay_browser',arguments:{...args,action:'select',ref:'second',value:'Fixture B',observationReceipt:token},callId:'queue-second-fresh-observation'});
+    assert.equal(corrected.success,true,JSON.stringify(corrected));
     assert.deepEqual(seen,['fill:first','select:second']);
-    const receipts=[a,b].map(r=>r.contentItems.at(-1).text.match(/receipt-[0-9]+/)[0]);
+    const receipts=[a,corrected].map(r=>r.contentItems.at(-1).text.match(/receipt-[0-9]+/)[0]);
     assert.equal((await dir('observe',{id:'prepare',outcome:'objective-met',claim:'Fixture fields prepared, not submitted.',receipts})).success,true);
    }
    concurrencyChecked=true;
@@ -771,7 +780,7 @@ test('Directory serializes parallel form preparation before receipt reservation 
   const run=engine.startRun({workflow:graph,input:{task:'Prepare the fixture form, do not submit',directoryActions:'on'}});
   await engine.executions.get(run.id);
   const result=engine.getRun(run.id);
-  assert.equal(concurrencyChecked,true,'The fixture reached and checked both queued browser outcomes.');
+  assert.equal(concurrencyChecked,true,'The fixture reached and checked both queued browser outcomes. '+JSON.stringify({error:result.error,seen}));
   assert.equal(result.status,uncertain?'failed':'completed',result.error);
  });
 });

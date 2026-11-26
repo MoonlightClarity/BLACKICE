@@ -760,7 +760,7 @@ test('autonomous recovery preserves prepared work without steering destination s
     async perform(args) {
       actions.push(args.action);
       if (args.action === 'click') throw Object.assign(new Error('Control changed'), {code:'BROWSER_REF_STALE', actionDispatched:false});
-      return {tabId:'prepared', frames:[{elements:[], text:args.action === 'read' ? 'Employer directory verifies the historical office' : 'Human verification challenge displayed'}]};
+      return {tabId:'prepared',url:'https://example.test/current',documentId:'prepared:1', frames:[{frameId:'main',elements:[{ref:'old-control',role:'button',name:'Old control'}], text:args.action === 'read' ? 'Employer directory verifies the historical office' : 'Human verification challenge displayed'}]};
     },
   };
   const {engine,goals,runtime} = await fixture(t, async (options,n) => {
@@ -798,8 +798,12 @@ test('autonomous recovery preserves prepared work without steering destination s
       assert.equal(goal.lastReportedMilestone.milestone,'prepared:historical-office-verified');
       assert.equal(goal.lastMilestone,undefined,'a reported milestone is not host-verified');
       for (let k = 0; k < 4; k++) {
-        const switched = await call({action:'navigate',url:'https://example.test/other-'+n+'-'+k});
-        assert.equal(switched.success,true);
+        const observed=await call({action:'snapshot'});
+        assert.equal(observed.success,true,JSON.stringify(observed));
+        const token=JSON.parse(observed.contentItems[0].text).observationReceipt;
+        assert.match(token,/^obs-[a-f0-9-]{36}$/);
+        const switched = await call({action:'navigate',url:'https://example.test/other-'+n+'-'+k,observationReceipt:token});
+        assert.equal(switched.success,true,JSON.stringify(switched));
         assert.equal(switched.contentItems.some(item => item.text?.includes('Goal steering:')), false, 'Distinct navigation must not trigger a fixed-count return to an old branch');
       }
       await report(options,'progress',{evidence:'Another destination was searched on turn '+n,nextAction:'Search a different destination.', ...(n === 4 ? {milestone:'prepared:historical-office-verified'} : {})});
@@ -810,7 +814,7 @@ test('autonomous recovery preserves prepared work without steering destination s
   await waitFor(()=>runtime.calls.length===5);
   assert.equal((await goals.get(run.id)).status,'active');
   assert.equal(runtime.calls.length,5,JSON.stringify([...engine.runs.values()].map(r => r.error)));
-  assert.deepEqual(actions,['read','click','snapshot',...Array(8).fill('navigate')]);
+  assert.deepEqual(actions,['read','click','snapshot',...Array.from({length:8},()=>['snapshot','navigate']).flat()]);
   assert.equal((await goals.get(run.id)).completionEvidence,null);
   assert.equal(goals.raw(run.id).lastReportedMilestone.milestone,'prepared:historical-office-verified');
   assert.equal(goals.raw(run.id).lastMilestone,undefined,'a reported milestone is not host-verified');
@@ -837,15 +841,18 @@ test('distinct observed field advances survive omitted milestones, while repeate
     if(n===7){await release.promise;return output(n);}
     current = [...engine.runs.values()].at(-1);
     const call = args => opts.onToolCall({name:'relay_browser',arguments:{browser:'relay',tabId:'draft',...args}});
-    await call({action:'snapshot'});
+    const observed=await call({action:'snapshot'});
+    assert.equal(observed.success,true,JSON.stringify(observed));
+    const observationReceipt=JSON.parse(observed.contentItems[0].text).observationReceipt;
+    const guard=observationReceipt?{observationReceipt}:{};
     if (n <= 3) {
-      const edit = await call({action:'fill',ref:'office',text:'Verified address '+n});
+      const edit = await call({action:'fill',ref:'office',text:'Verified address '+n,...guard});
       assert.equal(edit.success,true);
     } else if (n === 4) {
-      assert.equal((await call({action:'fill',ref:'office',text:'unknown'})).success,false);
+      assert.equal((await call({action:'fill',ref:'office',text:'unknown',...guard})).success,false);
     } else if (n === 5) {
       assert.match(current.input,/reconcile current destination\/receipt read-only before ANY retry/);
-      await call({action:'fill',ref:'office',text:'Verified address 3'});
+      await call({action:'fill',ref:'office',text:'Verified address 3',...guard});
     }
     const evidence = n === 4 ? 'Office address unknown' : 'Office address Verified address '+Math.min(n,3);
     assert.equal((await report(opts,'progress',{evidence})).result.success,true);
@@ -863,24 +870,29 @@ test('distinct observed field advances survive omitted milestones, while repeate
 });
 
 test('uncertain effect remains blocked after an unrelated read turn while a distinct action remains available', async t => {
-  let current; const dispatched = [];
+  let current; const dispatched = [];let readObservationReceipt;
   const browser = {
     status: () => ({available:true, contained:true, tabs:current ? [{tabId:'draft',owner:{taskId:current.taskId,runId:current.id,nodeId:'agent'}}] : []}),
     async perform(args) {
       dispatched.push(args.action + ':' + (args.ref || ''));
       if (args.action === 'click' && args.ref === 'first')
         throw Object.assign(new Error('Connection lost after possible dispatch'), {code:'BROWSER_ACTION_FAILED'});
-      return {tabId:'draft',frames:[{elements:[],text:'No conclusive receipt'}]};
+      return {tabId:'draft',url:'https://fixture.test/draft',documentId:'draft:1',frames:[{frameId:'main',elements:[{ref:'first',role:'button',name:'First'},{ref:'different',role:'button',name:'Different'}],text:'No conclusive receipt'}]};
     },
   };
   const {engine,goals,runtime,conversations,dataDir} = await fixture(t, async (opts,n) => {
     current = [...engine.runs.values()].at(-1);
     const call = args => opts.onToolCall({name:'relay_browser',arguments:{browser:'relay',tabId:'draft',...args}});
     if (n === 1) assert.equal((await call({action:'click',ref:'first'})).success,false);
-    if (n === 2) assert.equal((await call({action:'read',query:'receipt'})).success,true);
+    if (n === 2) {
+      const observed=await call({action:'read',query:'receipt'});
+      assert.equal(observed.success,true,JSON.stringify(observed));
+      readObservationReceipt=JSON.parse(observed.contentItems[0].text).observationReceipt;
+      assert.match(readObservationReceipt,/^obs-[a-f0-9-]{36}$/);
+    }
     if (n === 3) {
       assert.equal((await call({action:'click',ref:'first'})).code,'GOAL_EFFECT_UNRESOLVED');
-      assert.equal((await call({action:'click',ref:'different'})).success,true);
+      assert.equal((await call({action:'click',ref:'different',observationReceipt:readObservationReceipt})).success,true);
     }
     await report(opts,n === 3 ? 'complete' : 'progress',{evidence:'Controlled test evidence for turn '+n});
     return output(n);
