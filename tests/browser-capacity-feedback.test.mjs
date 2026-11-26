@@ -27,6 +27,7 @@ function fixture(t, { limit = 3, capacity = true } = {}) {
       const tab = { tabId: `opened-${++next}`, owner: options.owner, suspended: false, url: args.url }; tabs.push(tab); return { tabId: tab.tabId, url: tab.url, tabs };
     }
     const tab = tabs.find(tab => tab.tabId === args.tabId);
+    if (args.action === 'snapshot') return { tabId:tab.tabId,url:tab.url,documentId:tab.tabId+':1',frames:[{elements:[{ref:'control',role:'button',name:'Fixture control'}]}],tabs };
     if (args.action === 'close') { tabs.splice(tabs.indexOf(tab), 1); return status(); }
     if (args.action === 'suspend') tab.suspended = true;
     if (args.action === 'navigate') tab.url = args.url;
@@ -94,7 +95,12 @@ test('limit errors preserve no-dispatch semantics and lead to usable tabs, navig
   assert.equal((await f.call({ action: 'navigate', tabId: 'opened-1', url: 'https://example.invalid/reused' })).success, true);
   assert.equal((await f.call({ action: 'open', url: 'https://example.invalid/still-full' })).success, false, 'Navigate reuses a slot; it does not increase capacity.');
   const denied = await f.call({ action: 'suspend', tabId: 'personal-private-id' }); assert.equal(denied.success, false);
-  assert.equal((await f.call({ action: 'suspend', tabId: 'opened-1' })).success, true);
+  const observed=await f.call({ action:'snapshot',tabId:'opened-1' });
+  assert.equal(observed.success,true,JSON.stringify(observed));
+  const freshReceipt=parsed(observed).observationReceipt;
+  assert.match(freshReceipt,/^obs-[a-f0-9-]{36}$/);
+  const suspendResult=await f.call({ action: 'suspend', tabId: 'opened-1',observationReceipt:freshReceipt });
+  assert.equal(suspendResult.success, true, JSON.stringify(suspendResult));
   const resumed = await f.call({ action: 'open', url: 'https://example.invalid/next' }); assert.equal(resumed.success, true);
   assert.deepEqual(parsed(resumed).taskCapacity, { live: 3, limit: 3, remaining: 0 });
   const close = { action: "close", tabId: "opened-2" };

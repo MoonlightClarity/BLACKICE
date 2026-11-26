@@ -42,6 +42,15 @@ export function createFormBrowser(item) {
       { ref: 'phone', role: 'textbox', name: 'Phone number', required: true, value: state.values.phone },
       { ref: 'submit', role: 'button', name: 'Submit application', disabled: state.submitted },
     ],
+    // Expose the same observed control identity that a real browser snapshot
+    // returns, so host-side dependent-action causality can be verified.
+    frames:[{frameId:'fixture-main',url,documentId,elements:[
+      {ref:'full_name',role:'textbox',name:'Full name'},
+      {ref:'email',role:'textbox',name:'Email address'},
+      {ref:'nationality',role:'combobox',name:'Nationality'},
+      {ref:'phone',role:'textbox',name:'Phone number'},
+      {ref:'submit',role:'button',name:'Submit application'}
+    ]}],
     values: copy(state.values), submitted: state.submitted, validationErrors: [...state.validation], ...(state.submitted ? { confirmation: `FIXTURE-${item.id}` } : {}),
   });
   return {

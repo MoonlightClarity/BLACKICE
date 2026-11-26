@@ -86,7 +86,7 @@ test('actual engine wiring supplies concise mechanics and only the contained bro
     assert.match(options.developerInstructions, /Use SOUL\.md for behavior and relevant skills for task methods/);
     assert.match(options.developerInstructions, /An ordinary request delegates the actions and choices needed to complete it within the user's scope/);
     assert.match(options.developerInstructions, /no extra autonomy or no-questions wording is required/);
-    assert.match(options.developerInstructions, /routine uncertainty alone does not require reconfirmation/i);
+    assert.match(options.developerInstructions, /Exercise judgment under uncertainty/);
     assert.equal(options.onApproval, undefined);
     const connectionTool = options.dynamicTools.find(tool => tool.name === 'relay_connections');
     assert.equal(connectionTool, undefined);
@@ -96,9 +96,23 @@ test('actual engine wiring supplies concise mechanics and only the contained bro
     const opened = await call(options, 'relay_browser', { action: 'open', browser: 'relay', url: `https://forms.example.test/${known.id}` });
     assert.equal(opened.success, true); const page = unpack(opened);
     const target = { browser: 'relay', tabId: page.tabId, expectedUrl: page.url, expectedDocumentId: page.documentId };
-    for (const [ref, text] of [['full_name', known.profile.fullName], ['email', known.profile.email], ['phone', known.profile.phone]]) assert.equal((await call(options, 'relay_browser', { ...target, action: 'fill', ref, text })).success, true);
-    assert.equal((await call(options, 'relay_browser', { ...target, action: 'select', ref: 'nationality', value: 'Canadian' })).success, true);
-    const receipt = await call(options, 'relay_browser', { ...target, action: 'click', ref: 'submit' });
+    let priorInput=false;
+    const mutate=async args=>{
+      if(priorInput){
+        const fresh=await call(options,'relay_browser',{...target,action:'snapshot'});
+        assert.equal(fresh.success,true,JSON.stringify(fresh));
+        const token=unpack(fresh).observationReceipt;
+        assert.match(token,/^obs-[a-f0-9-]{36}$/);
+        args={...args,observationReceipt:token};
+      }
+      const receipt=await call(options,'relay_browser',{...target,...args});
+      assert.equal(receipt.success,true,JSON.stringify(receipt));
+      priorInput=true;
+      return receipt;
+    };
+    for (const [ref, text] of [['full_name', known.profile.fullName], ['email', known.profile.email], ['phone', known.profile.phone]]) await mutate({action:'fill',ref,text});
+    await mutate({action:'select',ref:'nationality',value:'Canadian'});
+    const receipt = await mutate({action:'click',ref:'submit'});
     assert.equal(unpack(receipt).submitted, true);
     return { output: 'Submitted and verified the fictional application.', threadId: 'advocacy-fixture-thread' };
   });

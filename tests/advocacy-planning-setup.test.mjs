@@ -125,9 +125,21 @@ for (const scenario of [
       assert.doesNotMatch(options.developerInstructions,/BLACKICE PLANNING MODULES|IMMEDIATE EFFORT CALIBRATION|MINIMUM-SCOPE BLOCKING/);
       assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_browser'));
       options.onEvent({ type: 'thread', threadId: 'synthetic-form-thread', model: 'fixture-model' });
+      let previousMutation = false;
+      const observe = async (tabId, callId) => {
+        const observed = await options.onToolCall({ name: 'relay_browser', arguments: {action:'snapshot',browser:'relay',tabId}, callId:'observe-'+callId });
+        assert.equal(observed.success,true,JSON.stringify(observed));
+        const token=receiptBody(observed).observationReceipt;
+        assert.match(token,/^obs-[a-f0-9-]{36}$/);
+        return token;
+      };
       const send = async (args, callId) => {
+        const mutation=['fill','select','click','press','upload'].includes(args.action);
+        if(mutation&&previousMutation)args={...args,observationReceipt:await observe(args.tabId,callId)};
         const result = await options.onToolCall({ name: 'relay_browser', arguments: args, callId });
-        assert.equal(result.success, true, JSON.stringify(result)); return result;
+        assert.equal(result.success, true, JSON.stringify(result));
+        if(mutation)previousMutation=true;
+        return result;
       };
       const opened = receiptBody(await send({ action: 'open', browser: 'relay', url: 'https://forms.example.test/' + item.id }, 'open-form'));
       const guard = { browser: 'relay', tabId: opened.tabId, expectedUrl: opened.url, expectedDocumentId: opened.documentId };
@@ -135,7 +147,8 @@ for (const scenario of [
         await send({ ...guard, action: 'fill', ref, text }, 'fill-' + ref);
       }
       await send({ ...guard, action: 'select', ref: 'nationality', value: 'Prefer not to say' }, 'select-nationality');
-      const submit = { name: 'relay_browser', callId: 'one-submission', arguments: { ...guard, action: 'click', ref: 'submit' } };
+      const submitToken=await observe(guard.tabId,'submit');
+      const submit = { name: 'relay_browser', callId: 'one-submission', arguments: { ...guard, action: 'click', ref: 'submit', observationReceipt:submitToken } };
       const [result, duplicate] = await Promise.all([options.onToolCall(submit), options.onToolCall(structuredClone(submit))]);
       assert.equal(result.success, true, JSON.stringify(result)); assert.deepEqual(duplicate, result);
       if (scenario.lostResult) throw Object.assign(Error('Synthetic provider lost its final response after the confirmed form effect.'), { code: 'FIXTURE_RESULT_LOST' });

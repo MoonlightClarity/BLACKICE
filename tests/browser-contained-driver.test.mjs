@@ -423,6 +423,8 @@ test('a detached renderer ref preserves its message across a boundary that loses
     error: 'This element ref is stale. Take a new snapshot and choose its current ref. Do not reuse this ref. Observe the current page, then select the intended control\'s ref from frames[].elements[].ref. No page input was dispatched.',
     code: 'BROWSER_REF_STALE',
     actionDispatched: false,
+    inputDispatched: false,
+    pointerStage: 'pre-pointer-identity',
     recovery: { nextCall: { action: 'snapshot', browser: 'relay', tabId: tab.id }, refSource: 'frames[].elements[].ref' },
   });
   assert.equal(tab.window.protocol.some(item => item.method.startsWith('Input.')), false, 'A detached target must fail before browser input.');
@@ -2052,6 +2054,9 @@ test('reloading a suspended page preserves a failed activation instead of report
   assert.equal(result.success, false); assert.equal(result.code, 'BROWSER_NAVIGATION_FAILED');
   const receipt = JSON.parse(result.contentItems[0].text); assert.equal(receipt.actionDispatched, true); assert.match(receipt.error, /ERR_CONNECTION_REFUSED/);
   assert.equal(attempts, 1, 'Resuming reload dispatches exactly one navigation.'); assert.match(tab.loadError, /ERR_CONNECTION_REFUSED/);
+  const unsafe=await handler({name:'relay_browser',arguments:{action:'click',tabId:tab.id,ref:'unobserved-button'}});
+  assert.equal(unsafe.code,'BROWSER_REOBSERVE_REQUIRED');assert.equal(unsafe.actionDispatched,false);
+  assert.equal(attempts,1,'A failed navigation does not authorize unobserved page input.');
   rejected = false;
   const recovered = await handler({ name: 'relay_browser', arguments: { action: 'navigate', tabId: tab.id, url: 'https://saved.example/release' } });
   assert.equal(recovered.success, true); assert.equal(attempts, 2);
