@@ -110,7 +110,7 @@ function alarmCode(tool,value) {
  if(tool==='relay_browser'&&['BROWSER_REF_STALE','BROWSER_INPUT_DOCUMENT_CHANGED','BROWSER_UNAVAILABLE'].includes(value))return value;
  if(tool==='relay_skills'&&['SKILL_NOT_FOUND','SKILL_UNAVAILABLE'].includes(value))return value;
  if(tool==='relay_history'&&value==='PAST_CHATS_OFF')return value;
- if(tool==='relay_workspace'&&['ENOENT','EACCES','EPERM','WORKSPACE_ERROR','WORKSPACE_COMMAND_EXIT_NONZERO','WORKSPACE_COMMAND_TIMED_OUT','WORKSPACE_COMMAND_SIGNALLED','WORKSPACE_READ_PREVIEW_LIMIT'].includes(value))return value;
+ if(tool==='relay_workspace'&&['ENOENT','EACCES','EPERM','WORKSPACE_ERROR','WORKSPACE_COMMAND_EXIT_NONZERO','WORKSPACE_COMMAND_TIMED_OUT','WORKSPACE_COMMAND_SIGNALLED','WORKSPACE_READ_PREVIEW_LIMIT','WORKSPACE_READ_OPTIONS_INVALID'].includes(value))return value;
  if(tool==='relay_directory_action'&&['DIRECTORY_BLOCKER','DIRECTORY_UNKNOWN','DIRECTORY_CHANGED','DIRECTORY_NOT_READY'].includes(value))return value;
  return null;
 }
@@ -160,7 +160,8 @@ export function diagnosticAlarmCopy(raw) {
   case 'WORKSPACE_COMMAND_EXIT_NONZERO':observed='The launched workspace shell command exited with a nonzero code.';explanation='The shell or child program failed; this is not proof that the workspace adapter malfunctioned. Inspect the saved stderr and command syntax, including nested PowerShell/Node quoting. The effects of that command have not been assessed.';break;
   case 'WORKSPACE_COMMAND_TIMED_OUT':observed='The workspace command exceeded its execution deadline.';explanation='The process may have performed partial effects. Inspect saved output and state before retrying.';break;
   case 'WORKSPACE_COMMAND_SIGNALLED':observed='The workspace command process ended with a signal.';explanation='Partial effects are unknown; inspect its saved command receipt.';break;
-  case 'WORKSPACE_READ_PREVIEW_LIMIT':observed='The workspace reader reached its bounded preview limit.';explanation='Use a specific range or a bounded command; this is not evidence that the file was missing.';break;
+  case 'WORKSPACE_READ_OPTIONS_INVALID':observed='The reader rejected incompatible paging options before reading.';explanation='Use PDF page/character options, XLSX sheet/row options, or text line options according to the existing file extension.';break;
+   case 'WORKSPACE_READ_PREVIEW_LIMIT':observed='The workspace reader reached its bounded preview limit.';explanation='Use a specific range or a bounded command; this is not evidence that the file was missing.';break;
   case 'WORKSPACE_ERROR':observed='The workspace adapter returned an error.';explanation='Inspect the exact saved tool error and operation; this generic code does not identify a root cause.';break;
   case 'ENOENT':observed='The workspace tool did not find the file or a folder in its path.';explanation='The path may have moved, been typed differently, or pointed to a folder that is not present.';break;
   case 'EACCES':

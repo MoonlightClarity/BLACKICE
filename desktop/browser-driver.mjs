@@ -1595,7 +1595,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (disposedFrame(reason)) {
         const diagnostic = this.referenceDiagnostic(tab, args.ref, 'frame-changed');
         this.retireReference(tab, args.ref, diagnostic);
-        throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: diagnostic });
+        throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: diagnostic, ...(action==='prepare'?{inputDispatched:false,pointerStage:'pre-pointer-identity'}:{}) });
       }
       throw reason;
     }
@@ -1608,11 +1608,11 @@ export class ElectronBrowserDriver extends EventEmitter {
       throw Object.assign(error(message), {
         code,
         ...(code === 'BROWSER_REF_STALE' ? { browserReferenceDiagnostic: { ...this.referenceDiagnostic(tab, args.ref, 'control-changed'), ...projectBrowserControlBinding(result.__blackiceElementError, action) } } : {}),
-        ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true }
-          : inputPrevented ? { inputDispatched: false } : {}),
+        ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true, ...(action==='prepare'?{inputDispatched:false,pointerStage:'pre-pointer-identity'}:{}) }
+          : inputPrevented ? { inputDispatched: false, ...(action==='prepare'?{pointerStage:'pre-pointer-identity'}:{}) } : {}),
       });
     }
-    if (!this.referenceCurrent(tab, args.ref)) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref) });
+    if (!this.referenceCurrent(tab, args.ref)) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref), ...(action==='prepare'?{inputDispatched:false,pointerStage:'pre-pointer-identity'}:{}) });
     return { frame, result };
   }
   async observeOperation(args, { signal, owner: context, receiptBindings = [], expectedDocumentId, expectedUrl, recoveryInspection = false } = {}) {
@@ -2517,6 +2517,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         // Restoring a suspended navigation or preparing a popup can already
         // affect the page, even though the requested input has not been sent.
         if (!activationMayAffectPage && !tab.popupViewport) cause.actionDispatched = false;
+        if(['click','hover'].includes(args.action) && cause.code==='BROWSER_INPUT_DOCUMENT_CHANGED' && cause[pointerIdentityGuard]===true)preservePrePointerRefusal(cause);
         throw cause;
       }
     }
