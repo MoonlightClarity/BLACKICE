@@ -25,6 +25,13 @@ const provider = tools => ({ tools: () => tools, call: unavailable });
 const frozenCatalog = JSON.parse(readFileSync(new URL('./fixtures/chatgpt-tool-catalog-28f8e0f5.json', import.meta.url), 'utf8'));
 const withoutDescriptions = value => Array.isArray(value) ? value.map(withoutDescriptions) : value && typeof value === 'object'
   ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'description').map(([key, item]) => [key, withoutDescriptions(item)])) : value;
+// The frozen 28f8 contract remains immutable. Only the two additive, explicitly
+// tested browser causality fields are exempt from its historical comparison.
+const withoutAddedBrowserReceipts=tools=>withoutDescriptions(tools).map(tool=>{
+  if(!['blackice_browser_action','blackice_browser_upload'].includes(tool.name))return tool;
+  const {observationReceipt,...properties}=tool.inputSchema.properties;
+  return {...tool,inputSchema:{...tool.inputSchema,properties}};
+});
 
 test('current catalog matches its live provider schemas and preserves runtime contracts', () => {
   const execution = new DirectExecutionAPI({ dataDir: '/unused-catalog-fixture', additionalTools: [
@@ -52,7 +59,12 @@ test('current catalog matches its live provider schemas and preserves runtime co
   });
   // Wording can change independently. Field types, actions, scopes and annotations
   // remain the same as the captured source contract unless deliberately reviewed.
-  assert.deepEqual(withoutDescriptions(current), withoutDescriptions(frozenCatalog.tools));
+  assert.deepEqual(withoutAddedBrowserReceipts(current), withoutDescriptions(frozenCatalog.tools));
+  for(const name of ['blackice_browser_action','blackice_browser_upload']){
+    const observationReceipt=current.find(tool=>tool.name===name)?.inputSchema.properties.observationReceipt;
+    assert.deepEqual({type:observationReceipt?.type,minLength:observationReceipt?.minLength,maxLength:observationReceipt?.maxLength},
+      {type:'string',minLength:1,maxLength:80},name+' must expose the shared host observation receipt');
+  }
   for (const tool of current) {
     assert.deepEqual(catalog.get(tool.name).definition, tool);
     assert.deepEqual(catalog.get(tool.name).requiredScopes, frozenCatalog.requiredScopes[tool.name]);
