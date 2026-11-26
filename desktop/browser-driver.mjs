@@ -29,6 +29,16 @@ import { browserReceiptBindingKey, describeHostOperation } from '../lib/operatio
 const error = message => new Error(message);
 // Evidence for one protocol command, never a claim about an entire operation.
 const commandDispatched = Symbol('commandDispatched');
+const pointerIdentityGuard = Symbol('pointerIdentityGuard');
+const pointerGeometryRecovery=Symbol('pointerGeometryRecovery');
+// Only this private host marker can establish that the requested pointer
+// input was not sent. It never claims that scrolling/hovering had no effects.
+function preservePrePointerRefusal(reason) {
+  if(reason?.[pointerIdentityGuard]===true && reason?.[commandDispatched]!==true){
+    reason.inputDispatched=false;reason.pointerStage='pre-pointer-identity';
+  }
+  return reason;
+}
 const capacityAdmissionRejected = Symbol('capacityAdmissionRejected');
 const DEFAULT_FOLDER = 'folder_user';
 // Refs stay bound to the observed DOM node for the current document. Retain a
@@ -126,6 +136,31 @@ function printableKeyEvent(value, modifiers) {
   const [plain, shifted, code, windowsVirtualKeyCode] = entry;
   const text = modifiers & 8 ? shifted : value;
   return { key: text, code, windowsVirtualKeyCode, modifiers: modifiers | (text !== plain ? 8 : 0), text, unmodifiedText: text };
+}
+function preparePressRequest(args) {
+  try {
+  // Common single-chord spellings are equivalent to the existing structured
+  // key/modifiers contract. Only supported shortcuts are normalized here;
+  // arbitrary chords remain rejected before any page input.
+  const supplied=String(args.key||'');
+  const selectAll=/^(?:Ctrl|Control|Cmd|Command|Meta)\s*\+\s*A$/i.exec(supplied);
+  const shiftTab=/^Shift\s*\+\s*Tab$/i.exec(supplied);
+  if((selectAll||shiftTab)&&Array.isArray(args.modifiers)&&args.modifiers.length)throw capacityError('Use either a supported shortcut spelling or key and modifiers, not both.','BROWSER_VALIDATION');
+  const rawKey=selectAll?'a':shiftTab?'Tab':supplied;
+  const key=rawKey.toLowerCase()==='a'?'A':rawKey;
+  const effectiveModifiers=selectAll?[/^(?:Ctrl|Control)/i.test(supplied)?'Control':'Meta']:shiftTab?['Shift']:args.modifiers;
+  const modifiers=keyboardModifiers(effectiveModifiers);
+  const keys = { Enter: { code: 'Enter', windowsVirtualKeyCode: 13 }, Tab: { code: 'Tab', windowsVirtualKeyCode: 9 }, Escape: { code: 'Escape', windowsVirtualKeyCode: 27 }, Backspace: { code: 'Backspace', windowsVirtualKeyCode: 8 }, Delete: { code: 'Delete', windowsVirtualKeyCode: 46 }, Home: { code: 'Home', windowsVirtualKeyCode: 36 }, End: { code: 'End', windowsVirtualKeyCode: 35 }, PageUp: { code: 'PageUp', windowsVirtualKeyCode: 33 }, PageDown: { code: 'PageDown', windowsVirtualKeyCode: 34 }, ArrowDown: { code: 'ArrowDown', windowsVirtualKeyCode: 40 }, ArrowUp: { code: 'ArrowUp', windowsVirtualKeyCode: 38 }, ArrowLeft: { code: 'ArrowLeft', windowsVirtualKeyCode: 37 }, ArrowRight: { code: 'ArrowRight', windowsVirtualKeyCode: 39 }, Space: { code: 'Space', windowsVirtualKeyCode: 32 }, A: { code: 'KeyA', windowsVirtualKeyCode: 65 } };
+  // Printable press delivers the full trusted keyboard sequence. Bulk fill
+  // and type retain their efficient insertion path. Modified shortcuts must
+  // never also insert their letter; preserve the existing Control/Meta+A
+  // contract and reject other modified printable shortcuts.
+  const printable = modifiers & 7 ? null : printableKeyEvent(rawKey === 'Space' ? ' ' : rawKey, modifiers);
+  if (!printable && (!Object.hasOwn(keys, key) || key === 'A' && (!(modifiers & 6) || modifiers & 1))) throw capacityError('Use one printable character, a supported editing/navigation key, or key: a with modifiers: [Control] or [Meta] to select all. Use type or fill for longer text.', 'BROWSER_VALIDATION');
+  return {rawKey,key,modifiers,keys,printable};
+  } catch(cause) {
+    throw Object.assign(cause,{code:'BROWSER_VALIDATION',actionDispatched:false,inputDispatched:false});
+  }
 }
 const containedWindowOptions = browserSession => ({
   width: 1280, height: 900, useContentSize: true, show: false, focusable: false, skipTaskbar: true,
@@ -265,23 +300,12 @@ function pageSnapshot(key, prefix, query, readContext = false, describeControl, 
 }
 
 async function smoothPageScroll(target, top, left) {
-  const position = () => ({ scrollTop: target.scrollTop, scrollLeft: target.scrollLeft });
-  const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
-  target.scrollBy({ top, left, behavior: reducedMotion ? 'instant' : 'smooth' });
-  if (reducedMotion || !top && !left) return position();
-  const started = performance.now(); let previous = position(), steady = 0;
-  await new Promise(resolve => {
-    const sample = () => {
-      const current = position();
-      if (Math.abs(current.scrollTop - previous.scrollTop) < 0.5 && Math.abs(current.scrollLeft - previous.scrollLeft) < 0.5) steady++;
-      else { previous = current; steady = 0; }
-      const elapsed = performance.now() - started;
-      if (elapsed >= 120 && steady >= 3 || elapsed >= 1800) { resolve(); return; }
-      setTimeout(sample, 40);
-    };
-    setTimeout(sample, 40);
-  });
-  return position();
+  // Agent directional scroll is a state change, not a visible animation.
+  // Hidden/parked Chromium surfaces can acknowledge smooth scrolling before
+  // their compositor ever advances. Use one deterministic movement and report
+  // the actual resulting position. Native wheel input retains its own path.
+  target.scrollBy({top,left,behavior:'instant'});
+  return {scrollTop:target.scrollTop,scrollLeft:target.scrollLeft};
 }
 
 function elementAction(key, ref, action, args, scrollPage, inspectOperation, describeControl, pointerHitMatches, associatedFileInput) {
@@ -322,12 +346,12 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
     // The browser may have advanced its whole-page revision for an unrelated
     // frame. Verify the exact still-observed target has focus before using a
     // frame-scoped keyboard guard. Raw keyboard input never takes this path.
-    const focused = (document.activeElement === el || el.getRootNode()?.activeElement === el)
-      && (typeof document.hasFocus !== 'function' || document.hasFocus());
-    return { focused };
+    const focused=document.activeElement===el||el.getRootNode()?.activeElement===el;
+    const documentFocused=typeof document.hasFocus!=='function'||document.hasFocus();
+    return {focused,documentFocused};
   }
   if (action === 'pointer-verify') {
-    if (!pointerHitMatches(el, args.hit, args.point)) throw new Error('The current pointer target is not the observed control. Inspect the page before acting.');
+    if (!pointerHitMatches(el, args.hit, args.point)) return {verified:false,reason:'pointer-hit-mismatch'};
     return { verified: true };
   }
   if (action === 'prepare') {
@@ -349,15 +373,27 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
     } catch { /* Preserve the established preparation path and its error handling. */ }
     el.scrollIntoView({ block: alignment, inline: alignment, behavior: 'instant' });
     const r = el.getBoundingClientRect();
-    const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-    let host = el, shadowMatch = false;
-    while (host?.getRootNode()?.host) { host = host.getRootNode().host; if (host === top) shadowMatch = true; }
-    if (top && top !== el && !el.contains(top) && !top.contains(el) && !shadowMatch) {
-      // This fixed guard runs before pointer dispatch. Scrolling may already
-      // have changed the page, so it cannot claim the whole action had no effects.
-      return { __blackiceElementError: { message: 'Another element covers this target. Inspect the page and dismiss or use the covering control.', code: 'BROWSER_TARGET_COVERED', inputDispatched: false } };
+    // A centered point can be covered while an exposed part of the SAME
+    // observed control is actionable (sticky headers, popovers, overlays).
+    // Sample a bounded set of in-viewport interior points. The native CDP
+    // hit-test must independently verify the exact observed control again
+    // before dispatch; no overlay control is ever clicked as a substitute.
+    const bx=Number.isFinite(r.left)?r.left:r.x,by=Number.isFinite(r.top)?r.top:r.y;
+    const left=Math.max(0,bx),topEdge=Math.max(0,by),right=Math.min(innerWidth,Number.isFinite(r.right)?r.right:bx+r.width),bottom=Math.min(innerHeight,Number.isFinite(r.bottom)?r.bottom:by+r.height);
+    let targetPoint=null;
+    if(right>left&&bottom>topEdge)for(const [fx,fy] of [[.5,.5],[.22,.5],[.78,.5],[.5,.22],[.5,.78],[.22,.22],[.78,.22],[.22,.78],[.78,.78]]){
+      const x=left+(right-left)*fx,y=topEdge+(bottom-topEdge)*fy;
+      const hit=document.elementFromPoint(x,y);
+      let host=el,shadowMatch=false;
+      while(host?.getRootNode()?.host){host=host.getRootNode().host;if(host===hit)shadowMatch=true;}
+      if(hit&&(hit===el||el.contains(hit)||shadowMatch)){targetPoint={x,y};break;}
     }
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2, viewportWidth: innerWidth, viewportHeight: innerHeight };
+    if(!targetPoint){
+      // Scrolling may already have changed the page. No pointer input was
+      // dispatched; leave genuinely covered controls blocked.
+      return {__blackiceElementError:{message:'Another element covers this target or no part is in view. Inspect the covering control or scroll.',code:'BROWSER_TARGET_COVERED',inputDispatched:false}};
+    }
+    return {...targetPoint,viewportWidth:innerWidth,viewportHeight:innerHeight};
   }
   if (action === 'click') { el.click(); return { clicked: true }; }
   if (action === 'focus') { el.focus({ preventScroll: true }); return { focused: document.activeElement === el || el.getRootNode()?.activeElement === el }; }
@@ -830,6 +866,10 @@ export class ElectronBrowserDriver extends EventEmitter {
     tab.window = window; tab.suspending = false; tab.closing = false;
     tab.popupViewport = suppliedWindow ? { ready: false, resetRequired: false, pending: null } : null;
     const wc = window.webContents;
+    // Every native lifetime owns its events and protocol readiness.
+    const currentWindow = () => !this.closed && this.tabs.get(tab.id) === tab && tab.window === window && !tab.suspending && !tab.closing;
+    tab.debuggerGeneration = (tab.debuggerGeneration || 0) + 1;
+    tab.containmentReady = null;
     if (tab.passwordManagerContext) this.passwordManager.attach(tab, wc);
     tab.debugEvidence ||= new BrowserTabDiagnostics();
     const diagnostic = (kind, details) => { if (tab.window === window && tab.purpose !== 'chat-mode' && !tab.providerKeyProtected) tab.debugEvidence.lifecycle(kind, details); };
@@ -844,7 +884,8 @@ export class ElectronBrowserDriver extends EventEmitter {
     wc.on('render-process-gone', (_event, details) => this.rendererGone(tab, window, details));
     wc.on('login', (event, details, authInfo, callback) => {
       event.preventDefault();
-      if (this.liveSurface && !this.closed && tab.window === window && !window.isDestroyed()) {
+      if (!currentWindow()) { callback(); return; }
+      if (this.liveSurface && !window.isDestroyed()) {
         this.beginAuthentication(tab, details, authInfo, callback); return;
       }
       callback();
@@ -856,7 +897,8 @@ export class ElectronBrowserDriver extends EventEmitter {
         void this.setHumanSurface(tab, tab.humanSurface).catch(() => {});
     });
     wc.debugger.on('message', (_event, method, params) => {
-      if (tab.window === window && !tab.providerKeyProtected) tab.submissionObservations?.observe(method, params);
+      if (!currentWindow()) return;
+      if (!tab.providerKeyProtected) tab.submissionObservations?.observe(method, params);
       if (tab.humanSurface && ['Page.fileChooserOpened', 'Page.javascriptDialogOpening', 'Page.javascriptDialogClosed'].includes(method)) return;
       if (method === 'Page.fileChooserOpened') {
         const supported = Number.isSafeInteger(params?.backendNodeId) && params.backendNodeId > 0;
@@ -877,7 +919,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         this.emit('changed');
       }
     });
-    wc.debugger.on('detach', () => { tab.containmentReady = null; for (const pending of tab.submissionObservations?.pending?.values() || []) pending.ambiguous = true; this.clearInteraction(tab, { preserveAuthentication: true }); });
+    wc.debugger.on('detach', () => { if (!currentWindow()) return; tab.debuggerGeneration++; tab.containmentReady = null; for (const pending of tab.submissionObservations?.pending?.values() || []) pending.ambiguous = true; this.clearInteraction(tab, { preserveAuthentication: true }); });
     wc.setWindowOpenHandler(({ url }) => {
       if (tab.closing || this.tabs.get(tab.id) !== tab || tab.window !== window) return { action: 'deny' };
       try { this.ownerAdmission?.(tab.owner); } catch { return { action: 'deny' }; }
@@ -905,14 +947,15 @@ export class ElectronBrowserDriver extends EventEmitter {
       else try { this.recordClickPopup(tab, this.newTab(details.url || 'about:blank', { window: child, owner: tab.owner, humanCreated, providerKeyProtected: tab.providerKeyProtected === true, folderId: tab.folderId, parentTabId: tab.id })); } catch { if (!child.isDestroyed()) child.destroy(); }
     });
     wc.on('will-attach-webview', event => event.preventDefault());
-    if (this.liveSurface) wc.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame === true) this.cancelAuthentication(tab); });
+    if (this.liveSurface) wc.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (currentWindow() && isMainFrame === true) this.cancelAuthentication(tab); });
     wc.on('did-frame-navigate', (_event, _url, _responseCode, _statusText, isMainFrame, frameProcessId, frameRoutingId) => {
-      this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url, 'frame-navigation');
+      if (currentWindow()) this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url, 'frame-navigation');
     });
-    wc.on('did-navigate-in-page', (_event, _url, isMainFrame, frameProcessId, frameRoutingId) => this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url, 'in-page-navigation'));
-    wc.on('did-fail-load', (_event, code, description, _url, isMainFrame) => { if (isMainFrame !== false && code !== -3) { tab.loadError = String(description || `Navigation failed (${code}).`); this.emit('changed'); } });
-    wc.on('page-title-updated', (_event, value) => { tab.title = value; this.persist(); this.emit('changed'); });
+    wc.on('did-navigate-in-page', (_event, _url, isMainFrame, frameProcessId, frameRoutingId) => { if (currentWindow()) this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url, 'in-page-navigation'); });
+    wc.on('did-fail-load', (_event, code, description, _url, isMainFrame) => { if (currentWindow() && isMainFrame !== false && code !== -3) { tab.loadError = String(description || `Navigation failed (${code}).`); this.emit('changed'); } });
+    wc.on('page-title-updated', (_event, value) => { if (!currentWindow()) return; tab.title = value; this.persist(); this.emit('changed'); });
     const handoffExternal = (event, target) => {
+      if (!currentWindow()) return;
       try {
         const url = browserURL(target); if (!externalProtocol(url)) return;
         event.preventDefault();
@@ -1275,20 +1318,25 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async pageWork(tab, promise, signal, ms = 12000) {
     const native = Promise.resolve(promise); native.catch(() => {});
+    const window = tab.window;
     let interrupted = false, notify, rendererGone;
     const pending = new Promise((_, reject) => { notify = () => { interrupted = true; reject(interactionError()); }; rendererGone = () => reject(rendererFailure(tab, true)); });
     tab.interactionWaiters.add(notify);
     (tab.rendererWaiters ||= new Set()).add(rendererGone);
     if (tab.rendererFailure) rendererGone();
     if (['javascript_dialog', 'http_auth'].includes(tab.pendingInteraction?.kind) && tab.pendingInteraction.status === 'pending' && !tab.pendingInteraction.automatic) notify();
-    try { return await bounded(Promise.race([native, pending]), signal, ms); }
+    try {
+      const value = await bounded(Promise.race([native, pending]), signal, ms);
+      if (tab.window !== window || window?.isDestroyed?.()) throw Object.assign(error('The native browser document was retired while an operation was in flight.'), { code: 'BROWSER_CONTAINMENT_LOST' });
+      return value;
+    }
     finally {
       tab.interactionWaiters.delete(notify);
       tab.rendererWaiters.delete(rendererGone);
       // A modal-suspended protocol operation is not a completed operation.
       // Keep it observed and reject unrelated input until an explicit decision
       // has released it; do not replay its original command on resolution.
-      if (interrupted && !tab.rendererFailure) { tab.suspendedWork.add(native); native.finally(() => { tab.suspendedWork.delete(native); this.emit('changed'); }).catch(() => {}); }
+      if (interrupted && !tab.rendererFailure && tab.window === window) { tab.suspendedWork.add(native); native.finally(() => { tab.suspendedWork.delete(native); this.emit('changed'); }).catch(() => {}); }
     }
   }
   async resolveInteraction(tab, args, signal) {
@@ -1473,10 +1521,16 @@ export class ElectronBrowserDriver extends EventEmitter {
         try {
           frameLabel = `${frame.processId}-${frame.routingId}`;
           const stamp = this.frameStamp(tab, frame, { mainFrame, throwDisposed: true });
-          if (!stamp) { changedRead = true; break; }
+          if (!stamp) {
+            if (frame === mainFrame) { changedRead = true; break; }
+            frameDisposed = true; errors.push({ frame: frameLabel, error: 'Child frame changed before inspection.' }); continue;
+          }
           const prefix = `${stamp.mainRevision}-${stamp.lineage.map(value => value.revision).join('_')}-${frameLabel}`;
           const value = await this.pageWork(tab, frame.executeJavaScript(`(${pageSnapshot.toString()})(${JSON.stringify(this.key)},${JSON.stringify(prefix)},${JSON.stringify(query || '')},${Boolean(readContext)},${browserControlDescriptor.toString()},${browserAssociatedFileInput.toString()})`), signal, Math.max(1, Math.min(deadline - Date.now(), frame === mainFrame ? 5000 : 500)));
-          if (!this.frameStampCurrent(tab, stamp)) { changedRead = true; break; }
+          if (!this.frameStampCurrent(tab, stamp)) {
+            if (frame === mainFrame) { changedRead = true; break; }
+            frameDisposed = true; errors.push({ frame: frameLabel, error: 'Child frame changed during inspection.' }); continue;
+          }
           if (value.elements.length > remainingElements || value.text.length > remainingText) value.truncated = true;
           value.elements = value.elements.slice(0, remainingElements); value.text = value.text.slice(0, remainingText);
           remainingElements -= value.elements.length; remainingText -= value.text.length;
@@ -1501,7 +1555,16 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (attempt === 0 && !frames.length && frameDisposed && Date.now() < deadline) continue;
       // A bounded failed read can report its disposal diagnostics without publishing
       // any stale observation. Successful frames still require current stamps.
-      if (frames.length || !frameDisposed) changedRead ||= !this.frameStampCurrent(tab, mainStamp) || captured.some(value => !this.frameStampCurrent(tab, value.stamp));
+      if (frames.length || !frameDisposed) changedRead ||= !this.frameStampCurrent(tab, mainStamp);
+      // Retire the entire observation of each changed child document without
+      // throwing away a still-current observation of an independent frame.
+      for (let i = captured.length - 1; i >= 0; i--) {
+        if (this.frameStampCurrent(tab, captured[i].stamp)) continue;
+        if (captured[i].stamp.frame === mainFrame) { changedRead = true; break; }
+        frameDisposed = true;
+        errors.push({ frame: frames[i].frame, error: 'Child frame changed before publication.' });
+        captured.splice(i, 1); frames.splice(i, 1);
+      }
       if (changedRead) {
         if (attempt === 0 && Date.now() < deadline) continue;
         // A snapshot may be the result read after consequential input. Do not
@@ -1745,13 +1808,33 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (isMainFrame !== false || !Number.isInteger(frameProcessId) || frameProcessId < 0 || !Number.isInteger(frameRoutingId) || frameRoutingId < 0) this.retireAllReferences(tab, isMainFrame === false ? 'frame-changed' : 'document-changed', isMainFrame === true ? url : undefined, bindingEvent);
     else {
       const key = `${frameProcessId}-${frameRoutingId}`, revisions = tab.frameRevisions ||= new Map();
-      revisions.set(key, (revisions.get(key) || 0) + 1);
+      // Monotonic generation also prevents reuse after evicting frame history.
+      revisions.delete(key); revisions.set(key, tab.revision);
       for (const [ref, context] of tab.refContexts || []) if (context.stamp.lineage.some(value => value.key === key)) this.retireReference(tab, ref, {
         reason: 'frame-changed', bindingEvent, frameLineageChanged: true, frameUrlChanged: context.stamp.lineage[0]?.key === key && typeof url === 'string' ? url !== context.stamp.url : undefined
       });
-      if (revisions.size > MAX_OBSERVED_REFS) this.retireAllReferences(tab, 'reference-evicted');
+      // Bound embedded-frame generations without resetting unrelated main
+      // document references. Retire only observations bound to evicted keys.
+      while (revisions.size > MAX_OBSERVED_REFS) {
+        const retiredKey = revisions.keys().next().value;
+        revisions.delete(retiredKey);
+        for (const [ref, context] of tab.refContexts || []) if (context.stamp.lineage.some(value => value.key === retiredKey)) this.retireReference(tab, ref, { reason: 'reference-evicted' });
+      }
+      // Native interaction decisions retain their existing whole-page guard.
+      // Subframe revisions are not persisted; avoid rewriting the full tab
+      // tree on every unrelated child commit. Coalesce only UI notifications.
+      const interactionChanged = Boolean(tab.pendingInteraction || tab.authenticationChallenge || tab.inputWarning);
+      this.clearInteraction(tab);
+      if (interactionChanged) { this.emit('changed'); return; }
+      if (!this.subframeChangeTimer) {
+        this.subframeChangeTimer = setTimeout(() => {
+          this.subframeChangeTimer = null;
+          if (!this.closed) this.emit('changed');
+        }, 50);
+        this.subframeChangeTimer.unref?.();
+      }
+      return;
     }
-    // Native dialog/chooser decisions keep their existing whole-page guard.
     this.clearInteraction(tab); this.persist(); this.emit('changed');
   }
   frameStamp(tab, frame, { mainFrame, throwDisposed = false } = {}) {
@@ -1802,7 +1885,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     return expected;
   }
   scopedInputCurrent(tab, expected) {
-    return Boolean(['click', 'hover', 'select', 'upload', 'fill', 'press'].includes(expected?.action) && typeof expected.ref === 'string' && this.referenceCurrent(tab, expected.ref, expected.expectedDocumentId));
+    return Boolean(['click', 'hover', 'select', 'upload', 'fill', 'press', 'scroll'].includes(expected?.action) && typeof expected.ref === 'string' && this.referenceCurrent(tab, expected.ref, expected.expectedDocumentId));
   }
   assertInputDocument(tab, expected) {
     if (expected?.expectedDocumentId === undefined && expected?.expectedUrl === undefined) return;
@@ -1810,7 +1893,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (typeof expected.expectedDocumentId !== 'string' || typeof expected.expectedUrl !== 'string') reason = 'input-identity-invalid';
     else if (expected.expectedUrl !== tab.window.webContents.getURL()) reason = 'input-url-mismatch';
     else if (expected.expectedDocumentId !== inputDocumentId(tab) && !this.scopedInputCurrent(tab, expected)) reason = 'input-document-mismatch';
-    else if (expected.ref && ['click', 'hover', 'fill', 'select', 'upload', 'press'].includes(expected.action) && !this.referenceCurrent(tab, expected.ref)) reason = 'input-reference-mismatch';
+    else if (expected.ref && ['click', 'hover', 'fill', 'select', 'upload', 'press', 'scroll'].includes(expected.action) && !this.referenceCurrent(tab, expected.ref)) reason = 'input-reference-mismatch';
     if (!reason) return;
     // Report the first actual failed check, preserving the existing ordering and dispatch guard.
     const browserReferenceDiagnostic = { reason, currentRevision: tab.revision };
@@ -1819,27 +1902,33 @@ export class ElectronBrowserDriver extends EventEmitter {
       ? expected.expectedDocumentId.slice(prefix.length) : '';
     if (/^\d{1,16}$/.test(suffix) && Number.isSafeInteger(Number(suffix)))
       browserReferenceDiagnostic.requestedRevision = Number(suffix);
-    throw Object.assign(error('The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', browserReferenceDiagnostic });
+    throw Object.assign(error('The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', browserReferenceDiagnostic, [pointerIdentityGuard]:true });
   }
   async cdp(tab, method, params = {}, signal, expected, sessionId) {
     let dispatched = false;
     try {
     if (tab.rendererFailure) throw rendererFailure(tab);
-    const wc = tab.window.webContents;
+    const window = tab.window, wc = window.webContents;
+    let inputGeneration, inputReady;
     if (method.startsWith('Input.')) {
       await this.ensureContained(tab, signal);
       // A detach can invalidate the guard while the awaiting caller resumes.
       // Never reconnect and send this input under a fresh, unguarded session.
-      if (!wc.debugger.isAttached() || !tab.containmentReady) throw Object.assign(error('The contained browser connection changed before input. Inspect the page and try the action again after it reconnects.'), { code: 'BROWSER_CONTAINMENT_LOST' });
+      if (tab.window !== window || !wc.debugger.isAttached() || !tab.containmentReady) throw Object.assign(error('The contained browser connection changed before input. Inspect the page and try the action again after it reconnects.'), { code: 'BROWSER_CONTAINMENT_LOST' });
+      inputGeneration = tab.debuggerGeneration; inputReady = tab.containmentReady;
       // Raw keyboard input retains the whole-document guard. A reference-bound
       // edit can survive unrelated frame navigation only after the exact current
       // control is independently checked for focus in its own renderer.
       const keyboard = method === 'Input.insertText' || method === 'Input.dispatchKeyEvent';
-      if (keyboard && expected && expected.expectedDocumentId !== inputDocumentId(tab)
-        && ['fill', 'press'].includes(expected.action) && this.scopedInputCurrent(tab, expected)) {
-        const proof = await this.element(tab, expected, 'keyboard-verify', signal);
-        if (proof.result?.focused !== true) throw Object.assign(error('The observed keyboard target no longer has focus. Inspect that field before retrying.'), { code: 'BROWSER_INPUT_FOCUS_CHANGED', inputDispatched: false });
-        this.assertInputDocument(tab, expected);
+      if (keyboard && expected && ['fill', 'press'].includes(expected.action) && typeof expected.ref==='string') {
+        this.assertInputDocument(tab,expected);
+        const proof=await this.element(tab,expected,'keyboard-verify',signal);
+        // Offscreen top-level documents have a real active element even though
+        // Chromium reports no OS document focus. Never grant that exception
+        // to a child frame (whose focus might belong to a different frame).
+        const offscreenMain=!tab.window.liveSurface&&proof.frame===wc.mainFrame;
+        if(proof.result?.focused!==true||proof.result.documentFocused===false&&!offscreenMain)throw Object.assign(error('The observed keyboard target no longer has focus. Inspect that field before retrying.'),{code:'BROWSER_INPUT_FOCUS_CHANGED',inputDispatched:false,keyboardStage:'pre-key-input'});
+        this.assertInputDocument(tab,expected);
       } else this.assertInputDocument(tab, keyboard && expected ? { ...expected, action: undefined } : expected);
       if (method === 'Input.dispatchMouseEvent' && ['mouseMoved', 'mousePressed', 'mouseWheel'].includes(params.type) && expected?.ref) {
         await this.assertPointerReference(tab, expected, params, signal, sessionId);
@@ -1847,6 +1936,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       }
     } else if (!wc.debugger.isAttached()) { wc.debugger.attach('1.3'); tab.containmentReady = null; }
     cancel(signal);
+    if (tab.window !== window || window.isDestroyed() || !wc.debugger.isAttached() || method.startsWith('Input.') && (!inputReady || tab.containmentReady !== inputReady || tab.debuggerGeneration !== inputGeneration)) throw Object.assign(error('The native browser connection changed before dispatch.'), { code: 'BROWSER_CONTAINMENT_LOST' });
     dispatched = true;
     const native = sessionId ? wc.debugger.sendCommand(method, params, sessionId) : wc.debugger.sendCommand(method, params);
     if (method === 'Page.handleJavaScriptDialog' || method === 'DOM.setFileInputFiles' || params.type === 'mouseReleased' || params.type === 'keyUp') return await bounded(native, signal);
@@ -1857,27 +1947,35 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
   }
   async assertPointerReference(tab, expected, point, signal, sessionId) {
-    let objectId;
+    let objectId,check='layout-metrics',geometryChanged=false;
     try {
       // Input coordinates are viewport CSS pixels. DOM hit lookup uses document
       // CSS pixels in this exact target session, including a scrolled OOP frame.
       const metrics = await this.cdp(tab, 'Page.getLayoutMetrics', {}, signal, undefined, sessionId);
       const viewport = metrics.cssLayoutViewport;
       if (!viewport || !['pageX', 'pageY', 'clientWidth', 'clientHeight'].every(key => Number.isFinite(viewport[key]))) throw error('The pointer viewport could not be verified.');
+      check='hit-location';
       const hit = await this.cdp(tab, 'DOM.getNodeForLocation', { x: Math.floor(point.x + viewport.pageX), y: Math.floor(point.y + viewport.pageY) }, signal, undefined, sessionId);
       if (!Number.isInteger(hit.backendNodeId)) throw error('The pointer hit node is unavailable.');
+      check='resolve-hit';
       const resolved = await this.cdp(tab, 'DOM.resolveNode', { backendNodeId: hit.backendNodeId }, signal, undefined, sessionId);
       objectId = resolved.object?.objectId;
       if (!objectId) throw error('The pointer hit document is unavailable.');
+      check='verify-hit';
       const checked = await this.cdp(tab, 'Runtime.callFunctionOn', { objectId,
         functionDeclaration: `function(key,ref,point){return (${elementAction.toString()})(key,ref,'pointer-verify',{hit:this,point},undefined,undefined,${browserControlDescriptor.toString()},${browserPointerHitMatches.toString()});}`,
         arguments: [{ value: this.key }, { value: expected.ref }, { value: expected.pointerLocalPoint || { x: point.x, y: point.y } }], returnByValue: true }, signal, undefined, sessionId);
-      if (checked.exceptionDetails || checked.result?.value?.verified !== true) throw error('The pointer no longer hits the exact observed control in its document.');
+      if (checked.exceptionDetails || checked.result?.value?.verified !== true) {
+        geometryChanged=!checked.exceptionDetails&&checked.result?.value?.verified===false&&checked.result.value.reason==='pointer-hit-mismatch';
+        throw error('The pointer no longer hits the exact observed control in its document.');
+      }
+      check='viewport-recheck';
       const current = (await this.cdp(tab, 'Page.getLayoutMetrics', {}, signal, undefined, sessionId)).cssLayoutViewport;
-      if (!current || ['pageX', 'pageY', 'clientWidth', 'clientHeight'].some(key => current[key] !== viewport[key])) throw error('The pointer viewport changed during verification.');
+      if (!current || ['pageX', 'pageY', 'clientWidth', 'clientHeight'].some(key => current[key] !== viewport[key])) {geometryChanged=Boolean(current);throw error('The pointer viewport changed during verification.');}
     } catch (cause) {
       if (cause?.name === 'AbortError' || ['BROWSER_CONTAINMENT_LOST', 'BROWSER_RENDERER_GONE', 'BROWSER_INTERACTION_PENDING'].includes(cause?.code)) throw cause;
-      throw Object.assign(error('The pointer target changed or could not be verified. Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: this.referenceDiagnostic(tab, expected.ref) });
+      if(check==='hit-location'&&/No node found at given location/i.test(String(cause?.message||cause)))geometryChanged=true;
+      throw Object.assign(error('The pointer target changed or could not be verified ('+check+'). Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: {...this.referenceDiagnostic(tab, expected.ref),pointerCheck:check}, [pointerIdentityGuard]:true, [pointerGeometryRecovery]:geometryChanged });
     } finally {
       if (objectId) void this.cdp(tab, 'Runtime.releaseObject', { objectId }, undefined, undefined, sessionId).catch(() => {});
     }
@@ -1903,23 +2001,45 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async ensureContained(tab, signal) {
     if (tab.rendererFailure) throw rendererFailure(tab);
-    cancel(signal); const wc = tab.window.webContents;
-    if (this.closed || !tab.window || tab.window.isDestroyed()) throw error('The contained browser page closed.');
-    await bounded(this.compatibilityReady, signal); cancel(signal);
-    await bounded(tab.rendererReady, signal, 8000); cancel(signal);
-    if (tab.rendererFailure) throw rendererFailure(tab);
-    if (this.closed || !tab.window || tab.window.isDestroyed()) throw error('The contained browser page closed.');
-    if (!wc.debugger.isAttached()) { wc.debugger.attach('1.3'); tab.containmentReady = null; }
-    if (!tab.containmentReady) {
-      tab.containmentReady = bounded((async () => {
-        await wc.debugger.sendCommand('Page.enable');
-        await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: tab.humanSurface !== true });
-      })(), undefined, 8000).catch(() => {
-        tab.containmentReady = null; throw error('The browser could not disable native file dialogs. No contained browser input was sent.');
-      });
-      tab.containmentReady.catch(() => {});
+    cancel(signal);
+    const window = tab.window, wc = window?.webContents;
+    const lost = () => Object.assign(error('The contained browser connection changed before input. Inspect the page and try the action again after it reconnects.'), { code: 'BROWSER_CONTAINMENT_LOST' });
+    const current = () => {
+      if (tab.rendererFailure) throw rendererFailure(tab);
+      if (this.closed || !window || window.isDestroyed() || tab.window !== window || tab.suspending || tab.closing || !wc || wc.isDestroyed?.()) throw lost();
+    };
+    current();
+    await bounded(this.compatibilityReady, signal); cancel(signal); current();
+    await bounded(tab.rendererReady, signal, 8000); cancel(signal); current();
+    if (!wc.debugger.isAttached()) {
+      wc.debugger.attach('1.3');
+      tab.debuggerGeneration = (tab.debuggerGeneration || 0) + 1;
+      tab.containmentReady = null;
     }
-    await bounded(tab.containmentReady, signal, 8000); cancel(signal);
+    const generation = tab.debuggerGeneration;
+    const currentConnection = () => {
+      current();
+      if (!wc.debugger.isAttached() || generation !== tab.debuggerGeneration) throw lost();
+    };
+    currentConnection();
+    if (!tab.containmentReady) {
+      let ready;
+      ready = bounded((async () => {
+        await wc.debugger.sendCommand('Page.enable'); currentConnection();
+        await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: tab.humanSurface !== true }); currentConnection();
+      })(), undefined, 8000).catch(cause => {
+        // A rejected handshake from a retired lifetime must not erase the
+        // replacement renderer's completed handshake.
+        if (tab.window === window && generation === tab.debuggerGeneration && tab.containmentReady === ready) tab.containmentReady = null;
+        if (cause?.code === 'BROWSER_CONTAINMENT_LOST' || cause?.code === 'BROWSER_RENDERER_GONE') throw cause;
+        throw error('The browser could not disable native file dialogs. No contained browser input was sent.');
+      });
+      tab.containmentReady = ready;
+      ready.catch(() => {});
+    }
+    const ready = tab.containmentReady;
+    await bounded(ready, signal, 8000); cancel(signal); currentConnection();
+    if (tab.containmentReady !== ready) throw lost();
   }
   setHostSurface(host, request) {
     if (!this.surface || this.closed) throw error('The live BLACKICE browser is unavailable.');
@@ -2014,20 +2134,22 @@ export class ElectronBrowserDriver extends EventEmitter {
     await bounded(state.pending, signal);
   }
   async capture(tab, signal, revision, { beforeInput = false, expected } = {}) {
-    return captureHiddenPage(tab.window.webContents, { signal, assertCurrent: () => {
-      if (this.closed || tab.window.isDestroyed()) throw error('The browser page closed before capture completed.');
+    const window = tab.window;
+    return captureHiddenPage(window.webContents, { signal, assertCurrent: () => {
+      if (this.closed || tab.window !== window || window.isDestroyed()) throw error('The native browser page was retired before capture completed.');
       if (beforeInput && expected) this.assertInputDocument(tab, expected);
       if (revision !== undefined && tab.revision !== revision && !(beforeInput && this.scopedInputCurrent(tab, expected))) {
         // This host-observed failure precedes pointer dispatch. Preparation may
         // have scrolled the page, so do not claim that the whole action had no effects.
-        if (beforeInput) throw Object.assign(error('The page changed before the requested pointer input was dispatched. Take a fresh snapshot before acting.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', inputDispatched: false });
+        if (beforeInput) throw Object.assign(error('The page changed before the requested pointer input was dispatched. Take a fresh snapshot before acting.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', inputDispatched: false, [pointerIdentityGuard]:true });
         throw error('The page changed while preparing browser input. Take a fresh snapshot before acting.');
       }
     } }).catch(reason => {
       // In click/hover preparation, the pointer routine has not been invoked.
       // Scroll/layout may already have changed; do not claim actionDispatched:false.
+      if (beforeInput && reason?.[pointerIdentityGuard]===true)throw preservePrePointerRefusal(reason);
       if (beforeInput && reason?.code === 'BROWSER_CAPTURE_TIMEOUT')
-        throw Object.assign(error(reason.message), {code: reason.code, pointerStage: 'pre-pointer-capture'});
+        throw Object.assign(error(reason.message), {code: reason.code, pointerStage: 'pre-pointer-capture', ...(reason.captureStage ? {captureStage:reason.captureStage} : {})});
       throw reason;
     });
   }
@@ -2035,7 +2157,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     cancel(signal);
     let release = true;
     try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 }, signal, expected, sessionId); }
-    catch (reason) { release = reason?.[commandDispatched] !== false; throw reason; }
+    catch (reason) { release = reason?.[commandDispatched] !== false; throw release?reason:preservePrePointerRefusal(reason); }
     finally {
       if (release) {
       try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 }, AbortSignal.timeout(1500), undefined, sessionId); }
@@ -2120,11 +2242,14 @@ export class ElectronBrowserDriver extends EventEmitter {
     catch { /* Optional evidence is never part of the action outcome. */ }
   }
   async pointerInput(tab, point, action, signal, expected, reportClickPopup) {
-    const target = await this.pointerTarget(tab, point, signal, expected);
+    let target;
+    try { target=await this.pointerTarget(tab,point,signal,expected); }
+    catch(reason){throw preservePrePointerRefusal(reason);}
     // Frame-local hit coordinates are host-derived, not supplied by the model.
     const guard = { ...target.guard, pointerLocalPoint: target.localPoint || target.point };
     try {
-      await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...target.point, button: 'none' }, signal, guard, target.sessionId);
+      try { await this.cdp(tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...target.point, button: 'none' }, signal, guard, target.sessionId); }
+      catch(reason){throw reason?.[commandDispatched]===false?preservePrePointerRefusal(reason):reason;}
       if (action === 'click') {
         const active = tab.clickPopupObservers ||= new Set();
         const click = { report: reportClickPopup };
@@ -2240,6 +2365,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     cancel(signal);
     args = normalizeBrowserFillRequest(args);
     const fillText = args.action === 'fill' ? validateBrowserFillRequest(args) : undefined;
+    const pressPlan=args.action==='press'?preparePressRequest(args):null;
     if (args.action === 'upload') validateBrowserUploadRequest(args);
     if (recoveryInput) await recoveryInput({ signal });
     const preview = validateBrowserPreview({ ...args, browser: args.browser ?? 'relay' }, source);
@@ -2385,7 +2511,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     // Reloading a saved page already dispatches its one navigation in activate.
     // A failed activation cannot be cleared by the no-op "already reloaded" arm.
     if (tab.loadError && (resumed && args.action === 'reload' || !['navigate', 'reload', 'back', 'forward'].includes(args.action))) throw navigationFailure(tab);
-    if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)) {
+    if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)||args.action==='scroll'&&args.ref) {
       try { this.assertInputDocument(tab, args); }
       catch (cause) {
         // Restoring a suspended navigation or preparing a popup can already
@@ -2451,9 +2577,11 @@ export class ElectronBrowserDriver extends EventEmitter {
         if (recoveryInput) await recoveryInput({ signal, prepared: true });
         if (text) await this.cdp(tab, 'Input.insertText', { text }, signal, guard);
         else {
+          let release=true;
           try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 }, signal, guard); }
+          catch(cause){release=cause?.[commandDispatched]!==false;throw cause;}
           finally {
-            try { await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 }, AbortSignal.timeout(1500)); }
+            try { if(release)await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 }, AbortSignal.timeout(1500)); }
             catch { tab.inputWarning = 'Browser key release could not be confirmed. Inspect or reload before continuing.'; }
           }
         }
@@ -2463,17 +2591,44 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (args.action === 'select') { if (recoveryInput) await recoveryInput({ signal, prepared: true }); receipt = (await this.element(tab, args, 'select', signal)).result; }
     if (['click', 'hover'].includes(args.action)) {
       if (args.ref) {
+        // A semantic target is verified against the native DOM and native hit
+        // testing immediately before dispatch. A bitmap is neither its identity
+        // nor its hit proof. Requiring a full compositor copy here unnecessarily
+        // couples independent iframe loading/painting to an exact-control click.
         let { frame, result } = await this.element(tab, args, 'prepare', signal);
-        const revision = tab.revision;
-        // Flush layout/compositing after scroll or SPA changes before hit testing.
-        const { retries } = await this.capture(tab, signal, revision, { beforeInput: true, expected: args });
-        // A retry waited for another frame: the target can have moved or detached meanwhile.
-        if (retries || tab.revision !== revision) ({ frame, result } = await this.element(tab, args, 'prepare', signal));
+        // Adopted popups have a separate native widget initialization contract.
+        // Preserve the real compositor-frame proof for that route.
+        if (tab.popupViewport) {
+          const revision = tab.revision;
+          const { retries } = await this.capture(tab, signal, revision, { beforeInput: true, expected: args });
+          if (retries || tab.revision !== revision) ({ frame, result } = await this.element(tab, args, 'prepare', signal));
+        }
         const point = await this.browserPoint(tab, frame, result, signal);
         await this.assertOperationCommit(args, operationDescriptor, { signal, owner });
         await this.armSubmissionObservation(tab, operationDescriptor, operationId, signal);
         if (recoveryInput) await recoveryInput({ signal, prepared: true });
-        await this.pointerInput(tab, point, args.action, signal, args, onClickPopup);
+        try {await this.pointerInput(tab, point, args.action, signal, args, onClickPopup);}
+        catch(cause){
+          // One in-call geometry correction, only when the requested pointer
+          // input has not been dispatched and the SAME observed node survives.
+          // Never remap by label, retry a consequential input, or consume a
+          // previously granted deliberate-retry permit a second time.
+          if(cause?.[pointerGeometryRecovery]!==true||cause.inputDispatched!==false||cause.pointerStage!=='pre-pointer-identity'||recoveryInput||tab.pendingInteraction||!this.referenceCurrent(tab,args.ref,args.expectedDocumentId))throw cause;
+          cancel(signal);
+          let next;
+          try {
+            this.assertInputDocument(tab,args);
+            const prepared=await this.element(tab,args,'prepare',signal);
+            if(tab.popupViewport)await this.capture(tab,signal,tab.revision,{beforeInput:true,expected:args});
+            const current=tab.popupViewport?await this.element(tab,args,'prepare',signal):prepared;
+            if(current.frame!==prepared.frame||!this.referenceCurrent(tab,args.ref,args.expectedDocumentId))throw cause;
+            next=await this.browserPoint(tab,current.frame,current.result,signal);
+            if(!Number.isFinite(next.x)||!Number.isFinite(next.y)||Math.hypot(next.x-point.x,next.y-point.y)<1)throw cause;
+            await this.assertOperationCommit(args,operationDescriptor,{signal,owner});
+          }catch(nextError){if(signal?.aborted)throw nextError;throw cause;}
+          // No automatic repetition follows this second dispatch attempt.
+          await this.pointerInput(tab,next,args.action,signal,args,onClickPopup);
+        }
         receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: args.ref, input: 'browser protocol' };
       } else {
         const viewport = await bounded(tab.window.webContents.executeJavaScript('({width:innerWidth,height:innerHeight})'), signal);
@@ -2497,15 +2652,11 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (args.action === 'press') {
       await this.assertOperationCommit(args, operationDescriptor, { signal, owner });
       await this.armSubmissionObservation(tab, operationDescriptor, operationId, signal);
-      const rawKey = String(args.key || ''), key = rawKey.toLowerCase() === 'a' ? 'A' : rawKey, modifiers = keyboardModifiers(args.modifiers);
-      const keys = { Enter: { code: 'Enter', windowsVirtualKeyCode: 13 }, Tab: { code: 'Tab', windowsVirtualKeyCode: 9 }, Escape: { code: 'Escape', windowsVirtualKeyCode: 27 }, Backspace: { code: 'Backspace', windowsVirtualKeyCode: 8 }, Delete: { code: 'Delete', windowsVirtualKeyCode: 46 }, Home: { code: 'Home', windowsVirtualKeyCode: 36 }, End: { code: 'End', windowsVirtualKeyCode: 35 }, PageUp: { code: 'PageUp', windowsVirtualKeyCode: 33 }, PageDown: { code: 'PageDown', windowsVirtualKeyCode: 34 }, ArrowDown: { code: 'ArrowDown', windowsVirtualKeyCode: 40 }, ArrowUp: { code: 'ArrowUp', windowsVirtualKeyCode: 38 }, ArrowLeft: { code: 'ArrowLeft', windowsVirtualKeyCode: 37 }, ArrowRight: { code: 'ArrowRight', windowsVirtualKeyCode: 39 }, Space: { code: 'Space', windowsVirtualKeyCode: 32 }, A: { code: 'KeyA', windowsVirtualKeyCode: 65 } };
-      // Printable press delivers the full trusted keyboard sequence. Bulk fill
-      // and type retain their efficient insertion path. Modified shortcuts must
-      // never also insert their letter; preserve the existing Control/Meta+A
-      // contract and reject other modified printable shortcuts.
-      const printable = modifiers & 7 ? null : printableKeyEvent(rawKey === 'Space' ? ' ' : rawKey, modifiers);
-      if (!printable && (!Object.hasOwn(keys, key) || key === 'A' && (!(modifiers & 6) || modifiers & 1))) throw error('Use one printable character, a supported editing/navigation key, or Control/Meta+A to select all. Use type or fill for longer text.');
-      if (args.ref) await this.element(tab, args, 'focus', signal);
+      const {rawKey,key,modifiers,keys,printable}=pressPlan;
+      if (args.ref) {
+        const {result:focus}=await this.element(tab,args,'focus',signal);
+        if(focus?.focused!==true)throw Object.assign(error('The exact observed field did not retain focus. Reobserve it before pressing a key.'),{code:'BROWSER_INPUT_FOCUS_CHANGED',inputDispatched:false,keyboardStage:'pre-key-input'});
+      }
       if (recoveryInput) await recoveryInput({ signal, prepared: true });
       const eventKey = key === 'Space' ? ' ' : key === 'A' && !(modifiers & 8) ? 'a' : key;
       const down = printable || { key: eventKey, ...keys[key], modifiers };
@@ -2517,6 +2668,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         if (key === 'Enter') await this.cdp(tab, 'Input.dispatchKeyEvent', { type: 'char', text: '\r', key: 'Enter', ...keys[key], modifiers }, signal, keyboardGuard);
       } catch (reason) {
         release = pressed || reason?.[commandDispatched] !== false;
+        if(pressed&&reason?.keyboardStage==='pre-key-input'){delete reason.keyboardStage;delete reason.inputDispatched;}
         if (!release && unpreparedKeyboard && !releaseInputFocus && !tab.popupViewport) reason.actionDispatched = false;
         throw reason;
       } finally {
@@ -2601,7 +2753,8 @@ export class ElectronBrowserDriver extends EventEmitter {
         if (source !== 'user' && tab.providerKeyProtected) throw Object.assign(error('This provider-key tab is protected. Use protected provider key inspection or the local human browser view.'), { code: 'BROWSER_CREDENTIAL_CAPTURE_BLOCKED' });
       };
       assertCredentialCapture();
-      if (preview) this.assertInputDocument(tab, args);
+      const guardScreenshot=preview||args.expectedDocumentId!==undefined||args.expectedUrl!==undefined;
+      if(guardScreenshot) this.assertInputDocument(tab,args);
       const revision = tab.revision;
       const assertCaptureCurrent = () => {
         cancel(signal); assertCredentialCapture();
@@ -2624,7 +2777,7 @@ export class ElectronBrowserDriver extends EventEmitter {
         if (Object.keys(viewport).some(key => viewport[key] !== after[key]))
           throw Object.assign(error('The viewport changed during screenshot capture. Take a fresh screenshot before using coordinates.'), { code: 'BROWSER_CAPTURE_GEOMETRY_CHANGED' });
       }
-      if (preview) this.assertInputDocument(tab, args);
+      if(guardScreenshot) this.assertInputDocument(tab,args);
       // The local live view favors small, quickly encoded frames. Tool screenshots
       // retain their original lossless PNG representation.
       const imageUrl = preview ? 'data:image/jpeg;base64,' + image.toJPEG(85).toString('base64') : image.toDataURL();
@@ -2680,8 +2833,13 @@ export class ElectronBrowserDriver extends EventEmitter {
       observedMainRevision = tab.mainRevision;
       try { result = await this.snapshot(tab, args.query, signal, { readContext: args.action === 'read' }); }
       catch (cause) {
-        if (!quietRequired || cause?.code !== 'BROWSER_SNAPSHOT_DOCUMENT_CHANGED') throw cause;
-        result = navigationUnsettled();
+        if(cause?.code!=='BROWSER_SNAPSHOT_DOCUMENT_CHANGED')throw cause;
+        if(quietRequired)result=navigationUnsettled();
+        else if(receipt&&['click','hover','fill','select','upload','scroll','press'].includes(args.action)){
+          // The input returned; the following read did not. This is a native
+          // input receipt, NOT proof that the requested external outcome occurred.
+          result={tabId:tab.id,url:this.tabURL(tab),documentId:inputDocumentId(tab),title:this.tabTitle(tab),frames:[],actionDispatched:true,observationUnavailable:true,navigationUnsettled:true,hint:'Input returned, but the resulting document changed during inspection. Observe the current destination; do not repeat the input to obtain a receipt.'};
+        }else throw cause;
       }
     }
     if (['open', 'navigate', 'reload', 'back', 'forward'].includes(args.action)) { this.persist(); await this.savedStatus(); }
@@ -2712,6 +2870,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (this.closePromise) return this.closePromise;
     this.surface?.hide();
     this.persist(); this.closed = true;
+    clearTimeout(this.subframeChangeTimer); this.subframeChangeTimer = null;
     const closingProtection = Promise.resolve().then(() => this.protection.close()); this.protection.off('updated', this.protectionListener);
     this.session.removeListener('will-download', this.downloadListener);
     this.session.removeListener('file-system-access-restricted', this.fileSystemAccessListener);

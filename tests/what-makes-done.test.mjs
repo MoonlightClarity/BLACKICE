@@ -154,3 +154,10 @@ test('shared completion distinguishes new effects from existing-state and histor
  ])assert.ok(content.includes(expected),expected);
  assert.match(content,/Unknown after timeout\/lost response \| Inspect the destination before repeating the action/);
 });
+
+
+test('timed Goal wait is an alternative to repeated empty email checks',async()=>{
+ const {content}=await createSkillsCatalog().detail({id:'library-what-makes-done'});
+ assert.match(content,/timed wait action until the observed request timestamp plus 90 seconds/);
+ assert.match(content,/Never schedule that wait beyond an earlier user cutoff/);
+});

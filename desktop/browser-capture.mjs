@@ -12,6 +12,20 @@ function bounded(promise, signal, milliseconds) {
   });
 }
 
+// Electron's capturePage copies the currently submitted compositor surface.
+// A nonempty bitmap need not include changes that the renderer has already
+// acknowledged. Cross two animation-frame boundaries in a host-owned isolated
+// world before copying it. This does not freeze the page or prove it cannot
+// change again; the caller still owns document/viewport identity checks.
+// World 1001 is separate from the site's main world and Electron's preload.
+const nativeFrameWorld=1001;
+export function nativeFrameBoundary(contents) {
+  if(typeof contents.executeJavaScriptInIsolatedWorld!=='function')return null;
+  return contents.executeJavaScriptInIsolatedWorld(nativeFrameWorld,[{
+    code:'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))'
+  }]);
+}
+
 /** Retry only the read-only frame copy. Consequential browser input is never retried here. */
 export async function captureHiddenPage(contents, { signal, assertCurrent = () => {}, timeoutMs = 4000, retryDelays = [50, 100] } = {}) {
   const deadline = Date.now() + Math.max(1, Math.min(12000, timeoutMs)), delays = retryDelays.slice(0, 2); let lastError;
@@ -20,7 +34,18 @@ export async function captureHiddenPage(contents, { signal, assertCurrent = () =
     current(); if (Date.now() >= deadline) throw failure('The browser did not produce a frame before the capture deadline.', 'BROWSER_CAPTURE_TIMEOUT');
     let image;
     try {
-      image = await bounded(contents.capturePage(undefined, { stayHidden: true }), signal, deadline - Date.now());
+      const frameDeadline = Math.min(deadline, Date.now() + 1500);
+      const frame=nativeFrameBoundary(contents);
+      if(frame){
+        let ready;
+        try { ready=await bounded(frame,signal,frameDeadline-Date.now()); }
+        catch(cause){ if(cause?.code==='BROWSER_CAPTURE_TIMEOUT')cause.captureStage='render-boundary'; throw cause; }
+        current();
+        if(ready!==true)throw failure('The native renderer did not confirm a fresh frame boundary.','BROWSER_CAPTURE_RENDER_UNAVAILABLE');
+        if(Date.now()>=deadline)throw failure('The browser did not produce a frame before the capture deadline.','BROWSER_CAPTURE_TIMEOUT');
+      }
+      try { image = await bounded(contents.capturePage(undefined, { stayHidden: true }), signal, deadline - Date.now()); }
+      catch(cause){ if(cause?.code==='BROWSER_CAPTURE_TIMEOUT')cause.captureStage='bitmap-copy'; throw cause; }
       current(); const size = image?.getSize?.(); if (!image || image.isEmpty?.() || !size?.width || !size?.height) throw new Error('Empty browser capture');
       return { image, retries: attempt };
     } catch (error) { current(); if (!transient(error)) throw error; lastError = error; }

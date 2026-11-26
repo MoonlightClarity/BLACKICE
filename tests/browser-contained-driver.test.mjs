@@ -429,7 +429,7 @@ test('a detached renderer ref preserves its message across a boundary that loses
   assert.equal(tab.window.captureArgs, undefined, 'A detached target must fail before pointer preparation.');
 });
 
-async function goalPointerFixture(t, { covered = true, inputError, embeddedCandidates, frameOwnerError } = {}) {
+async function goalPointerFixture(t, { covered = true, inputError, embeddedCandidates, frameOwnerError, pointerMismatch = false } = {}) {
   let ref, scrolls = 0, captures = 0, overlay = covered, candidates = embeddedCandidates;
   const scrollAlignments = [];
   const childURL = 'https://identity.example.test/control', quad = [150, 80, 450, 80, 450, 230, 150, 230];
@@ -455,6 +455,7 @@ async function goalPointerFixture(t, { covered = true, inputError, embeddedCandi
       if (method === 'Target.attachToTarget') { assert.equal(params.targetId, 'owned-frame'); return { sessionId: 'exact-child-session' }; }
     }
     if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed' && inputError) throw inputError;
+    if(method==='Runtime.callFunctionOn'&&pointerMismatch)return {result:{value:{verified:false}}};
     return pointerProof(method, params, ref, embeddedCandidates === undefined ? undefined : childViewport);
   } });
   const tab = f.driver.newTab('https://example.test/covered-control'); await tab.loading;
@@ -517,7 +518,7 @@ for (const candidates of [0, 2]) for (const action of ['click', 'hover']) {
     assert.equal(first.success, false);
     assert.match(body.error, /Embedded frame identity is ambiguous/);
     assert.equal(f.scrolls(), 1, 'The real renderer preparation already scrolled the child control.');
-    assert.equal(f.captures(), captures + 1, 'The real pre-input capture completed before frame resolution.');
+    assert.equal(f.captures(), captures, 'An exact observed control must not require a bitmap before native frame resolution.');
     assert.equal(f.tab.window.protocol.filter(call => call.method === 'Target.getTargets').length, 1);
     assert.equal(f.tab.window.protocol.filter(call => call.method.startsWith('Input.')).length, 0);
     assert.equal(body.inputDispatched, false);
@@ -566,11 +567,10 @@ test('a page-thrown frame-identity code cannot counterfeit the host no-input gua
   assert.equal(f.scrolls(), 1);
 });
 
-for (const boundary of ['capture', 'frame owner']) {
+for (const boundary of ['frame owner']) {
   test(`an adjacent ${boundary} failure keeps UNKNOWN protection without a trusted frame-identity receipt`, async t => {
     const f = await goalPointerFixture(t, { covered: false, embeddedCandidates: 1,
       ...(boundary === 'frame owner' ? { frameOwnerError: new Error('Owned frame geometry failure.') } : {}) });
-    if (boundary === 'capture') f.tab.window.webContents.capturePage = async () => { throw new Error('Owned capture failure.'); };
     const first = await f.wrapped(f.original), body = JSON.parse(first.contentItems[0].text);
     assert.equal(first.success, false); assert.notEqual(first.code, 'BROWSER_FRAME_IDENTITY_AMBIGUOUS');
     if (boundary === 'frame owner') assert.match(body.error, /does not expose a page-level input target/);
@@ -2514,6 +2514,7 @@ test('owner recovery reaches native fill-ready without rejecting its own focus p
     if(action==='host-inspect'){inspections++;assert.equal(args.hostRecoveryInspection,true);return {result:control()};}
     if(action==='fill')return {result:{needsTrustedTextInput:true}};
     if(action==='fill-ready'){ready++;return {result:{ready:true}};}
+    if(action==='keyboard-verify')return {frame:tab.window.webContents.mainFrame,result:{focused:true,documentFocused:true}};
     throw Error('Unexpected element action '+action);
   };
   const call={name:'relay_browser',arguments:{browser:'relay',action:'fill',tabId:tab.id,ref:'field',text:'Example',expectedDocumentId:`${tab.id}:${tab.revision}`,expectedUrl:tab.url}};
@@ -3266,13 +3267,13 @@ test('capture timeout tags pre-pointer capture, but not screenshot or a timed ou
   contents.capturePage=async()=>{throw timeout();};
   let dispatched=0;
   driver.pointerInput=async()=>{dispatched++;throw timeout();};
-  await assert.rejects(driver.perform({...guard,ref:'submit'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage==='pre-pointer-capture'&&e.inputDispatched===undefined&&e.actionDispatched===undefined);
+  await assert.rejects(driver.perform({...guard,ref:'submit'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage===undefined&&e.inputDispatched===undefined);
   await assert.rejects(driver.perform({...guard,x:20,y:20}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage==='pre-pointer-capture'&&e.inputDispatched===undefined&&e.actionDispatched===undefined);
   await assert.rejects(driver.perform({...guard,action:'screenshot'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage===undefined&&e.inputDispatched===undefined);
-  assert.equal(dispatched,0);
+  assert.equal(dispatched,1, 'Only the semantic target reaches native input; capture failures still prevent coordinate input.');
   contents.capturePage=original;
   await assert.rejects(driver.perform({...guard,ref:'submit'}),e=>e.code==='BROWSER_CAPTURE_TIMEOUT'&&e.pointerStage===undefined&&e.inputDispatched===undefined);
-  assert.equal(dispatched,1);
+  assert.equal(dispatched,2);
 });
 test('input binding diagnostics distinguish bad shape, URL, obsolete document and same-document missing ref without dispatch', async t => {
   const {driver,windows}=await fixture(t),tab=driver.newTab('https://careers.example.test/application');
@@ -3409,4 +3410,57 @@ test('reference-bound keyboard input survives only unrelated frame changes with 
   assert.equal(windows[0].protocol.filter(x=>x.method==='Input.insertText').length,before);
   driver.navigationChanged(tab,true);
   await assert.rejects(driver.cdp(tab,'Input.insertText',{text:'no'},undefined,guard),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+});
+
+test('host pre-pointer identity mismatch is recoverable without claiming preparation had no effect', async t => {
+  const f=await goalPointerFixture(t,{covered:false,pointerMismatch:true});
+  const result=await f.wrapped(f.original),body=JSON.parse(result.contentItems[0].text);
+  assert.equal(result.success,false);
+  assert.equal(result.code,'BROWSER_REF_STALE');
+  assert.equal(body.inputDispatched,false);
+  assert.equal(body.pointerStage,'pre-pointer-identity');
+  assert.equal(body.actionDispatched,undefined);
+  assert.equal(f.tab.window.protocol.filter(c=>c.method==='Input.dispatchMouseEvent').length,0);
+  assert.equal(f.run.goalEvidence.at(-1).kind,'recoverable_no_input');
+  assert.deepEqual(f.conversations.states.root.goalUnresolvedEffects||[],[]);
+});
+
+test('an observed reference reaches native identity proof even when bitmap capture is unavailable', async t => {
+  const f = await goalPointerFixture(t, { covered: false, embeddedCandidates: 1 });
+  f.tab.window.webContents.capturePage = async () => { throw Error('Bitmap path unavailable'); };
+  const result = await f.wrapped(f.original);
+  assert.equal(result.success, true);
+  assert.equal(f.tab.window.protocol.filter(call => call.method === 'Input.dispatchMouseEvent' && call.params.type === 'mousePressed').length, 1);
+  assert.equal(f.captures(), 0);
+});
+
+
+test('agent screenshots honor optional observed URL and document identity without enabling human preview',async t=>{
+ const {driver}=await fixture(t),tab=driver.newTab('https://example.test/guarded-screenshot');
+ await tab.loading;
+ const wc=tab.window.webContents;
+ let copies=0;const original=wc.capturePage.bind(wc);
+ wc.capturePage=async(...args)=>{copies++;return original(...args)};
+ const guard={action:'screenshot',tabId:tab.id,expectedUrl:wc.getURL(),expectedDocumentId:tab.id+':'+tab.revision};
+ const result=await driver.perform(guard,{source:'agent'});
+ assert.match(result.imageUrl,/^data:image\/png;base64,/);assert.equal(copies,1);
+ const wrong={...guard,expectedDocumentId:tab.id+':wrong'};
+ await assert.rejects(driver.perform(wrong,{source:'agent'}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+ await assert.rejects(driver.perform({...guard,expectedUrl:'https://example.test/other'},{source:'agent'}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+ assert.equal(copies,1,'stale guards must be rejected before capture');
+ assert.equal(tab.window.protocol.some(x=>x.method.startsWith('Input.')),false,'no page input');
+});
+
+
+test('browser tool wrapper accepts screenshot document guards without human preview and rejects stale bindings',async t=>{
+ const f=await fixture(t),tab=f.driver.newTab('https://example.test/guarded-wrapper-screenshot');await tab.loading;
+ const browser=new BrowserWorkspace({driver:new BrowserRouter({independent:f.driver})});t.after(()=>browser.close());
+ const wc=tab.window.webContents;
+ let captures=0;const original=wc.capturePage.bind(wc);wc.capturePage=async(...args)=>{captures++;return original(...args);};
+ const request={action:'screenshot',browser:'relay',tabId:tab.id,expectedUrl:wc.getURL(),expectedDocumentId:tab.id+':'+tab.revision};
+ const captured=await browser.perform(request,{source:'user'});
+ assert.match(captured.imageUrl,/^data:image\/png;base64,/);assert.equal(captures,1);
+ assert.equal(captured.documentId,request.expectedDocumentId);
+ await assert.rejects(browser.perform({...request,expectedDocumentId:tab.id+':retired'},{source:'user'}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+ assert.equal(captures,1);
 });
