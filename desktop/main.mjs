@@ -38,6 +38,7 @@ import { initializeLocalCrashReporting } from './local-crash-reporting.mjs';
 import { nativeOwnershipPossible, assertNativeParentUnowned, createNativeParentRetainer, createNativeParentCloseHandler, createNativeSafeQuitHandler } from './native-parent-lifetime.mjs';
 import { createLiveBrowserWindow, performBrowserSurface } from './browser-surface.mjs';
 import { createFrontendDevtools } from './frontend-devtools.mjs';
+import { bindInterfaceReloadShortcuts } from './interface-reload-shortcut.mjs';
 import { resolveDesktopIcon, repairDesktopShortcut } from './app-icon.mjs';
 
 const accessArgs = desktopRemoteAccessArgs(process.argv, { packaged: app.isPackaged });
@@ -391,6 +392,7 @@ function createWindow() {
   });
   mainWindow.removeMenu();
   const contents = mainWindow.webContents;
+  bindInterfaceReloadShortcuts(contents);
   contents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) hideBrowserSurface(); });
   contents.on('render-process-gone', () => { hideBrowserSurface(); });
   window.on('closed', () => { hideBrowserSurface(); });

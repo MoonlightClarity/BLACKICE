@@ -11,7 +11,7 @@ export function createActivityInspector({frame,getRunId,api,events,onTurnReceipt
  if(typeof onTurnReceipts==='function')head.append(button('next-activity-turn-receipts','Turn receipts',()=>{dialog.close();void onTurnReceipts();}));
  head.append(close);
  const controls=make('form','next-activity-controls'),search=make('input','next-activity-search');search.setAttribute('type','search');search.setAttribute('aria-label','Search selected activity');search.placeholder='Search selected activity';search.maxLength=200;
- const view=make('select','next-activity-view');view.setAttribute('aria-label','Activity category');for(const [value,label] of [['updates','Updates'],['tools','Tool calls'],['internal','Internal outputs']]){const option=make('option','',label);option.value=value;view.append(option);}view.value='updates';
+ const view=make('select','next-activity-view');view.setAttribute('aria-label','Activity category');for(const [value,label] of [['updates','Updates'],['tools','Tool calls'],['failures','Tool failures'],['internal','Internal outputs']]){const option=make('option','',label);option.value=value;view.append(option);}view.value='updates';
  const submit=make('button','','Search');submit.setAttribute('type','submit');const refreshButton=button('next-activity-refresh','Refresh',()=>load());controls.append(view,search,submit,refreshButton);
  const privacy=make('p','next-help','Internal outputs are hidden by default. Select Internal outputs to inspect saved structured reports. Private reasoning is not shown.');
  const status=make('p','next-activity-status');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
@@ -21,14 +21,14 @@ export function createActivityInspector({frame,getRunId,api,events,onTurnReceipt
  let runId=null,generation=0,controller=null,nextOffset=null,revision=null,destroyed=false,timer=null,paged=false;
  const reset=()=>{generation++;controller?.abort();controller=null;clearTimeout(timer);timer=null;nextOffset=null;revision=null;paged=false;rows.replaceChildren();more.hidden=true;};
  const active=(id,token)=>!destroyed&&dialog.open&&id===runId&&token===generation;
- function coverage(value={}){return [value.scope,Number.isSafeInteger(value.retainedEvents)?value.retainedEvents+' retained events.':'',Number.isSafeInteger(value.omittedEvents)?value.omittedEvents+' earlier events omitted from this run index.':view.value==='internal'?'':'Earlier omission count unavailable.',value.details].filter(Boolean).join(' ');}
+ function coverage(value={}){return [value.scope,Number.isSafeInteger(value.recordedFailures)?value.recordedFailures+' recorded failures.':'',Number.isSafeInteger(value.omittedFailures)&&value.omittedFailures>0?value.omittedFailures+' older failure receipts omitted.':'',Number.isSafeInteger(value.retainedEvents)?value.retainedEvents+' retained events.':'',Number.isSafeInteger(value.omittedEvents)?value.omittedEvents+' earlier events omitted from this run index.':view.value==='internal'?'':'Earlier omission count unavailable.',value.details].filter(Boolean).join(' ');}
  async function load({more:append=false}={}){
   if(!runId||destroyed||!dialog.open)return;
   const offset=append?nextOffset:0;if(append&&offset===null)return;
   clearTimeout(timer);timer=null;paged=append;generation++;controller?.abort();controller=new AbortController();const token=generation,id=runId;
   if(!append){rows.replaceChildren();revision=null;nextOffset=null;}
   more.hidden=true;status.textContent='Loading '+(view.value==='internal'?'saved structured outputs':'activity')+'…';
-  const params=new URLSearchParams({view:view.value,q:search.value,offset:String(offset),limit:'30'});if(append&&revision)params.set('revision',revision);
+  const params=new URLSearchParams({view:view.value,q:search.value,offset:String(offset),limit:'30'});if(view.value==='failures')params.set('scope','task');if(append&&revision)params.set('revision',revision);
   try{
    const result=await api('/api/conversations/'+encodeURIComponent(id)+'/activity?'+params,'GET',undefined,{signal:controller.signal});if(!active(id,token))return;
    revision=result.revision;nextOffset=result.nextOffset;scope.textContent=coverage(result.coverage);status.textContent=result.items.length?result.items.length+' records on this page.':result.nextOffset!==null?'No matches on this page. Continue to search later retained events.':'No matching records in this search scope.';
