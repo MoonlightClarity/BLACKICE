@@ -17,7 +17,7 @@ test('the built-in core delegates behavior and contains no retired analytical/ap
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /no extra autonomy or no-questions wording is required/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Before treating a concern as a blocker, identify its premises, sources and actual scope/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /prepare-only, exclusions and cancellation/);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Distinguish known information, inference and observed effects/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Distinguish evidence, inference, uncertainty, authorization, feasibility and observed effects/);
   assert.doesNotMatch(BLACKICE_HARNESS_INSTRUCTIONS, /full quantitative planning contract|GENERAL ANALYTICAL METHOD|FORM COMPLETION|changes require owner approval/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /When a tool says input was not dispatched/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /If it may have run, inspect the saved receipt or destination before repeating/);
