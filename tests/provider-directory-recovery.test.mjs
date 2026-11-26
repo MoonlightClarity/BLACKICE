@@ -228,3 +228,51 @@ test('shared host tool limit does not label a healthy provider or model as faile
  const status=f.runtime.listProviders().find(provider=>provider.id==='fixture');
  assert.equal(status?.modelChecks?.fixture?.lastGenerationOk,undefined);
 });
+
+test('repeated malformed provider tool-call arguments have their own bounded protocol failure, not a host-loop label',async t=>{
+ const malformed=index=>[{id:'bad-'+index,name:'relay_workspace',arguments:'{bad'}];
+ const f=await fixture(t,{type:'compatible',reply:(_body,index)=>index<=12?callsResponse('compatible',malformed(index)):final('compatible')});
+ let dispatched=0,marked=0;
+ const original=f.runtime.generationCheck.bind(f.runtime);
+ f.runtime.generationCheck=(...args)=>{marked++;return original(...args);};
+ await assert.rejects(f.run({onToolCall:()=>{dispatched++;return rejected('unexpected');}}),{code:'PROVIDER_TOOL_ARGUMENTS_LOOP'});
+ assert.equal(f.requests.length,8);
+ assert.equal(dispatched,0,'invalid arguments never dispatch a tool handler');
+ assert.equal(marked,1,'a provider protocol failure remains distinguishable from a host tool stop');
+ assert.equal(f.events.filter(event=>event.type==='tool.result'&&event.code==='PROVIDER_TOOL_ARGUMENTS_INVALID').length,8);
+});
+
+test('a malformed provider batch is fully recorded and safely projected before a corrected next response',async t=>{
+ const invalid=Array.from({length:12},(_,i)=>({id:'invalid-'+i,name:'relay_workspace',arguments:'{bad'}));
+ const f=await fixture(t,{type:'compatible',reply:(_body,index)=>index===1?callsResponse('compatible',invalid):final('compatible')});
+ let dispatched=0;
+ const result=await f.run({onToolCall:()=>{dispatched++;return rejected('unexpected');}});
+ assert.equal(result.output,'Done.');
+ assert.equal(dispatched,0);
+ assert.equal(f.requests.length,2);
+ assert.equal(f.events.filter(event=>event.type==='tool.result'&&event.code==='PROVIDER_TOOL_ARGUMENTS_INVALID').length,12);
+ const stored=await f.runtime.readThread(result.threadId);
+ assert.equal(stored.messages.filter(message=>message.role==='tool').length,12);
+ assert.ok(f.requests[1].messages.some(message=>String(message.content).includes('Arguments were not a valid JSON object.')));
+});
+
+test('invalid non-object tool arguments stop distinctly across provider wire formats',async t=>{
+ for(const type of ['compatible','openai','anthropic'])await t.test(type,async t=>{
+  const f=await fixture(t,{type,reply:(_body,index)=>index<=9?callsResponse(type,[{id:'nonobject-'+index,name:'relay_workspace',arguments:'[]'}]):final(type)});
+  let dispatched=0;
+  await assert.rejects(f.run({onToolCall:()=>{dispatched++;return rejected('unexpected');}}),{code:'PROVIDER_TOOL_ARGUMENTS_LOOP'});
+  assert.equal(dispatched,0);
+  assert.equal(f.requests.length,8);
+  assert.equal(f.events.filter(event=>event.type==='tool.result'&&event.code==='PROVIDER_TOOL_ARGUMENTS_INVALID').length,8);
+ });
+});
+
+test('a large malformed single response preserves its complete batch before a corrected reply',async t=>{
+ const calls=Array.from({length:65},(_,i)=>({id:'bad-batch-'+i,name:'relay_workspace',arguments:'[]'}));
+ const f=await fixture(t,{type:'compatible',reply:(_body,index)=>index===1?callsResponse('compatible',calls):final('compatible')});
+ let dispatched=0;
+ const result=await f.run({onToolCall:()=>{dispatched++;return rejected('unexpected');}});
+ assert.equal(result.output,'Done.');
+ assert.equal(dispatched,0);assert.equal(f.requests.length,2);
+ assert.equal(f.events.filter(event=>event.type==='tool.result'&&event.code==='PROVIDER_TOOL_ARGUMENTS_INVALID').length,65);
+});
