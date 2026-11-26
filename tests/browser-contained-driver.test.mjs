@@ -3464,3 +3464,12 @@ test('browser tool wrapper accepts screenshot document guards without human prev
  await assert.rejects(browser.perform({...request,expectedDocumentId:tab.id+':retired'},{source:'user'}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
  assert.equal(captures,1);
 });
+
+test('native guarded browser read accepts current identity and rejects stale identity',async t=>{
+ const {driver}=await fixture(t);await driver.init();
+ const owner={taskId:'read-task',runId:'read-run',nodeId:'agent',conversationId:'read-task'};
+ const tab=driver.newTab('https://fixture.example.test/profile',{owner});await tab.loading;
+ const valid={action:'read',tabId:tab.id,expectedUrl:tab.url,expectedDocumentId:tab.id+':'+tab.revision};
+ const result=await driver.perform(valid,{owner});assert.equal(result.tabId,tab.id);
+ await assert.rejects(driver.perform({...valid,expectedDocumentId:tab.id+':0',expectedUrl:'https://other.fixture.test/'},{owner}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+});

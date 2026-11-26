@@ -78,7 +78,7 @@ test('guarded form fill, selection and hover cross the tool boundary without los
     }
     assert.equal(calls.length, dispatched, 'An incomplete guard must not reach the driver.');
   }
-  await assert.rejects(browser.perform({ ...guard, action: 'read' }), { code: 'BROWSER_VALIDATION' });
+  const read = { ...guard, action: 'read' };await browser.perform(read,{source:'user'});assert.deepEqual(calls.at(-1),read);
   const legacy = { action: 'fill', browser: 'relay', tabId: 'owned-tab', ref: 'observed-field', text: 'Ref-only draft' };
   assert.equal((await handler({ name: 'relay_browser', arguments: legacy })).success, true);
   assert.deepEqual(calls.at(-1), legacy);
@@ -659,3 +659,12 @@ for (const closeReceipt of ['confirmed', 'lost-after-close']) {
     assert.equal(calls.filter(args => args.action === 'close').length, 1, 'reinspection of an absent page does not replay an uncertain close');
   });
 }
+
+test('guarded browser reads verify the observed document instead of rejecting the guard',async t=>{
+ const calls=[],browser=fixtureWorkspace({driver:{status:()=>({available:true,contained:true}),perform:async args=>{calls.push(args);return{tabId:args.tabId,frames:[]};}}});
+ t.after(()=>browser.close());
+ const call={action:'read',tabId:'owned-tab',browser:'relay',expectedUrl:'https://fixture.example.test/profile',expectedDocumentId:'owned-tab:4'};
+ await browser.perform(call,{source:'user'});assert.deepEqual(calls.at(-1),call);
+ await assert.rejects(browser.perform({...call,expectedDocumentId:undefined},{source:'user'}),{code:'BROWSER_VALIDATION'});
+ assert.equal(calls.length,1,'Incomplete identity guards must not reach the driver');
+});
