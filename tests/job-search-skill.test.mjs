@@ -356,3 +356,11 @@ test('Compatible provider uses job skills only when explicitly requested and hon
  assert.deepEqual(deleted.receipts,[]);
  assert.doesNotMatch(deleted.prompt,/OWNER_CURRENT_JOB_8181/);
 });
+
+
+test('location selector fallback uses nearest metro without changing actual residence',async()=>{
+ const {content}=await createSkillsCatalog().detail({id});
+ assert.match(content,/If a job-board, employer, or application location selector does not recognize the user's locality, use the nearest accepted metropolitan area/);
+ assert.match(content,/retain their actual city and street address in factual residence fields/);
+ assert.match(content,/do not infer willingness to relocate or work on-site/);
+});
