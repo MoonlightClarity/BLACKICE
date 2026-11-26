@@ -60,8 +60,8 @@ test('intent/blocker cascade guidance is wired across execution, identity, skill
   // These are instruction-contract regressions, not a substitute for an actual
   // model-driven application run: model behavior still needs live evaluation.
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/Infer the intended result.*before evaluating blockers/i);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/unstated hypothetical constraint is not a verified limit/i);
-  assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/Separate authority to answer a routine question from the factual answer/i);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/hypothetical user constraint is not a verified limit/i);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/Separate authority to answer a routine question from its factual truth/i);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/User hard constraints are conditions of scope/i);
   assert.match(DEFAULT_SOUL,/Don't invent an unmentioned user restriction/i);
   assert.match(DEFAULT_SOUL,/Permission to answer is not proof/i);
