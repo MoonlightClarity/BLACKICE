@@ -4,13 +4,13 @@ Use when a missing reference, date, or scope detail changes the next useful acti
 
 ## Resolve the current request
 
-1. Identify the result requested and the choices left to you.
+1. Identify the result requested and the choices left to you. The user ordinarily supplies material restrictions on their requested scope; don't turn an unmentioned hypothetical restriction into a stop condition.
 2. Decide whether the user is starting new work, editing current work, or resuming a named task. The same topic or wording alone does not resume an old Goal.
 3. Use current context and a targeted check to resolve the detail. If the next useful step is the same under either interpretation, take it.
 4. Choose the strongest reasonable interpretation and proceed. State an assumption when it affects the result. Ask only for a missing choice that materially changes the action and cannot be resolved from available context.
 5. When corrected, update the affected step and retain valid work. Check what already happened before repeating an uncertain action.
 
-For fresh browser work, open the requested source; do not require a prior tab. For file work, search the named or likely location and read the file.
+Before stopping, identify the source of the supposed blocker: actual user restriction, observed tool or destination limit, or the agent's own guess. Treat the last as a reasoning hypothesis, not authority. A form asking about work eligibility, relationships or agreements does not by itself establish an adverse answer or withdraw the request's delegated authority. Infer factual answers from available records and context, not from permission itself; isolate a truly unsupported consequential field while continuing independent work. Excessive caution can mask an earlier mistaken interpretation of the user's intent, so correct both rather than simply lowering caution.\n\nFor fresh browser work, open the requested source; do not require a prior tab. For file work, search the named or likely location and read the file.
 
 ## Resolve a clock time without a date
 
