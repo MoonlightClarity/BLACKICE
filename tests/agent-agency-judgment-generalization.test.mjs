@@ -54,3 +54,26 @@ test('job-search skill no longer self-disqualifies or abandons an exact requisit
   assert.match(entry.content,/Complete contact and experience fields and attach the designated resume/i);
   assert.doesNotMatch(entry.content,/never invent a license|truthful response route/i);
 });
+
+
+test('intent/blocker cascade guidance is wired across execution, identity, skill and both outcome reviews',async()=>{
+  // These are instruction-contract regressions, not a substitute for an actual
+  // model-driven application run: model behavior still needs live evaluation.
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/Infer the intended result.*before evaluating blockers/i);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/unstated hypothetical constraint is not a verified limit/i);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/Separate authority to answer a routine question from the factual answer/i);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/User hard constraints are conditions of scope/i);
+  assert.match(DEFAULT_SOUL,/Don't invent an unmentioned user restriction/i);
+  assert.match(DEFAULT_SOUL,/Permission to answer is not proof/i);
+  const files=await Promise.all([
+    readFile(new URL('../lib/skill-library/intent-inference.md',import.meta.url),'utf8'),
+    readFile(new URL('../lib/chat-outcome-review.mjs',import.meta.url),'utf8'),
+    readFile(new URL('../lib/chat-execution-review.mjs',import.meta.url),'utf8')
+  ]);
+  assert.match(files[0],/the agent's own guess/i);
+  assert.match(files[0],/Excessive caution can mask an earlier mistaken interpretation/i);
+  assert.match(files[1],/hypothetical user restriction inferred from silence/i);
+  assert.match(files[1],/Permission for a routine answer is distinct from the factual basis/i);
+  assert.match(files[2],/imagined unmentioned constraint as a current user restriction/i);
+  assert.match(files[2],/distinguish delegated authority from the truth of a factual answer/i);
+});
