@@ -19,4 +19,4 @@ jobs:
       - run: node --check lib/identity.mjs
       - run: node --check lib/chat-outcome-review.mjs
       - run: node --check lib/chat-execution-review.mjs
-      - run: node --test tests/agent-agency-judgment-generalization.test.mjs tests/intent-inference-skill.test.mjs tests/intent-inference-execution.test.mjs tests/chat-execution-review.test.mjs
+      - run: node --test tests/instruction-core.test.mjs tests/identity-default-refresh.test.mjs tests/soul-release-default.test.mjs tests/agent-agency-judgment-generalization.test.mjs tests/intent-inference-skill.test.mjs tests/intent-inference-execution.test.mjs tests/chat-execution-review.test.mjs tests/chat-outcome-review.test.mjs tests/job-search-skill.test.mjs
