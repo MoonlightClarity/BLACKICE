@@ -55,7 +55,9 @@ test('readonly and disabled fields fail before focus or replacement preparation'
   for (const flags of [{ readOnly: true }, { disabled: true }]) {
     let focused = false; const field = { isConnected: true, tagName: 'INPUT', type: 'text', getAttribute: () => null, focus() { focused = true; }, ...flags };
     const context = vm.createContext({ fixture: { elements: new Map([['field', field]]) } });
-    assert.throws(() => vm.runInContext(`(${elementSource})('fixture','field','fill',{text:'must not write'})`, context), /read only|disabled/); assert.equal(focused, false);
+    const rejected=vm.runInContext(`(${elementSource})('fixture','field','fill',{text:'must not write'})`, context);
+    assert.equal(rejected.__blackiceElementError.code,flags.readOnly?'BROWSER_FIELD_READ_ONLY':'BROWSER_FIELD_DISABLED');
+    assert.equal(rejected.__blackiceElementError.inputDispatched,false);assert.equal(focused,false);
   }
 });
 
@@ -95,7 +97,9 @@ test('non-text native controls fail before focus rather than claim a text fill',
   for (const type of ['file', 'checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'date', 'color', 'range', 'hidden']) {
     let focused = false; const field = { isConnected: true, tagName: 'INPUT', type, getAttribute: () => null, focus() { focused = true; } };
     const context = vm.createContext({ fixture: { elements: new Map([['field', field]]) } });
-    assert.throws(() => vm.runInContext(`(${elementSource})('fixture','field','fill',{text:'must not write'})`, context), /editable text field/); assert.equal(focused, false);
+    const result=vm.runInContext(`(${elementSource})('fixture','field','fill',{text:'must not write'})`, context);
+    assert.equal(result.__blackiceElementError.code,'BROWSER_FIELD_NOT_EDITABLE');
+    assert.equal(result.__blackiceElementError.inputDispatched,false);assert.equal(focused,false);
   }
 });
 
@@ -146,4 +150,19 @@ test('renderer stale diagnostics distinguish fixed causes and redact control con
     assert.equal(field.value, 'PRIVATE_VALUE');
     assert.doesNotMatch(JSON.stringify(error), /PRIVATE/);
   }
+});
+
+test('trusted fill preparation explicitly classifies focus and selection failures before text input',()=>{
+ const states=[{name:"lost-focus",code:"BROWSER_INPUT_FOCUS_CHANGED",focus:false,select:true},
+  {name:"selection-rejected",code:"BROWSER_INPUT_SELECTION_FAILED",focus:true,select:false}];
+ for(const state of states){
+  const calls=[],field={isConnected:true,tagName:"INPUT",type:"text",readOnly:false,value:"existing",
+   getAttribute:()=>null,getRootNode:()=>({}),select(){calls.push("select");if(state.select===false)throw Error("Page selection event failure");},
+   focus(){calls.push("focus");},dispatchEvent(){calls.push("event");}};
+  const context=vm.createContext({fixture:{elements:new Map([["field",field]])},document:{activeElement:state.focus?field:null}});
+  const result=vm.runInContext("(" + elementSource + ")(\"fixture\",\"field\",\"fill-ready\",{text:\"replacement\"})",context);
+  assert.equal(result.__blackiceElementError.code,state.code,state.name);
+  assert.equal(result.__blackiceElementError.inputDispatched,false);
+  assert.equal(calls.includes("event"),false);assert.equal(field.value,"existing");
+ }
 });
