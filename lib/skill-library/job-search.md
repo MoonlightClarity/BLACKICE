@@ -56,6 +56,8 @@ Keep a compact record: employer, title, exact requisition/posting ID when availa
 
 ## Complete applications efficiently
 
+**Location fallback.** If a job-board, employer, or application location selector does not recognize the user's locality, use the nearest accepted metropolitan area and continue. This is a location-search or picker fallback, not a claim that the applicant resides somewhere else: retain their actual city and street address in factual residence fields, and do not infer willingness to relocate or work on-site.
+
 Read the question, make the best supported call, and enter it now. Use the identified existing application resume and context already available, including reasonable inferences. Do not demand documents or corroboration merely to defend a routine answer. Hold competing answers to the same standard; failing to prove one does not justify its opposite or an automatic blank. For a delegated choice, choose a sensible default.
 
 - Answer the exact field. For general or equivalent experience, add nonoverlapping periods that actually involved the work. An adjacent title does not turn supported experience into zero.
