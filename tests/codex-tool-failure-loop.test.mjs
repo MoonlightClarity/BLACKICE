@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { CodexRuntime, CODEX_DYNAMIC_TOOL_LIMITS, codexRepeatedToolFailure } from '../lib/codex.mjs';
 
 const errorReceipt = Object.freeze({ success: false, code: 'INVALID_TASK_VIEW', contentItems: [{ type: 'inputText', text: 'Use the returned expectedRevision and viewHash; restart the first page when absent.' }] });
-const staleRefReceipt = Object.freeze({ success: false, code: 'BROWSER_REF_STALE', contentItems: [{ type: 'inputText', text: JSON.stringify({ error: 'Take a fresh snapshot.', code: 'BROWSER_REF_STALE', actionDispatched: false }) }] });
-const documentChangedReceipt = Object.freeze({ success: false, code: 'BROWSER_INPUT_DOCUMENT_CHANGED', contentItems: [{ type: 'inputText', text: JSON.stringify({ code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false }) }] });
+const staleRefReceipt = Object.freeze({ success: false, code: 'BROWSER_REF_STALE', actionDispatched:false, contentItems: [{ type: 'inputText', text: JSON.stringify({ error: 'Take a fresh snapshot.', code: 'BROWSER_REF_STALE', actionDispatched: false }) }] });
+const documentChangedReceipt = Object.freeze({ success: false, code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched:false, contentItems: [{ type: 'inputText', text: JSON.stringify({ code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false }) }] });
 const goodReceipt = Object.freeze({ success: true, contentItems: [{ type: 'inputText', text: '{"ok":true}' }] });
 const call = (offset, action = 'read') => ({ name: 'relay_task', arguments: { action, view: 'full', offset, expectedRevision: 316 } });
 
@@ -98,7 +98,7 @@ test('a silent repeated failure remains bounded even if the model emits no progr
 });
 
 test('stale browser failures with uncertain effects retain the strict eight-call stop', async () => {
-  const uncertain = { ...staleRefReceipt, contentItems: [{ type: 'inputText', text: JSON.stringify({ error: 'Inspect the page.', code: 'BROWSER_REF_STALE' }) }] };
+  const uncertain = { ...staleRefReceipt, actionDispatched:undefined, contentItems: [{ type: 'inputText', text: JSON.stringify({ error: 'Inspect the page.', code: 'BROWSER_REF_STALE' }) }] };
   const f = fixture(async () => uncertain, 'relay_browser');
   for (let i = 0; i < CODEX_DYNAMIC_TOOL_LIMITS.repeatedFailure; i++) await f.invoke(i);
   assert.equal(f.state.cancelError?.code, 'CODEX_TOOL_FAILURE_LOOP');
@@ -128,7 +128,7 @@ test('document-change recovery still stops repeated opportunities and silent flo
 });
 test('document-change uncertain or dispatched effects retain strict cap', async () => {
   for (const flag of [undefined, true]) {
-    const receipt = { ...documentChangedReceipt, contentItems: [{type:'inputText', text:JSON.stringify({code:'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched:flag})}] };
+    const receipt = { ...documentChangedReceipt, actionDispatched:flag, contentItems: [{type:'inputText', text:JSON.stringify({code:'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched:flag})}] };
     const f = fixture(async () => receipt, 'relay_browser');
     for (let i = 0; i < 8; i++) await f.invoke(i, 'fill');
     assert.equal(f.cancellations.length, 1);
