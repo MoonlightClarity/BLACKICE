@@ -17,7 +17,7 @@ class Runtime extends EventEmitter{
  async steerAgent(){return{accepted:true};}
  async runAgent(options){
   this.calls.push(options);
-  if(options.prompt.startsWith('You are a short-lived BLACKICE subagent.')){this.children.push(options);return{output:'Child evidence.'};}
+  if(options.hostAgentRole==='delegate'){this.children.push(options);return{output:'Child evidence.'};}
   await this.inspect?.(options,null);
   options.onEvent?.({type:'thread',threadId:'ephemeral-'+this.calls.length,turnId:'turn-'+this.calls.length,model:'fixture::remote'});
   options.onEvent?.({type:'message',text:'Ordinary Chat result.',phase:'final_answer'});

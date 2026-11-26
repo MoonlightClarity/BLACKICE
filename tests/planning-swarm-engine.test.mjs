@@ -173,7 +173,7 @@ test('historical linked single-scope work is rejected before ownership transfer 
   const workflow = graph([agent('coordinator')], [['input', 'coordinator'], ['coordinator', 'output']], false);
   let childCalls = 0;
   const f = await fixture(t, workflow, async options => {
-    if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
+    if (options.hostAgentRole==='delegate') {
       childCalls++; assert.fail('A single linked assignment has no parallel work to dispatch.');
     }
     const returned = await tool(options, 'relay_delegate', { tasks: [{ id: 'inspector', stepId: 'inspect', prompt: 'Inspect only the assigned input and maintain that saved plan action.' }] });
@@ -216,7 +216,7 @@ test('Planning Off explicit canonical assignments transfer only named ownership 
       await options.onToolResultDelivered?.({ call, result });
       return result;
     };
-    if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
+    if (options.hostAgentRole==='delegate') {
       const state = await context.tasks.get(context.engine.listRuns()[0].taskId);
       const expected = options.prompt.split('YOUR ASSIGNED TASK:')[1]?.trimStart().startsWith('Inspect left') ? 'left' : 'right';
       assert.equal(state.contract.workItems.find(item => item.id === expected).owner, delegatedPlanNodeId('coordinator', expected));

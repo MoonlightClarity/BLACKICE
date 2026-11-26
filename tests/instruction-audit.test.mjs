@@ -202,7 +202,7 @@ test('delegated execution has a separate exact audit with frozen SOUL and assign
   store={get:()=>({baseUrl:'https://fixture.invalid/v1'})};
   status(){return {connected:true,authenticated:true,defaultModel:'fixture::remote',models:[{id:'fixture::remote',supportsTools:true}]};}
   async runAgent(options){
-   const child=options.prompt.startsWith('You are a short-lived BLACKICE subagent.');
+   const child=options.hostAgentRole==='delegate';
    options.onInstructionAuditPrepared?.({developerInstructions:options.developerInstructions+(child?'\nCHILD_ADAPTER':'\nPARENT_ADAPTER'),adapter:'fixture',role:'system',source:'offline delegate test'});
    options.onPromptAccepted?.(options.prompt);
    if(child){childCall=options;return {output:'Worker checked the assigned fixture.'};}

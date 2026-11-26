@@ -142,7 +142,7 @@ test('retry preserves an interrupted native catalog, task identity and saved par
 test('a historical one-slot delegation is rejected without worker execution or a partial write', async t => {
   let childCalls = 0;
   const f = await fixture(t, async options => {
-    if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
+    if (options.hostAgentRole==='delegate') {
       childCalls++; assert.fail('One worker slot cannot supply a parallel speedup.');
     }
     const delegated = await tool(options, 'relay_delegate', { tasks: [{ id: 'one-worker', stepId: 'assigned', prompt: 'Write the one requested fixture value and record its actual result.' }] }, 'delegate-one');
@@ -159,7 +159,7 @@ test('a historical one-slot delegation is rejected without worker execution or a
 test('a fully serial historical delegation is rejected even when two worker slots are available', async t => {
   let childCalls = 0, steerCalls = 0;
   const f = await fixture(t, async options => {
-    if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
+    if (options.hostAgentRole==='delegate') {
       childCalls++; assert.fail('A fully serial batch must remain with the coordinator.');
     }
     const delegated = await tool(options, 'relay_delegate', { tasks: [

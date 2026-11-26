@@ -124,7 +124,7 @@ test('guarded delegated workers preserve the contained challenge while independe
  class Runtime extends EventEmitter{
   status(){return {connected:true,authenticated:true,defaultModel:'demo',models:[{id:'demo',model:'demo',available:true}]};}
   async runAgent(options){
-   if(options.prompt.startsWith('You are a short-lived BLACKICE subagent.')){
+   if(options.hostAgentRole==='delegate'){
     assert.ok(options.dynamicTools.some(t=>t.name==='relay_browser_signin'));
     assert.ok(!options.dynamicTools.some(t=>t.name==='relay_delegate'));
     assert.equal(options.dynamicTools.some(t=>t.name==='relay_connections'),false);

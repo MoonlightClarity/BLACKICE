@@ -25,7 +25,7 @@ for (const scenario of [
       models: [{ id: defaultModel, supportsTools: true }] }; }
     async runAgent(options) {
       calls.push(options);
-      if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
+      if (options.hostAgentRole==='delegate') {
         assert.ok(!options.dynamicTools?.some(tool => tool.name === 'relay_delegate'));
         return { output: 'Independent synthetic result.' };
       }

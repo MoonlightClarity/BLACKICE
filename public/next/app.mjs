@@ -16,6 +16,7 @@ const modules={
   workflows:()=>import('./workspaces/workflow-execution.mjs').then(m=>m.createWorkflowWorkspace),
   browser:()=>import('./workspaces/browser.mjs').then(m=>m.createBrowserWorkspace),
   skills:()=>import('./workspaces/skills.mjs').then(m=>m.createSkillsWorkspace),
+  runtime:()=>import('./workspaces/runtime.mjs').then(m=>m.createRuntimeWorkspace),
   settings:()=>import('./workspaces/settings.mjs').then(m=>m.createSettingsWorkspace),
 };
 const notify=(message,error=false)=>{

@@ -310,7 +310,7 @@ test('Off keeps the current optional task tool and external recovery guidance wi
 test('Off identity and disabled automatic planning apply to delegated workers within current assigned scope', async t => {
   const f = await fixture(t, async options => {
     assert.ok(options.developerInstructions.startsWith(BLACKICE_HARNESS_INSTRUCTIONS)); assert.doesNotMatch(options.developerInstructions, /DEFAULT TASK WORKSPACE|FIRST-PARTY BLACKICE PLANNING SKILL/);
-    if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
+    if (options.hostAgentRole==='delegate') {
       assert.ok(!options.dynamicTools.some(tool => tool.name === 'relay_task')); assert.doesNotMatch(options.developerInstructions, /form a brief operational plan/);
       assert.match(options.developerInstructions, /Maintain the exact assigned canonical work-item IDs/);
       assert.ok(!options.dynamicTools.some(tool=>['relay_delegate','relay_control'].includes(tool.name)));

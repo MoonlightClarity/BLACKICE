@@ -96,7 +96,7 @@ test('an existing native conversation keeps its recorded catalog when storage la
 
 test('delegated workers receive the protected flow with a distinct trusted owner and no recursive coordinator controls', async t => {
   const f = await fixture(t, async options => {
-    if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
+    if (options.hostAgentRole==='delegate') {
       assert.ok(options.dynamicTools.some(tool => tool.name === 'relay_credentials'));
       assert.ok(!options.dynamicTools.some(tool => ['relay_delegate', 'relay_control'].includes(tool.name)));
       assert.ok(options.prompt.includes(BROWSER_CREDENTIAL_INSTRUCTIONS), 'The active credential mechanics reach the delegated worker.');

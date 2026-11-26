@@ -88,31 +88,26 @@ test('audit rendering keeps HTML-shaped instructions inert and preserves provena
   assert.equal(f.$('details').open,false,'Instruction bodies begin collapsed.');
 });
 
-test('Instructions sits beside SOUL and USER without discarding a draft or writing configuration',async t=>{
+test('Config contains SOUL and USER only; switching preserves unsaved drafts without writing Runtime',async t=>{
   const f=planningDOM(t),calls=[];
   const api=async(route,method='GET')=>{
     calls.push({route,method});
     if(route==='/api/identity/soul')return identity('soul');
     if(route==='/api/identity/user')return identity('user');
-    if(route==='/api/instructions/core')return core();
-    if(route==='/api/instructions')return index([{id:'captured',title:'Captured turn',captured:true}]);
-    if(route==='/api/runs/captured/instructions')return snapshot('captured','Captured SOUL revision 3.');
     throw Error('Unexpected route: '+route);
   };
   const panel=createIdentitySettings({mount:f.mount,api});
   t.after(()=>panel.destroy());panel.enter();await settle();
-  assert.deepEqual(calls.map(row=>row.route),['/api/identity/soul'],'Audit sources load only after selecting Instructions.');
+  assert.deepEqual(calls.map(row=>row.route),['/api/identity/soul']);
+  assert.equal(f.$('#next-identity-instructions'),null);
+  assert.equal(f.$('#next-identity-tools'),null);
+  assert.equal(f.$('#next-developer-layer-text'),null);
   await f.input('#next-identity-content','Unsaved SOUL draft');
-  await f.click('#next-identity-instructions');await settle();
-  assert.equal(f.$('#next-identity-instructions').getAttribute('aria-selected'),'true');
-  assert.equal(f.$('#next-identity-editor').hidden,true);
-  assert.equal(f.$('#next-identity-instructions-panel').hidden,false);
-  assert.match(f.$('#next-identity-instructions-panel').textContent,/Captured SOUL revision 3/);
-  await f.key(f.$('#next-identity-instructions'),'ArrowLeft');await settle();
+  await f.click('#next-identity-user');await settle();
   assert.equal(f.$('#next-identity-user').getAttribute('aria-selected'),'true');
   await f.click('#next-identity-soul');
   assert.equal(f.$('#next-identity-content').value,'Unsaved SOUL draft');
-  assert.ok(calls.every(row=>row.method==='GET'),'Inspecting instructions never saves defaults or edits identity.');
+  assert.ok(calls.every(row=>row.method==='GET'),'Config navigation must never edit Runtime instructions.');
 });
 
 test('late audit responses cannot overwrite another selected turn',async t=>{
@@ -226,12 +221,11 @@ test('real audit HTTP routes return captured sources without returning task/prof
   const initial=await fetch(url),cookie=initial.headers.get('set-cookie')?.split(';')[0];
   assert.ok(cookie);
   const get=route=>fetch(new URL(route,url),{headers:{Cookie:cookie}});
-  const endpoint='/api/instructions/developer-layer';
-  for(const content of ['Owner layer', '', null]){
-    const response=await fetch(new URL(endpoint,url),{method:'PUT',headers:{Cookie:cookie,Origin:new URL(url).origin,'Content-Type':'application/json'},body:JSON.stringify({content})});
-    assert.equal(response.status,200,await response.text());
-    assert.equal((await (await get(endpoint)).json()).content,content);
-  }
+  assert.equal((await get('/api/instructions/developer-layer')).status,404,'the global override route is retired');
+  const forbidden=await fetch(new URL('/api/instructions/developer-layer',url),{method:'PUT',
+    headers:{Cookie:cookie,Origin:new URL(url).origin,'Content-Type':'application/json'},
+    body:JSON.stringify({content:'SHOULD_NOT_BE_WRITTEN'})});
+  assert.equal(forbidden.status,404,'the removed override cannot accept a write');
   const current=await get('/api/instructions');assert.equal(current.status,200);
   const config=await current.json(),saved=await (await get('/api/instructions/core')).json();
   assert.deepEqual(config.core,saved);assert.equal(saved.text,saved.content);assert.equal(saved.revision,0);assert.equal(saved.source,'initial-default');
@@ -246,31 +240,28 @@ test('real audit HTTP routes return captured sources without returning task/prof
   assert.doesNotMatch(JSON.stringify(payload),/PRIVATE TASK|PRIVATE RESULT|PRIVATE NODE/);
   app.engine.runs.get('fixture-instructions').nodes.agent.instructionAudit=null;
   const old=await (await get('/api/runs/fixture-instructions/instructions')).json();assert.equal(old.nodes[0].audit,null);
-  for(const route of ['/next/workspaces/settings-instruction-editor.mjs','/next/workspaces/settings-instructions.mjs','/next/workspaces/instruction-audit.mjs','/next/instruction-audit.css']){
+  for(const route of ['/next/workspaces/runtime.mjs','/next/runtime.css','/next/workspaces/instruction-audit.mjs','/next/instruction-audit.css']){
     const result=await get(route);assert.equal(result.status,200,route);assert.ok((await result.text()).length>30);
   }
+  for(const route of ['/next/workspaces/settings-instruction-editor.mjs','/next/workspaces/settings-instructions.mjs',
+   '/next/workspaces/settings-execution-layers.mjs','/next/workspaces/settings-tool-descriptions.mjs'])
+    assert.equal((await get(route)).status,404,'retired duplicate editor route: '+route);
   app.engine.runs.delete('fixture-instructions');
 });
 
-test('developer layer capture opens an editable draft and saves the complete replacement',async t=>{
-  const f=planningDOM(t), run=snapshot('layer-test','Task prompt'), requests=[];
-  run.nodes[0].audit.sections.push(...['First',' second'].map(text=>({role:'developer',layer:'developer',text})));
-  const settings=createInstructionSettings({mount:f.mount,api:async(route,method,body)=>{
+test('instruction audits remain readable without an obsolete Developer/System override',async t=>{
+  const f=planningDOM(t),run=snapshot('layer-test','Task prompt'),calls=[];
+  run.nodes[0].audit.sections.push({id:'core',title:'System instructions',source:'Saved canonical instruction record',
+    role:'developer',layer:'developer',text:'Exact saved core',status:'accepted'});
+  const settings=createInstructionSettings({mount:f.mount,api:async(route,method)=>{
+    calls.push({route,method});
     if(route==='/api/instructions/core')return core();
     if(route==='/api/instructions')return index([{id:run.runId,captured:true}]);
-    if(route==='/api/instructions/developer-layer'){
-      if(method==='PUT')requests.push(body);
-      return {path:'developer-layer.md',content:body?.content??null};
-    }
-    return run;
+    if(route==='/api/runs/layer-test/instructions')return run;
+    throw Error(route);
   }});
   t.after(()=>settings.destroy());settings.enter();await settle();
-  const button=label=>[...f.mount.querySelectorAll('button')].find(item=>item.textContent===label);
-  await f.click(button('Edit developer / system layer'));
-  const field=f.$('#next-developer-layer-text');
-  assert.equal(field.value,'First second');
-  await f.input('#next-developer-layer-text','My replacement');await f.click(button('Save developer layer'));await settle();
-  assert.deepEqual(requests,[{content:'My replacement'}]);
-  await f.click(button('Restore automatic instructions'));await settle();
-  assert.deepEqual(requests.at(-1),{content:null});
+  assert.equal(f.$('#next-developer-layer-text'),null);
+  assert.match(f.$('#next-instructions-content').textContent,/Exact saved core/);
+  assert.ok(calls.every(call=>call.method==='GET'));
 });

@@ -286,6 +286,67 @@ test('PF2 planning puts the current request first once and preserves every artif
   } finally { await catalog.close(); }
 });
 
+test('planning instruction audit retains prompt sources in actual provider-delivery order after role edits',async()=>{
+ let request,audit;
+ const editor={
+  project(id,text,role){
+   if(id==='core')return{enabled:true,role:'prompt',text:'CURRENT_CORE_AS_PROMPT'};
+   if(id==='planning')return{enabled:true,role:'prompt',text:'CURRENT_PLANNING_AS_PROMPT'};
+   if(id==='preparation-contract')return{enabled:false,role:'developer',text:''};
+   return{enabled:true,role,text};
+  },
+  additions(role){return role==='prompt'?[{id:'custom-prompt',title:'Custom prompt',source:'Owner',
+   text:'CURRENT_EXTRA_PROMPT'}]:[];}
+ };
+ const invoke=createChatPlanningProviderInvoker({
+  runtime:{runAgent(options){request=options;options.onPromptAccepted(options.prompt);
+   return{output:JSON.stringify({artifact:output})};}},
+  ...scope,cwd:'planning-audit-fixture',model:'fixture-model',assertAdmission:()=>{},
+  executionLayers:editor,instructionSnapshot:{content:'OLD_SHIPPED_CORE',revision:1},
+  onInstructionAudit:entry=>{audit=entry.audit;}
+ });
+ const response=await invoke({module,...scope,snapshot});
+ assert.equal(response.transport,'completed');
+ const ids=audit.sections.filter(section=>section.layer==='prompt').map(section=>section.id);
+ assert.deepEqual(ids,['planning-artifact','core','planning','custom-prompt'],
+  'every model-facing prompt instruction must be captured in the same order it was delivered');
+ assert.deepEqual(ids.map(id=>request.prompt.indexOf(audit.sections.find(section=>section.id===id).text))
+  .every((position,i,array)=>i===0||position>array[i-1]),true);
+ assert.doesNotMatch(request.prompt,/OLD_SHIPPED_CORE/);
+ assert.equal(audit.delivery,'accepted');
+});
+test('planning-phase Runtime roles, disables and custom layers reach the actual provider channels',async()=>{
+ let options,latestAudit;
+ const edited={
+  project(id,text,role){
+   if(id==='core')return{enabled:true,role:'prompt',text:'OWNER_CORE_PROMPT_CURRENT'};
+   if(id==='preparation-contract')return{enabled:false,role:'developer',text:''};
+   if(id==='planning')return{enabled:true,role:'prompt',text:'OWNER_PLANNING_PROMPT_CURRENT'};
+   if(id==='planning-artifact')return{enabled:true,role:'developer',text:'OWNER_ARTIFACT_DEVELOPER_CURRENT'};
+   return{enabled:true,text,role};
+  },
+  additions(role){return role==='developer'
+   ?[{id:'custom-owner-dev',title:'Owner dev',source:'Owner',text:'OWNER_CUSTOM_DEVELOPER_CURRENT'}]
+   :[{id:'custom-owner-prompt',title:'Owner prompt',source:'Owner',text:'OWNER_CUSTOM_PROMPT_CURRENT'}];}
+ };
+ const invoke=createChatPlanningProviderInvoker({runtime:{runAgent(value){options=value;return{output:JSON.stringify({artifact:output})};}},
+  ...scope,cwd:'test-workspace',model:'api1::model1',effort:'low',assertAdmission:()=>{},
+  instructionSnapshot:{content:'SHIPPED_CORE_DO_NOT_DELIVER',revision:1},executionLayers:edited,
+  onInstructionAudit:entry=>{latestAudit=entry.audit;}});
+ const result=await invoke({module,...scope,snapshot});
+ assert.equal(result.transport,'completed');
+ assert.match(options.developerInstructions,/OWNER_ARTIFACT_DEVELOPER_CURRENT/);
+ assert.match(options.developerInstructions,/OWNER_CUSTOM_DEVELOPER_CURRENT/);
+ assert.doesNotMatch(options.developerInstructions,/OWNER_CORE_PROMPT_CURRENT|OWNER_PLANNING_PROMPT_CURRENT/);
+ assert.doesNotMatch(options.developerInstructions,/SHIPPED_CORE_DO_NOT_DELIVER/);
+ assert.match(options.prompt,/OWNER_CORE_PROMPT_CURRENT/);
+ assert.match(options.prompt,/OWNER_PLANNING_PROMPT_CURRENT/);
+ assert.match(options.prompt,/OWNER_CUSTOM_PROMPT_CURRENT/);
+ assert.doesNotMatch(options.prompt,/OWNER_ARTIFACT_DEVELOPER_CURRENT/);
+ assert.equal(latestAudit.sections.find(section=>section.id==='core').role,'user');
+ assert.equal(latestAudit.sections.find(section=>section.id==='planning-artifact').role,'developer');
+ assert.equal(strictProviderSchema(options.outputSchema),true,'host output schema remains canonical');
+});
 test('editable planning layers replace model guidance without changing host artifact validation or importing skills',async()=>{
  const module=CHAT_PLANNING_MODULES[0];
  let captured,audit;
