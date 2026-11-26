@@ -1,0 +1,123 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {BrowserWorkspace,createBrowserToolHandler} from '../lib/browser.mjs';
+
+const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject}};
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+const invoke=(tabId,action,extra={})=>({name:'relay_browser',arguments:{browser:'relay',tabId,action,...extra}});
+const taskOwner={taskId:'test-task',runId:'test-run',nodeId:'agent'};
+function fixture(t, perform){
+ const calls=[];
+ const driver={
+  status:()=>({available:true,contained:true,activeTab:'one',tabs:[
+   {tabId:'one',url:'https://example.test/form',contained:true,owner:taskOwner},
+   {tabId:'two',url:'https://example.test/other',contained:true,owner:taskOwner}
+  ]}),
+  perform:async args=>{calls.push(args);return perform?perform(args,calls.length):{
+   tabId:args.tabId,url:args.tabId==='one'?'https://example.test/form':'https://example.test/other',
+   documentId:args.tabId+':1',frames:[{observation:'content-observed',elements:[]}]} }
+ };
+ const browser=new BrowserWorkspace({driver});t.after(()=>browser.close());
+ return{handler:createBrowserToolHandler({browser,owner:taskOwner}),browser,calls};
+}
+const receipt=result=>JSON.parse(result.contentItems[0].text);
+
+test('dependent same-tab mutations require an explicit subsequent page observation; unrelated tabs are independent',async t=>{
+ const f=fixture(t);
+ const first=await f.handler(invoke('one','fill',{ref:'email',text:'private value'}));
+ assert.equal(first.success,true);
+ const blocked=await f.handler(invoke('one','select',{ref:'region',value:'remote'}));
+ assert.equal(blocked.success,false);
+ assert.equal(blocked.code,'BROWSER_REOBSERVE_REQUIRED');
+ assert.equal(blocked.actionDispatched,false);assert.equal(blocked.inputDispatched,false);
+ assert.equal(receipt(blocked).recovery.nextCall.tabId,'one');
+ assert.equal(f.calls.length,1,'Second dependent input must not enter physical browser queue');
+ assert.doesNotMatch(JSON.stringify(blocked),/private value|remote/);
+ const other=await f.handler(invoke('two','click',{ref:'continue'}));
+ assert.equal(other.success,true,'Independent other tab is not blocked');
+ const fresh=await f.handler(invoke('one','snapshot'));
+ assert.equal(fresh.success,true);
+ const token=receipt(fresh).observationReceipt;
+ assert.match(token,/^obs-[a-f0-9-]{36}$/);
+ const next=await f.handler(invoke('one','select',{ref:'region',value:'remote',observationReceipt:token}));
+ assert.equal(next.success,true);
+ assert.equal(f.calls.at(-1).observationReceipt,undefined,'The causality receipt is stripped before native browser dispatch');
+ assert.deepEqual(f.calls.map(c=>c.action),['fill','click','snapshot','select']);
+});
+
+test('a failed or unsettled read cannot clear a dependent same-tab input barrier',async t=>{
+ let inspection=0;
+ const f=fixture(t,async args=>{
+  if(args.action==='read'){
+   inspection++;
+   if(inspection===1)throw Object.assign(new Error('capture unavailable'),{code:'BROWSER_READ_FAILED'});
+   if(inspection===2)return{tabId:args.tabId,url:'https://example.test/form',documentId:'one:1',navigationUnsettled:true,frames:[{}]};
+  }
+  return{tabId:args.tabId,url:'https://example.test/form',documentId:'one:1',frames:[{observation:'content-observed',elements:[]}]};
+ });
+ assert.equal((await f.handler(invoke('one','click',{ref:'continue'}))).success,true);
+ assert.equal((await f.handler(invoke('one','read'))).success,false);
+ assert.equal((await f.handler(invoke('one','click',{ref:'next'}))).code,'BROWSER_REOBSERVE_REQUIRED');
+ assert.equal((await f.handler(invoke('one','read'))).success,true);
+ assert.equal((await f.handler(invoke('one','click',{ref:'next'}))).code,'BROWSER_REOBSERVE_REQUIRED');
+ const observed=await f.handler(invoke('one','snapshot'));assert.equal(observed.success,true);
+ assert.equal((await f.handler(invoke('one','click',{ref:'next',observationReceipt:receipt(observed).observationReceipt}))).success,true);
+ assert.deepEqual(f.calls.map(c=>c.action),['click','read','read','snapshot','click']);
+});
+
+test('concurrent same-tab calls cannot bypass the admission guard while a previous action remains physically in flight',async t=>{
+ const held=deferred(),entered=deferred();
+ const f=fixture(t,async args=>{
+  if(args.action==='fill'){entered.resolve();await held.promise;}
+  return{tabId:args.tabId,url:'https://example.test/form',documentId:'one:1',frames:[{observation:'content-observed',elements:[]}]};
+ });
+ t.after(()=>held.resolve());
+ const first=f.handler(invoke('one','fill',{ref:'first',text:'first'}));
+ await entered.promise;
+ const second=await f.handler(invoke('one','fill',{ref:'second',text:'second'}));
+ assert.equal(second.code,'BROWSER_REOBSERVE_REQUIRED');assert.equal(f.calls.length,1);
+ const observe=f.handler(invoke('one','snapshot'));
+ const next=await f.handler(invoke('one','click',{ref:'continue'}));
+ assert.equal(next.code,'BROWSER_REOBSERVE_REQUIRED','Concurrent observation has not yet returned to the model');
+ held.resolve();await first;const observed=await observe;
+ assert.equal((await f.handler(invoke('one','click',{ref:'continue',observationReceipt:receipt(observed).observationReceipt}))).success,true);
+ assert.deepEqual(f.calls.map(x=>x.action),['fill','snapshot','click']);
+});
+
+test('unrelated inspection without usable frame data is not a fresh control observation',async t=>{
+ const f=fixture(t,async args=>args.action==='read'?{tabId:args.tabId,url:'https://example.test/form',documentId:'one:1',frames:[]}:
+ {tabId:args.tabId,url:'https://example.test/form',documentId:'one:1',frames:[{observation:'content-observed'}]});
+ await f.handler(invoke('one','click',{ref:'button'}));
+ const empty=await f.handler(invoke('one','read'));assert.equal(empty.success,true);
+ assert.equal((await f.handler(invoke('one','click',{ref:'button2'}))).code,'BROWSER_REOBSERVE_REQUIRED');
+});
+
+
+test('fresh observation produced in a model batch must not authorize a dependent click unless the caller consumed its receipt',async t=>{
+ const f=fixture(t);
+ const first=await f.handler(invoke('one','fill',{ref:'first',text:'initial'}));
+ assert.equal(first.success,true);
+ const snapshot=await f.handler(invoke('one','snapshot'));
+ assert.equal(snapshot.success,true);
+ const staleBatchClick=await f.handler(invoke('one','click',{ref:'second'}));
+ assert.equal(staleBatchClick.code,'BROWSER_REOBSERVE_REQUIRED','A model cannot legitimately select the next current target until it has seen the new observation receipt');
+ assert.equal(f.calls.filter(call=>call.action==='click').length,0);
+ const token=receipt(snapshot).observationReceipt;
+ assert.match(token,/^obs-[a-f0-9-]{36}$/);
+ const accepted=await f.handler(invoke('one','click',{ref:'second',observationReceipt:token}));
+ assert.equal(accepted.success,true);
+ assert.equal((await f.handler(invoke('one','click',{ref:'third',observationReceipt:token}))).code,'BROWSER_REOBSERVE_REQUIRED','The receipt is single-use');
+});
+
+
+test('causality state survives a new handler instance for the same trusted task and tab',async t=>{
+ const f=fixture(t),freshHandler=createBrowserToolHandler({browser:f.browser,owner:taskOwner});
+ assert.equal((await f.handler(invoke('one','fill',{ref:'first',text:'once'}))).success,true);
+ const blocked=await freshHandler(invoke('one','click',{ref:'second'}));
+ assert.equal(blocked.code,'BROWSER_REOBSERVE_REQUIRED');
+ assert.equal(blocked.actionDispatched,false);assert.equal(f.calls.length,1);
+ const observed=await freshHandler(invoke('one','read'));
+ const token=receipt(observed).observationReceipt;assert.match(token,/^obs-[a-f0-9-]{36}$/);
+ assert.equal((await f.handler(invoke('one','click',{ref:'second',observationReceipt:token}))).success,true);
+ assert.deepEqual(f.calls.map(call=>call.action),['fill','read','click']);
+});
