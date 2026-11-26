@@ -20,6 +20,12 @@ For an uncertain earlier attempt, check the destination and available receipt be
 
 ## Search current openings
 
+### Apply source-side filters before opening results
+
+Derive hard constraints and ranking preferences from the current request, then inspect each source's actual filter controls or documented query fields. **Set every applicable supported filter before fetching or expanding vacancy results**, especially remote-only work arrangement, eligible work geography, full-time employment, compensation, and posting date. Confirm that filter chips, URL parameters, request fields, or returned facets actually reflect the chosen restrictions. Adding the word “remote” to a text query does not substitute for the source's remote-only filter.
+
+Use only filters the source truly supports; do not invent controls or equate a city filter with remote-only work. Where salary data or other facets are incomplete, keep plausible unknowns for lightweight follow-up rather than silently excluding every undisclosed role. If a filter is absent, first triage a bounded result batch using its title, location, employment and pay metadata, and open only plausible candidates. Do not spend page-level inspection time on cards that already contradict a hard requirement. Retain the user's restrictions when changing employers or sources; relax only preferences such as an initial seven-day ranking window if useful. Record which filters were applied, unavailable, or not verified, so a broad unfiltered scan is never mistaken for a filtered search.
+
 1. Read the user's desired work, required conditions, preferences, exclusions, count, and cutoff. Use work history as evidence of ability, not as a requirement to repeat old work.
 2. Start with the rolling last seven days unless the current request specifies a different window. Treat that default as a search and ranking preference; an older or unknown posting date alone does not exclude an otherwise suitable role unless the user requested a recency limit. Use the current search timestamp and available date filters.
 3. Start with actual vacancies on relevant employers' careers pages and public ATS boards or current postings feeds. Give the user's requested work direction priority, then broaden across other permitted roles. Favor low-friction actual application routes such as Ashby, Greenhouse and Lever when useful; choose a slower ATS only when its remaining cost and the opportunity justify it. Collect distinct promising postings in batches, then pursue a specific one rather than exhausting discovery.
