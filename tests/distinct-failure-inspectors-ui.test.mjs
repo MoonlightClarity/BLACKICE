@@ -28,7 +28,7 @@ test('primary Receipts switches between distinct categories and exact original o
  const view=d.$('.next-activity-view');view.value='failures';await view.dispatch('change');await tick();
  assert.equal(urls.at(-1).searchParams.get('scope'),'task');
  assert.equal(urls.at(-1).searchParams.get('distinct'),'1');
- assert.equal(d.$('.next-activity-distinct-toggle').checked,true);
+ const distinctButton=d.$('.next-activity-distinct-button');assert.equal(distinctButton.tagName,'BUTTON');assert.equal(distinctButton.getAttribute('aria-pressed'),'true');assert.equal(distinctButton.textContent,'Distinct failures');assert.equal(d.mount.querySelector('.next-activity-distinct-toggle'),null);
  assert.match(d.$('.next-activity-status').textContent,/2 distinct categories/);
  assert.equal(d.mount.querySelectorAll('.next-activity-results li').length,2);
  await d.click('.next-activity-show-occurrences');await tick();
@@ -37,11 +37,10 @@ test('primary Receipts switches between distinct categories and exact original o
  assert.match(d.$('.next-activity-status').textContent,/retained occurrences/);
  await d.click('.next-activity-back-groups');await tick();
  assert.equal(urls.at(-1).searchParams.get('distinct'),'1');
- d.$('.next-activity-distinct-toggle').checked=false;
- await d.$('.next-activity-distinct-toggle').dispatch('change');await tick();
+ await d.click('.next-activity-distinct-button');await tick();assert.equal(distinctButton.getAttribute('aria-pressed'),'false');
  assert.equal(urls.at(-1).searchParams.has('distinct'),false);
  assert.equal(urls.at(-1).searchParams.has('group'),false);
- assert.equal(d.mount.querySelectorAll('.next-activity-results li').length,5);
+ assert.equal(d.mount.querySelectorAll('.next-activity-results li').length,5);await d.click('.next-activity-distinct-button');await tick();assert.equal(distinctButton.getAttribute('aria-pressed'),'true');assert.equal(urls.at(-1).searchParams.get('distinct'),'1');
 });
 test('Turn receipts offers distinct categories and an exact individual-drilldown',async t=>{
  const d=planningDOM(t),f=fixture(),urls=[];
@@ -55,7 +54,7 @@ test('Turn receipts offers distinct categories and an exact individual-drilldown
  await inspector.open();
  const category=Array.from(d.mount.querySelectorAll('select')).find(e=>e.getAttribute('aria-label')==='Receipt category');
  category.value='failures';await category.dispatch('change');await tick();
- assert.equal(urls.at(-1).searchParams.get('distinct'),'1');
+ assert.equal(urls.at(-1).searchParams.get('distinct'),'1');const distinctButton=Array.from(d.mount.querySelectorAll('button')).find(b=>b.textContent==='Distinct failures');assert.equal(distinctButton.tagName,'BUTTON');assert.equal(distinctButton.getAttribute('aria-pressed'),'true');
  assert.equal(d.mount.querySelectorAll('details').length>=4,true);
  const inspect=Array.from(d.mount.querySelectorAll('button')).find(b=>b.textContent.startsWith('Inspect '));
  assert.ok(inspect);
@@ -63,5 +62,5 @@ test('Turn receipts offers distinct categories and an exact individual-drilldown
  assert.match(urls.at(-1).searchParams.get('group'),/^fg-[a-f0-9]{64}$/);
  const back=Array.from(d.mount.querySelectorAll('button')).find(b=>b.textContent==='Back to distinct failures');
  await back.dispatch('click');await tick();
- assert.equal(urls.at(-1).searchParams.get('distinct'),'1');
+ assert.equal(urls.at(-1).searchParams.get('distinct'),'1');await distinctButton.dispatch('click');await tick();assert.equal(distinctButton.getAttribute('aria-pressed'),'false');assert.equal(urls.at(-1).searchParams.has('distinct'),false);
 });
