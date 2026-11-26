@@ -44,7 +44,7 @@ export function createChatFrame(mount) {
     '<div class="next-chat-main"><header class="next-chat-head">',
     '<button id="next-chat-mobile-list" type="button" aria-label="Show conversations and folders" aria-expanded="false">Chats</button>',
     '<div class="next-chat-heading"><strong id="next-chat-title">New conversation</strong><small id="next-chat-subtitle">Local workspace</small></div>',
-    '<div class="next-chat-head-actions"><button type="button" id="next-chat-rename" hidden>Rename</button>',
+    '<div class="next-chat-head-actions"><button type="button" id="next-chat-reload-ui" title="Reload interface without stopping active Goals">Reload UI</button><button type="button" id="next-chat-rename" hidden>Rename</button>',
     '<button type="button" id="next-chat-task-menu" hidden aria-haspopup="dialog">Tasks</button>',
     '<button type="button" id="next-chat-close" hidden>Close chat</button>',
     '<button type="button" id="next-chat-archive" hidden>Archive</button>',

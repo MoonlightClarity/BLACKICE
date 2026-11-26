@@ -1,6 +1,57 @@
 const label=(value,max)=>typeof value==='string'&&value.length<=max&&/^[a-zA-Z0-9_ .-]+$/.test(value)?value:'';
 const code=value=>typeof value==='string'&&/^[A-Z][A-Z0-9_]{1,79}$/.test(value)?value:'';
+const callId=value=>typeof value==='string'&&/^[A-Za-z0-9_.:~-]{1,160}$/.test(value)?value:'';
 const digest=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value)?value:'';
+
+
+const TOOL_FAILURE_HISTORY_LIMIT = 128;
+const safeReceiptTime=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)&&Number.isFinite(Date.parse(value))?new Date(value).toISOString():null;
+const safeFailureReceipt=row=>{
+ if(!row||!label(row.tool,100))return null;
+ const receipt={
+  sequence:Number.isSafeInteger(row.sequence)&&row.sequence>0?row.sequence:0,
+  at:safeReceiptTime(row.at),nodeId:label(row.nodeId,100),
+  tool:label(row.tool,100),action:label(row.action,100),code:code(row.code)||'TOOL_FAILED',
+  recovered:row.recovered===true,...(callId(row.callId)?{callId:callId(row.callId)}:{})
+ };
+ if(typeof row.actionDispatched==='boolean')receipt.actionDispatched=row.actionDispatched;
+ if(typeof row.inputDispatched==='boolean')receipt.inputDispatched=row.inputDispatched;
+ if(Number.isSafeInteger(row.exitCode)&&Math.abs(row.exitCode)<65536)receipt.exitCode=row.exitCode;
+ return receipt;
+};
+/** Individual chronological failures; no result bodies, arguments, secret values, or raw error prose. */
+export function retainToolFailureHistory(previous,entry){
+ const e=entry?.data;
+ if(e?.type!=='tool.result'||typeof e.tool!=='string')return previous;
+ const prior=previous&&typeof previous==='object'?previous:{};
+ const receipts=Array.isArray(prior.receipts)?prior.receipts.slice(-TOOL_FAILURE_HISTORY_LIMIT).map(row=>({...row})):[];
+ const tool=label(e.tool,100)||'Tool',nodeId=label(entry.nodeId,100),operationKey=digest(e.operationKey);
+ const total=Number.isSafeInteger(prior.total)&&prior.total>=receipts.length?prior.total:receipts.length;
+ const receiptIdentity=typeof e.callId==='string'&&/^[A-Za-z0-9_.:~-]{1,160}$/.test(e.callId)?nodeId+':'+e.callId+':'+e.status:null;
+ if(e.success===false&&receiptIdentity&&receipts.some(row=>row.receiptIdentity===receiptIdentity))return previous;
+ if(e.success===true){
+  if(!operationKey)return previous;
+  let changed=false;
+  for(const row of receipts)if(!row.recovered&&row.operationKey===operationKey&&row.nodeId===nodeId&&row.tool===tool){row.recovered=true;changed=true;}
+  return changed?{version:1,total,omitted:Math.max(0,total-receipts.length),receipts}:previous;
+ }
+ if(e.success!==false)return previous;
+ const row={sequence:total+1,at:entry.at,nodeId,tool,action:label(e.action,100),code:code(e.code)||'TOOL_FAILED',
+   recovered:false,...(callId(e.callId)?{callId:callId(e.callId)}:{}),...(operationKey?{operationKey}:{}),...(receiptIdentity?{receiptIdentity}:{}),
+   ...(typeof e.actionDispatched==='boolean'?{actionDispatched:e.actionDispatched}:{}),
+   ...(typeof e.inputDispatched==='boolean'?{inputDispatched:e.inputDispatched}:{}),
+   ...(e.commandExecution?.source==='native-workspace-process-close'&&Number.isSafeInteger(e.commandExecution.exitCode)?{exitCode:e.commandExecution.exitCode}:{})};
+ receipts.push(row);
+ return {version:1,total:total+1,omitted:Math.max(0,total+1-TOOL_FAILURE_HISTORY_LIMIT),receipts:receipts.slice(-TOOL_FAILURE_HISTORY_LIMIT)};
+}
+/** Safe Chat projection. Keep chronological failures and omit matching digests. */
+export function projectToolFailureHistory(history){
+ if(!history||!Array.isArray(history.receipts))return null;
+ const receipts=history.receipts.slice(-TOOL_FAILURE_HISTORY_LIMIT).map(safeFailureReceipt).filter(Boolean);
+ const total=Number.isSafeInteger(history.total)&&history.total>=receipts.length?history.total:receipts.length;
+ return receipts.length?{version:1,total,omitted:Math.max(0,total-receipts.length),receipts}:null;
+}
+export const archivedToolFailureHistory=projectToolFailureHistory;
 
 /** Retain one bounded failure, no arbitrary messages, arguments or result payloads. */
 export function retainChatToolFailure(latest,entry){
@@ -59,7 +110,7 @@ function alarmCode(tool,value) {
  if(tool==='relay_browser'&&['BROWSER_REF_STALE','BROWSER_INPUT_DOCUMENT_CHANGED','BROWSER_UNAVAILABLE'].includes(value))return value;
  if(tool==='relay_skills'&&['SKILL_NOT_FOUND','SKILL_UNAVAILABLE'].includes(value))return value;
  if(tool==='relay_history'&&value==='PAST_CHATS_OFF')return value;
- if(tool==='relay_workspace'&&['ENOENT','EACCES','EPERM'].includes(value))return value;
+ if(tool==='relay_workspace'&&['ENOENT','EACCES','EPERM','WORKSPACE_ERROR','WORKSPACE_COMMAND_EXIT_NONZERO','WORKSPACE_COMMAND_TIMED_OUT','WORKSPACE_COMMAND_SIGNALLED','WORKSPACE_READ_PREVIEW_LIMIT'].includes(value))return value;
  if(tool==='relay_directory_action'&&['DIRECTORY_BLOCKER','DIRECTORY_UNKNOWN','DIRECTORY_CHANGED','DIRECTORY_NOT_READY'].includes(value))return value;
  return null;
 }
@@ -106,6 +157,11 @@ export function diagnosticAlarmCopy(raw) {
   case 'BROWSER_UNAVAILABLE':observed='The runtime reported no available contained browser.';break;
   case 'SKILL_NOT_FOUND':observed='The skill catalog could not find the requested entry.';explanation='The entry may have been deleted or requested under a different ID.';break;
   case 'SKILL_UNAVAILABLE':observed='The runtime could not load the requested skill.';explanation='The receipt does not identify which catalog or storage check failed.';break;
+  case 'WORKSPACE_COMMAND_EXIT_NONZERO':observed='The launched workspace shell command exited with a nonzero code.';explanation='The shell or child program failed; this is not proof that the workspace adapter malfunctioned. Inspect the saved stderr and command syntax, including nested PowerShell/Node quoting. The effects of that command have not been assessed.';break;
+  case 'WORKSPACE_COMMAND_TIMED_OUT':observed='The workspace command exceeded its execution deadline.';explanation='The process may have performed partial effects. Inspect saved output and state before retrying.';break;
+  case 'WORKSPACE_COMMAND_SIGNALLED':observed='The workspace command process ended with a signal.';explanation='Partial effects are unknown; inspect its saved command receipt.';break;
+  case 'WORKSPACE_READ_PREVIEW_LIMIT':observed='The workspace reader reached its bounded preview limit.';explanation='Use a specific range or a bounded command; this is not evidence that the file was missing.';break;
+  case 'WORKSPACE_ERROR':observed='The workspace adapter returned an error.';explanation='Inspect the exact saved tool error and operation; this generic code does not identify a root cause.';break;
   case 'ENOENT':observed='The workspace tool did not find the file or a folder in its path.';explanation='The path may have moved, been typed differently, or pointed to a folder that is not present.';break;
   case 'EACCES':
   case 'EPERM':observed='The operating system did not let the workspace tool access the path.';explanation='Check this file or folder’s access and whether another app is holding it. A permission error does not mean the file is missing.';break;
