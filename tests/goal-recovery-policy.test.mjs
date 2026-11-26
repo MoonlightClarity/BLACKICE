@@ -413,6 +413,11 @@ test('native select pre-input refusal does not create an unknown external effect
   for (const response of [result(false, code, {code}), result(false, code, {code,inputDispatched:true}), {...receipt,inputDispatched:true}, result(false,code,{code,inputDispatched:false,actionDispatched:true}), result(false,'BROWSER_ACTION_FAILED',{code,inputDispatched:false})]) {
     assert.equal(observeGoalToolOutcome(operation,response).kind,'uncertain_external_effect');
   }
+  for(const distinct of ['BROWSER_SELECT_NOT_NATIVE','BROWSER_SELECT_VALUE_UNAVAILABLE']){
+    const safe=result(false,distinct,{code:distinct,inputDispatched:false});
+    assert.equal(observeGoalToolOutcome(operation,safe).kind,'recoverable_no_input');
+    assert.equal(observeGoalToolOutcome(operation,result(false,distinct,{code:distinct})).kind,'uncertain_external_effect');
+  }
   assert.equal(observeGoalToolOutcome(call('relay_browser',{action:'click',tabId:'form',ref:'control'}),receipt).kind,'uncertain_external_effect');
 });
 

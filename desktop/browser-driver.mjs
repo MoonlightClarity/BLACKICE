@@ -456,8 +456,8 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
     return { needsTrustedTextInput: true };
   }
   if (action === 'select') {
-    if (el.tagName !== 'SELECT') return { __blackiceElementError: { message: 'This is not a native select. Click it and inspect the available options.', code: 'BROWSER_ELEMENT_ACTION_FAILED', inputDispatched: false } };
-    if (![...el.options].some(o => o.value === args.value)) return { __blackiceElementError: { message: 'Select value is not available.', code: 'BROWSER_ELEMENT_ACTION_FAILED', inputDispatched: false } };
+    if (el.tagName !== 'SELECT') return { __blackiceElementError: { message: 'This is not a native select. Click it and inspect the available options.', code: 'BROWSER_SELECT_NOT_NATIVE', inputDispatched: false } };
+    if (![...el.options].some(o => o.value === args.value)) return { __blackiceElementError: { message: 'Select value is not available. Inspect the current observed option values; do not invent a value.', code: 'BROWSER_SELECT_VALUE_UNAVAILABLE', inputDispatched: false } };
     el.value = args.value; el.dispatchEvent(new Event('input', { bubbles: true, composed: true })); el.dispatchEvent(new Event('change', { bubbles: true, composed: true })); return { selected: el.value };
   }
   if (action === 'upload') {

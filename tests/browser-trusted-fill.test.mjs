@@ -32,7 +32,7 @@ test('native select type and value rejection prove no input while a real selecti
     const value = kind === 'missing' ? 'not-present' : 'actual';
     const result = vm.runInContext('(' + elementSource + ')("fixture","field","select",' + JSON.stringify({ value }) + ')', context);
     if (kind === 'valid') { assert.equal(result.selected, 'actual'); assert.deepEqual(events, ['input', 'change']); }
-    else { assert.equal(result.__blackiceElementError.inputDispatched, false); assert.equal(field.value, ''); assert.deepEqual(events, []); }
+    else { assert.equal(result.__blackiceElementError.code,kind==='custom'?'BROWSER_SELECT_NOT_NATIVE':'BROWSER_SELECT_VALUE_UNAVAILABLE');assert.equal(result.__blackiceElementError.inputDispatched, false); assert.equal(field.value, ''); assert.deepEqual(events, []); }
   }
 });
 
