@@ -1,0 +1,22 @@
+name: Verify intent and blocker cascade (temporary)
+on:
+  push:
+    branches: [fix/intent-blocker-cascade-20261126]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  focused:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: node --check lib/harness-identity.mjs
+      - run: node --check lib/identity.mjs
+      - run: node --check lib/chat-outcome-review.mjs
+      - run: node --check lib/chat-execution-review.mjs
+      - run: node --test tests/agent-agency-judgment-generalization.test.mjs tests/intent-inference-skill.test.mjs tests/intent-inference-execution.test.mjs tests/chat-execution-review.test.mjs
