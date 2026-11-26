@@ -1902,7 +1902,9 @@ export class ElectronBrowserDriver extends EventEmitter {
       ? expected.expectedDocumentId.slice(prefix.length) : '';
     if (/^\d{1,16}$/.test(suffix) && Number.isSafeInteger(Number(suffix)))
       browserReferenceDiagnostic.requestedRevision = Number(suffix);
-    throw Object.assign(error('The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', browserReferenceDiagnostic, [pointerIdentityGuard]:true });
+    throw Object.assign(error(expected.action==='read'
+      ? 'The observed page changed before this guarded read. Take a fresh snapshot, then retry the read with the current URL and document identity.'
+      : 'The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', browserReferenceDiagnostic, [pointerIdentityGuard]:true });
   }
   async cdp(tab, method, params = {}, signal, expected, sessionId) {
     let dispatched = false;
@@ -2511,6 +2513,10 @@ export class ElectronBrowserDriver extends EventEmitter {
     // Reloading a saved page already dispatches its one navigation in activate.
     // A failed activation cannot be cleared by the no-op "already reloaded" arm.
     if (tab.loadError && (resumed && args.action === 'reload' || !['navigate', 'reload', 'back', 'forward'].includes(args.action))) throw navigationFailure(tab);
+    // A guarded read is observational but must honor the caller's current
+    // page identity instead of silently reading a new destination.
+    if (args.action==='read' && (args.expectedUrl!==undefined||args.expectedDocumentId!==undefined))
+      this.assertInputDocument(tab,args);
     if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)||args.action==='scroll'&&args.ref) {
       try { this.assertInputDocument(tab, args); }
       catch (cause) {
