@@ -670,5 +670,6 @@ test('guarded browser reads verify the observed document instead of rejecting th
 });
 test('same-tab mutation dependency explicitly prevents stale batch instruction',()=>{
  assert.match(BROWSER_TOOL.description,/Do not batch several same-tab form mutations/);
- assert.match(BROWSER_TOOL.description,/A successful input can invalidate later refs even if the URL is unchanged/);
+ assert.match(BROWSER_TOOL.description,/input[^.]*invalidate[^.]*refs[^.]*URL/i,
+  'Guidance must explain that input can invalidate stale refs without changing the URL.');
 });
