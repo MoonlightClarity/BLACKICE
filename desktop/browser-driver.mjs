@@ -391,7 +391,21 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
     if(!targetPoint){
       // Scrolling may already have changed the page. No pointer input was
       // dispatched; leave genuinely covered controls blocked.
-      return {__blackiceElementError:{message:'Another element covers this target or no part is in view. Inspect the covering control or scroll.',code:'BROWSER_TARGET_COVERED',inputDispatched:false}};
+      // Report bounded blocker geometry and modal presence, not arbitrary
+       // page text, selectors, class names or hidden DOM. Never redirect input.
+       const outOfViewport=!(right>left&&bottom>topEdge);
+       const probeX=Math.max(0,Math.min(innerWidth-1,(left+right)/2));
+       const probeY=Math.max(0,Math.min(innerHeight-1,(topEdge+bottom)/2));
+       const blocker=outOfViewport?null:document.elementFromPoint(probeX,probeY);
+       const coverBox=blocker?.getBoundingClientRect?.();
+       const viewportOverlay=Boolean(coverBox&&coverBox.width>=innerWidth*.85&&coverBox.height>=innerHeight*.85);
+       const dialogs=[...document.querySelectorAll('dialog,[role="dialog"],[aria-modal="true"]')].slice(0,16);
+       const modalPresent=dialogs.some(dialog=>{const bounds=dialog.getBoundingClientRect(),style=getComputedStyle(dialog);
+         return bounds.width>0&&bounds.height>0&&style.display!=='none'&&style.visibility==='visible';});
+       return {__blackiceElementError:{message:modalPresent
+         ?'A visible modal dialog or backdrop is blocking this control. Inspect and resolve the modal before clicking behind it.'
+         :'Another element covers this target or no part is in view. Inspect the covering control or scroll.',
+         code:'BROWSER_TARGET_COVERED',inputDispatched:false,blocker:{modalPresent,viewportOverlay,outOfViewport}}};
     }
     return {...targetPoint,viewportWidth:innerWidth,viewportHeight:innerHeight};
   }
@@ -1605,8 +1619,10 @@ export class ElectronBrowserDriver extends EventEmitter {
       // strips page-supplied dispatch claims even when its code matches a guard.
       const inputPrevented = inputDispatched === false
         && (action === 'select' || action === 'fill' && code === 'BROWSER_VALIDATION' || action === 'prepare' && code === 'BROWSER_TARGET_COVERED');
+       const blocker=code==='BROWSER_TARGET_COVERED'&&action==='prepare'&&inputDispatched===false&&result.__blackiceElementError.blocker;
       throw Object.assign(error(message), {
         code,
+        ...(blocker?{blocker:{modalPresent:blocker.modalPresent===true,viewportOverlay:blocker.viewportOverlay===true,outOfViewport:blocker.outOfViewport===true}}:{}),
         ...(code === 'BROWSER_REF_STALE' ? { browserReferenceDiagnostic: { ...this.referenceDiagnostic(tab, args.ref, 'control-changed'), ...projectBrowserControlBinding(result.__blackiceElementError, action) } } : {}),
         ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true, ...(action==='prepare'?{inputDispatched:false,pointerStage:'pre-pointer-identity'}:{}) }
           : inputPrevented ? { inputDispatched: false, ...(action==='prepare'?{pointerStage:'pre-pointer-identity'}:{}) } : {}),

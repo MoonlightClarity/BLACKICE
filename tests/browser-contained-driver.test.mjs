@@ -429,7 +429,7 @@ test('a detached renderer ref preserves its message across a boundary that loses
   assert.equal(tab.window.captureArgs, undefined, 'A detached target must fail before pointer preparation.');
 });
 
-async function goalPointerFixture(t, { covered = true, inputError, embeddedCandidates, frameOwnerError, pointerMismatch = false } = {}) {
+async function goalPointerFixture(t, { covered = true, modal = false, inputError, embeddedCandidates, frameOwnerError, pointerMismatch = false } = {}) {
   let ref, scrolls = 0, captures = 0, overlay = covered, candidates = embeddedCandidates;
   const scrollAlignments = [];
   const childURL = 'https://identity.example.test/control', quad = [150, 80, 450, 80, 450, 230, 150, 230];
@@ -467,11 +467,12 @@ async function goalPointerFixture(t, { covered = true, inputError, embeddedCandi
     getRootNode: () => document, contains: other => other === control, closest: () => null,
     scrollIntoView: options => { scrolls++; scrollAlignments.push(options); },
   };
-  const covering = { contains: () => false };
+  const covering = { contains: () => false, getBoundingClientRect: () => ({x:0,y:0,width:1280,height:900}) };
+  const dialogElement={getBoundingClientRect:()=>({x:400,y:300,width:450,height:230})};
   const document = {
     forms: [], title: 'Covered control', readyState: 'complete',
     documentElement: { children: [control] }, getElementById: () => null,
-    querySelectorAll: () => [], elementFromPoint: () => overlay ? covering : control,
+    querySelectorAll: selector => modal && selector.includes('dialog') ? [dialogElement] : [], elementFromPoint: () => overlay ? covering : control,
   };
   const main = tab.window.webContents.mainFrame;
   let frame = main;
@@ -3472,4 +3473,15 @@ test('native guarded browser read accepts current identity and rejects stale ide
  const valid={action:'read',tabId:tab.id,expectedUrl:tab.url,expectedDocumentId:tab.id+':'+tab.revision};
  const result=await driver.perform(valid,{owner});assert.equal(result.tabId,tab.id);
  await assert.rejects(driver.perform({...valid,expectedDocumentId:tab.id+':0',expectedUrl:'https://other.fixture.test/'},{owner}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+});
+test('covered page modal returns actionable blocker evidence without dispatch',async t=>{
+ const f=await goalPointerFixture(t,{modal:true});
+ const first=await f.wrapped(f.original),body=JSON.parse(first.contentItems[0].text);
+ assert.equal(first.success,false);assert.equal(first.code,'BROWSER_TARGET_COVERED');
+ assert.equal(body.inputDispatched,false);assert.equal(body.actionDispatched,undefined);
+ assert.deepEqual(JSON.parse(JSON.stringify(body.blocker)),{modalPresent:true,viewportOverlay:true,outOfViewport:false});
+ assert.match(body.recovery.hint,/resolve the dialog before any new click/);
+ assert.equal(f.tab.window.protocol.filter(call=>call.method==='Input.dispatchMouseEvent'&&call.params.type==='mousePressed').length,0);
+ const safe=await goalPointerFixture(t);const blocked=await safe.wrapped(safe.original),other=JSON.parse(blocked.contentItems[0].text);
+ assert.equal(other.blocker.modalPresent,false);
 });
