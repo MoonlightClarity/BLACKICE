@@ -41,7 +41,7 @@ test('saved common Instructions are pinned across nodes and explicit empty appli
   for (const [index, id] of ['a', 'b'].entries()) {
     const audit = completed.nodes[id].instructionAudit, core = audit.sections.find(item => item.id === 'core');
     assert.equal(core.text, owner.content); assert.equal(core.revision, owner.revision); assert.equal(core.sourceHash, owner.hash);
-    assert.equal(core.status, 'accepted'); assert.equal(core.source, 'Config / Instructions');
+    assert.equal(core.status, 'accepted'); assert.equal(core.source, 'Runtime / System instructions');
     assert.equal(audit.sections.filter(item => item.layer === 'developer').map(item => item.text).join(''), runtime.calls[index].developerInstructions);
     assert.ok(runtime.calls[index].developerInstructions.startsWith(owner.content));
     assert.ok(!runtime.calls[index].developerInstructions.includes(DEFAULT_COMMON_INSTRUCTIONS));

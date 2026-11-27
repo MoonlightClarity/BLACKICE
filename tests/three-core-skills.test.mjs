@@ -61,7 +61,7 @@ test('explicit folder mutation removes orphan placements only, preserving actual
  const editBytes=JSON.stringify(edits);await writeFile(path.join(root,'skill-edits','skills.json'),editBytes);
  const file=path.join(root,'skills-folders.json'),state={version:1,revision:9,folders:[{id:'orphan',name:'Orphan',parentId:null},{id:'saved',name:'Saved',parentId:null},{id:'deleted',name:'Deleted',parentId:null}],assignments:{'builtin-browser':'orphan','builtin-file-discovery':'orphan','builtin-browser-tab-management':'saved','builtin-job-search':'deleted','builtin-decomposition':null}};
  const bytes=JSON.stringify(state);await writeFile(file,bytes);const folders=new SkillFolderStore({dataDir:root});
- assert.deepEqual(await folders.read(),state);assert.equal(await readFile(file,'utf8'),bytes,'read never mutates placements');
+ assert.deepEqual(await folders.read(),{...state,removedCategories:[],runtimeAssignments:{}});assert.equal(await readFile(file,'utf8'),bytes,'read never mutates placements');
  await assert.rejects(folders.mutate({action:'remove',id:'orphan',expectedRevision:8}),{status:409});assert.equal(await readFile(file,'utf8'),bytes);
  for(const id of ['saved','deleted'])await assert.rejects(folders.mutate({action:'remove',id,expectedRevision:9}),{status:409});
  assert.equal(await readFile(file,'utf8'),bytes,'rejected mutation does not persist cleanup');

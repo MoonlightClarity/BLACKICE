@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: blackice-24085-source-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true # supersede stale recovery-only source validation; publication never runs here
 
 jobs:
   source-qualification:
