@@ -58,3 +58,11 @@ test('installer diagnostics build once and run distinct clean and upgrade jobs i
  assert.match(workflow,/retention-days: 7/);
  assert.doesNotMatch(workflow,/release-request\.json|publish-windows-release/);
 });
+test('diagnostic evidence assignments cannot silently become standalone PowerShell commands',()=>{
+ assert.doesNotMatch(script,/^\s*\$\s*$/gm,'A bare dollar sign is syntactically tolerated by PowerShell but fails at runtime.');
+ for(const name of ['installerSha256','appFingerprint','baselineSha256','baselineFingerprint','shortcuts','runtime']){
+   assert.match(script,new RegExp('\\$report\\["'+name+'"\\]\\s*='),'Missing bound diagnostic receipt field: '+name);
+ }
+ assert.match(script,/\$report\.passed=\$mainPassed -and \$cleanupPassed/);
+ assert.match(script,/SavedReport/);
+});

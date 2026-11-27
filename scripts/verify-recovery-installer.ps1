@@ -124,8 +124,8 @@ try {
   $m=ReadJson $manifest
   $hash=Hash $setup
   Assert ($m.version -ceq '2.40.85' -and $m.artifact.sha256 -ceq $hash -and $m.artifact.size -eq (Get-Item -LiteralPath $setup).Length) 'Candidate manifest hash or version mismatch.'
-  $
-  $
+  $report["installerSha256"]=$hash
+  $report["appFingerprint"]=$m.appFingerprint
   $report.checks+=@{name='candidate-manifest-bound';passed=$true}
   New-Item -ItemType Directory -Path $work -Force | Out-Null
   if($Mode -eq 'upgrade') {
@@ -137,7 +137,7 @@ try {
     Invoke-WebRequest -Uri ($base+'/blackice-public-release.json') -OutFile $oldManifest -TimeoutSec 30
     $old=ReadJson $oldManifest
     Assert ($old.version -ceq '2.40.84' -and $old.artifact.sha256 -ceq (Hash $oldSetup) -and $old.artifact.size -eq (Get-Item $oldSetup).Length) 'Published 2.40.84 baseline hash mismatch.'
-    $
+    $report["baselineSha256"]=$old.artifact.sha256
     $report.stage='baseline-install'
     $installStarted=$true
     InvokeSetup $oldSetup "/S /currentuser /D=$install"
@@ -145,7 +145,7 @@ try {
     CheckRegistration '2.40.84' $install
     $oldPair=FingerprintPair $app
     Assert ($oldPair.installed -ceq $old.appFingerprint) 'Published 2.40.84 installed application differs from released manifest.'
-    $
+    $report["baselineFingerprint"]=$oldPair.installed
     $report.checks+=@{name='published-baseline-installed';passed=$true}
   }
   New-Item -ItemType Directory -Path $profile -Force | Out-Null
@@ -164,7 +164,7 @@ try {
   foreach($name in @('public\next\workspaces\runtime.mjs','public\next\runtime.css','lib\tool-failure-loop.mjs','lib\model-tool-schema-annotations.mjs')){
     Assert (Test-Path -LiteralPath (Join-Path $app $name) -PathType Leaf) ('Missing recovered app feature: '+$name)
   }
-  $
+  $report["shortcuts"]=@(CheckShortcuts)
   $report.checks+=@{name='installed-source-fingerprint';passed=$true;fingerprint=$pair.installed}
   if($Mode -eq 'upgrade'){Assert ($pair.installed -cne $report.baselineFingerprint) 'Upgrade failed to change application source.';$report.checks+=@{name='actual-published-version-upgrade';passed=$true}}
   $report.stage='native-runtime'
@@ -177,7 +177,7 @@ try {
     Assert ($runtime[$key].passed -eq $true) ('Native runtime did not pass '+$key)
   }
   Assert ($runtime.shutdown.nativeQuitVerified -eq $true -and $runtime.shutdown.forcedTerminationUsed -eq $false) 'Native Runtime required forced termination.'
-  $
+  $report["runtime"]=$runtime
   Assert ((Hash $sentinel) -ceq $sentinelHash) 'Runtime verification altered existing user profile sentinel.'
   $report.checks+=@{name='native-runtime-and-profile';passed=$true}
   $mainPassed=$true
