@@ -10,7 +10,6 @@ import {ToolDescriptionOverrides} from '../lib/tool-description-overrides.mjs';
 import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 import {SkillFolderStore} from '../lib/skill-folders.mjs';
 import {createRuntimeWorkspace} from '../public/next/workspaces/runtime.mjs';
-import {createSkillsWorkspace} from '../public/next/workspaces/skills.mjs';
 
 const wait=async(check,label='UI state')=>{
  for(let i=0;i<130;i++){if(await check())return;await new Promise(resolve=>setTimeout(resolve,10));}
@@ -129,35 +128,85 @@ test('Runtime top-level editor updates canonical system text, tool schemas and c
  await wait(async()=> (await catalog.detail({id:'library-job-search'})).content.includes('OWNER_JOB_SEARCH_CURRENT_731'),'current skill revision');
  assert.ok(calls.some(row=>row.route==='/api/skills/library-job-search'&&row.method==='POST'),'shared effective skill source saved');
 });
-test('Skills folder manager explicitly deletes/restores virtual category groups without deleting any skills',async t=>{
+test('Runtime category hierarchy preserves legacy skills, nested folders, item revisions and contents',async t=>{
  const dataDir=await env(t),folderStore=new SkillFolderStore({dataDir}),catalog=createSkillsCatalog({dataDir});
  t.after(async()=>{await folderStore.close();await catalog.close();});
+ let org=await folderStore.read();
+ org=await folderStore.mutate({action:'create',id:'old-parent',name:'Legacy research',parentId:null,expectedRevision:org.revision});
+ org=await folderStore.mutate({action:'create',id:'old-child',name:'Old child',parentId:'old-parent',expectedRevision:org.revision});
+ org=await folderStore.mutate({action:'assign',skillId:'library-job-search',folderId:'old-child',expectedRevision:org.revision});
+ const original=await catalog.detail({id:'library-job-search'});
  const api=async(route,method='GET',body)=>{
-  if(route==='/api/skills/folders')return method==='GET'?folderStore.read():folderStore.mutate(body);
+  if(route==='/api/runtime/organization')return method==='GET'?folderStore.read():folderStore.mutate(body);
+  if(route==='/api/execution-layers')return {revision:0,layers:[{id:'core',title:'System instructions',text:'CORE',enabled:true,role:'developer'}]};
+  if(route==='/api/tool-descriptions')return {revision:0,tools:[{name:'relay_workspace',description:'Workspace',enabled:true}]};
+  if(route==='/api/instructions/core'||route==='/api/instructions/core/versions/0')return {content:'CORE',revision:0,hash:'test'};
   const url=new URL(route,'http://fixture');
-  if(url.pathname==='/api/skills')return catalog.list({query:url.searchParams.get('query')||'',source:url.searchParams.get('source')||'all'});
-  if(url.pathname.startsWith('/api/skills/'))return catalog.detail({id:decodeURIComponent(url.pathname.slice(12))});
+  if(url.pathname==='/api/skills')return catalog.list({source:url.searchParams.get('source')||'all'});
+  if(url.pathname.startsWith('/api/skills/')){
+   const id=decodeURIComponent(url.pathname.slice(12));
+   if(method==='POST')return catalog.save({id,value:body});
+   return catalog.detail({id});
+  }
   throw Error(route);
  };
- const f=planningDOM(t),ui=createSkillsWorkspace({mount:f.mount,api});
- t.after(()=>ui.destroy());ui.enter();
- await wait(()=>f.$('#skills-manage-folders-button'),'manage folders');
- await f.click('#skills-manage-folders-button');
- assert.equal(f.$('#skills-folder-manager').open,true);
- await wait(()=>[...f.$('#skills-folder-manager-list').querySelectorAll('button')].some(node=>node.dataset.manageCategoryDelete==='Research & web'),'category manager populated').catch(error=>{console.log('SKILLS_DEBUG',f.$('#skills-status')?.textContent,'manager='+f.$('#skills-folder-manager-list')?.textContent?.slice(0,500));throw error;});
- const button=[...f.$('#skills-folder-manager-list').querySelectorAll('button')].find(node=>node.dataset.manageCategoryDelete==='Research & web');
- assert.ok(button,'virtual categories have delete controls');
- await f.click(button);
- assert.equal(f.$('#skills-folder-delete-confirm').hidden,false);
- assert.match(f.$('#skills-folder-delete-confirm').textContent,/No skill documents will be deleted/);
- await f.click('#skills-folder-delete-yes');
- await wait(async()=> (await folderStore.read()).removedCategories.includes('category:Research & web'),'category deleted');
- const job=await catalog.detail({id:'library-job-search'});
- assert.ok(job.content,'catalog content is unchanged');
- const restore=[...f.$('#skills-removed-category-list').querySelectorAll('button')].find(node=>node.dataset.restoreCategory==='Research & web');
- assert.ok(restore,'deleted category remains restorable');
- await f.click(restore);
- await wait(async()=> !(await folderStore.read()).removedCategories.includes('category:Research & web'),'category restored');
+ const f=planningDOM(t),ui=createRuntimeWorkspace({mount:f.mount,api});t.after(()=>ui.destroy());
+ ui.enter();await wait(()=>f.$('[data-runtime-item="layer:core"]'),'Runtime loaded');
+ const branch=id=>f.mount.querySelectorAll('[data-runtime-category]').find(node=>node.dataset.runtimeCategory===id);
+ const item=id=>f.$('[data-runtime-item="'+id+'"]');
+ const create=async(parent,name)=>{
+  await f.click('[data-add-category="'+parent+'"]');
+  await f.input('#runtime-category-name',name);
+  await f.$('#runtime-category-form').dispatch('submit');
+  await wait(async()=> (await folderStore.read()).folders.some(row=>row.name===name),'folder saved');
+  await wait(()=>f.$('#runtime-category-form').hidden,'create complete');
+  return (await folderStore.read()).folders.find(row=>row.name===name).id;
+ };
+ assert.ok(branch('runtime:skill').contains(branch('old-parent')));
+ assert.ok(branch('old-parent').contains(branch('old-child')));
+ assert.ok(branch('old-child').contains(item('skill:library-job-search')));
+ const parent=await create('runtime:system','Operating principles');
+ const child=await create(parent,'Owner policy');
+ assert.ok(branch('runtime:system').contains(branch(parent)));
+ assert.ok(branch(parent).contains(branch(child)));
+ await f.click(item('layer:core'));await wait(()=>f.$('#runtime-text').value==='CORE');
+ f.$('#runtime-move-target').value=child;await f.click('#runtime-move');
+ await wait(()=>branch(child).contains(item('layer:core')),'layer moved');
+ await f.click(item('skill:library-job-search'));await wait(()=>f.$('#runtime-text').value===original.content);
+ f.$('#runtime-move-target').value=child;await f.click('#runtime-move');
+ await wait(()=>branch(child).contains(item('skill:library-job-search')),'skill moved');
+ await f.click('[data-delete-category="'+parent+'"]');
+ await wait(()=>!branch(parent)&&branch('runtime:system').contains(branch(child)),'children promoted');
+ await f.click('[data-delete-category="'+child+'"]');
+ await wait(()=>!branch(child)&&branch('runtime:system').contains(item('skill:library-job-search')),'items promoted');
+ assert.equal((await folderStore.read()).runtimeAssignments['layer:core'],'runtime:system');
+ assert.equal((await folderStore.read()).assignments['library-job-search'],'runtime:system');
+ assert.deepEqual(await catalog.detail({id:'library-job-search'}),original);
+ await f.click(f.mount.querySelectorAll('[data-delete-category]').find(node=>node.dataset.deleteCategory==='category:Research & web'));
+ await wait(()=>!branch('category:Research & web'),'virtual category removed');
+ await f.click(f.mount.querySelectorAll('[data-restore-category]').find(node=>node.dataset.restoreCategory==='category:Research & web'));
+ await wait(()=>branch('category:Research & web'),'virtual category restored');
+ await f.click('[data-toggle-category="runtime:skill"]');
+ await f.input('#runtime-search','Legacy research');
+ assert.equal(branch('runtime:skill').querySelector('[data-toggle-category="runtime:skill"]').getAttribute('aria-expanded'),'true');
+ await f.input('#runtime-search','');
+ assert.equal(branch('runtime:skill').querySelector('[data-toggle-category="runtime:skill"]').getAttribute('aria-expanded'),'false');
+ ui.leave();ui.enter();await wait(()=>branch('runtime:system')?.contains(item('skill:library-job-search')),'organization reloaded');
+ assert.equal((await new SkillFolderStore({dataDir}).read()).assignments['library-job-search'],'runtime:system');
+ ui.openSkillId('library-job-search');
+ await wait(()=>f.$('#runtime-text').value===original.content&&!f.$('#runtime-delete').disabled,'skill deep link');
+ const body='---\nactivation: [judgment]\ndescription: exact metadata\n---\n# Changed in body\n\nOwner guidance.\n';
+ await f.input('#runtime-text',body);await f.$('#runtime-editor').dispatch('submit');
+ await wait(async()=> (await catalog.detail({id:'library-job-search'})).content===body,'front matter preserved');
+ await wait(()=>f.$('#runtime-text').value===body&&!f.$('#runtime-delete').disabled,'saved editor ready');
+ await f.input('#runtime-text',body+'stale draft\n');
+ const newer=await catalog.save({id:'library-job-search',value:{expectedRevision:(await catalog.detail({id:'library-job-search'})).revision,content:body+'newer revision\n'}});
+ await f.click('#runtime-refresh');
+ await wait(()=>f.$('#runtime-text').value===body+'stale draft\n'&&!f.$('#runtime-save').disabled,'draft preserved after refresh');
+ await f.$('#runtime-editor').dispatch('submit');
+ await wait(()=>f.$('#runtime-save-status').textContent.includes('Skill changed'),'revision conflict surfaced');
+ assert.equal((await catalog.detail({id:'library-job-search'})).content,newer.content);
+ assert.equal(f.$('#runtime-text').value,body+'stale draft\n');
 });
 
 test('Runtime supports adding, editing, disabling, deleting and restoring catalog items through the UI',async t=>{

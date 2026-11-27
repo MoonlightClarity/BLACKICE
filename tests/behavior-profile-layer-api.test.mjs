@@ -48,10 +48,14 @@ test('local Behavior & Profile endpoints edit, add, disable, restore and delete 
  const first=await read('/api/execution-layers');
  app.engine.runs.set('runtime-observed-fixture',{nodes:{agent:{instructionAudit:{version:1,
   sections:[{id:'runtime-discovered-fixture',title:'Observed runtime instruction',source:'lib/fixture.mjs',
-   layer:'prompt',role:'user',text:'OBSERVED_BEHAVIOR_871'}]}}}});
+   layer:'prompt',role:'user',text:'OBSERVED_BEHAVIOR_871'},
+   {id:'skill-library-job-search',title:'Job Search',source:'Owner skill: library-job-search',
+    layer:'prompt',role:'user',text:'STALE_JOB_GUIDANCE_872'}]}}}});
  const discovered=await read('/api/execution-layers');
- assert.equal(discovered.layers.find(layer=>layer.id==='runtime-discovered-fixture')?.text,'OBSERVED_BEHAVIOR_871',
-  'recent observed model instructions become editable without a manually supplied run ID');
+ assert.deepEqual(discovered.layers,first.layers,'historical receipts must never create editable runtime layers');
+ assert.equal((await put('/api/execution-layers',{action:'replace',id:'skill-library-job-search',text:'SHADOW_SKILL',expectedRevision:first.revision})).status,404);
+ assert.equal((await put('/api/execution-layers',{action:'disable',id:'runtime-discovered-fixture',expectedRevision:first.revision})).status,404);
+ assert.equal(app.engine.runs.get('runtime-observed-fixture').nodes.agent.instructionAudit.sections[1].text,'STALE_JOB_GUIDANCE_872','historical evidence is unchanged');
  app.engine.runs.delete('runtime-observed-fixture');
 
  assert.ok(first.layers.some(layer=>layer.id==='core'&&layer.role==='developer'));

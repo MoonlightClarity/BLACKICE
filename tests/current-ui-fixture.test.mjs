@@ -10,6 +10,13 @@ test('current UI fixture serves release Skills without loading a removed memory 
  const catalog=await (await get('/api/skills')).json();assert.ok(catalog.entries.some(x=>x.id==='builtin-decomposition'));
  const detail=await (await get('/api/skills/builtin-decomposition')).json();assert.equal(detail.immutable,true);
  assert.deepEqual((await (await get('/api/skills/folders')).json()).folders,[]);
+ assert.deepEqual((await (await get('/api/runtime/organization')).json()).folders,[]);
+ const shell=await (await get('/next/')).text();
+ assert.doesNotMatch(shell,/data-space="skills"/);
+ assert.match(shell,/data-space="runtime"/);
+ const app=await (await get('/next/app.mjs')).text();
+ assert.doesNotMatch(app,/import\('\.\/workspaces\/skills\.mjs'\)/);
+ assert.match(app,/if\(name==='skills'\)\{name='runtime'/);
  assert.equal((await get('/next/core/folder-tree.mjs')).status,200);
  assert.equal(typeof fixture.close,'function');assert.equal('knowledge'in fixture,false);
 });

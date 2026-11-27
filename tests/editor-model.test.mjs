@@ -113,3 +113,10 @@ test('artifact resolution preserves escaping, literal code, HTTP links and inert
   assert.equal(renderMarkdown('[file](./status.svg)', { resolveArtifact: () => ({ taskId: 'bad" onclick="x', artifactId: 'registered' }) }).includes('data-task-artifact'), false);
   assert.equal(renderMarkdown('[file](./status.svg)', { resolveArtifact: () => { throw new Error('missing'); } }).includes('data-task-artifact'), false);
 });
+
+test('diagnostic tables render through chat markdown with escaped cell content', () => {
+  const result = renderMarkdown('| Component | Change | Acceptance check |\n|---|---|---|\n| Browser | A\\|B | <check> |');
+  assert.match(result, /<thead><tr><th scope="col">Component/);
+  assert.match(result, /<td>A\|B<\/td><td>&lt;check&gt;<\/td>/);
+  assert.doesNotMatch(renderMarkdown('| A | B |\n|invalid|---|'), /<table>/);
+});

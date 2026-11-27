@@ -3,6 +3,8 @@ import {stableId} from '../core/dom.mjs';
 const ACTIONS=new Set(['set','update','pause','resume','clear']);
 const RESUMABLE=new Set(['paused','blocked','interrupted','budget_exhausted']);
 const ACTIVE_GOAL=new Set(['active','waiting']);
+const EDITOR_STALE_MESSAGE='This Goal changed while you were editing. Your draft has not been submitted. Close and reopen the editor to review the newer Goal.';
+const EDITOR_READONLY_MESSAGE='This conversation is read-only. Your draft has not been submitted.';
 const toComputerDateTime=iso=>{if(!iso)return '';const d=new Date(iso);if(!Number.isFinite(d.getTime()))return '';const two=v=>String(v).padStart(2,'0');return [d.getFullYear(),two(d.getMonth()+1),two(d.getDate())].join('-')+'T'+two(d.getHours())+':'+two(d.getMinutes())+':'+two(d.getSeconds());};
 export const computerDeadlineInput=value=>{
   const match=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)(?::(\d\d))?$/.exec(value);
@@ -31,6 +33,17 @@ export function goalDraftObjective({draft='',firstTask='',turns=0}={}) {
   const refinement=task&&Number(turns)>1?'\n\nHonor all corrections, constraints and decisions established later in this same conversation. Verify the agreed outcome before declaring completion.':'';
   return initial.slice(0,12000-refinement.length)+refinement;
 }
+/**
+ * Self-driving is a reusable ordinary Goal objective, not a separate engine,
+ * permission mode, scheduler, or source of verification authority.
+ * Its starting wording was used in the verified plain-Goal feasibility runs.
+ */
+export const SELF_DRIVING_GOAL_OBJECTIVE = [
+  'Use the accessible workspace to identify and perform worthwhile, permitted work independently.',
+  'Inspect actual source records and operational artifacts, correct any demonstrable discrepancies in editable operational artifacts, verify the saved results and any linked requirements, then continue exploring other useful opportunities.',
+  'Preserve original source evidence and any standing owner restrictions. Do not invent work or substitute a report for a feasible repair.'
+].join(' ');
+
 export function parseGoalCommand(value) {
   const match=String(value??'').trim().match(/^\/goal(?:\s+([\s\S]*))?$/i);
   if(!match)return null;
@@ -44,6 +57,7 @@ export function parseGoalCommand(value) {
   const control=body.toLowerCase();
   if(['pause','resume','clear'].includes(control))return {action:control};
   if(['continue','unpause'].includes(control))return {action:'resume'};
+  if(control==='self-driving')return {action:'set',objective:SELF_DRIVING_GOAL_OBJECTIVE};
   return {action:'set',objective:body};
 }
 export function goalPresentation(goal,{running=false}={}) {
@@ -62,7 +76,7 @@ export async function updateConversationGoal({api,conversationId,goal,action,obj
   if(!conversationId||conversationId==='new')throw Error('Start a conversation before changing its saved goal.');
   if(!ACTIONS.has(action))throw Error('Unknown goal action.');
   if(['set','update'].includes(action)&&(!String(objective??'').trim()))throw Error('Enter an objective for this goal.');
-  if(maxTurns!==undefined&&maxTurns!==null&&(!Number.isInteger(maxTurns)||maxTurns<1))throw Error('Use a positive whole number for the turn limit, or leave it empty.');
+  if(maxTurns!==undefined&&maxTurns!==null&&(!Number.isSafeInteger(maxTurns)||maxTurns<1))throw Error('Use a positive whole number for the turn limit, or leave it empty.');
   return api('/api/conversations/'+encodeURIComponent(conversationId)+'/goal','POST',{
     ...(['set','resume'].includes(action)?executionOptions:{}),action,requestId:stableId('goal'),
     ...(action==='pause'&&goal?.running&&goal?.currentRunId?{pauseRunId:goal.currentRunId}:{}),
@@ -79,6 +93,28 @@ export async function updateConversationGoal({api,conversationId,goal,action,obj
 export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},onChange=()=>{},onGoalChange=()=>{},notify=()=>{},onError=()=>{}}) {
   let owner='new',goal=null,loading=false,busy=false,locked=false,readonly=false,working=false,destroyed=false,readToken=0,editorOwner=null;
   let readError='',queuedRead=null;
+  let specificGoalDraft='',selfDrivingGoalDraft=SELF_DRIVING_GOAL_OBJECTIVE,editorType='specific',editorBinding=null;
+  // Goal revisions advance during ordinary progress; only a change of the
+  // owner-controlled configuration invalidates an open editor.
+  const goalEditBinding=current=>current?JSON.stringify({
+    id:current.id??null,generation:current.generation??null,
+    // Starting or finishing a Goal changes what Save means. A running Goal
+    // can move between active and waiting without invalidating its editor.
+    lifecycle:ACTIVE_GOAL.has(current.status)?'enabled':(current.status??null),
+    objective:current.objective??'',maxTurns:current.maxTurns??null,
+    deadlineAt:current.deadlineAt??null,deadlineTimeZone:current.deadlineTimeZone??null,
+    deadlineExpiredAt:current.deadlineExpiredAt??null
+  }):null;
+  const editorStale=()=>editorOwner!==null&&editorBinding!==goalEditBinding(goal);
+  const editorBlockReason=()=>readonly?EDITOR_READONLY_MESSAGE:editorStale()?EDITOR_STALE_MESSAGE:'';
+  const showEditorBlock=()=>{
+    if(!view.goalDialog.open)return;
+    const reason=editorBlockReason();
+    if(reason){view.goalError.textContent=reason;view.goalError.hidden=false;}
+    else if([EDITOR_READONLY_MESSAGE,EDITOR_STALE_MESSAGE].includes(view.goalError.textContent)){
+      view.goalError.textContent='';view.goalError.hidden=true;
+    }
+  };
   const paint=()=>{
     if(destroyed)return;
     const current=goalPresentation(goal,{running:working});
@@ -99,11 +135,27 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
       view.goalPause.hidden=!current.canPause;view.goalResume.hidden=!current.canResume;
       for(const control of [view.goalEdit,view.goalPause,view.goalResume,view.goalClear])control.disabled=busy||locked||readonly;
     }
-    view.goalSave.disabled=busy||locked;view.goalCancel.disabled=busy||locked;view.goalInput.readOnly=busy||locked;view.goalLimit.disabled=busy||locked;view.goalDeadlineInput.disabled=busy||locked;
+    const blocked=Boolean(editorBlockReason());
+    if(view.goalDialog.open){
+      if(editorType==='self-driving')view.goalType.setAttribute('aria-describedby','next-chat-goal-mode-help');
+      else view.goalType.removeAttribute('aria-describedby');
+      const creating=!goal||goal.status==='completed';
+      view.goalSave.textContent=creating
+        ? editorType==='self-driving'?'Start Self-driving Goal':'Start Goal'
+        : ACTIVE_GOAL.has(goal.status)?'Save & continue':'Save Goal';
+    }
+    view.goalSave.disabled=busy||locked||blocked;
+    view.goalCancel.disabled=busy||locked;
+    view.goalInput.readOnly=busy||locked||readonly;
+    view.goalType.disabled=busy||locked||readonly||editorStale();
+    view.goalLimit.disabled=busy||locked||blocked;
+    view.goalDeadlineInput.disabled=busy||locked||blocked;
+    showEditorBlock();
     view.goalCard.setAttribute('aria-busy',String(busy));
   };
   const closeEditor=()=>{
-    editorOwner=null;if(view.goalDialog.open)view.goalDialog.close();
+    editorOwner=null;editorBinding=null;
+    if(view.goalDialog.open)view.goalDialog.close();
   };
   async function refresh() {
     if(destroyed||owner==='new')return null;
@@ -129,7 +181,7 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     if(next&&goal&&next.id===goal.id&&Number(next.revision)<Number(goal.revision))return false;
     ++readToken;loading=false;goal=next??null;readError='';paint();onGoalChange(goal,target);return true;
   }
-  async function act(action,values={}) {
+  async function act(action,values={}, {fromEditor=false}={}) {
     if(destroyed||busy||locked||readonly)return false;
     const target=owner;
     busy=true;paint();onChange();
@@ -137,6 +189,10 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
       if(loading&&queuedRead)await queuedRead.catch(()=>{});
       if(target!==owner||destroyed)return false;
       if(readError)throw Error(readError);
+      // A refresh may have completed while this action waited for saved
+      // state. Recheck the exact editor's owner-controlled configuration
+      // immediately before dispatching the revision-checked POST.
+      if(fromEditor&&editorBlockReason())throw Error(editorBlockReason());
       const result=await updateConversationGoal({api,conversationId:target,goal,action,...values,
         executionOptions:getContext()?.executionOptions||{}});
       if(accept(result?.goal??null,target))await onResult(result,target);
@@ -146,16 +202,29 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
   }
   function showEditor() {
     if(destroyed||busy||locked||loading||readonly)return;
-    editorOwner=owner;
+    editorOwner=owner;editorBinding=goalEditBinding(goal);
     const context=getContext()||{},turns=Math.max(0,Number(context.calibration?.turns)||0);
-    view.goalInput.value=goal?.objective||goalDraftObjective({draft:context.draft,firstTask:context.calibration?.firstTask,turns});
+    const existing=goal?.objective||goalDraftObjective({draft:context.draft,firstTask:context.calibration?.firstTask,turns});
+    const selfDriving=existing.startsWith(SELF_DRIVING_GOAL_OBJECTIVE);
+    specificGoalDraft=selfDriving?'':existing;
+    selfDrivingGoalDraft=selfDriving?existing:SELF_DRIVING_GOAL_OBJECTIVE;
+    editorType=selfDriving?'self-driving':'specific';
+    view.goalType.value=editorType;
+    view.goalModeHelp.hidden=!selfDriving;
+    view.goalInput.value=existing;
     view.goalLimit.value=goal?.maxTurns==null?'':String(goal.maxTurns);
     view.goalDeadlineInput.value=toComputerDateTime(goal?.deadlineAt);
     view.goalDeadlineInput.dataset.original=view.goalDeadlineInput.value;
     view.goalTitle.textContent=goal&&goal.status!=='completed'?'Edit Goal':'Create Goal';
-    view.goalSave.textContent=goal&&goal.status!=='completed'?'Save Goal':'Create Goal';
+    // Save action text is controlled by paint(), which also reflects the
+    // selected starting point and whether the existing Goal is running.
     if(view.goalContext){view.goalContext.hidden=owner==='new';view.goalContext.textContent=owner==='new'?'':`Using this chat’s ${turns} saved ${turns===1?'turn':'turns'} as context. Your corrections and selected settings stay with this conversation.`;}
-    view.goalError.hidden=true;view.goalDialog.showModal();view.goalInput.focus({preventScroll:true});
+    view.goalError.hidden=true;
+    view.goalDialog.showModal();
+    paint(); // Restore editable controls after a previous stale or read-only editor.
+    // Expose the starting-point choice on creation; preserve direct text
+    // editing focus when reopening an existing Goal.
+    (goal?view.goalInput:view.goalType).focus({preventScroll:true});
   }
   async function command(command,{consumeDraft=true}={}) {
     if(!command)return false;
@@ -185,23 +254,42 @@ export function createGoalControls({view,api,getContext,onStart,onResult=()=>{},
     else showEditor();
   });
   view.goalEdit.addEventListener('click',showEditor);
+  view.goalType.addEventListener('change',()=>{
+    if(destroyed||busy||locked||readonly||editorStale()||!view.goalDialog.open)return;
+    if(!['specific','self-driving'].includes(view.goalType.value)||editorType===view.goalType.value)return;
+    if(view.goalType.value==='self-driving'){
+      specificGoalDraft=view.goalInput.value;
+      view.goalInput.value=selfDrivingGoalDraft;
+      view.goalModeHelp.hidden=false;
+    }else{
+      selfDrivingGoalDraft=view.goalInput.value;
+      view.goalInput.value=specificGoalDraft;
+      view.goalModeHelp.hidden=true;
+    }
+    editorType=view.goalType.value;
+    paint();
+    view.goalInput.focus({preventScroll:true});
+  });
   view.goalCancel.addEventListener('click',closeEditor);
-  view.goalDialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();else editorOwner=null;});
+  view.goalDialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();else{editorOwner=null;editorBinding=null;}});
   for(const [button,action]of [[view.goalPause,'pause'],[view.goalResume,'resume'],[view.goalClear,'clear']])
     button.addEventListener('click',()=>void act(action).catch(()=>{}));
   view.goalForm.addEventListener('submit',async event=>{
-    event.preventDefault();if(busy||locked||editorOwner!==owner)return;
+    event.preventDefault();
+    if(busy||locked||editorOwner!==owner)return;
+    const blocked=editorBlockReason();
+    if(blocked){view.goalError.textContent=blocked;view.goalError.hidden=false;paint();return;}
     const objective=view.goalInput.value.trim(),limit=view.goalLimit.value.trim();
     const maxTurns=limit===''?null:Number(limit);
     const deadlineValue=view.goalDeadlineInput.value, original=view.goalDeadlineInput.dataset.original||'';
     view.goalError.hidden=true;
     try{
       if(!objective)throw Error('Enter the outcome you want BLACKICE to achieve.');
-      if(maxTurns!==null&&(!Number.isInteger(maxTurns)||maxTurns<1))throw Error('Use a positive whole number for the turn limit, or leave it empty.');
+      if(maxTurns!==null&&(!Number.isSafeInteger(maxTurns)||maxTurns<1))throw Error('Use a positive whole number for the turn limit, or leave it empty.');
       const deadlineOptions=deadlineValue===original?{}:deadlineValue?computerDeadlineInput(deadlineValue):{deadlineAt:null};
       let result;
       if(owner==='new')result=await command({action:'set',objective,maxTurns,...deadlineOptions},{consumeDraft:false});
-      else result=await act(goal&&goal.status!=='completed'?'update':'set',{objective,maxTurns,...deadlineOptions});
+      else result=await act(goal&&goal.status!=='completed'?'update':'set',{objective,maxTurns,...deadlineOptions},{fromEditor:true});
       if(result)closeEditor();
     }catch(error){view.goalError.textContent=String(error?.message||error);view.goalError.hidden=false;}
   });

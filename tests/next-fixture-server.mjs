@@ -125,7 +125,7 @@ export function makeFixture({heavyHistory=false,largeCatalog=false,largeWorkflow
     if(await settingsFixture.handle(req,res,url))return;
     if(await planningFixture(req,res,url))return;
     if(pathname==='/api/skills'&&req.method==='GET')return json(res,await skillsCatalog.list({query:url.searchParams.get('query')||''}));
-    if(pathname==='/api/skills/folders'&&req.method==='GET')return json(res,{version:1,revision:0,folders:[],assignments:{}});
+    if((pathname==='/api/skills/folders'||pathname==='/api/runtime/organization')&&req.method==='GET')return json(res,{version:1,revision:0,folders:[],assignments:{}});
     const skillId=skillIdFromRequestPath(pathname);
     if(skillId&&req.method==='GET'){try{return json(res,await skillsCatalog.detail({id:skillId}));}catch(error){return json(res,{error:error.message},error.status||400);}}
     if(pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});res.write('data: '+JSON.stringify({type:'runtime.status',data:state.status})+'\n\n');subscribers.add(res);res.on('close',()=>subscribers.delete(res));return;}

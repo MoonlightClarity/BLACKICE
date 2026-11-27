@@ -5,7 +5,7 @@ import { text, formatDate } from '../core/dom.mjs';
 import { runText, displayChatRequest, messagesOfRun, chatResponseState, windowedRuns, windowedMessages, CHAT_MESSAGE_BATCH, rootId, lastRunId, running, CHAT_INDEX_BATCH, conversationIndexWindow, conversationGoalStatus, projectSkillLoadReceipts, projectPlanningModuleReceipts } from './model.mjs';
 import { chatOptionChoices } from './options-model.mjs';
 import { createRegisteredArtifactResolver } from '../../conversation-model.mjs';
-import { chatToolFailure } from './tool-failure.mjs';
+import { chatToolFailure,projectToolFailureHistory } from './tool-failure.mjs';
 import { taskPlanView } from '../../task-plan-model.mjs';
 import { chatDisplayPhases, chatWorkSummary, chatProgressPreview, chatOutlineStatusLabel } from './planning-timeline.mjs';
 
@@ -69,7 +69,7 @@ export function createChatFrame(mount) {
     '</form>',
     '<p id="next-chat-hint" class="next-chat-hint" role="status">Enter to send · Shift+Enter for a new line</p>',
     '</footer></div>',
-    '<dialog id="next-chat-goal-dialog" class="next-chat-management-dialog next-chat-goal-dialog" aria-labelledby="next-chat-goal-title"><form id="next-chat-goal-form"><h2 id="next-chat-goal-title">Create Goal</h2><p>Goal Mode tracks one explicit objective and its completion evidence.</p><p id="next-chat-goal-context" class="next-chat-goal-context" hidden></p><label class="next-label">Objective and completion criteria<textarea id="next-chat-goal-input" class="next-field" rows="5" maxlength="12000" required placeholder="Describe the outcome and how to know it is done."></textarea></label><label class="next-label">Turn limit (optional)<input id="next-chat-goal-limit" class="next-field" type="number" min="1" step="1" inputmode="numeric" placeholder="No limit"></label><label class="next-label">Stop at computer-local time (optional)<input id="next-chat-goal-deadline-input" class="next-field" type="datetime-local" step="1"></label><p class="next-help">A phrase such as until 6 AM EST also establishes an automatic stop. EST is fixed UTC-05:00; Eastern follows daylight saving time. Saved deadlines do not reset on Resume.</p><p class="next-help">Goal Mode is optional. Turning it off retains the saved goal and progress.</p><p id="next-chat-goal-error" role="alert" hidden></p><div class="next-chat-dialog-actions"><button id="next-chat-goal-cancel" type="button">Cancel</button><button id="next-chat-goal-save" type="submit" class="next-primary">Save Goal</button></div></form></dialog><dialog id="next-chat-trash-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-trash-title">',
+    '<dialog id="next-chat-goal-dialog" class="next-chat-management-dialog next-chat-goal-dialog" aria-labelledby="next-chat-goal-title"><form id="next-chat-goal-form"><h2 id="next-chat-goal-title">Create Goal</h2><p>Goal Mode tracks one explicit objective and its completion evidence.</p><p id="next-chat-goal-context" class="next-chat-goal-context" hidden></p><label class="next-label">Start from<select id="next-chat-goal-type" class="next-field" aria-label="Goal starting point"><option value="specific">Specific objective</option><option value="self-driving">Self-driving: explore useful work</option></select></label><p id="next-chat-goal-mode-help" class="next-help" hidden>Self-driving fills an editable workspace-focused objective in ordinary Goal Mode. It can inspect and change permitted files. Your existing restrictions, Stop, and deadlines still apply. With no turn limit or stop time, it can continue until the Goal finishes or you stop it.</p><label class="next-label">Objective and completion criteria<textarea id="next-chat-goal-input" class="next-field" rows="5" maxlength="12000" required placeholder="Describe the outcome and how to know it is done."></textarea></label><label class="next-label">Turn limit (optional)<input id="next-chat-goal-limit" class="next-field" type="number" min="1" step="1" inputmode="numeric" placeholder="No limit"></label><label class="next-label">Stop at computer-local time (optional)<input id="next-chat-goal-deadline-input" class="next-field" type="datetime-local" step="1"></label><p class="next-help">A phrase such as until 6 AM EST also establishes an automatic stop. EST is fixed UTC-05:00; Eastern follows daylight saving time. Saved deadlines do not reset on Resume.</p><p class="next-help">Goal Mode is optional. Turning it off retains the saved goal and progress.</p><p id="next-chat-goal-error" role="alert" hidden></p><div class="next-chat-dialog-actions"><button id="next-chat-goal-cancel" type="button">Cancel</button><button id="next-chat-goal-save" type="submit" class="next-primary">Save Goal</button></div></form></dialog><dialog id="next-chat-trash-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-trash-title">',
     '<h2 id="next-chat-trash-title">Move to Trash?</h2><p id="next-chat-trash-message"></p><p>You can restore the chats, but their Receipts will be permanently removed. Saved messages and files are preserved.</p>',
     '<div class="next-chat-dialog-actions"><button id="next-chat-trash-cancel" type="button" autofocus>Cancel</button><button id="next-chat-trash-confirm" type="button">Move to Trash</button></div></dialog>',
     '<dialog id="next-chat-task-dialog" class="next-chat-management-dialog" aria-labelledby="next-chat-task-title">',
@@ -108,7 +108,7 @@ export function createChatFrame(mount) {
     stop:find('next-chat-stop'),scroll:find('next-chat-scroll'),timeline:find('next-chat-timeline'),
     cycleNotice:find('next-chat-cycle-notice'),cycleStatus:find('next-chat-cycle-status'),openPlan:find('next-chat-open-plan'),executionMode:find('next-chat-execution-mode'),
     form:find('next-chat-form'),input:find('next-chat-input'),attachments:find('next-chat-attachments'),model:find('next-chat-model'),
-    goalToggle:find('next-chat-goal-toggle'),goalCard:find('next-chat-goal-card'),goalStatus:find('next-chat-goal-status'),goalObjective:find('next-chat-goal-objective'),goalProgress:find('next-chat-goal-progress'),goalDeadline:find('next-chat-goal-deadline'),goalReason:find('next-chat-goal-reason'),goalEdit:find('next-chat-goal-edit'),goalPause:find('next-chat-goal-pause'),goalResume:find('next-chat-goal-resume'),goalClear:find('next-chat-goal-clear'),goalDialog:find('next-chat-goal-dialog'),goalForm:find('next-chat-goal-form'),goalTitle:find('next-chat-goal-title'),goalInput:find('next-chat-goal-input'),goalContext:find('next-chat-goal-context'),goalLimit:find('next-chat-goal-limit'),goalDeadlineInput:find('next-chat-goal-deadline-input'),goalError:find('next-chat-goal-error'),goalCancel:find('next-chat-goal-cancel'),goalSave:find('next-chat-goal-save'),
+    goalToggle:find('next-chat-goal-toggle'),goalCard:find('next-chat-goal-card'),goalStatus:find('next-chat-goal-status'),goalObjective:find('next-chat-goal-objective'),goalProgress:find('next-chat-goal-progress'),goalDeadline:find('next-chat-goal-deadline'),goalReason:find('next-chat-goal-reason'),goalEdit:find('next-chat-goal-edit'),goalPause:find('next-chat-goal-pause'),goalResume:find('next-chat-goal-resume'),goalClear:find('next-chat-goal-clear'),goalDialog:find('next-chat-goal-dialog'),goalForm:find('next-chat-goal-form'),goalTitle:find('next-chat-goal-title'),goalInput:find('next-chat-goal-input'),goalContext:find('next-chat-goal-context'),goalType:find('next-chat-goal-type'),goalModeHelp:find('next-chat-goal-mode-help'),goalLimit:find('next-chat-goal-limit'),goalDeadlineInput:find('next-chat-goal-deadline-input'),goalError:find('next-chat-goal-error'),goalCancel:find('next-chat-goal-cancel'),goalSave:find('next-chat-goal-save'),
     effort:find('next-chat-effort'),tier:find('next-chat-tier'),pastChats:find('next-chat-past-chats'),directoryActions:find('next-chat-directory-actions'),chatPlanning:find('next-chat-planning-actions'),send:find('next-chat-send'),hint:find('next-chat-hint') };
 }
 
@@ -408,10 +408,10 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     const delivery=chatResponseState(run,allMessages);
     const {shown:messages,hidden:olderMessages}=windowedMessages(
       allMessages,messageLimits?.get(run.id)??CHAT_MESSAGE_BATCH);
-    const failure=chatRunError(run),toolFailure=run.toolFailure??chatToolFailure(run);
+    const failure=chatRunError(run),toolFailure=run.toolFailure??chatToolFailure(run),toolFailureHistory=projectToolFailureHistory(run.toolFailureHistory);
     const skillLoads=projectSkillLoadReceipts(run.skillLoadReceipts);
     const planningModules=projectPlanningModuleReceipts(run);
-    const signature=[run,...planningModules.flatMap(receipt=>[receipt.moduleId,receipt.phase]),...skillLoads.flatMap(receipt=>[receipt.type,receipt.skillId,receipt.title]),run.status,run.settled,run.output,failure?.message,failure?.code,toolFailure?.label,toolFailure?.detail,request,run.retryOf,earlier&&displayChatRequest(earlier),
+    const signature=[run,...planningModules.flatMap(receipt=>[receipt.moduleId,receipt.phase]),...skillLoads.flatMap(receipt=>[receipt.type,receipt.skillId,receipt.title]),run.status,run.settled,run.output,failure?.message,failure?.code,toolFailure?.label,toolFailure?.detail,JSON.stringify(toolFailureHistory),request,run.retryOf,earlier&&displayChatRequest(earlier),
       run===shown.at(-1),run.taskState,run.taskState?.revision,run.planningActivity,run.workflow,markdown,
       delivery.missing,delivery.pausedAfterPlan,delivery.needsFollowup,delivery.errors.join('\n'),
       messageLimits?.get(run.id),allMessages.length,...(run.attachmentIds||[]).flatMap(id=>[id,getAttachment?.(id)?.name]),
@@ -625,7 +625,16 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     const completedLabel=directoryIncomplete?'Task incomplete':delivery.missing?'No response received':delivery.pausedAfterPlan?'Plan ready':'Response saved';
     const pill=text(footer,run.status==='completed'&&run.settled===true?completedLabel:run.status==='completed'&&run.settled===false?'Finishing…':run.status||'saved','span','next-status-pill');
     pill.dataset.state=run.status||'saved';
-    if(toolFailure&&run.settled===true){
+    if(toolFailureHistory?.receipts?.length){
+      const history=text(footer,'','details','next-turn-note');
+      text(history,'Tool failure receipts ('+toolFailureHistory.total+')','summary');
+      for(const row of toolFailureHistory.receipts){
+        const stamp=row.at?row.at.replace('T',' ').replace(/\.\d{3}Z$/,' UTC'):'';
+        const disposition=row.recovered?' · recovered':row.actionDispatched===false?' · not dispatched':row.actionDispatched===true?' · dispatched':' · dispatch unknown';
+        text(history,[stamp,row.tool,row.action,row.code,Number.isInteger(row.exitCode)?'exit '+row.exitCode:''].filter(Boolean).join(' · ')+disposition,'p');
+      }
+      if(toolFailureHistory.omitted)text(history,toolFailureHistory.omitted+' older failures not included in this bounded Chat receipt.','p');
+    }else if(toolFailure&&run.settled===true){
       const receipt=text(footer,'','details','next-turn-note');
       text(receipt,toolFailure.label,'summary');
       text(receipt,toolFailure.detail,'p');

@@ -4,7 +4,7 @@ import {planningDOM} from './fixture-planning-dom.mjs';
 import {projectConversationGoal,conversationGoalStatus,chatHeaderStatus} from '../public/next/chat/model.mjs';
 import {projectFamily} from '../public/next/chat/reader-model.mjs';
 import {createChatFrame,paintIndex} from '../public/next/chat/render.mjs';
-import {createGoalControls,parseGoalCommand,goalPresentation,updateConversationGoal} from '../public/next/chat/goals.mjs';
+import {createGoalControls,parseGoalCommand,goalPresentation,updateConversationGoal,SELF_DRIVING_GOAL_OBJECTIVE} from '../public/next/chat/goals.mjs';
 import {submitChat} from '../public/next/chat/send.mjs';
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r;});return{promise,resolve};};
@@ -51,6 +51,7 @@ test('calibrate an existing chat, turn autonomy on, off, and on again without a 
   await view.goalToggle.dispatch('click');
   assert.equal(view.goalDialog.open,true);
   assert.equal(view.goalTitle.textContent,'Create Goal');
+  assert.equal(view.goalSave.textContent,'Start Goal','Creating an enabled Goal must not be labeled as a passive save');
   assert.match(view.goalInput.value,/^Audit the release process/);
   assert.match(view.goalInput.value,/corrections, constraints and decisions established later/);
   assert.match(view.goalContext.textContent,/4 saved turns/);
@@ -87,6 +88,7 @@ test('new chats keep autonomy off until an explicit configuration is submitted',
   await view.goalToggle.dispatch('click');
   assert.equal(view.goalDialog.open,true);
   assert.equal(starts.length,0);
+  assert.equal(globalThis.document.activeElement,view.goalType,'Creating a Goal focuses the starting-point choice');
   assert.equal(view.goalInput.value,'Review the architecture');
   await view.goalCancel.dispatch('click');
   assert.equal(starts.length,0);
@@ -106,10 +108,226 @@ test('/goal commands are explicit and literal objectives preserve their full tex
   assert.deepEqual(parseGoalCommand('/goal continue'),{action:'resume'});
   assert.deepEqual(parseGoalCommand('/goal clear'),{action:'clear'});
   assert.deepEqual(parseGoalCommand('/goal -- pause'),{action:'set',objective:'pause'});
+  assert.deepEqual(parseGoalCommand('/goal self-driving'),{action:'set',objective:SELF_DRIVING_GOAL_OBJECTIVE});
+  assert.deepEqual(parseGoalCommand('/goal -- self-driving'),{action:'set',objective:'self-driving'});
   assert.deepEqual(parseGoalCommand('/goal Build the UI\nand verify keyboard controls.'),{action:'set',objective:'Build the UI\nand verify keyboard controls.'});
   assert.equal(parseGoalCommand('/goals'),null);
   assert.equal(parseGoalCommand('Explain /goal'),null);
   assert.throws(()=>parseGoalCommand('/goal --'),/objective/);
+});
+
+test('Self-driving is an editable subfunction of Goal creation and uses the original Goal admission',async t=>{
+  const {view}=fixture(t),starts=[];
+  const controls=createGoalControls({view,api:()=>assert.fail('No separate API is called for Self-driving'),
+    getContext:()=>({draft:'Keep this specific objective available.'}),
+    onStart:async(goal,options)=>{starts.push({goal,options});return {run:{id:'first'}};}});
+  t.after(()=>controls.destroy());
+  await view.goalToggle.dispatch('click');
+  assert.equal(view.goalType.value,'specific');
+  assert.equal(view.goalInput.value,'Keep this specific objective available.');
+  assert.equal(view.goalModeHelp.hidden,true);
+  view.goalType.value='self-driving';
+  await view.goalType.dispatch('change');
+  assert.equal(view.goalInput.value,SELF_DRIVING_GOAL_OBJECTIVE);
+  assert.equal(view.goalModeHelp.hidden,false);
+  assert.equal(view.goalType.getAttribute('aria-describedby'),'next-chat-goal-mode-help','The selected starting point exposes its explanation to assistive technology');
+  assert.equal(view.goalSave.textContent,'Start Self-driving Goal');
+  assert.match(view.goalModeHelp.textContent,/ordinary Goal Mode/);
+  assert.match(view.goalModeHelp.textContent,/no turn limit/i);
+  assert.equal(starts.length,0,'Selecting a Goal type never starts work');
+  view.goalInput.value+=' Limit changes to reversible actions.';
+  const customized=view.goalInput.value;
+  await view.goalType.dispatch('change');
+  assert.equal(view.goalInput.value,customized,'Repeated change event cannot clobber the current draft');
+  view.goalType.value='specific';await view.goalType.dispatch('change');
+  assert.equal(view.goalSave.textContent,'Start Goal');
+  assert.equal(view.goalType.getAttribute('aria-describedby'),null,'Specific Goals do not announce irrelevant Self-driving instructions');
+  assert.equal(view.goalInput.value,'Keep this specific objective available.');
+  view.goalType.value='self-driving';await view.goalType.dispatch('change');
+  assert.equal(view.goalInput.value,customized,'Preserve edits when switching between Goal types');
+  view.goalLimit.value='8';
+  await view.goalForm.dispatch('submit');
+  assert.equal(starts.length,1);
+  assert.deepEqual(starts[0],{goal:{objective:customized,maxTurns:8},options:{consumeDraft:false}});
+  assert.equal(Object.hasOwn(starts[0].goal,'selfDriving'),false,'Ordinary Goal Mode is the sole executor');
+  assert.equal(view.goalDialog.open,false);
+});
+
+test('a saved Self-driving objective edits and pauses through the existing Goal endpoint',async t=>{
+  const {view}=fixture(t),posts=[];
+  let goal=savedGoal({objective:SELF_DRIVING_GOAL_OBJECTIVE,status:'paused',maxTurns:7});
+  const controls=createGoalControls({view,
+    api:async(_route,method,body)=>{
+      if(method==='GET')return {goal};
+      posts.push(body);
+      goal={...goal,...body,revision:goal.revision+1};return {goal};
+    },
+    getContext:()=>({runId:'run-one'}),
+    onStart:()=>assert.fail('Editing an existing Self-driving Goal must not create a conversation')});
+  t.after(()=>controls.destroy());
+  controls.update({conversationId:'one'});await tick();
+  await view.goalEdit.dispatch('click');
+  assert.equal(view.goalType.value,'self-driving');
+  assert.equal(view.goalInput.value,SELF_DRIVING_GOAL_OBJECTIVE);
+  assert.equal(view.goalModeHelp.hidden,false);
+  assert.equal(view.goalSave.textContent,'Save Goal','Saving a paused Goal does not activate it');
+  assert.equal(view.goalLimit.value,'7');
+  view.goalInput.value+=' Respect newer owner instructions.';
+  await view.goalForm.dispatch('submit');
+  assert.equal(posts.length,1);
+  assert.equal(posts[0].action,'update');
+  assert.equal(posts[0].maxTurns,7);
+  assert.match(posts[0].objective,/Respect newer owner instructions/);
+  assert.equal('selfDriving' in posts[0],false,'No extra backend mode or permissions');
+  assert.equal(view.goalDialog.open,false);
+  assert.equal(view.goalStatus.textContent,'Paused');
+  await view.goalEdit.dispatch('click');
+  assert.equal(view.goalType.value,'self-driving','A customized Self-driving Goal stays recognizable in the editor');
+  assert.match(view.goalInput.value,/Respect newer owner instructions/);
+});
+
+test('stale editor cannot overwrite a concurrently changed Goal but retains its unsaved draft',async t=>{
+  const {view}=fixture(t),posts=[];
+  let goal=savedGoal({id:'same-goal',generation:2,status:'paused',objective:'Original owner goal.'});
+  const controls=createGoalControls({view,
+    api:async(_route,method,body)=>{if(method==='GET')return {goal};posts.push(body);return {goal};},
+    getContext:()=>({runId:'run-one'}),onStart:()=>assert.fail('Existing Goal must not create a new run')});
+  t.after(()=>controls.destroy());controls.update({conversationId:'one'});await tick();
+  await view.goalEdit.dispatch('click');
+  assert.equal(globalThis.document.activeElement,view.goalInput,'Editing a Goal focuses the current objective');
+  assert.equal(view.goalSave.textContent,'Save Goal','Saving a paused Goal leaves it paused');
+  view.goalInput.value='My unsaved changes.';
+  // Revision-only progress updates are not competing edits to Goal settings.
+  goal={...goal,revision:3,lastReason:'A background turn reported progress.'};
+  controls.handleEvent({type:'goal.updated',data:{conversationId:'one',goal}});
+  assert.equal(view.goalSave.disabled,false,'Routine progress must not invalidate the editor');
+  goal={...goal,objective:'Newer goal from another window.',generation:3,revision:4};
+  controls.handleEvent({type:'goal.updated',data:{conversationId:'one',goal}});
+  assert.equal(view.goalSave.disabled,true);
+  assert.equal(view.goalType.disabled,true);
+  assert.equal(view.goalError.hidden,false);
+  assert.match(view.goalError.textContent,/changed while you were editing/i);
+  assert.equal(view.goalInput.value,'My unsaved changes.','Unsaved text stays available for copying');
+  await view.goalForm.dispatch('submit');
+  assert.equal(posts.length,0,'A synthetic submit cannot overwrite another actor');
+  await view.goalCancel.dispatch('click');
+  await view.goalEdit.dispatch('click');
+  assert.equal(view.goalInput.value,'Newer goal from another window.');
+  assert.equal(view.goalSave.disabled,false);
+});
+
+test('read-only transition blocks a previously open Self-driving editor and forced submit',async t=>{
+  const {view}=fixture(t),starts=[];
+  const controls=createGoalControls({view,api:()=>assert.fail('New chat should not call Goal API'),
+    getContext:()=>({draft:'Existing unsent note'}),
+    onStart:async(...args)=>{starts.push(args);return {run:{id:'new'}};}});
+  t.after(()=>controls.destroy());
+  await view.goalToggle.dispatch('click');
+  view.goalType.value='self-driving';await view.goalType.dispatch('change');
+  assert.equal(view.goalModeHelp.hidden,false);
+  controls.update({conversationId:'new',readonly:true});
+  assert.equal(view.goalSave.disabled,true);
+  assert.equal(view.goalType.disabled,true);
+  assert.equal(view.goalInput.readOnly,true);
+  assert.match(view.goalError.textContent,/read-only/i);
+  await view.goalForm.dispatch('submit');
+  assert.equal(starts.length,0,'No start admitted even on forced form submission');
+  assert.equal(view.goalDialog.open,true,'Draft stays visible for copying');
+  await view.goalCancel.dispatch('click');
+});
+
+test('Goal refresh racing Save cannot rebase a stale editor onto another Goal edit',async t=>{
+  const {view}=fixture(t),pending=deferred(),posts=[];
+  let goal=savedGoal({id:'goal-stable',generation:2,objective:'Original task',status:'paused'}),reads=0;
+  const controls=createGoalControls({view,api:async(_route,method,body)=>{
+    if(method==='GET')return ++reads===1?{goal}:pending.promise;
+    posts.push(body);return {goal};
+  },getContext:()=>({runId:'run-one'}),onStart:()=>assert.fail('No new conversation')});
+  t.after(()=>controls.destroy());controls.update({conversationId:'one'});await tick();
+  await view.goalEdit.dispatch('click');
+  view.goalInput.value='Unsaved draft';
+  const refreshing=controls.refresh();
+  const submitting=view.goalForm.dispatch('submit');
+  goal={...goal,revision:4,generation:3,objective:'Concurrent owner edit'};
+  pending.resolve({goal});
+  await Promise.all([refreshing,submitting]);
+  assert.equal(posts.length,0);
+  assert.equal(view.goalDialog.open,true);
+  assert.equal(view.goalInput.value,'Unsaved draft');
+  assert.match(view.goalError.textContent,/changed while you were editing/i);
+  assert.equal(view.goalSave.disabled,true);
+});
+
+test('completion of an open Goal editor cannot change Save into an unintended new Goal',async t=>{
+  const {view}=fixture(t),posts=[];
+  let goal=savedGoal({id:'goal-complete-race',generation:4,status:'active',objective:'Original goal.'});
+  const controls=createGoalControls({view,
+    api:async(_route,method,body)=>{if(method==='GET')return {goal};posts.push(body);return {goal};},
+    getContext:()=>({runId:'run-one'}),onStart:()=>assert.fail('Existing Goal never starts a new conversation')});
+  t.after(()=>controls.destroy());
+  controls.update({conversationId:'one'});await tick();
+  await view.goalEdit.dispatch('click');
+  assert.equal(view.goalSave.textContent,'Save & continue','An active Goal continues automatically after edits');
+  view.goalInput.value='My in-progress revision.';
+  goal={...goal,status:'completed',revision:goal.revision+1,lastReason:'Earlier objective finished.'};
+  controls.handleEvent({type:'goal.updated',data:{conversationId:'one',goal}});
+  assert.equal(view.goalSave.disabled,true,'Completion of the current Goal invalidates a previously open edit');
+  assert.match(view.goalError.textContent,/changed while you were editing/i);
+  await view.goalForm.dispatch('submit');
+  assert.equal(posts.length,0,'Never convert an Edit into Set without fresh user intent');
+  await view.goalCancel.dispatch('click');
+  await view.goalEdit.dispatch('click');
+  assert.equal(view.goalTitle.textContent,'Create Goal');
+  assert.equal(view.goalSave.disabled,false,'A deliberately reopened dialog can start a new Goal');
+});
+
+test('pause or Resume elsewhere invalidates an editor instead of changing execution as a side effect',async t=>{
+  const {view}=fixture(t),posts=[];
+  let goal=savedGoal({id:'goal-pause-race',generation:3,status:'paused',objective:'Paused work'});
+  const controls=createGoalControls({view,
+    api:async(_route,method,body)=>{if(method==='GET')return {goal};posts.push(body);return {goal};},
+    getContext:()=>({runId:'run-one'})});
+  t.after(()=>controls.destroy());controls.update({conversationId:'one'});await tick();
+  await view.goalEdit.dispatch('click');
+  view.goalInput.value='Rewritten objective';
+  goal={...goal,status:'active',revision:goal.revision+1};
+  controls.handleEvent({type:'goal.updated',data:{conversationId:'one',goal}});
+  assert.equal(view.goalSave.disabled,true);
+  await view.goalForm.dispatch('submit');
+  assert.equal(posts.length,0);
+});
+
+test('read-only interruption clears its explanation when editing is restored',async t=>{
+  const {view}=fixture(t),starts=[];
+  const controls=createGoalControls({view,api:()=>assert.fail('No saved conversation'),
+    getContext:()=>({draft:'Preserve this note'}),
+    onStart:async(goal)=>{starts.push(goal);return {run:{id:'first'}};}});
+  t.after(()=>controls.destroy());
+  await view.goalToggle.dispatch('click');
+  controls.update({conversationId:'new',readonly:true});
+  assert.equal(view.goalSave.disabled,true);
+  assert.match(view.goalError.textContent,/read-only/);
+  controls.update({conversationId:'new',readonly:false});
+  assert.equal(view.goalSave.disabled,false);
+  assert.equal(view.goalError.hidden,true);
+  assert.equal(view.goalInput.value,'Preserve this note');
+  await view.goalForm.dispatch('submit');
+  assert.equal(starts.length,1);
+});
+
+test('opening an editor and switching conversations never submits the old draft',async t=>{
+  const {view}=fixture(t),posts=[];
+  let goal=savedGoal({id:'old-goal',generation:1});
+  const controls=createGoalControls({view,api:async(_route,method,body)=>{
+    if(method==='GET')return {goal};posts.push(body);return {goal};
+  },getContext:()=>({runId:'run-one'}),onStart:()=>assert.fail('No new Goal')});
+  t.after(()=>controls.destroy());controls.update({conversationId:'one'});await tick();
+  await view.goalEdit.dispatch('click');
+  view.goalInput.value='Stale old-chat draft';
+  controls.update({conversationId:'two'});await tick();
+  assert.equal(view.goalDialog.open,false);
+  await view.goalForm.dispatch('submit');
+  assert.equal(posts.length,0);
 });
 
 test('goal lifecycle is distinct from an actually running turn',()=>{
@@ -137,6 +355,7 @@ test('goal edits and controls use one revision-checked conversation endpoint',as
   assert.equal(calls[1].body.objective,'Next outcome');assert.equal(calls[1].body.maxTurns,null);
   assert.equal(calls[1].body.model,'chosen-model');
   await assert.rejects(updateConversationGoal({api,conversationId:'new',action:'set',objective:'Go'}),/Start a conversation/);
+  await assert.rejects(updateConversationGoal({api,conversationId:'one',action:'set',objective:'Go',maxTurns:Number.MAX_SAFE_INTEGER+1}),/positive whole/);
   await assert.rejects(updateConversationGoal({api,conversationId:'one',action:'set',objective:'Go',maxTurns:0}),/positive whole/);
 });
 
@@ -217,6 +436,9 @@ test('editing a paused goal preserves its lifecycle; invalid limits never reach 
   t.after(()=>controls.destroy());controls.update({conversationId:'one'});await tick();
   await view.goalEdit.dispatch('click');view.goalInput.value='Revised outcome';view.goalLimit.value='2.5';
   await view.goalForm.dispatch('submit');assert.equal(posts.length,0);assert.equal(view.goalError.hidden,false);
+  view.goalLimit.value='9007199254740992';await view.goalForm.dispatch('submit');
+  assert.equal(posts.length,0,'Unsafe numeric limits must be rejected before an API request');
+  assert.equal(view.goalError.hidden,false);
   view.goalLimit.value='9';await view.goalForm.dispatch('submit');
   assert.equal(posts.length,1);assert.equal(posts[0].action,'update');assert.equal(posts[0].maxTurns,9);
   assert.equal(view.goalStatus.textContent,'Paused');assert.equal(view.goalDialog.open,false);

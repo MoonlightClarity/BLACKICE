@@ -377,3 +377,12 @@ test('editable planning layers replace model guidance without changing host arti
  assert.equal(audit.sections.find(row=>row.id==='planning-artifact').text,changes['planning-artifact']);
  assert.equal(audit.sections.some(row=>row.id.startsWith('skill-')),false);
 });
+
+test('choice schema constrains focus to the host-ready subset of pending actions',()=>{
+  const current={...snapshot,actions:[{id:'root',state:'pending'},{id:'dependent',state:'pending'}],ready:['root']};
+  const choice=CHAT_PLANNING_MODULES.find(item=>item.artifact==='grounded-choice');
+  const analysis=CHAT_PLANNING_MODULES.find(item=>item.artifact==='revised-choice');
+  assert.deepEqual(chatPlanningArtifactSchema(choice,current).properties.artifact.anyOf[0].properties.focus.enum,['root']);
+  assert.equal(chatPlanningArtifactSchema(analysis,current).properties.artifact.anyOf.length,1);
+  assert.equal(chatPlanningArtifactSchema(choice,{...current,ready:[]}).properties.artifact.anyOf.length,1);
+});

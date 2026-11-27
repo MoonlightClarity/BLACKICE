@@ -198,6 +198,19 @@ export function renderMarkdown(value, { resolveArtifact, svgPreviews = false } =
     }
     return null;
   };
+  function tableCells(line) {
+    const cells = [];
+    let cell = '', separated = false;
+    const row = line.trim();
+    for (let i = row.startsWith('|') ? 1 : 0; i < row.length; i++) {
+      if (row[i] === '\\' && row[i + 1] === '|') { cell += '|'; i++; }
+      else if (row[i] === '|') { cells.push(cell.trim()); cell = ''; separated = true; }
+      else cell += row[i];
+    }
+    if (!separated && !row.startsWith('|')) return [];
+    if (!row.endsWith('|') || cell) cells.push(cell.trim());
+    return cells;
+  }
   function renderLines(lines, depth = 0) {
     if (depth >= 24) return '<p>' + lines.map(inline).join('<br>') + '</p>';
     const result = []; let paragraph = [], index = 0;
@@ -216,6 +229,18 @@ export function renderMarkdown(value, { resolveArtifact, svgPreviews = false } =
         result.push(preview || codeBlock(source, opening[1]));
       } else if (raw) {
         flush(); result.push(raw.preview); index = raw.end;
+      } else if (line.includes('|') && /^\s*\|?[\s|:-]+$/.test(lines[index + 1] || '') &&
+        tableCells(lines[index + 1]).every(cell => /^:?-+:?$/.test(cell)) &&
+        tableCells(line).length && tableCells(line).length === tableCells(lines[index + 1]).length) {
+        flush();
+        const headers = tableCells(line), rows = [];
+        index += 2;
+        while (index < lines.length && lines[index].includes('|') && !fence(lines[index]) && !heading(lines[index]) && !marker(lines[index])) {
+          const cells = tableCells(lines[index++]);
+          rows.push('<tr>' + headers.map((_, column) => '<td>' + inline(cells[column] || '') + '</td>').join('') + '</tr>');
+        }
+        result.push('<div class="markdown-table"><table><thead><tr>' + headers.map(cell => '<th scope="col">' + inline(cell) + '</th>').join('') +
+          '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>');
       } else if (title) {
         flush(); const level = title[1].length + 1;
         result.push('<h' + level + '>' + inline(title[2]) + '</h' + level + '>'); index++;

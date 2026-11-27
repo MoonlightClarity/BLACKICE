@@ -26,3 +26,24 @@ test('a closed page cannot capture and a hung renderer respects the overall dead
   const contents = fake(() => image); contents.isDestroyed = () => true; await assert.rejects(captureHiddenPage(contents), { code: 'BROWSER_CLOSED' }); assert.equal(contents.calls, 0);
   const hung = fake(() => new Promise(() => {})), start = Date.now(); await assert.rejects(captureHiddenPage(hung, { timeoutMs: 25 }), { code: 'BROWSER_CAPTURE_TIMEOUT' }); assert.equal(hung.calls, 1); assert.ok(Date.now() - start < 1000);
 });
+
+
+test('native capture crosses an isolated rendering boundary before every frame copy', async()=>{
+ const order=[],contents=fake((call)=>{order.push('copy'+call);if(call===1)throw Error('UnknownVizError');return image});
+ contents.executeJavaScriptInIsolatedWorld=async(world,scripts)=>{order.push('frame');assert.equal(world,1001);assert.match(scripts[0].code,/requestAnimationFrame\(\(\)=>requestAnimationFrame/);return true};
+ const result=await captureHiddenPage(contents,{retryDelays:[0,0]});
+ assert.equal(result.retries,1);assert.deepEqual(order,['frame','copy1','frame','copy2']);
+});
+test('native render synchronization respects identity, cancellation, and the overall deadline',async()=>{
+ const changed=fake(()=>image);let retired=false;
+ changed.executeJavaScriptInIsolatedWorld=async()=>{retired=true;return true};
+ await assert.rejects(captureHiddenPage(changed,{assertCurrent:()=>{if(retired)throw Error('Changed native document')}}),/Changed native document/);assert.equal(changed.calls,0);
+ const hung=fake(()=>image);hung.executeJavaScriptInIsolatedWorld=()=>new Promise(()=>{});
+ await assert.rejects(captureHiddenPage(hung,{timeoutMs:25}),{code:'BROWSER_CAPTURE_TIMEOUT'});assert.equal(hung.calls,0);
+ const cancelled=fake(()=>image),controller=new AbortController();
+ cancelled.executeJavaScriptInIsolatedWorld=()=>new Promise(()=>{});
+ const pending=captureHiddenPage(cancelled,{signal:controller.signal});controller.abort();
+ await assert.rejects(pending,{name:'AbortError'});assert.equal(cancelled.calls,0);
+ const invalid=fake(()=>image);invalid.executeJavaScriptInIsolatedWorld=async()=>false;
+ await assert.rejects(captureHiddenPage(invalid),{code:'BROWSER_CAPTURE_RENDER_UNAVAILABLE'});assert.equal(invalid.calls,0);
+});

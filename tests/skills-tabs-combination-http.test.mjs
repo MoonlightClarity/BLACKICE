@@ -31,25 +31,35 @@ test('server delivers release-owned Skills without legacy contamination or model
   const first=await fetch(address+'/next/');
   assert.equal(first.status,200);
   const html=await first.text();
-  assert.match(html,/data-space="skills"/);
+  assert.doesNotMatch(html,/data-space="skills"/);
+  assert.match(html,/data-space="runtime"/);
   assert.match(html,/href="\/next\/skills\.css"/);
   const cookie=first.headers.get('set-cookie')?.split(';')[0];
   assert.ok(cookie,'A disposable real server must issue a session cookie.');
   const get=async route=>fetch(address+route,{headers:{Cookie:cookie}});
   for(const [asset,type,content] of [
-    ['/next/app.mjs','javascript','createSkillsWorkspace'],
+    ['/next/app.mjs','javascript','createRuntimeWorkspace'],
     ['/next/skills.css','css','.next-skills-layout'],
-    ['/next/workspaces/skills.mjs','javascript','createSkillsWorkspace'],
+    ['/next/workspaces/runtime.mjs','javascript','createRuntimeWorkspace'],
     ['/next/workspaces/browser-scoped-cleanup-ui.mjs','javascript','createBrowserScopedCleanup'],
   ]){
     const response=await get(asset);
     const body=await response.text();
     assert.equal(response.status,200,asset+' is explicitly allowlisted');
     assert.match(response.headers.get('content-type'),new RegExp(type),asset+' uses correct MIME');
-    if(asset==='/next/app.mjs')assert.match(body,/workspaces\/skills\.mjs/);
+    if(asset==='/next/app.mjs'){assert.match(body,/workspaces\/runtime\.mjs/);assert.doesNotMatch(body,/workspaces\/skills\.mjs/);}
     else assert.ok(body.includes(content),asset+' has the expected module content');
   }
+  assert.equal((await get('/next/workspaces/skills.mjs')).status,404);
   assert.equal((await get('/next/workspaces/undocumented-unlisted-asset.mjs')).status,404);
+  const org=await (await get('/api/runtime/organization')).json();
+  assert.deepEqual(org,await (await get('/api/skills/folders')).json());
+  const orgHeaders={Cookie:cookie,Origin:new URL(address).origin,'Content-Type':'application/json'};
+  const write=await fetch(address+'/api/runtime/organization',{method:'POST',headers:orgHeaders,body:JSON.stringify({action:'create',id:'runtime-http-parent',name:'Runtime category',parentId:'runtime:system',expectedRevision:org.revision})});
+  assert.equal(write.status,200);
+  const written=await write.json();
+  assert.deepEqual(written,await (await get('/api/skills/folders')).json());
+  assert.equal(written.folders[0].parentId,'runtime:system');
   assert.equal(Object.hasOwn(app,'knowledge'),false);
   const listResponse=await get('/api/skills?source=all');
   assert.equal(listResponse.status,200);

@@ -5,7 +5,7 @@ import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HarnessEngine } from '../lib/engine.mjs';
-import { intentInferenceSignals } from '../lib/chat-intent-inference.mjs';
+import { intentInferenceSignals, explicitMethodTitles, boundGoalMethodObjective } from '../lib/chat-intent-inference.mjs';
 import { projectPlanningModuleReceipts } from '../public/next/chat/model.mjs';
 
 const id='builtin-intent-inference', artifact='intent-advice';
@@ -193,3 +193,15 @@ test('a host-bound expired Goal remains fixed, and a retry does not acquire a fr
  assert.equal(retry.clockCandidate,undefined);
 });
 
+
+
+test('explicit selected method with coordinated constraints survives initial and bound Goal turns',()=>{
+ const objective='Continue the authorized job search until 8:00 AM Eastern on November 26, 2026. Use the current Remote Job Search skill and existing user constraints. Complete applications.';
+ assert.deepEqual(explicitMethodTitles(objective),['Remote Job Search']);
+ const run={id:'r2',taskId:'t1',goalDispatch:{conversationId:'t1',goalId:'g1',generation:1,epoch:2},goal:{id:'g1',generation:1,objective}};
+ assert.deepEqual(explicitMethodTitles(boundGoalMethodObjective(run)),['Remote Job Search']);
+ assert.deepEqual(explicitMethodTitles('Read and use the current Remote Job Search skill (revision 14) and Job Search skill, and established user requirements.'),['Remote Job Search','Job Search']);
+ for(const input of ['Describe the Remote Job Search skill.','Use the Remote Job Search skill and explain why it is flawed.','> Use the Remote Job Search skill and existing user constraints.','The prior user said "Use the Remote Job Search skill and existing user constraints."']){
+   assert.deepEqual(explicitMethodTitles(input),[],input);
+ }
+});

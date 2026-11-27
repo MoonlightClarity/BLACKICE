@@ -341,10 +341,38 @@ test('archived browser observations expose only a bounded exact subset of curren
  assert.equal(compact.partial,true);
  const controls=compact.frames.flatMap(f=>f.elements);
  assert(controls.length<=24);assert(controls.some(e=>e.ref==='file-7'&&e.uploadOnly&&e.hidden));
- assert(!controls.some(e=>e.type==='password'||Object.hasOwn(e,'value')||Object.hasOwn(e,'options')));
+ assert(controls.some(e=>e.type==='password'&&e.ref==='pwd-1'));
+ assert(!controls.some(e=>Object.hasOwn(e,'value')||Object.hasOwn(e,'options')));
  assert(Buffer.byteLength(JSON.stringify(compact),'utf8')<=5200);
  assert(controls.every(e=>page.frames[0].elements.some(original=>original.ref===e.ref&&original.name===e.name)));
  assert.match(response.nextAction,/Use the included exact browser controls/);
  const protectedResponse=parsed(await store.archiveResult({...call,callId:'browser-2'},result(JSON.stringify({...page,protectedContent:true}))));
  assert.equal(protectedResponse.browserObservation,undefined);
+});
+
+test('goal field projection keeps exact edit receipt, live ref, and full archived observation without changing other mutations', async t => {
+  const {dataDir}=await fixture(t);
+  const store=new TaskExternalContextStore({dataDir,taskId:'field-task',compactFieldEdits:true});
+  const args={action:'fill',tabId:'t',expectedDocumentId:'t:2',expectedUrl:'https://example.test/form',ref:'observed',text:'Answer'};
+  const call={name:'relay_browser',arguments:args};
+  const page={tabId:'t',documentId:'t:2',url:args.expectedUrl,receipt:{filled:true,characters:6,input:'browser'},frames:[{frame:'main',elements:[{ref:'observed',name:'Question',tag:'input',type:'text',value:'Answer'},{ref:'other',name:'Other'}],text:'other content '.repeat(1000)}]};
+  const original=result(JSON.stringify(page));
+  const projected=parsed(await store.archiveResult(call,original));
+  assert.deepEqual(projected.receipt,page.receipt);
+  assert.equal(projected.documentId,page.documentId);
+  assert.deepEqual(projected.frames[0].elements,[page.frames[0].elements[0]]);
+  assert.equal(projected.partial,true);
+  assert.ok(projected.externalContext);
+  assert.ok(JSON.stringify(projected).length<1500);
+  assert.equal(await readFile(store.file(projected.reference,'.txt'),'utf8'),original.contentItems[0].text);
+  for(const modified of [{...page,pendingInteraction:{id:'pending'}},{...page,documentId:'t:3'},{...page,receipt:{submitted:true}},{...page,frameErrors:['changed']}]){
+    const value=result(JSON.stringify(modified));assert.strictEqual(await store.archiveResult(call,value),value);
+  }
+  assert.strictEqual(await store.archiveResult({...call,arguments:{...args,action:'click'}},original),original);
+  const legacy=new TaskExternalContextStore({dataDir,taskId:'legacy'});
+  assert.strictEqual(await legacy.archiveResult(call,original),original);
+  const selectArgs={...args,action:'select',value:'yes'};delete selectArgs.text;
+  const selectPage={...page,receipt:{selected:'yes'},frames:[{...page.frames[0],elements:[{ref:'observed',name:'Question',tag:'select',value:'yes'}]}]};
+  const selectProjection=parsed(await store.archiveResult({name:'relay_browser',arguments:selectArgs},result(JSON.stringify(selectPage))));
+  assert.deepEqual(selectProjection.receipt,{selected:'yes'});
 });

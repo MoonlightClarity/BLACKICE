@@ -288,3 +288,29 @@ test('an explicit admission of unfinished work triggers one bounded Goal continu
    assert.equal(f.goals.beforeCheckpoint(run,candidate),null,'a second corrective admission would loop');
  }});
 });
+
+test('new model-authored narratives do not erase consecutive no-progress turns',async()=>{
+ const f=fixture();
+ for(let n=0;n<3;n++){
+   await f.turn(search(null),receipt(cursor(1),100),{beforeSettle:r=>{
+     r.goalEvidence=[];
+     r.goalProgress={summary:'Different lead '+n,evidence:'New reasoning narrative '+n,nextAction:'Find a viable application'};
+   }});
+   const goal=f.goals.raw('root');
+   assert.equal(goal.lastProgressBasis,'provisional_reasoning');
+   assert.equal(goal.noProgressTurns,n+1);
+   assert.equal(goal.noVerifiedMilestoneTurns,n+1);
+ }
+ await f.goals.dispatch('root');
+ assert.match(f.dispatched.at(-1).message,/Host-observed outcome milestone has not advanced for 3 turns/);
+ assert.match(f.dispatched.at(-1).message,/New agent-authored reasoning is not a verified milestone/);
+});
+test('an explicit no-submission ending earns one same-turn correction',async()=>{
+ const f=fixture();
+ await f.turn(search(null),receipt(cursor(1),100),{beforeSettle:async run=>{
+   run.startedAt=new Date().toISOString();
+   const result=f.goals.beforeCheckpoint(run,{output:'A current job was checked, but no new application was submitted this turn.'});
+   assert.equal(result?.continue,true);
+   assert.equal(f.goals.beforeCheckpoint(run,{output:'No new application submitted.'}),null);
+ }});
+});

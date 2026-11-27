@@ -1312,10 +1312,10 @@ export async function createHarnessServer(options = {}) {
       if (promptAction && req.method === 'POST' && ['delete', 'restore'].includes(promptAction[2])) { const value = await promptBody(req, promptAction[2] === 'delete' ? ['expectedRevision'] : ['expectedRevision', 'revision']); return json(res, 200, { template: await (promptAction[2] === 'delete' ? prompts.remove(promptAction[1], { expectedRevision: value.expectedRevision }) : prompts.restore(promptAction[1], { expectedRevision: value.expectedRevision, revision: value.revision })) }); }
       const promptMatch = pathname.match(/^\/api\/prompts\/([A-Za-z0-9_-]+)$/);
       if (promptMatch && req.method === 'GET') return json(res, 200, { template: prompts.get(promptMatch[1]) });
-      if(pathname==='/api/skills/folders'){
+      if(pathname==='/api/runtime/organization'||pathname==='/api/skills/folders'){
         if(req.method==='GET')return json(res,200,await skillFolders.read());
         if(req.method==='POST'){
-          if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Organize skills in BLACKICE on this computer.'});
+          if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Organize Runtime in BLACKICE on this computer.'});
           const saved=await skillFolders.mutate(await body(req));sendEvent({type:'skills.folders.updated'});return json(res,200,saved);
         }
       }
@@ -1414,27 +1414,9 @@ export async function createHarnessServer(options = {}) {
       if(pathname==='/api/execution-layers'){
         if(Object.hasOwn(req.headers,'x-blackice-remote')&&req.method!=='GET')
           return json(res,403,{error:'Edit execution layers locally in Runtime.'});
-        const runId=new URL(req.url,'http://localhost').searchParams.get('runId');
-        let sources=[];
-        if(runId){
-          if(!/^[a-zA-Z0-9_-]{1,120}$/.test(runId))
-            return json(res,400,{error:'Invalid execution ID.'});
-          sources=[await conversations.get(runId)];
-        }else{
-          // Newly observed runtime instruction sources appear without asking the
-          // user to locate a run ID. No historical instruction is auto-applied.
-          sources=[...engine.runs.values()].slice(-60).reverse();
-        }
-        const excluded=new Set(['effective-developer','adapter-addendum','adapter-developer',
-          'identity-context','soul','user-profile','loaded-skill']);
-        const observed=sources.flatMap(item=>Object.values(item?.nodes||{})
-          .flatMap(node=>node?.instructionAudit?.sections||[]))
-          .filter(section=>['developer','prompt'].includes(section?.layer)
-            &&typeof section.id==='string'&&!excluded.has(section.id)
-            &&!section.id.startsWith('adapter-')&&!section.id.startsWith('tool-definition-')
-            &&!section.id.startsWith('loaded-skill-'));
-
-        const definitions=await engine.executionLayerDefinitions(observed);
+        // The historical instruction endpoint retains immutable per-run receipts.
+        // The editor lists current delivery sources only, never historical copies.
+        const definitions=await engine.executionLayerDefinitions();
         if(req.method==='GET')return json(res,200,executionLayers.list(definitions));
         if(req.method==='PUT'){
           const input=await body(req);
@@ -1525,7 +1507,7 @@ export async function createHarnessServer(options = {}) {
         'workspaces/workflow-editor.mjs','workspaces/workflow-edit-model.mjs',
         'workspaces/workflow-overview-model.mjs','workspaces/workflow-canvas-model.mjs','workspaces/workflow-canvas.mjs','workspaces/workflow-graph-author.mjs',
         'workspaces/workflow-graph-edit.mjs','workspaces/browser-folders.mjs','workspaces/browser-model.mjs','workspaces/browser-ownership-ui.mjs','workspaces/browser-usage-ui.mjs','workspaces/browser-scoped-cleanup-ui.mjs','workspaces/browser-native.mjs',
-        'browser.css','skills.css','runtime.css','workspaces/skills.mjs','workspaces/runtime.mjs','core/folder-tree.mjs',
+        'browser.css','skills.css','runtime.css','workspaces/runtime.mjs','core/folder-tree.mjs',
         'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/instruction-audit.mjs','instruction-audit.css','workspaces/settings-passwords.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-mcp-apps.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-passwords.css','settings-identity.css','settings-providers.css',
         'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/llama-launch-settings.mjs','workspaces/settings-providers.mjs','workspaces/native-write-recovery.mjs'];

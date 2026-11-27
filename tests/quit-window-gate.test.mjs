@@ -21,10 +21,13 @@ test('no window needs no negotiation; throwing close rejects without a dangling 
 test('frontend cleanup waits for accepted navigation, preserving the cancelled editor session',async()=>{
  const source=await readFile(new URL('../public/next/app.mjs',import.meta.url),'utf8');
  assert.match(source,/addEventListener\('pagehide'/);assert.doesNotMatch(source,/addEventListener\('beforeunload'/);
- const skills=await readFile(new URL('../public/next/workspaces/skills.mjs',import.meta.url),'utf8');
- const beforeUnload=skills.match(/const beforeUnload=event=>\{(.+?)\};hostWindow.addEventListener\('beforeunload',beforeUnload\)/)?.[1];
- assert.ok(beforeUnload,'Skills must register its unsaved editor gate.');
- assert.match(beforeUnload,/if\(drafts\.size\|\|\(newDraft&&newDraft\.content!=='# '\)\|\|rename\|\|\(creation&&el\('folder-name'\)\.value\.trim\(\)\)\)/);
+ const runtime=await readFile(new URL('../public/next/workspaces/runtime.mjs',import.meta.url),'utf8');
+ const beforeUnload=runtime.match(/const beforeUnload=event=>\{(.+?)\};/)?.[1];
+ assert.ok(beforeUnload,'Runtime must register its unsaved editor gate.');
+ assert.match(runtime,/hostWindow.addEventListener\('beforeunload',beforeUnload\)/);
+ assert.match(beforeUnload,/editDrafts\.size/);
+ assert.match(beforeUnload,/category-name/);
+ assert.match(beforeUnload,/new-form/);
  assert.match(beforeUnload,/event.preventDefault\(\);event.returnValue='';/);
 });
 test('desktop recovery remains active until accepted close, not before renderer veto',async()=>{
