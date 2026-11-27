@@ -44,6 +44,19 @@ test('named filename discovery is passive on success, failure and in-flight dete
  assert.equal(detectUnknownEffectReplay([unknown],effect).code,'GOAL_EFFECT_UNRESOLVED');
  assert.equal(detectUnknownEffectReplay([unknown],call),null);
 });
+test('a delivered unknown login receipt is saved as an unresolved external effect', () => {
+ const args={action:'authenticate',requestId:'original',credentialId:'fixture-credential',revision:1,origin:'https://example.test',intent:'login',tabId:'tab',submitRef:'submit'};
+ const call={name:'relay_credentials',arguments:args};
+ const observation=receipt=>observeGoalToolOutcome(call,{success:true,contentItems:[{type:'inputText',text:JSON.stringify(receipt)}]});
+ const payload={requestId:args.requestId,credentialId:args.credentialId,revision:1,origin:args.origin,authenticated:false,submissionRequested:null,outcome:'unknown'};
+ const row=observation(payload);
+ assert.equal(row.kind,'uncertain_external_effect');
+ assert.equal(row.code,'BROWSER_CREDENTIAL_AUTH_UNCONFIRMED');
+ assert.equal(detectUnknownEffectReplay([row],{...call,arguments:{...args,requestId:'changed'}})?.code,'GOAL_EFFECT_UNRESOLVED');
+ assert.equal(observation({...payload,requestId:'different'}).kind,'tool_executed_unverified');
+ assert.equal(observation({...payload,submissionRequested:true,outcome:'dispatched'}).kind,'tool_executed_unverified');
+});
+
 test('nine advancing cursor turns settle and dispatch beyond seven without claiming completion; user turn budget still stops',async()=>{
  const f=fixture();await f.goals.save('root',{...f.goals.raw('root'),maxTurns:9});
  for(let n=1;n<=9;n++){
@@ -313,6 +326,25 @@ test('job-search Goals correct unsupported screening at a late checkpoint even a
  await f.goals.dispatch('root');
  assert.match(f.dispatched[0].message,/Review the last role decision/);
  assert.doesNotMatch(f.dispatched[0].message,/Do not privilege the most advanced branch/);
+});
+
+test('late job-search checkpoints execute a saved actionable form step without replaying uncertain effects', async () => {
+ for(const variant of ['actionable','blocked','uncertain','stale-report']){
+  const f=fixture();
+  await f.goals.save('root',{...f.goals.raw('root'),objective:'Resume my ongoing remote job search.'});
+  const op={name:'relay_browser',arguments:{action:'snapshot',tabId:'tab'}};
+  await f.turn(op,{success:true,contentItems:[]},{beforeSettle:run=>{
+   run.startedAt=new Date(Date.now()-180000).toISOString();
+   f.goals.observeConfirmedCommit(run,{adapter:'relay_browser',effect:'commit',effectKey:'fixture-other-role',operationId:'native:fixture'});
+   run.goalProgress={runId:run.id,at:new Date(Date.now()+(variant==='stale-report'?-10000:100)).toISOString(),summary:'The application is still open.',evidence:'Browser observation',
+    nextAction:'Identify the current password control and continue the application form.',...(variant==='blocked'?{blockedBranch:'The employer has paused intake.'}:{})};
+   if(variant==='uncertain') run.goalEvidence.push({tool:'relay_credentials',action:'authenticate',kind:'uncertain_external_effect',success:false});
+   const correction=f.goals.beforeCheckpoint(run,{output:'I left the application open and saved the next step.'});
+   if(variant==='actionable'){assert.equal(correction?.continue,true);assert.match(correction.prompt,/actionable application step/);
+    assert.equal(f.goals.beforeCheckpoint(run,{output:'I left the application open and saved the next step.'}),null);}
+   else assert.equal(correction,null,variant);
+  }});
+ }
 });
 
 test('a genuine unsupported form choice is not mistaken for screening on résumé silence', async () => {

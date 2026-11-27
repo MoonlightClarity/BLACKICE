@@ -681,6 +681,21 @@ async function observedSelectFixture(t, names) {
   return { driver, tab, frame, context, document, controls };
 }
 
+test('filtered browser observations find unlabeled visible password controls past the default control bound', async t => {
+  const f=await observedSelectFixture(t, Array.from({length:320}, (_,i)=>'Navigation '+i));
+  const password={...f.controls[0],tagName:'INPUT',type:'password',value:'',getAttribute:()=>null};
+  const hidden={...password,getBoundingClientRect:()=>({width:0,height:0})};
+  f.document.documentElement.children.push(password,hidden);
+  const unfiltered=await f.driver.perform({action:'snapshot',tabId:f.tab.id},{source:'user'});
+  assert.equal(unfiltered.frames[0].truncated,true);
+  assert.equal(unfiltered.frames[0].elements.some(row=>row.type==='password'),false);
+  const query=await f.driver.perform({action:'read',tabId:f.tab.id,query:'password'},{source:'user'});
+  const rows=query.frames[0].elements;
+  assert.equal(rows.length,1); assert.equal(rows[0].type,'password'); assert.ok(rows[0].ref);
+  assert.equal(rows[0].value,'');
+  assert.equal(f.tab.refs.get(rows[0].ref),f.frame);
+});
+
 test('refs from separate filtered reads stay usable on their original connected controls', async t => {
   const f = await observedSelectFixture(t, ['Authorization', 'Sponsorship', 'Privacy']);
   const read = async query => (await f.driver.perform({ action: 'read', tabId: f.tab.id, query }, { source: 'user' })).frames[0].elements[0].ref;

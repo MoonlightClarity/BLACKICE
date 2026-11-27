@@ -245,14 +245,18 @@ function pageSnapshot(key, prefix, query, readContext = false, describeControl, 
           if (ref) { state.elements.delete(ref); state.identities.delete(ref); }
           ref = `${prefix}:${state.documentId}:${++state.next}`; state.ids.set(el, ref); state.descriptors.set(el, descriptor);
         }
-        if (!query || `${label} ${'value' in el ? el.value : ''}`.toLowerCase().includes(query.toLowerCase())) {
+        // An unlabeled control can still be found by its actual input type.
+        const value = 'value' in el ? String(el.value) : undefined;
+        const matches = !query || `${label} ${value ?? ''}`.toLowerCase().includes(needle)
+          || (typeof el.type === 'string' && el.type.toLowerCase().includes(needle));
+        if (matches) {
           state.elements.delete(ref); state.elements.set(ref, el); state.identities.set(ref, descriptor);
           if (hiddenAncestor) visibleControlsUnderHiddenAncestor++;
           // Only report browser-declared requirements, not label punctuation or inferred server rules.
           const ariaRequired = el.getAttribute('aria-required');
           const required = el.matches?.(':required') || ariaRequired === 'true' ? true
             : el.matches?.(':optional') || ariaRequired === 'false' ? false : undefined;
-          items.push({ ref, ...(uploadOnly ? { uploadOnly: true, hidden: true } : {}), role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...(required === undefined ? {} : { required }), ...('value' in el ? { value: String(el.value).slice(0, 300) } : {}), disabled: Boolean(el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true'), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
+          items.push({ ref, ...(uploadOnly ? { uploadOnly: true, hidden: true } : {}), role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...(required === undefined ? {} : { required }), ...(value === undefined ? {} : { value: value.slice(0, 300) }), disabled: Boolean(el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true'), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
         }
       }
       for (const node of el.childNodes) if (node.nodeType === 3) {
@@ -296,7 +300,7 @@ function pageSnapshot(key, prefix, query, readContext = false, describeControl, 
   }));
   const validation = [...document.querySelectorAll('input,select,textarea')].filter(field => (field.validity?.valid === false || field.getAttribute('aria-invalid') === 'true')).slice(0, 100)
     .map(field => ({ name: String(field.name || field.id || '').slice(0, 256), message: String(field.validationMessage || field.getAttribute('aria-errormessage') || '').slice(0, 1000) }));
-  return { title: document.title, url: location.href, elements: query ? items.filter(i => `${i.name} ${i.value || ''}`.toLowerCase().includes(query.toLowerCase())) : items, text: text.join('\n').slice(0, 22000), truncated, ...(visibleControlsUnderHiddenAncestor ? { observationDiagnostics: { visibleControlsUnderHiddenAncestor } } : {}), ...(semanticRecords.length ? { semanticRecords, semanticTruncated } : {}), ...(forms.length ? { forms } : {}), ...(validation.length ? { validation } : {}), readyState: document.readyState, ...(contextual ? { textContext: { matches, before: 1, after: 8 } } : {}) };
+  return { title: document.title, url: location.href, elements: items, text: text.join('\n').slice(0, 22000), truncated, ...(visibleControlsUnderHiddenAncestor ? { observationDiagnostics: { visibleControlsUnderHiddenAncestor } } : {}), ...(semanticRecords.length ? { semanticRecords, semanticTruncated } : {}), ...(forms.length ? { forms } : {}), ...(validation.length ? { validation } : {}), readyState: document.readyState, ...(contextual ? { textContext: { matches, before: 1, after: 8 } } : {}) };
 }
 
 async function smoothPageScroll(target, top, left) {
