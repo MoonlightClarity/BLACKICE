@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createBrowserToolHandler } from '../lib/browser.mjs';
 import { applicationTarget } from '../lib/application-history.mjs';
+import { AttachmentStore } from '../lib/attachments.mjs';
 import { HarnessEngine } from '../lib/engine.mjs';
 import { IdentityStore } from '../lib/identity.mjs';
 import { ProviderRuntime } from '../lib/providers.mjs';
@@ -363,4 +364,26 @@ test('history collection distinguishes an incomplete scope from truncated matche
  assert.equal(facts.matchesTruncated,true);
  assert.equal(facts.matches.length,40);
  assert.deepEqual(facts.errors,[]);
+});
+
+
+test('an explicitly attached immutable application ledger discloses the exact prior iCIMS requisition from a separate workspace',async t=>{
+ const f=await temporary();t.after(()=>f.cleanup());
+ const store=await new AttachmentStore({dataDir:path.join(f.directory,'data')}).init();
+ const prior='https://careers-navitus.icims.com/jobs/7200/customer-market-intelligence-analyst/job?mode=submit_apply';
+ const observed='https://careers-navitus.icims.com/jobs/7200/customer-market-intelligence-analyst/job';
+ const unrelated='https://careers-navitus.icims.com/jobs/7092/regulatory-analyst/job';
+ const ledger=await store.importBytes({name:'application_history.json',bytes:Buffer.from(JSON.stringify({entries:[
+   {employer:'Lumicera Health Services (Navitus)',state:'confirmed',url:prior},
+   {employer:'Navitus',state:'confirmed',url:unrelated},
+   {employer:'Navitus',state:'draft',url:prior},
+ ]}))});
+ await store.importBytes({name:'unattached_application_history.json',bytes:Buffer.from(JSON.stringify({url:prior,status:'submitted'}))});
+ const browser=browserFixture(), handler=createBrowserToolHandler({browser,cwd:f.cwd,attachedApplicationHistory:{store,ids:[ledger.id]}});
+ const observedHistory=body(await handler(call('open',{action:'open',url:observed}))).applicationHistory;
+ assert.deepEqual(observedHistory.matches,[],'selected workspace did not include the ledger');
+ assert.deepEqual(observedHistory.attached.sources,[{id:ledger.id,name:'application_history.json'}]);
+ assert.deepEqual(observedHistory.attached.matches,[{id:ledger.id,source:'application_history.json',record:1,reason:'reported-prior-requisition'}]);
+ assert.deepEqual(observedHistory.attached.errors,[]);
+ assert.equal(browser.calls.length,1);
 });
