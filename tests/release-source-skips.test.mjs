@@ -75,3 +75,36 @@ test('unknown, duplicate, missing and malformed capability skips remain required
   assert.deepEqual(classifySourceSkips([capability,capability]).unexpectedSkips,[capability,capability]);
   assert.deepEqual(classifySourceSkips([]),{capability:[],unexpectedSkips:[]});
 });
+
+test('recovered opt-in Chromium fixtures have exact skip reasons and required hosted execution', async () => {
+  const items = [
+    ['native Chromium capture observes fresh compositor state across parked, resized and offscreen views',
+      'Set RELAY_LIVE_BROWSER_QA=1 for isolated native browser stress testing.'],
+    ['native renderer lifetimes and exact control input survive unrelated frame churn',
+      'Set RELAY_LIVE_BROWSER_QA=1 for isolated native browser stress testing.'],
+    ['isolated native browser recovers same-control drift and preserves input/observation boundaries across action types',
+      'Set RELAY_LIVE_BROWSER_QA=1 for the isolated native fixture.'],
+  ];
+  const tap = 'TAP version 13\n' + items.map(([name,reason],i) =>
+    'ok '+(i+1)+' - '+name+' # SKIP '+reason).join('\n') + '\n';
+  const skips = parseSourceSuiteSkips(tap);
+  assert.equal(skips.length,3);
+  assert.ok(skips.every(item => item.assertionsRan === false));
+  assert.deepEqual(classifySourceSkips(skips),{capability:[],unexpectedSkips:[]});
+  for(const item of skips){
+    const changed={...item,reason:'Unverified native skip'};
+    assert.deepEqual(classifySourceSkips([changed]).unexpectedSkips,[changed]);
+    const renamed={...item,name:item.name+' altered'};
+    assert.deepEqual(classifySourceSkips([renamed]).unexpectedSkips,[renamed]);
+    assert.equal(classifySourceSkips([item,item]).unexpectedSkips.length,2);
+  }
+  const workflow=await fs.readFile(new URL('../.github/workflows/verify-v2.40.85-recovery.yml',import.meta.url),'utf8');
+  assert.match(workflow,/Exercise mandatory native Chromium stress tests on disposable Windows/);
+  assert.match(workflow,/RELAY_LIVE_BROWSER_QA: '1'/);
+  for(const file of ['browser-engine-stress.integration.test.mjs','browser-native-lifecycle-stress.integration.test.mjs','browser-stabilization.integration.test.mjs']){
+    assert.ok(workflow.includes(file),file);
+  }
+  assert.match(workflow,/# pass 3/);
+  assert.match(workflow,/# skipped 0/);
+  assert.match(workflow,/if \(\$code -ne 0\).*browser stress validation failed/);
+});

@@ -39,6 +39,11 @@ const optionalWindowsSourceTests = new Set([
   'Relay-owned sign-in and local storage survive a full process restart without foregrounding',
   'restored hidden browser tabs defer requests until used and never load closed or replaced pages',
   'native popups preserve OAuth routing and remain independent when their opener closes',
+  // These recovered native-browser stress fixtures are mandatory as separate
+  // disposable Windows CI tests. Canonical source-suite skips still mean unexecuted.
+  'native Chromium capture observes fresh compositor state across parked, resized and offscreen views',
+  'native renderer lifetimes and exact control input survive unrelated frame churn',
+  'isolated native browser recovers same-control drift and preserves input/observation boundaries across action types',
   // These disposable Electron input fixtures explicitly opt in through RELAY_LIVE_BROWSER_QA.
   'live contained input updates application state and delivers editing keys without OS focus',
   'offscreen contained input updates application state and delivers editing keys without OS focus',
@@ -60,6 +65,15 @@ const historicalBenchmarkSkips = new Set([
   'Historical MiniCPM execution-evidence benchmark requires original pinned 2026-11-20 snapshot',
 ]);
 const historicalBenchmarkReason = 'Historical frozen source absent; no benchmark assertions executed or credited.';
+// Native-browser stress skip reasons must exactly match the opt-in test declaration.
+const nativeBrowserStressSkipReasons = new Map([
+  ['native Chromium capture observes fresh compositor state across parked, resized and offscreen views',
+    'Set RELAY_LIVE_BROWSER_QA=1 for isolated native browser stress testing.'],
+  ['native renderer lifetimes and exact control input survive unrelated frame churn',
+    'Set RELAY_LIVE_BROWSER_QA=1 for isolated native browser stress testing.'],
+  ['isolated native browser recovers same-control drift and preserves input/observation boundaries across action types',
+    'Set RELAY_LIVE_BROWSER_QA=1 for the isolated native fixture.'],
+]);
 // These skips report unexecuted containment assertions, not successful checks.
 const fileSymlinkCapabilityTests = new Map([
   ['symlinked source is rejected where file symlink creation is available', 'tests/application-history.test.mjs'],
@@ -73,6 +87,10 @@ function validSourceSkips(prior, count) {
   const historical = skips.filter(name => historicalBenchmarkSkips.has(name));
   if (historical.length && (!Array.isArray(prior.skipDetails) || historical.some(name =>
     prior.skipDetails.filter(item => item?.name === name && item?.reason === historicalBenchmarkReason
+      && item?.assertionsRan === false).length !== 1))) return false;
+  const nativeStress = skips.filter(name => nativeBrowserStressSkipReasons.has(name));
+  if (nativeStress.length && (!Array.isArray(prior.skipDetails) || nativeStress.some(name =>
+    prior.skipDetails.filter(item => item?.name === name && item?.reason === nativeBrowserStressSkipReasons.get(name)
       && item?.assertionsRan === false).length !== 1))) return false;
   const byName = new Map();
   for (const item of capability) {

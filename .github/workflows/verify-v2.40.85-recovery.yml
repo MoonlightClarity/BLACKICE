@@ -32,6 +32,19 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Verify documentation links
         run: npm run docs:check
+      - name: Exercise mandatory native Chromium stress tests on disposable Windows
+        shell: pwsh
+        env:
+          RELAY_LIVE_BROWSER_QA: '1'
+        run: |
+          $ErrorActionPreference='Stop'
+          $tap=Join-Path $env:RUNNER_TEMP 'blackice-2.40.85-native-browser-stress.tap'
+          node --test --test-concurrency=1 --test-reporter=tap tests/browser-engine-stress.integration.test.mjs tests/browser-native-lifecycle-stress.integration.test.mjs tests/browser-stabilization.integration.test.mjs > $tap 2>&1
+          $code=$LASTEXITCODE
+          Get-Content -LiteralPath $tap -Tail 100
+          if ($code -ne 0) { throw 'Mandatory Chromium browser stress validation failed.' }
+          $output=Get-Content -LiteralPath $tap -Raw
+          if ($output -notmatch '(?m)^# tests 3\s*$' -or $output -notmatch '(?m)^# pass 3\s*$' -or $output -notmatch '(?m)^# fail 0\s*$' -or $output -notmatch '(?m)^# skipped 0\s*$') { throw 'Native browser stress test inventory incomplete.' }
       - name: Run full canonical Windows source suite
         shell: pwsh
         run: |
