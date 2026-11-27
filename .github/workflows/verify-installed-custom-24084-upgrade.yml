@@ -1,0 +1,126 @@
+name: Diagnostic upgrade from installed-equivalent BLACKICE 2.40.84 source (no release)
+
+on:
+  push:
+    branches:
+      - verification/custom-installed-24084-upgrade-20261127
+
+permissions:
+  contents: read
+
+concurrency:
+  group: custom-installed-24084-upgrade-20261127
+  cancel-in-progress: true
+
+jobs:
+  package-both-sources:
+    if: github.ref == 'refs/heads/verification/custom-installed-24084-upgrade-20261127'
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - name: Package recovered 2.40.85 from current tested application tree
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Current source locked install failed.' }
+          node scripts/materialize-llama-repair.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Current source pinned repair materialization failed.' }
+          $env:BLACKICE_LLAMA_REPAIR_BUNDLE=Join-Path $PWD '.build/llama-repair'
+          npm run package:public
+          if ($LASTEXITCODE -ne 0) { throw 'Recovered candidate packaging failed.' }
+          $new=Get-Content -LiteralPath 'dist/Blackice-Public-Windows/blackice-public-release.json' -Raw | ConvertFrom-Json
+          if ($new.version -cne '2.40.85' -or $new.appFingerprint -cne '0509bfac7407c6605af51458f1f523294605330eb738295c3b195ebf69215ca0') { throw 'Recovered candidate code does not match the inspected source.' }
+      - name: Rebuild the exact installed 2.40.84 application source variant
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=$PWD.Path
+          $oldRoot=Join-Path $env:RUNNER_TEMP 'blackice-installed-24084-source'
+          git worktree add --detach $oldRoot 71cb4f1c8ea254b35aff8b5b17f622a1e11434d2
+          if ($LASTEXITCODE -ne 0) { throw 'Original morning Git commit unavailable.' }
+          Push-Location $oldRoot
+          try {
+            $oldHash=(git rev-parse HEAD).Trim()
+            if ($oldHash -cne '71cb4f1c8ea254b35aff8b5b17f622a1e11434d2') { throw 'Wrong original source checkout.' }
+            npm ci --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) { throw 'Original source locked dependencies failed.' }
+            node scripts/materialize-llama-repair.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Original source pinned runtime materialization failed.' }
+            $env:BLACKICE_LLAMA_REPAIR_BUNDLE=Join-Path $PWD '.build/llama-repair'
+            npm run package:public
+            if ($LASTEXITCODE -ne 0) { throw 'Original morning source packaging failed.' }
+            $old=Get-Content -LiteralPath 'dist/Blackice-Public-Windows/blackice-public-release.json' -Raw | ConvertFrom-Json
+            if ($old.version -cne '2.40.84' -or $old.appFingerprint -cne '26af9bf3ce3500d8488acf502271f5aa5f0430b4a0513176bc3ab7f8a646faab') { throw 'Rebuilt source does not match the user-installed 2.40.84 variant.' }
+            $target=Join-Path $root 'dist/Blackice-Public-Windows'
+            Copy-Item -LiteralPath 'dist/Blackice-Public-Windows/Blackice-2.40.84-Setup.exe' -Destination (Join-Path $target 'Custom-2.40.84-Setup.exe') -ErrorAction Stop
+            Copy-Item -LiteralPath 'dist/Blackice-Public-Windows/blackice-public-release.json' -Destination (Join-Path $target 'custom-2.40.84-manifest.json') -ErrorAction Stop
+            $sha=(Get-FileHash -LiteralPath (Join-Path $target 'Custom-2.40.84-Setup.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($sha -cne $old.artifact.sha256) { throw 'Rebuilt source-equivalent installer artifact changed.' }
+            Write-Output ('Rebuilt installed-variant 2.40.84 fingerprint: '+$old.appFingerprint)
+            Write-Output ('Rebuilt source-equivalent installer SHA256: '+$sha)
+          } finally {
+            Pop-Location
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blackice-source-equivalent-custom-24084-upgrade-artifacts
+          path: |
+            dist/Blackice-Public-Windows/Blackice-2.40.85-Setup.exe
+            dist/Blackice-Public-Windows/blackice-public-release.json
+            dist/Blackice-Public-Windows/Custom-2.40.84-Setup.exe
+            dist/Blackice-Public-Windows/custom-2.40.84-manifest.json
+          if-no-files-found: error
+          retention-days: 1
+
+  hosted-custom-variant-upgrade:
+    needs: package-both-sources
+    if: github.ref == 'refs/heads/verification/custom-installed-24084-upgrade-20261127'
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: blackice-source-equivalent-custom-24084-upgrade-artifacts
+          path: dist/Blackice-Public-Windows
+      - name: Test actual morning application fingerprint through recovery upgrade
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./scripts/verify-custom-installed-upgrade.ps1 -Mode custom -SourceRoot $PWD.Path -Distribution (Join-Path $PWD 'dist/Blackice-Public-Windows') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'blackice-custom-variant-evidence')
+          if ($LASTEXITCODE -ne 0) { throw 'Source-equivalent original-install upgrade failed.' }
+      - name: Stage bounded diagnostic receipt
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path verification/custom-variant-evidence -Force | Out-Null
+          $p=Join-Path $env:RUNNER_TEMP 'blackice-custom-variant-evidence/custom.json'
+          if (Test-Path -LiteralPath $p) { Copy-Item -LiteralPath $p -Destination verification/custom-variant-evidence/custom.json }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blackice-installed-source-equivalent-24084-to-24085-upgrade-evidence
+          path: verification/custom-variant-evidence/custom.json
+          if-no-files-found: warn
+          retention-days: 7
+
+# Private recovery experiment only: no main merge, no version tag, no release
+# request, no user's installation touched, no publication rights.
