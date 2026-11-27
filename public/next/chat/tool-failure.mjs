@@ -1,13 +1,107 @@
+const choices = {
+  codeSource: ['adapter', 'result', 'unavailable'],
+  argumentForm: ['object', 'invalid-json', 'array', 'absent', 'non-object'],
+  receiptState: ['superseded-or-invalid', 'missing-after-observation', 'new-observation-needed'],
+  pointerStage: ['pre-pointer-capture', 'pre-pointer-identity'],
+  keyboardStage: ['pre-key-input'],
+  bindingReason: ['reference-missing', 'reference-unknown', 'reference-evicted', 'document-changed', 'frame-changed',
+    'binding-mismatch', 'control-changed', 'input-identity-invalid', 'input-url-mismatch', 'input-document-mismatch', 'input-reference-mismatch'],
+  bindingEvent: ['frame-navigation', 'in-page-navigation', 'renderer-gone', 'tab-suspended'],
+  pointerCheck: ['layout-metrics', 'hit-location', 'resolve-hit', 'verify-hit', 'viewport-recheck'],
+  pointerVerification: ['renderer-exception', 'hit-mismatch', 'no-verification', 'control-disconnected', 'hidden', 'no-box', 'identity-changed'],
+  controlBindingCause: ['control-disconnected', 'hidden', 'no-box', 'identity-changed'],
+  controlBindingPhase: ['fill', 'fill-ready'],
+  commandStatus: ['exited', 'timed-out', 'signalled', 'unknown'],
+  commandError: ['SyntaxError', 'TypeError', 'ReferenceError', 'RangeError', 'URIError', 'AggregateError'],
+  commandSignal: ['SIGTERM', 'SIGKILL', 'SIGINT', 'SIGABRT', 'SIGSEGV', 'SIGBUS', 'SIGHUP', 'SIGQUIT', 'SIGPIPE'],
+};
+const flags = ['hostHandlerEntered', 'modalPresent', 'viewportOverlay', 'outOfViewport', 'topUrlChanged',
+  'frameUrlChanged', 'frameLineageChanged', 'controlTagChanged', 'controlTypeChanged', 'controlRoleChanged', 'controlNameChanged'];
+const counts = ['argumentCount', 'observedRevision', 'currentRevision', 'retiredAtRevision', 'requestedRevision'];
+const argumentNames = ['action', 'browser', 'tabId', 'url', 'expectedUrl', 'expectedDocumentId', 'observationReceipt',
+  'ref', 'chooserId', 'interactionId', 'decision', 'paths', 'query', 'path', 'cwd', 'command', 'script', 'oldText',
+  'expectedHash', 'expectedRevision', 'reference', 'needle', 'offset', 'startOffset', 'maxBytes', 'limit', 'origin',
+  'requestId', 'revision', 'credentialId', 'length', 'usernameRef', 'confirmationRef', 'passwordRef', 'submitRef', 'intent'];
+const fieldTypes = ['string', 'array', 'object', 'number', 'boolean', 'null', 'undefined'];
+const invalidNames = new Set([...argumentNames, 'password', 'username', 'label', 'operation', 'loginOrigin']);
+const typeOf = value => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+
+export function failureRequestShape(original, parsed, invalidJson) {
+  if (original === undefined) return { argumentForm: 'absent' };
+  if (invalidJson) return { argumentForm: 'invalid-json' };
+  const type = typeOf(parsed);
+  if (type !== 'object') return { argumentForm: type === 'array' ? 'array' : 'non-object' };
+  return { argumentForm: 'object', argumentCount: Math.min(Object.keys(parsed).length, 4096),
+    argumentTypes: Object.fromEntries(argumentNames.filter(name => Object.hasOwn(parsed, name)).map(name => [name, typeOf(parsed[name])])) };
+}
+
+const pointerEvidenceChoices = {
+  pointerSession: ['top-level', 'child-target'],
+  pointerObservedFrame: ['main', 'embedded'],
+  pointerInputPhase: ['move', 'press', 'wheel'],
+  pointerHitRelationship: ['disconnected', 'different-document', 'invalid-local-point', 'shadow-root-unavailable',
+    'shadow-hit-unavailable', 'shadow-hit-unrelated', 'unrelated'],
+  pointerNativeHitKind: ['text', 'frame', 'control', 'other-element', 'other-node'],
+  pointerRendererHit: ['target', 'other', 'none', 'unavailable'],
+  pointerFirstRendererHit: ['target', 'other', 'none', 'unavailable'],
+  pointerRecovery: ['not-eligible', 'same-point', 'preparation-failed', 'retry-failed'],
+};
+const pointerEvidenceRanges = { pointerScrollX: [-1000000, 1000000], pointerScrollY: [-1000000, 1000000],
+  pointerLookupRoundingX: [-100, 0], pointerLookupRoundingY: [-100, 0], pointerRecoveryDistance: [0, 1000000] };
+
+// Persist a bounded comparison, with no hit node, exact pointer position or page content.
+export function projectPointerEvidence(input) {
+  const safe = {};
+  for (const [key, allowed] of Object.entries(pointerEvidenceChoices)) if (allowed.includes(input?.[key])) safe[key] = input[key];
+  for (const [key, [minimum, maximum]] of Object.entries(pointerEvidenceRanges)) {
+    const value = input?.[key];
+    if (Number.isSafeInteger(value) && value >= minimum && value <= maximum) safe[key] = value === 0 ? 0 : value;
+  }
+  if (typeof input?.pointerWithinTargetBox === 'boolean') safe.pointerWithinTargetBox = input.pointerWithinTargetBox;
+  return safe;
+}
+
+/** Only bounded classifications and argument types may cross the saved-receipt boundary. */
+export function projectFailureEvidence(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const safe = {};
+  for (const [key, allowed] of Object.entries(choices)) if (allowed.includes(input[key])) safe[key] = input[key];
+  if (safe.pointerCheck) Object.assign(safe, projectPointerEvidence(input));
+  for (const key of flags) if (typeof input[key] === 'boolean') safe[key] = input[key];
+  for (const key of counts) if (Number.isSafeInteger(input[key]) && input[key] >= 0) safe[key] = input[key];
+  const types = argumentNames.filter(name => fieldTypes.includes(input.argumentTypes?.[name]));
+  if (types.length) safe.argumentTypes = Object.fromEntries(types.map(name => [name, input.argumentTypes[name]]));
+  if (Array.isArray(input.invalidFields)) {
+    const invalid = [...new Set(input.invalidFields.slice(0, 64).filter(name => invalidNames.has(name)))].sort();
+    if (invalid.length) safe.invalidFields = invalid;
+  }
+  return Object.keys(safe).length ? safe : null;
+}
+
+export function failureCause(evidence) {
+  if (!evidence) return [];
+  const { receiptState, pointerStage, keyboardStage, bindingReason, pointerCheck, pointerVerification, controlBindingCause,
+    modalPresent, viewportOverlay, outOfViewport, commandStatus, commandError, argumentForm, invalidFields } = evidence;
+  const cause = [receiptState, pointerStage, keyboardStage, bindingReason, pointerCheck, pointerVerification,
+    controlBindingCause, modalPresent, viewportOverlay, outOfViewport, commandStatus, commandError,
+    argumentForm === 'invalid-json' ? argumentForm : undefined, invalidFields];
+  // Group by failure mechanism. Keep scroll amounts and movement distances as sample evidence.
+  const pointer = [evidence.pointerSession, evidence.pointerObservedFrame, evidence.pointerInputPhase,
+    evidence.pointerHitRelationship, evidence.pointerNativeHitKind, evidence.pointerRendererHit];
+  if (pointer.some(value => value !== undefined)) cause.push(...pointer);
+  return cause.some(value => value !== undefined) ? cause : [];
+}
+
 /** A diagnostic fingerprint of allowlisted metadata only; never raw error prose. */
 export function failureFingerprint(row={}){
  const string=value=>typeof value==='string'?value:'';
  const flag=value=>typeof value==='boolean'?value:null;
  return JSON.stringify([string(row.nodeId),string(row.tool),string(row.action),string(row.code),
    flag(row.actionDispatched),flag(row.inputDispatched),
-   Number.isSafeInteger(row.exitCode)?row.exitCode:null]);
+   Number.isSafeInteger(row.exitCode)?row.exitCode:null,...failureCause(row.evidence)]);
 }
 export function failureUnclassified(row={}){
- return !row.code||['TOOL_FAILED','WORKSPACE_ERROR','BROWSER_ACTION_FAILED','BROWSER_ELEMENT_ACTION_FAILED','UNKNOWN','ERROR'].includes(row.code);
+ return !row.code||['TOOL_FAILED','WORKSPACE_ERROR','BROWSER_ACTION_FAILED','BROWSER_ELEMENT_ACTION_FAILED','UNKNOWN','ERROR'].includes(row.code)&&!failureCause(row.evidence).length;
 }
 const label=(value,max)=>typeof value==='string'&&value.length<=max&&/^[a-zA-Z0-9_ .-]+$/.test(value)?value:'';
 const code=value=>typeof value==='string'&&/^[A-Z][A-Z0-9_]{1,79}$/.test(value)?value:'';
@@ -29,14 +123,27 @@ const safeFailureReceipt=row=>{
  if(typeof row.actionDispatched==='boolean')receipt.actionDispatched=row.actionDispatched;
  if(typeof row.inputDispatched==='boolean')receipt.inputDispatched=row.inputDispatched;
  if(Number.isSafeInteger(row.exitCode)&&Math.abs(row.exitCode)<65536)receipt.exitCode=row.exitCode;
+ const evidence=projectFailureEvidence(row.evidence);
+ if(evidence)receipt.evidence=evidence;
  return receipt;
 };
+/** Reproject explicit host metadata from a retained event without reading its raw result. */
+export function projectLegacyToolFailure(entry) {
+ const data=entry?.data;
+ if(data?.type!=='tool.result'||data.success!==false||!code(data.code))return null;
+ const row=safeFailureReceipt({...data,nodeId:entry.nodeId,at:entry.at,
+   exitCode:data.commandExecution?.source==='native-workspace-process-close'?data.commandExecution.exitCode:data.nativeExitCode});
+ return row&&!failureUnclassified(row)?row:null;
+}
 /** Store one safe fingerprint per failure class so rare historical causes survive receipt rollover. */
 function safeFailureKind(row){
  const entry=safeFailureReceipt(row);
  if(!entry||!Number.isSafeInteger(row?.count)||row.count<1)return null;
- const {sequence,callId,recovered,...base}=entry;
- return {...base,count:Math.min(row.count,Number.MAX_SAFE_INTEGER),
+ const {sequence,callId: occurrenceCallId,recovered,...base}=entry;
+ return {...base,
+    ...(callId(row.sampleCallId)?{sampleCallId:callId(row.sampleCallId)}:{}),
+    ...(safeReceiptTime(row.sampleAt)?{sampleAt:safeReceiptTime(row.sampleAt)}:{}),
+    count:Math.min(row.count,Number.MAX_SAFE_INTEGER),
    recoveredCount:Number.isSafeInteger(row.recoveredCount)&&row.recoveredCount>=0?Math.min(row.recoveredCount,row.count):0,
    firstAt:safeReceiptTime(row.firstAt),lastAt:safeReceiptTime(row.lastAt),
    firstSequence:Number.isSafeInteger(row.firstSequence)&&row.firstSequence>0?row.firstSequence:0,
@@ -47,10 +154,14 @@ function addFailureKind(kinds,row){
  if(match){match.count=Math.min(Number.MAX_SAFE_INTEGER,match.count+1);
   match.lastAt=safeReceiptTime(row.at);match.lastSequence=row.sequence;
   if(row.recovered===true)match.recoveredCount=Math.min(match.count,(match.recoveredCount||0)+1);
+  if(!match.evidence&&row.evidence){
+   match.evidence=row.evidence;match.sampleCallId=row.callId;match.sampleAt=safeReceiptTime(row.at);
+  }
   return true;}
  if(kinds.length>=DISTINCT_FAILURE_KINDS_LIMIT)return false;
  const entry=safeFailureKind({...row,count:1,recoveredCount:row.recovered===true?1:0,
-   firstAt:row.at,lastAt:row.at,firstSequence:row.sequence,lastSequence:row.sequence});
+   firstAt:row.at,lastAt:row.at,firstSequence:row.sequence,lastSequence:row.sequence,
+    sampleCallId:row.callId,sampleAt:row.at});
  if(!entry)return false;kinds.push(entry);return true;
 }
 /** Individual chronological failures; no result bodies, arguments, secret values, or raw error prose. */
@@ -78,11 +189,13 @@ export function retainToolFailureHistory(previous,entry){
   return changed?{...prior,version:1,total,omitted:Math.max(0,total-receipts.length),receipts,distinctKinds:kinds,distinctOverflow}:previous;
  }
  if(e.success!==false)return previous;
+ const evidence=projectFailureEvidence(e.evidence);
+ const exitCode=e.commandExecution?.source==='native-workspace-process-close'?e.commandExecution.exitCode:e.nativeExitCode;
  const row={sequence:total+1,at:entry.at,nodeId,tool,action:label(e.action,100),code:code(e.code)||'TOOL_FAILED',
    recovered:false,...(callId(e.callId)?{callId:callId(e.callId)}:{}),...(operationKey?{operationKey}:{}),...(receiptIdentity?{receiptIdentity}:{}),
    ...(typeof e.actionDispatched==='boolean'?{actionDispatched:e.actionDispatched}:{}),
    ...(typeof e.inputDispatched==='boolean'?{inputDispatched:e.inputDispatched}:{}),
-   ...(e.commandExecution?.source==='native-workspace-process-close'&&Number.isSafeInteger(e.commandExecution.exitCode)?{exitCode:e.commandExecution.exitCode}:{})};
+   ...(Number.isSafeInteger(exitCode)?{exitCode}:{}),...(evidence?{evidence}:{})};
  receipts.push(row);
  const indexed=addFailureKind(kinds,row);
  return {version:1,total:total+1,omitted:Math.max(0,total+1-TOOL_FAILURE_HISTORY_LIMIT),receipts:receipts.slice(-TOOL_FAILURE_HISTORY_LIMIT),distinctKinds:kinds,distinctOverflow:distinctOverflow+(indexed?0:1)};
