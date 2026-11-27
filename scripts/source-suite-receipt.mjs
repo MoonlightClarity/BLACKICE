@@ -24,7 +24,11 @@ await fs.writeFile(path.join(output,'inventory.json'),JSON.stringify({startedAt,
 // Windows native compiler/process fixtures share runner resources. The matched
 // affected-file run passed 136/136 serially but timed out twice at four workers.
 // Keep all assertions and production deadlines; isolate file execution instead.
-const stream=run({files:files.map(f=>path.join(root,f)),concurrency:1,timeout:120000});
+// File timeout applies to the whole test file, not each child test.
+ // planning-workflow-acceptance has multiple Electron cases; an individual case
+ // has a 300s deadline. The outer source-suite harness must not cut it off at 120s.
+const SOURCE_TEST_FILE_TIMEOUT_MS=360000;
+const stream=run({files:files.map(f=>path.join(root,f)),concurrency:1,timeout:SOURCE_TEST_FILE_TIMEOUT_MS});
 let observedPasses=0;
 const active=new Map();
 stream.on('test:dequeue',event=>{if(event.nesting===0)active.set(event.name,Date.now());});
