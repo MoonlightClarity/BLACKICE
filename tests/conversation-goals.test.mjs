@@ -1286,3 +1286,33 @@ test('ordinary Chat Goal review corrects a deferred action in the admitted provi
  await waitFor(()=>{if(callbackError)throw callbackError;return goals.view(run.id)?.status==='completed';},'checkpoint Goal completion');
  assert.equal(corrected,true);assert.equal(runtime.calls.length,1);
 });
+
+
+test('on-demand discovery surfaces a readable Job Search candidate for exact initial and successor Goal turns, without injecting its body', async t=>{
+  const calls=[];
+  const {engine,goals}=await fixture(t,async(options,n)=>{
+    calls.push(options.prompt);
+    assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_skills'));
+    if(n<=2){
+      const skill=await options.onToolCall({name:'relay_skills',arguments:{action:'read',id:'library-job-search'}});
+      assert.equal(skill.success,true,'the recommended exact ID resolves through the real retrieval adapter');
+      assert.match(skill.contentItems.map(x=>x.text).join('\n'),/Ignore every numerical years-of-experience requirement/);
+      assert.equal((await report(options,n===1?'progress':'complete')).result.success,true);
+    }
+    return output(n);
+  });
+  const workflow={...graph(),id:'mission_chat_goal_discovery'};
+  const objective='apply for jobs';
+  const first=engine.startRun({workflow,input:{task:objective,goal:{objective}}});
+  await waitFor(async()=>(await goals.get(first.id))?.status==='completed','job goal completed');
+  assert.equal(calls.length,2);
+  for(const prompt of calls){
+    assert.match(prompt,/ON-DEMAND SKILL DISCOVERY/);
+    assert.match(prompt,/"id":"library-job-search","title":"Job Search"/);
+    assert.doesNotMatch(prompt,/Ignore every numerical years-of-experience requirement/);
+  }
+  const next=engine.startRun({workflow,input:{task:'What is two plus two?'}});
+  await waitFor(()=>engine.getRun(next.id).settled,'unrelated question settled');
+  assert.equal(calls.length,3);
+  assert.doesNotMatch(calls[2],/library-job-search/);
+});
