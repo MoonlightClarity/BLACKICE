@@ -121,3 +121,39 @@ test('causality state survives a new handler instance for the same trusted task 
  assert.equal((await f.handler(invoke('one','click',{ref:'second',observationReceipt:token}))).success,true);
  assert.deepEqual(f.calls.map(call=>call.action),['fill','read','click']);
 });
+
+test('covered-target recovery supplies a fresh receipt, not a second click',async t=>{
+ const f=fixture(t,async (args,n)=>{
+  if(n===1)throw Object.assign(new Error('covered'),{code:'BROWSER_TARGET_COVERED',inputDispatched:false,blocker:{modalPresent:true}});
+  return {tabId:'one',url:'https://example.test/form',documentId:'one:1',frames:[{frame:'main',elements:[{ref:'close-dialog',name:'Close dialog',role:'button'}]}]};
+ });
+ const failed=await f.handler(invoke('one','click',{ref:'covered'}));
+ assert.equal(failed.code,'BROWSER_TARGET_COVERED');
+ assert.equal(failed.inputDispatched,false);
+ assert.deepEqual(f.calls.map(x=>x.action),['click','snapshot']);
+ const {recovery}=receipt(failed);
+ assert.equal(recovery.inspectVisualCall.action,'screenshot');
+ assert.match(recovery.observationReceipt,/^obs-/);
+ assert.equal((await f.handler(invoke('one','click',{ref:'close-dialog',observationReceipt:recovery.observationReceipt}))).success,true);
+ assert.deepEqual(f.calls.map(x=>x.action),['click','snapshot','click']);
+});
+test('snapshot uses the current owned tab when prior identity fields are carried into a read',async t=>{
+ const f=fixture(t);
+ const fresh=await f.handler(invoke('one','snapshot',{expectedUrl:'https://example.test/old',expectedDocumentId:'old-document'}));
+ assert.equal(fresh.success,true);
+ assert.equal(f.calls[0].expectedUrl,undefined);
+ assert.equal(f.calls[0].expectedDocumentId,undefined);
+ assert.equal(receipt(fresh).documentId,'one:1');
+});
+
+test('settled navigation and waits supply the observation required by the next action',async t=>{
+ const f=fixture(t,async args=>({tabId:args.tabId,url:args.url||'https://example.test/a',documentId:'one:2',frames:[{}]}));
+ const first=await f.handler(invoke('one','navigate',{url:'https://example.test/a'}));
+ assert.match(receipt(first).observationReceipt,/^obs-/);
+ const wait=await f.handler(invoke('one','wait',{text:'ready'}));
+ assert.match(receipt(wait).observationReceipt,/^obs-/);
+ const nav=await f.handler(invoke('one','navigate',{url:'https://example.test/b',observationReceipt:receipt(wait).observationReceipt}));
+ assert.equal(nav.success,true);
+ assert.equal((await f.handler(invoke('one','click',{ref:'control'}))).code,'BROWSER_REOBSERVE_REQUIRED');
+ assert.deepEqual(f.calls.map(x=>x.action),['navigate','wait','navigate']);
+});

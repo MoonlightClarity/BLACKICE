@@ -329,7 +329,7 @@ test('provider and host share closed mutually exclusive action contracts',async 
 
 test('archived browser observations expose only a bounded exact subset of current controls',async t=>{
  const {store}=await fixture(t);
- const page={tabId:'tab-1',documentId:'doc-2',url:'https://example.test/apply',frames:[{frame:'main',elements:[
+ const page={tabId:'tab-1',documentId:'doc-2',url:'https://example.test/apply',observationReceipt:'obs-01234567-0123-4567-89ab-0123456789ab',frames:[{frame:'main',elements:[
   {ref:'file-7',name:'Resume',tag:'input',type:'file',hidden:true,uploadOnly:true,required:true,value:'sensitive path'},
   {ref:'pwd-1',name:'Password',tag:'input',type:'password',value:'secret'},
   ...Array.from({length:50},(_,i)=>({ref:'field-'+i,name:'Question '+i,tag:'input',type:'text',value:'hidden value '+i,options:['A','B']}))
@@ -338,7 +338,7 @@ test('archived browser observations expose only a bounded exact subset of curren
  const response=parsed(await store.archiveResult(call,result(full))),compact=response.browserObservation;
  assert.equal(response.externalContext,true);
  assert.equal(compact.tabId,page.tabId);assert.equal(compact.documentId,page.documentId);assert.equal(compact.url,page.url);
- assert.equal(compact.partial,true);
+ assert.equal(compact.partial,true);assert.equal(compact.observationReceipt,page.observationReceipt);
  const controls=compact.frames.flatMap(f=>f.elements);
  assert(controls.length<=24);assert(controls.some(e=>e.ref==='file-7'&&e.uploadOnly&&e.hidden));
  assert(!controls.some(e=>e.type==='password'||Object.hasOwn(e,'value')||Object.hasOwn(e,'options')));
@@ -347,4 +347,15 @@ test('archived browser observations expose only a bounded exact subset of curren
  assert.match(response.nextAction,/Use the included exact browser controls/);
  const protectedResponse=parsed(await store.archiveResult({...call,callId:'browser-2'},result(JSON.stringify({...page,protectedContent:true}))));
  assert.equal(protectedResponse.browserObservation,undefined);
+});
+
+test('invalid archive search term points to fixing the term instead of implying no archive match',async t=>{
+ const {store}=await fixture(t);
+ const saved=parsed(await store.archiveResult(readCall,result('unique term '+ 'long '.repeat(500))));
+ const failed=await store.handle({arguments:{action:'search',reference:saved.reference,needle:['unique term']}});
+ assert.equal(failed.code,'CONTEXT_ARCHIVE_INVALID');
+ assert.match(failed.contentItems[0].text,/one nonempty literal string/);
+ const done=await store.handle({arguments:{action:'search',reference:saved.reference,needle:'unique term'}});
+ assert.equal(done.success,true);
+ assert.equal(parsed(done).matches.length,1);
 });

@@ -1309,6 +1309,7 @@ test('on-demand discovery surfaces a readable Job Search candidate for exact ini
   for(const prompt of calls){
     assert.match(prompt,/ON-DEMAND SKILL DISCOVERY/);
     assert.match(prompt,/"id":"library-job-search","title":"Job Search"/);
+    assert.match(prompt,/TASK SKILL CHECK[\s\S]*Ignore numerical years of experience completely/);
     assert.doesNotMatch(prompt,/Ignore every numerical years-of-experience requirement/);
   }
   const next=engine.startRun({workflow,input:{task:'What is two plus two?'}});

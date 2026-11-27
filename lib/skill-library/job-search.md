@@ -2,6 +2,12 @@
 
 Use to find, shortlist, or apply to open roles. Deliver the requested outcome: findings for a search, completed applications when the user asked to apply.
 
+## Every goal turn
+
+- Use only the user's requirements to filter openings. Ignore numerical years of experience completely for fit, ranking, level, and the decision to apply. Never reject because the resume does not mirror the employer's checklist. Compare actual core duties to the candidate's direct and adjacent work.
+- Citizenship, work authorization, and routine attestations are application fields, not reasons to screen out a role. Open the form. When the user says they would flag an exception, use the ordinary favorable reading unless you have contrary information. The resume’s silence does not imply an exception or require a new question. Give real scrutiny to material claims such as a license or clearance; never claim one the applicant does not hold. A question is not a rejection. Finish independent fields and continue other authorized applications when a site actually blocks progress.
+- If you skip a viable-looking role, record the specific user constraint, closed intake, or mismatch in core duties. 'Not established in the resume' is not a reason by itself.
+
 ## Use existing application documents
 
 For applications, use the user's current designated application resume unchanged by default. If its exact path is already supplied or established, read that path directly; do not search the filesystem for it again. Identify the actual source first; a professional profile or master may be background evidence, not the upload. A workspace copy, past application artifact, tailored derivative, or filename match is not automatically the current resume. If the intended path is unknown, search the relevant personal document folder and compare plausible candidates; do not stop at the first workspace hit. Reuse the established current path across applications and successor turns rather than rediscovering it for every role.
@@ -37,6 +43,12 @@ Useful routes:
 - Explore relevant employers, direct competitors, or a portfolio's hiring companies for further distinct openings.
 - Use specialist or broad boards and focused search-engine queries for discovery when useful, then follow a lead to its actual employer posting. A funding announcement or indexed snippet does not establish a vacancy's pay, remote terms, or current status.
 - For a repeat search, use a known requisition identity when readily available; another role at the same employer is not a duplicate.
+
+## Don't screen on the employer's behalf
+
+Open promising roles and judge whether the candidate can do the work. Match the core duties to concrete work the candidate has done, including adjacent tasks and work under other titles. Numerical tenure, preferred tools, and an item missing from the resume are not reasons to discard a role. A role can be a poor fit when the actual day-to-day work is substantially different, not because the checklist wording is different. Name the concrete duty or user's constraint if you skip.
+
+A posting's applicant-status language or the presence of a form question is not, by itself, evidence that the candidate cannot apply. Don't turn it into a search or ranking gate. Reach the actual form for an otherwise suitable role. Use already supplied answers for exact factual questions, don't assume a missing answer means ineligible, and don't treat an unanswered field as an employer rejection. Continue the other fields and the rest of the search if the form itself won't advance. Keep actual license and clearance claims accurate.
 
 ## Verify the exact vacancy
 

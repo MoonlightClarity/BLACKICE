@@ -3485,7 +3485,7 @@ test('covered page modal returns actionable blocker evidence without dispatch',a
  assert.equal(first.success,false);assert.equal(first.code,'BROWSER_TARGET_COVERED');
  assert.equal(body.inputDispatched,false);assert.equal(body.actionDispatched,undefined);
  assert.deepEqual(JSON.parse(JSON.stringify(body.blocker)),{modalPresent:true,viewportOverlay:true,outOfViewport:false});
- assert.match(body.recovery.hint,/resolve the dialog before any new click/);
+ assert.match(body.recovery.hint,/through its own visible controls/);
  assert.equal(f.tab.window.protocol.filter(call=>call.method==='Input.dispatchMouseEvent'&&call.params.type==='mousePressed').length,0);
  const safe=await goalPointerFixture(t);const blocked=await safe.wrapped(safe.original),other=JSON.parse(blocked.contentItems[0].text);
  assert.equal(other.blocker.modalPresent,false);

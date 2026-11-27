@@ -420,3 +420,16 @@ test('append validates preconditions, respects protected paths, and does not cre
   assert.equal(await readFile(path.join(cwd,'protected.txt'),'utf8'),'original');
   assert.deepEqual(await readdir(cwd),['protected.txt']);
 });
+
+test('an ENOENT text-search target suggests bounded rediscovery without claiming a search ran',async t=>{
+ const {handler,cwd}=await harness(t);
+ const failure=await handler(call({action:'search',path:'ledger-old.md',query:'requisition 42'}));
+ assert.equal(failure.success,false);
+ const detail=parsed(failure);
+ assert.equal(detail.searchPerformed,false);
+ assert.deepEqual(detail.recovery.nextCall,{action:'find',path:cwd,query:'ledger-old'});
+ await writeFile(path.join(cwd,'ledger-current.md'),'requisition 42');
+ const found=await handler(call({...detail.recovery.nextCall,query:'ledger'}));
+ assert.equal(found.success,true);
+ assert(parsed(found).matches.some(m=>path.basename(m.path)==='ledger-current.md'));
+});
