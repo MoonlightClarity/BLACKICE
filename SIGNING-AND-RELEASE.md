@@ -23,6 +23,13 @@ The request binds an exact source commit, application fingerprint, source-test r
 
 Do not substitute a passing source test for installed-binary validation, or treat an old receipt as evidence for a newer commit. A normal documentation cleanup is not a release request.
 
+## Source lineage review and acknowledgement
+
+The normal push-to-main release request continues to trigger publication automatically. Before building an installer, the existing workflow checks the independently maintained remote accepted-development branch and records the exact ancestry finding in the GitHub Actions summary. This warning does not require all experimental branches or worktrees to be clean.
+
+Every new publishing release request must explicitly include a lineageReview record with format 1, acknowledged true, reviewedVersion matching the new release, reviewedAppFingerprint matching its application fingerprint, reviewedAcceptedTip matching the remote accepted commit (or null if unavailable), reviewedOutcome equal to included, omitted, or unavailable, and a specific note describing what was checked. Run the read-only lineage inspector against the proposed source and latest accepted ref before editing the acknowledgement. The workflow independently recomputes the finding; omitted, changed, absent, or stale acknowledgement blocks publishing. A known omission may proceed with matching explicit acknowledgement and a visible warning. A missing remote baseline is reported as unverified, not as successful inclusion. Draft-only requests still receive the warning, but do not require approval before build; publication does.
+
+The accepted-development reference represents only changes actually accepted for integration; it is not automatically reset to a release branch. This workflow cannot inspect unpushed local work, so the reviewer must compare the local canonical development worktree to the accepted branch before acknowledging. Keep this review proportional and do not block unrelated experiments.
 ## Signing and user choice
 
 BLACKICE may distribute unsigned builds; signing is optional unless expressly required by the selected release configuration. An unsigned file has no Windows-verified publisher identity. A matching published SHA-256 verifies artifact bytes, not publisher trust or antivirus compatibility.

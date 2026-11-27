@@ -81,9 +81,9 @@ test('engine and delegated agents never offer the retired Bridge, including old 
     async runAgent(options) {
       assert.equal(options.dynamicTools.some(tool => tool.name === CHATGPT_BRIDGE_TOOL.name), false);
       assert.doesNotMatch(options.developerInstructions || '', /relay_chatgpt/);
-      await assert.rejects(async () => options.onToolCall(call({ action: 'status' })), options.prompt.startsWith('You are a short-lived BLACKICE subagent.') ? /subagent tool is not available/ : /Unknown knowledge tool/);
+      await assert.rejects(async () => options.onToolCall(call({ action: 'status' })), options.hostAgentRole==='delegate' ? /subagent tool is not available/ : /Unknown knowledge tool/);
       assert.equal(store.status().count, 0, 'Rejected Bridge calls must not create external requests.');
-      if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
+      if (options.hostAgentRole==='delegate') {
         childTurns++;
         return { output: 'No Bridge tool is attached.' };
       }

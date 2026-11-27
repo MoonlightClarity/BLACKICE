@@ -6,6 +6,7 @@ import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {HarnessEngine} from '../lib/engine.mjs';
+import {WORKSPACE_INSTRUCTIONS} from '../lib/workspace-tools.mjs';
 import {persistedRunRows} from './fixture-persisted-runs.mjs';
 import {RuntimeSettingsStore} from '../lib/runtime-settings.mjs';
 import {TaskStateStore} from '../lib/task-state.mjs';
@@ -36,10 +37,12 @@ test('guarded Relay chats really delegate with bounded child tools and observabl
     status(){return{connected:true,authenticated:true,defaultModel:'test-model'};}
     async runAgent(options){
       calls.push(options);
-      if(options.prompt.startsWith('You are a short-lived BLACKICE subagent.')){
+      if(options.hostAgentRole==='delegate'){
         assert.equal(options.cwd,cwd);
         assert.equal(options.codexHistory,'relay');
         assert.equal(options.effort,'high');
+        assert.match(options.prompt,/OWNER_EDITED_WORKER_WORKSPACE_1125/);
+        assert.equal(options.prompt.includes(WORKSPACE_INSTRUCTIONS),false,'worker must not inject an old hardcoded workspace instruction');
         assert.doesNotMatch(options.prompt,/RESPONSE VERBOSITY DEFAULT|ANSWER DETAIL/);
         assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));
         assert.ok(!options.dynamicTools.some(tool=>['relay_delegate','relay_control','relay_desktop','relay_task'].includes(tool.name)));
@@ -66,6 +69,8 @@ test('guarded Relay chats really delegate with bounded child tools and observabl
   assert.equal(calls.length,1);
   assert.ok(!calls[0].dynamicTools.some(tool=>tool.name==='relay_delegate'));
   await prefs.update({subagentsEnabled:true,maxSubagents:2,defaultEffort:'high',executionGuardrails:true});
+  await engine.executionLayers.save({action:'replace',id:'workspace-tools',text:'OWNER_EDITED_WORKER_WORKSPACE_1125',
+    expectedRevision:engine.executionLayers.revision},await engine.executionLayerDefinitions());
   const enabled=await finish(engine,engine.startRun({workflow:taskGraph(),input:'Evaluate a change with delegation.',planningMode:'off'}).id);
   assert.equal(enabled.status,'completed',enabled.error);
   assert.match(enabled.nodes.agent.output,/Worker finished/);
@@ -76,6 +81,57 @@ test('guarded Relay chats really delegate with bounded child tools and observabl
   assert.ok(enabled.events.some(event=>event.data?.type==='subagent'&&event.data?.status==='completed'));
 });
 
+test('disabled Runtime tools cannot be dispatched by stale delegated-worker tool calls',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'blackice-disabled-worker-tool-')),
+  cwd=path.join(root,'work'),dataDir=path.join(root,'data');
+ await mkdir(cwd);
+ const attempts=[];
+ class Runtime extends EventEmitter{
+  status(){return{connected:true,authenticated:true,defaultModel:'fixture-model',models:[{id:'fixture-model',supportsTools:true}]};}
+  async runAgent(options){
+   if(options.hostAgentRole==='delegate'){
+    assert.match(options.prompt,/^OWNER_DELEGATE_OPENING_EDIT_2026/);
+     assert.doesNotMatch(options.prompt,/You are a short-lived BLACKICE subagent/);
+     assert.match(options.prompt,/OWNER_DELEGATE_PROMPT_CURRENT_1125/);
+     assert.doesNotMatch(options.prompt,/You share the working folder and live plan with other agents/);
+     assert.match(options.developerInstructions,/OWNER_DELEGATE_DEVELOPER_CURRENT_1125/);
+     assert.doesNotMatch(options.prompt,/OWNER_DELEGATE_DEVELOPER_CURRENT_1125/);
+     assert.equal(options.dynamicTools.some(tool=>tool.name==='relay_workspace'),false,
+     'disabled worker tool must not be advertised');
+    const receipt=await options.onToolCall({name:'relay_workspace',callId:'worker-stale-dispatch',
+     arguments:{action:'run',command:'echo must-not-run'}});
+    attempts.push(receipt);
+    assert.equal(receipt.success,false);
+    assert.equal(receipt.code,'RUNTIME_TOOL_NOT_ATTACHED');
+    return{output:'Stale worker tool call rejected'};
+   }
+   const delegated=await options.onToolCall({name:'relay_delegate',
+    arguments:{tasks:[{id:'probe',prompt:'Inspect disabled workspace tool delivery'},
+     {id:'independent',prompt:'Independently inspect disabled workspace tool delivery'}]}});
+   assert.equal(delegated.success,true,JSON.stringify(delegated));
+   return{output:'Coordinator verified disabled tool boundary'};
+  }
+ }
+ const prefs=await new RuntimeSettingsStore({dataDir}).init();
+ await prefs.update({subagentsEnabled:true,maxSubagents:2});
+ const engine=await new HarnessEngine({runtime:new Runtime(),dataDir,defaultCwd:cwd}).init();
+ engine.runtimeSettings=prefs;
+ t.after(async()=>{await engine.close();await prefs.close();await rm(root,{recursive:true,force:true});});
+ await engine.toolDescriptions.save({name:'relay_workspace',action:'disable',
+  expectedRevision:engine.toolDescriptions.revision},engine.nativeToolDefinitions());
+  const definitions=await engine.executionLayerDefinitions();
+  await engine.executionLayers.save({action:'replace',id:'delegate-contract-1',
+    text:'OWNER_DELEGATE_OPENING_EDIT_2026',expectedRevision:engine.executionLayers.revision},definitions);
+   await engine.executionLayers.save({action:'replace',id:'delegate-contract-2',
+   text:'OWNER_DELEGATE_PROMPT_CURRENT_1125',expectedRevision:engine.executionLayers.revision},definitions);
+  await engine.executionLayers.save({action:'update',id:'delegate-contract-4',
+   fields:{role:'developer',text:'OWNER_DELEGATE_DEVELOPER_CURRENT_1125'},
+   expectedRevision:engine.executionLayers.revision},definitions);
+ const result=await finish(engine,engine.startRun({workflow:taskGraph(),
+  input:'Delegate a worker to check the disabled workspace tool boundary.',planningMode:'off'}).id);
+ assert.equal(result.status,'completed',result.error);
+ assert.equal(attempts.length,2,'both independent stale worker attempts were rejected');
+});
 test('a failed child execution remains inspectable in the durable parent run after a planned coordinator response',async t=>{
   const root=await mkdtemp(path.join(tmpdir(),'relay-delegate-failure-')),cwd=path.join(root,'work'),dataDir=path.join(root,'data');await mkdir(cwd);
   let childReceipt;
@@ -83,7 +139,7 @@ test('a failed child execution remains inspectable in the durable parent run aft
     status(){return{connected:true,authenticated:true,defaultModel:'fixture-model',models:[{id:'fixture-model',supportsTools:true}]};}
     async runAgent(options){
       const review = fixtureOutcomeReview(options); if (review) return review;
-      if(options.prompt.startsWith('You are a short-lived BLACKICE subagent.')){
+      if(options.hostAgentRole==='delegate'){
         const secondary=options.prompt.includes('Inspect a separate synthetic fixture; report actual work.');
         options.onEvent({type:'thread',threadId:secondary?'other-failed-thread':'failed-child-thread',turnId:secondary?'other-failed-turn':'failed-child-turn',model:'fixture-model'});
         options.onEvent({type:'usage',usage:{inputTokens:60,outputTokens:12,totalTokens:72}});

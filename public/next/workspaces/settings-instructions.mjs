@@ -1,6 +1,5 @@
 import {renderInstructionAudit, instructionAuditText} from './instruction-audit.mjs';
 import {createInstructionEditor} from './settings-instruction-editor.mjs';
-import {createExecutionLayerSettings} from './settings-execution-layers.mjs';
 
 const make = (doc, tag, value = '', className = '') => {
   const node = doc.createElement(tag); node.textContent = value;
@@ -23,43 +22,6 @@ export function createInstructionSettings({mount, api, onSelectFile}) {
   const current = make(doc, 'section', '', 'next-instruction-editor');
   current.id = 'next-instructions-core';
   const editor = createInstructionEditor({mount:current, api});
-  const layer = make(doc,'section','','next-instruction-editor');
-  const title = make(doc,'h4','Developer/System override (optional)');
-  const help = make(doc,'p','Optional complete replacement of BLACKICE-generated developer instructions. When active, this takes precedence over individual developer execution layers. Restore generation to use the editable layers below.','next-help');
-  const text = make(doc,'textarea','','next-field next-identity-content');
-  text.id='next-developer-layer-text';text.rows=9; text.setAttribute('aria-label','Developer / system layer');
-  const save = make(doc,'button','Save developer layer'), reset = make(doc,'button','Restore automatic instructions');
-  const notice = make(doc,'p','','next-help'), location = make(doc,'code');
-  notice.setAttribute('role','status'); save.type=reset.type='button';
-  layer.append(title,help,text,save,reset,notice,location);
-  const endpoint='/api/instructions/developer-layer';
-  let dirty=false,writing=false,generation=0;
-  text.addEventListener('input',()=>{dirty=true;notice.textContent='Unsaved changes.';});
-  async function layerRequest(method,value){
-    if(writing)return;
-    const token=++generation;
-    writing=method==='PUT';
-    save.disabled=reset.disabled=text.disabled=writing;
-    try{
-      const result=await api(endpoint,method,method==='PUT'?{content:value}:undefined);
-      if(token!==generation||destroyed)return;
-      location.textContent=result.path;
-      if(method==='PUT'||!dirty){
-        text.value=result.content??'';dirty=false;
-        notice.textContent=result.content===null?'Automatic instructions are active.':'Saved developer layer applies to the next execution.';
-      }
-    }catch(error){if(token===generation&&!destroyed)notice.textContent=error.message;}
-    finally{if(token===generation){writing=false;save.disabled=reset.disabled=text.disabled=false;}}
-  }
-  save.addEventListener('click',()=>void layerRequest('PUT',text.value));
-  reset.addEventListener('click',()=>void layerRequest('PUT',null));
-  function useCapture(value){
-    if(writing)return;
-    text.value=value;dirty=true;notice.textContent='Captured layer loaded as a draft. Save to apply it to future executions.';text.focus();
-  }
-  const executionLayersMount=make(doc,'section','','next-instruction-editor');
-  executionLayersMount.id='next-execution-layers-editor';
-  const executionLayersEditor=createExecutionLayerSettings({mount:executionLayersMount,api});
   const label = make(doc, 'h3', 'Captured executions');
   const explanation = make(doc, 'p',
     'Inspect the instructions captured for a particular execution, including their source and layer. Later edits do not rewrite a saved snapshot.', 'next-help');
@@ -78,7 +40,7 @@ export function createInstructionSettings({mount, api, onSelectFile}) {
   const status = make(doc, 'p', '', 'next-help'), content = make(doc, 'div', '', 'next-instruction-content');
   status.id = 'next-instructions-status'; status.setAttribute('role', 'status');
   content.id = 'next-instructions-content';
-  mount.replaceChildren(heading, description, sourceLinks, current, layer, executionLayersMount, label, explanation, form, nodeControls, status, content);
+  mount.replaceChildren(heading, description, sourceLinks, current, label, explanation, form, nodeControls, status, content);
   let active = false, destroyed = false, indexRead = 0, auditRead = 0, indexController = null, auditController = null, record = null;
   function invalidate() {
     indexRead++; auditRead++; indexController?.abort(); auditController?.abort();
@@ -92,7 +54,7 @@ export function createInstructionSettings({mount, api, onSelectFile}) {
         'This turn has no saved instruction snapshot. Current files cannot reconstruct what the model received.', 'next-help'));
       return;
     }
-    renderInstructionAudit(content, node.audit, new Set(), useCapture);
+    renderInstructionAudit(content, node.audit, new Set());
   }
   async function loadAudit() {
     const id = runInput.value.trim();
@@ -161,8 +123,8 @@ export function createInstructionSettings({mount, api, onSelectFile}) {
     finally { link.remove(); setTimeout(() => urlApi.revokeObjectURL(url), 1000); }
   });
   return {
-    enter() { if (active || destroyed) return; active = true; editor.enter(); executionLayersEditor.enter(); void layerRequest('GET'); void loadIndex(); },
-    leave() { active = false; invalidate(); editor.leave(); executionLayersEditor.leave(); },
-    destroy() { this.leave(); destroyed = true; editor.destroy(); executionLayersEditor.destroy(); mount.replaceChildren(); },
+    enter() { if (active || destroyed) return; active = true; editor.enter(); void loadIndex(); },
+    leave() { active = false; invalidate(); editor.leave(); },
+    destroy() { this.leave(); destroyed = true; editor.destroy(); mount.replaceChildren(); },
   };
 }

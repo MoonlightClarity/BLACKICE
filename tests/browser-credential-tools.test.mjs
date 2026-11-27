@@ -196,3 +196,16 @@ test('credential preflight failure is known not dispatched while a failed vault 
  assert.equal(observeGoalToolOutcome({name:"relay_credentials",arguments:{action:"generate",origin,requestId:"uncertain_attempt"}},uncertain).kind,"uncertain_external_effect");
  assert.doesNotMatch(JSON.stringify(uncertain),/Secret vault failure/);
 });
+test('credential action contract identifies missing fields before touching the vault', async () => {
+  const schema = BROWSER_CREDENTIAL_TOOL.inputSchema;
+  const generate = schema.oneOf.find(branch => branch.properties.action.const === 'generate');
+  assert.ok(generate.required.includes('requestId'));
+  assert.equal(Object.hasOwn(generate.properties, 'password'), false);
+  const vault = vaultFixture();
+  const handler = createBrowserCredentialToolHandler({ vault });
+  const rejected = await handler({ name: 'relay_credentials', arguments: { action: 'generate', origin } });
+  assert.equal(rejected.code, 'BROWSER_CREDENTIAL_VALIDATION');
+  assert.deepEqual(receipt(rejected).fields, ['requestId']);
+  assert.equal(rejected.actionDispatched, false);
+  assert.equal(vault.generated.length, 0);
+});

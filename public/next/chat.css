@@ -264,3 +264,7 @@
 .next-chat-diagnostic-alarm[hidden]{display:none}
 .next-chat-diagnostic-alarm p{margin:0;min-width:0;flex:1 1 320px;overflow-wrap:anywhere}
 .next-chat-diagnostic-alarm button{font-size:11px;padding:4px 8px}
+
+.markdown-table { max-width: 100%; overflow-x: auto; }
+.markdown-table table { border-collapse: collapse; }
+.markdown-table :is(th, td) { padding: .35em .65em; text-align: start; vertical-align: top; border: 1px solid currentColor; }

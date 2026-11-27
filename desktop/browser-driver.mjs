@@ -13,7 +13,7 @@ import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, bro
 import { captureHiddenPage } from './browser-capture.mjs';
 import { NativePasswordManager, passwordManagerURL, passwordManagerPreload } from './native-password-manager.mjs';
 import { prepareBrowserCompatibility } from './browser-compatibility.mjs';
-import { projectBrowserControlBinding } from '../lib/browser-reference-diagnostic.mjs';
+import { projectBrowserControlBinding, projectPointerEvidence } from '../lib/browser-reference-diagnostic.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { BrowserTabDiagnostics, diagnosticText } from '../lib/browser-tab-diagnostics.mjs';
 import { BrowserProtection, protectionOrigin } from '../lib/browser-protection.mjs';
@@ -245,14 +245,18 @@ function pageSnapshot(key, prefix, query, readContext = false, describeControl, 
           if (ref) { state.elements.delete(ref); state.identities.delete(ref); }
           ref = `${prefix}:${state.documentId}:${++state.next}`; state.ids.set(el, ref); state.descriptors.set(el, descriptor);
         }
-        if (!query || `${label} ${'value' in el ? el.value : ''}`.toLowerCase().includes(query.toLowerCase())) {
+        // An unlabeled control can still be found by its actual input type.
+        const value = 'value' in el ? String(el.value) : undefined;
+        const matches = !query || `${label} ${value ?? ''}`.toLowerCase().includes(needle)
+          || (typeof el.type === 'string' && el.type.toLowerCase().includes(needle));
+        if (matches) {
           state.elements.delete(ref); state.elements.set(ref, el); state.identities.set(ref, descriptor);
           if (hiddenAncestor) visibleControlsUnderHiddenAncestor++;
           // Only report browser-declared requirements, not label punctuation or inferred server rules.
           const ariaRequired = el.getAttribute('aria-required');
           const required = el.matches?.(':required') || ariaRequired === 'true' ? true
             : el.matches?.(':optional') || ariaRequired === 'false' ? false : undefined;
-          items.push({ ref, ...(uploadOnly ? { uploadOnly: true, hidden: true } : {}), role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...(required === undefined ? {} : { required }), ...('value' in el ? { value: String(el.value).slice(0, 300) } : {}), disabled: Boolean(el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true'), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
+          items.push({ ref, ...(uploadOnly ? { uploadOnly: true, hidden: true } : {}), role: role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), name: label, tag: el.tagName.toLowerCase(), ...(el.type ? { type: el.type } : {}), ...(required === undefined ? {} : { required }), ...(value === undefined ? {} : { value: value.slice(0, 300) }), disabled: Boolean(el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true'), ...(el.checked ? { checked: true } : {}), ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') } : {}), ...(el.tagName === 'A' ? { href: el.href } : {}), ...(el.tagName === 'SELECT' ? { options: [...el.options].slice(0, 80).map(o => ({ value: o.value, label: o.label })) } : {}) });
         }
       }
       for (const node of el.childNodes) if (node.nodeType === 3) {
@@ -296,7 +300,7 @@ function pageSnapshot(key, prefix, query, readContext = false, describeControl, 
   }));
   const validation = [...document.querySelectorAll('input,select,textarea')].filter(field => (field.validity?.valid === false || field.getAttribute('aria-invalid') === 'true')).slice(0, 100)
     .map(field => ({ name: String(field.name || field.id || '').slice(0, 256), message: String(field.validationMessage || field.getAttribute('aria-errormessage') || '').slice(0, 1000) }));
-  return { title: document.title, url: location.href, elements: query ? items.filter(i => `${i.name} ${i.value || ''}`.toLowerCase().includes(query.toLowerCase())) : items, text: text.join('\n').slice(0, 22000), truncated, ...(visibleControlsUnderHiddenAncestor ? { observationDiagnostics: { visibleControlsUnderHiddenAncestor } } : {}), ...(semanticRecords.length ? { semanticRecords, semanticTruncated } : {}), ...(forms.length ? { forms } : {}), ...(validation.length ? { validation } : {}), readyState: document.readyState, ...(contextual ? { textContext: { matches, before: 1, after: 8 } } : {}) };
+  return { title: document.title, url: location.href, elements: items, text: text.join('\n').slice(0, 22000), truncated, ...(visibleControlsUnderHiddenAncestor ? { observationDiagnostics: { visibleControlsUnderHiddenAncestor } } : {}), ...(semanticRecords.length ? { semanticRecords, semanticTruncated } : {}), ...(forms.length ? { forms } : {}), ...(validation.length ? { validation } : {}), readyState: document.readyState, ...(contextual ? { textContext: { matches, before: 1, after: 8 } } : {}) };
 }
 
 async function smoothPageScroll(target, top, left) {
@@ -354,8 +358,27 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
     return {focused,documentFocused};
   }
   if (action === 'pointer-verify') {
-    if (!pointerHitMatches(el, args.hit, args.point)) return {verified:false,reason:'pointer-hit-mismatch'};
-    return { verified: true };
+    const diagnostic = {};
+    if (pointerHitMatches(el, args.hit, args.point, diagnostic)) return { verified: true };
+    // Compare the renderer's current topmost hit with the CDP hit. Evidence
+    // here describes the refusal only and never permits pointer dispatch.
+    diagnostic.pointerRendererHit = 'unavailable';
+    try {
+      diagnostic.pointerNativeHitKind = args.hit?.nodeType === 3 ? 'text'
+        : ['IFRAME', 'FRAME'].includes(args.hit?.tagName) ? 'frame'
+          : ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'OPTION', 'LABEL'].includes(args.hit?.tagName) ? 'control'
+            : args.hit?.nodeType === 1 ? 'other-element' : 'other-node';
+      const { x, y } = args.point || {};
+      if (Number.isFinite(x) && Number.isFinite(y) && typeof document.elementFromPoint === 'function') {
+        const box = el.getBoundingClientRect();
+        if ([box.x, box.y, box.width, box.height].every(Number.isFinite)) {
+          diagnostic.pointerWithinTargetBox = x >= box.x && y >= box.y && x < box.x + box.width && y < box.y + box.height;
+        }
+        const hit = document.elementFromPoint(x, y);
+        diagnostic.pointerRendererHit = hit ? (pointerHitMatches(el, hit, args.point) ? 'target' : 'other') : 'none';
+      }
+    } catch { /* A secondary diagnostic cannot change the dispatch refusal. */ }
+    return { verified: false, reason: 'pointer-hit-mismatch', diagnostic };
   }
   if (action === 'prepare') {
     // A visible menu option, autocomplete result or similar transient control
@@ -468,8 +491,10 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
     el.value = args.value; el.dispatchEvent(new Event('input', { bubbles: true, composed: true })); el.dispatchEvent(new Event('change', { bubbles: true, composed: true })); return { selected: el.value };
   }
   if (action === 'upload') {
-    if (el.tagName !== 'INPUT' || el.type !== 'file') throw new Error('Choose a file input from a fresh snapshot.');
-    if (el.webkitdirectory || !el.multiple && args.files.length > 1) throw new Error('Choose files matching this input; directory selection is not supported.');
+    if (el.tagName !== 'INPUT' || el.type !== 'file')
+      return { __blackiceElementError: { message: 'Use the current file input ref, or click the upload control and observe its exact pending chooser.', code: 'BROWSER_UPLOAD_TARGET_NOT_FILE_INPUT', inputDispatched: false } };
+    if (el.webkitdirectory || !el.multiple && args.files.length > 1)
+      return { __blackiceElementError: { message: 'Choose files matching this input; directory selection is not supported.', code: 'BROWSER_UPLOAD_SELECTION_UNSUPPORTED', inputDispatched: false } };
     const transfer = new DataTransfer();
     for (const file of args.files) { const raw = atob(file.data); const bytes = Uint8Array.from(raw, c => c.charCodeAt(0)); transfer.items.add(new File([bytes], file.name, { type: file.type })); }
     el.files = transfer.files;
@@ -970,10 +995,18 @@ export class ElectronBrowserDriver extends EventEmitter {
     wc.on('will-attach-webview', event => event.preventDefault());
     if (this.liveSurface) wc.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (currentWindow() && isMainFrame === true) this.cancelAuthentication(tab); });
     wc.on('did-frame-navigate', (_event, _url, _responseCode, _statusText, isMainFrame, frameProcessId, frameRoutingId) => {
-      if (currentWindow()) this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url, 'frame-navigation');
+      if (!currentWindow()) return;
+      // Only a successful new top-level HTTP document can supersede an aborted
+      // load. Neither an iframe nor an in-page URL change proves this.
+      if (isMainFrame === true && /^https?:\/\//i.test(_url) && _responseCode >= 200 && _responseCode < 400) {
+        tab.successfulPageCommit = (tab.successfulPageCommit || 0) + 1;
+        if (tab.loadError && tab.abortedPageLoad === tab.loadError) tab.loadError = null;
+        tab.abortedPageLoad = null;
+      }
+      this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url, 'frame-navigation');
     });
     wc.on('did-navigate-in-page', (_event, _url, isMainFrame, frameProcessId, frameRoutingId) => { if (currentWindow()) this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url, 'in-page-navigation'); });
-    wc.on('did-fail-load', (_event, code, description, _url, isMainFrame) => { if (currentWindow() && isMainFrame !== false && code !== -3) { tab.loadError = String(description || `Navigation failed (${code}).`); this.emit('changed'); } });
+    wc.on('did-fail-load', (_event, code, description, _url, isMainFrame) => { if (currentWindow() && isMainFrame !== false && code !== -3) { tab.abortedPageLoad = null; tab.loadError = String(description || `Navigation failed (${code}).`); this.emit('changed'); } });
     wc.on('page-title-updated', (_event, value) => { if (!currentWindow()) return; tab.title = value; this.persist(); this.emit('changed'); });
     const handoffExternal = (event, target) => {
       if (!currentWindow()) return;
@@ -1010,9 +1043,22 @@ export class ElectronBrowserDriver extends EventEmitter {
     tab.loading = suppliedWindow || tab.pendingURL ? Promise.resolve() : containment.then(async () => {
       if (tab.window !== window || tab.rendererFailure) throw rendererFailure(tab);
       tab.navigationDispatched = true;
-      try { if (tab.url !== 'about:blank') await wc.loadURL(tab.url); }
+      try { if (tab.url !== 'about:blank') await this.loadPage(tab, window, tab.url); }
       finally { if (tab.window === window) tab.preparingURL = null; }
     }).catch(reason => { if (tab.window === window) tab.loadError = reason.message; });
+  }
+  async loadPage(tab, window, url) {
+    const commitBeforeLoad = tab.successfulPageCommit || 0;
+    try { await window.webContents.loadURL(url); }
+    catch (reason) {
+      if (tab.window !== window) return;
+      const aborted = reason?.code === 'ERR_ABORTED' || reason?.errno === -3;
+      if (aborted && (tab.successfulPageCommit || 0) > commitBeforeLoad) return;
+      // An abort must not overwrite a separately reported hard load failure.
+      if (aborted && tab.loadError && !tab.abortedPageLoad) return;
+      tab.loadError = reason?.message || String(reason);
+      tab.abortedPageLoad = aborted ? tab.loadError : null;
+    }
   }
   tab(id) { const tab = this.tabs.get(id || this.activeTab); if (!tab || tab.window?.isDestroyed()) throw error('Choose an existing browser tab, or open a URL first.'); return tab; }
   removeTab(tab) {
@@ -1396,7 +1442,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (tab.pendingURL) {
       const url = tab.pendingURL; tab.pendingURL = null; tab.preparingURL = url; tab.loadError = null; tab.navigationDispatched = true;
       const window = tab.window;
-      tab.loading = (url === 'about:blank' && window.webContents.getURL() === url ? Promise.resolve() : window.webContents.loadURL(url))
+      tab.loading = (url === 'about:blank' && window.webContents.getURL() === url ? Promise.resolve() : this.loadPage(tab, window, url))
         .catch(reason => { if (tab.window === window) tab.loadError = reason.message; })
         .finally(() => { if (tab.window === window) tab.preparingURL = null; });
     }
@@ -1628,13 +1674,16 @@ export class ElectronBrowserDriver extends EventEmitter {
         'BROWSER_FIELD_NOT_EDITABLE','BROWSER_INPUT_FOCUS_CHANGED','BROWSER_INPUT_SELECTION_FAILED'].includes(code);
       const inputPrevented = inputDispatched === false
         && (action === 'select' || ['fill','fill-ready'].includes(action)&&textPreflight || action === 'prepare' && code === 'BROWSER_TARGET_COVERED');
-       const blocker=code==='BROWSER_TARGET_COVERED'&&action==='prepare'&&inputDispatched===false&&result.__blackiceElementError.blocker;
+      const uploadRefused = action === 'upload' && inputDispatched === false &&
+        ['BROWSER_UPLOAD_TARGET_NOT_FILE_INPUT', 'BROWSER_UPLOAD_SELECTION_UNSUPPORTED'].includes(code);
+      const blocker=code==='BROWSER_TARGET_COVERED'&&action==='prepare'&&inputDispatched===false&&result.__blackiceElementError.blocker;
       throw Object.assign(error(message), {
         code,
         ...(blocker?{blocker:{modalPresent:blocker.modalPresent===true,viewportOverlay:blocker.viewportOverlay===true,outOfViewport:blocker.outOfViewport===true}}:{}),
         ...(code === 'BROWSER_REF_STALE' ? { browserReferenceDiagnostic: { ...this.referenceDiagnostic(tab, args.ref, 'control-changed'), ...projectBrowserControlBinding(result.__blackiceElementError, action) } } : {}),
         ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true, ...(action==='prepare'?{inputDispatched:false,pointerStage:'pre-pointer-identity'}:{}) }
-          : inputPrevented ? { inputDispatched: false, ...(action==='prepare'?{pointerStage:'pre-pointer-identity'}:{}),
+          : uploadRefused ? { actionDispatched: false, inputDispatched: false }
+           : inputPrevented ? { inputDispatched: false, ...(action==='prepare'?{pointerStage:'pre-pointer-identity'}:{}),
               ...(['fill','fill-ready'].includes(action)?{keyboardStage:'pre-key-input'}:{}) } : {}),
       });
     }
@@ -1975,15 +2024,25 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
   }
   async assertPointerReference(tab, expected, point, signal, sessionId) {
-    let objectId,check='layout-metrics',geometryChanged=false;
+    let objectId,check='layout-metrics',geometryChanged=false,pointerVerification;
+    const observedLineage = tab.refContexts?.get(expected.ref)?.stamp?.lineage;
+    const diagnostic = { pointerSession: sessionId ? 'child-target' : 'top-level',
+      ...(observedLineage?.length ? { pointerObservedFrame: observedLineage.length === 1 ? 'main' : 'embedded' } : {}),
+      pointerInputPhase: { mouseMoved: 'move', mousePressed: 'press', mouseWheel: 'wheel' }[point.type] };
     try {
       // Input coordinates are viewport CSS pixels. DOM hit lookup uses document
       // CSS pixels in this exact target session, including a scrolled OOP frame.
       const metrics = await this.cdp(tab, 'Page.getLayoutMetrics', {}, signal, undefined, sessionId);
       const viewport = metrics.cssLayoutViewport;
       if (!viewport || !['pageX', 'pageY', 'clientWidth', 'clientHeight'].every(key => Number.isFinite(viewport[key]))) throw error('The pointer viewport could not be verified.');
+      const lookupX = point.x + viewport.pageX, lookupY = point.y + viewport.pageY;
+      const x = Math.floor(lookupX), y = Math.floor(lookupY);
+      diagnostic.pointerScrollX = Math.round(viewport.pageX);
+      diagnostic.pointerScrollY = Math.round(viewport.pageY);
+      diagnostic.pointerLookupRoundingX = Math.round((x - lookupX) * 100);
+      diagnostic.pointerLookupRoundingY = Math.round((y - lookupY) * 100);
       check='hit-location';
-      const hit = await this.cdp(tab, 'DOM.getNodeForLocation', { x: Math.floor(point.x + viewport.pageX), y: Math.floor(point.y + viewport.pageY) }, signal, undefined, sessionId);
+      const hit = await this.cdp(tab, 'DOM.getNodeForLocation', { x, y }, signal, undefined, sessionId);
       if (!Number.isInteger(hit.backendNodeId)) throw error('The pointer hit node is unavailable.');
       check='resolve-hit';
       const resolved = await this.cdp(tab, 'DOM.resolveNode', { backendNodeId: hit.backendNodeId }, signal, undefined, sessionId);
@@ -1994,7 +2053,16 @@ export class ElectronBrowserDriver extends EventEmitter {
         functionDeclaration: `function(key,ref,point){return (${elementAction.toString()})(key,ref,'pointer-verify',{hit:this,point},undefined,undefined,${browserControlDescriptor.toString()},${browserPointerHitMatches.toString()});}`,
         arguments: [{ value: this.key }, { value: expected.ref }, { value: expected.pointerLocalPoint || { x: point.x, y: point.y } }], returnByValue: true }, signal, undefined, sessionId);
       if (checked.exceptionDetails || checked.result?.value?.verified !== true) {
-        geometryChanged=!checked.exceptionDetails&&checked.result?.value?.verified===false&&checked.result.value.reason==='pointer-hit-mismatch';
+        const proof=checked.result?.value;
+        const rejected=proof?.__blackiceElementError;
+        geometryChanged=!checked.exceptionDetails&&proof?.verified===false&&proof.reason==='pointer-hit-mismatch';
+        if (geometryChanged && proof.diagnostic) {
+          const { pointerHitRelationship, pointerRendererHit, pointerNativeHitKind, pointerWithinTargetBox } = proof.diagnostic;
+          Object.assign(diagnostic, { pointerHitRelationship, pointerRendererHit, pointerNativeHitKind, pointerWithinTargetBox });
+        }
+        pointerVerification=checked.exceptionDetails?'renderer-exception':geometryChanged?'hit-mismatch':
+          ['control-disconnected','hidden','no-box','identity-changed'].includes(rejected?.controlBindingCause)
+            ? rejected.controlBindingCause : 'no-verification';
         throw error('The pointer no longer hits the exact observed control in its document.');
       }
       check='viewport-recheck';
@@ -2003,7 +2071,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     } catch (cause) {
       if (cause?.name === 'AbortError' || ['BROWSER_CONTAINMENT_LOST', 'BROWSER_RENDERER_GONE', 'BROWSER_INTERACTION_PENDING'].includes(cause?.code)) throw cause;
       if(check==='hit-location'&&/No node found at given location/i.test(String(cause?.message||cause)))geometryChanged=true;
-      throw Object.assign(error('The pointer target changed or could not be verified ('+check+'). Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: {...this.referenceDiagnostic(tab, expected.ref),pointerCheck:check}, [pointerIdentityGuard]:true, [pointerGeometryRecovery]:geometryChanged });
+      throw Object.assign(error('The pointer target changed or could not be verified ('+check+'). Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: {...this.referenceDiagnostic(tab, expected.ref),pointerCheck:check,...projectPointerEvidence(diagnostic),...(pointerVerification?{pointerVerification}:{})}, [pointerIdentityGuard]:true, [pointerGeometryRecovery]:geometryChanged });
     } finally {
       if (objectId) void this.cdp(tab, 'Runtime.releaseObject', { objectId }, undefined, undefined, sessionId).catch(() => {});
     }
@@ -2543,7 +2611,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     // page identity instead of silently reading a new destination.
     if (args.action==='read' && (args.expectedUrl!==undefined||args.expectedDocumentId!==undefined))
       this.assertInputDocument(tab,args);
-    if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)||args.action==='scroll'&&args.ref) {
+    if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)||args.action==='scroll'&&!wheel) {
       try { this.assertInputDocument(tab, args); }
       catch (cause) {
         // Restoring a suspended navigation or preparing a popup can already
@@ -2575,7 +2643,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (recoveryInput) await recoveryInput({ signal, prepared: true });
       tab.loadError = null; tab.navigationDispatched = true;
       const wc = tab.window.webContents;
-      if (args.action === 'navigate') { tab.pendingURL = null; tab.url = browserURL(args.url); await this.pageWork(tab, wc.loadURL(tab.url).catch(e => { tab.loadError = e.message; }), signal, 20000); }
+      if (args.action === 'navigate') { tab.pendingURL = null; tab.url = browserURL(args.url); await this.pageWork(tab, this.loadPage(tab, tab.window, tab.url), signal, 20000); }
       else if (args.action === 'reload' && !resumed) wc.reload();
       else if (args.action === 'reload') { /* Resuming the suspended URL already performs this reload. */ }
       else if (args.action === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
@@ -2646,7 +2714,12 @@ export class ElectronBrowserDriver extends EventEmitter {
           // input has not been dispatched and the SAME observed node survives.
           // Never remap by label, retry a consequential input, or consume a
           // previously granted deliberate-retry permit a second time.
-          if(cause?.[pointerGeometryRecovery]!==true||cause.inputDispatched!==false||cause.pointerStage!=='pre-pointer-identity'||recoveryInput||tab.pendingInteraction||!this.referenceCurrent(tab,args.ref,args.expectedDocumentId))throw cause;
+          if(cause?.[pointerGeometryRecovery]!==true||cause.inputDispatched!==false||cause.pointerStage!=='pre-pointer-identity')throw cause;
+          const diagnostic = cause.browserReferenceDiagnostic;
+          if(recoveryInput||tab.pendingInteraction||!this.referenceCurrent(tab,args.ref,args.expectedDocumentId)) {
+            diagnostic.pointerRecovery = 'not-eligible';
+            throw cause;
+          }
           cancel(signal);
           let next;
           try {
@@ -2656,11 +2729,29 @@ export class ElectronBrowserDriver extends EventEmitter {
             const current=tab.popupViewport?await this.element(tab,args,'prepare',signal):prepared;
             if(current.frame!==prepared.frame||!this.referenceCurrent(tab,args.ref,args.expectedDocumentId))throw cause;
             next=await this.browserPoint(tab,current.frame,current.result,signal);
-            if(!Number.isFinite(next.x)||!Number.isFinite(next.y)||Math.hypot(next.x-point.x,next.y-point.y)<1)throw cause;
+            const distance = Math.hypot(next.x - point.x, next.y - point.y);
+            if (Number.isFinite(distance)) diagnostic.pointerRecoveryDistance = Math.round(distance);
+            if(!Number.isFinite(next.x)||!Number.isFinite(next.y)||distance<1) {
+              if (Number.isFinite(distance)) diagnostic.pointerRecovery = 'same-point';
+              throw cause;
+            }
             await this.assertOperationCommit(args,operationDescriptor,{signal,owner});
-          }catch(nextError){if(signal?.aborted)throw nextError;throw cause;}
+          }catch(nextError){
+            if(signal?.aborted)throw nextError;
+            diagnostic.pointerRecovery ||= 'preparation-failed';
+            throw cause;
+          }
           // No automatic repetition follows this second dispatch attempt.
-          await this.pointerInput(tab,next,args.action,signal,args,onClickPopup);
+          try { await this.pointerInput(tab,next,args.action,signal,args,onClickPopup); }
+          catch (retryError) {
+            if (retryError?.[pointerIdentityGuard] === true && retryError.browserReferenceDiagnostic) {
+              Object.assign(retryError.browserReferenceDiagnostic, projectPointerEvidence({
+                pointerRecovery: 'retry-failed', pointerRecoveryDistance: diagnostic.pointerRecoveryDistance,
+                pointerFirstRendererHit: diagnostic.pointerRendererHit,
+              }));
+            }
+            throw retryError;
+          }
         }
         receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: args.ref, input: 'browser protocol' };
       } else {

@@ -145,3 +145,33 @@ test('revision-insensitive recovery is restricted to validated task conflict wri
  const current=toolResultEvent({name:'relay_task',arguments:{...args,expectedRevision:2}},{success:true});
  assert.equal(reduceToolOutcome(reduceToolOutcome(undefined,legacy),current).issues[0].resolved,false,'old receipts cannot acquire an unverified recovery identity');
 });
+
+test('browser and validation failure events preserve trusted dispatch and bounded request evidence', () => {
+ const error = toolResultEvent({
+  name:'relay_browser',callId:'call-42',arguments:{action:'click',ref:'private-ref',expectedUrl:'https://private.example/details',
+    expectedDocumentId:'private-document',observationReceipt:'opaque-token',customPrivateKey:'private-value'},
+ }, {
+  success:false,code:'BROWSER_REF_STALE',inputDispatched:false,hostHandlerEntered:true,pointerStage:'pre-pointer-identity',
+  browserReferenceDiagnostic:{reason:'binding-mismatch',pointerCheck:'verify-hit',pointerVerification:'hit-mismatch',
+    currentRevision:7,requestedRevision:6,raw:'private-renderer-data'},
+ });
+ assert.equal(error.inputDispatched,false);
+ assert.equal(error.actionDispatched,undefined);
+ assert.deepEqual(error.evidence,{
+  codeSource:'adapter',argumentForm:'object',pointerStage:'pre-pointer-identity',bindingReason:'binding-mismatch',
+  pointerCheck:'verify-hit',pointerVerification:'hit-mismatch',hostHandlerEntered:true,argumentCount:6,currentRevision:7,
+  requestedRevision:6,argumentTypes:{action:'string',expectedUrl:'string',expectedDocumentId:'string',observationReceipt:'string',ref:'string'},
+ });
+ assert.doesNotMatch(JSON.stringify(error.evidence),/private|opaque-token/);
+ const malformed=toolResultEvent({name:'relay_context_page',arguments:'{secret'},{success:false});
+ assert.equal(malformed.evidence.argumentForm,'invalid-json');
+ assert.equal(malformed.evidence.codeSource,'unavailable');
+ const byType=toolResultEvent({name:'relay_context_page',arguments:{action:'search',needle:['secret']}},{success:false,code:'CONTEXT_ARCHIVE_INVALID'});
+ assert.equal(byType.evidence.argumentTypes.needle,'array');
+ assert.doesNotMatch(JSON.stringify(byType.evidence),/secret/);
+ const codex=nativeToolResultEvent({id:'native-1',type:'commandExecution',status:'failed',exitCode:7,command:'raw-command'});
+ assert.equal(codex.code,'CODEX_COMMAND_EXIT_NONZERO');
+ assert.equal(codex.nativeExitCode,7);
+ assert.equal(codex.evidence.commandStatus,'exited');
+ assert.doesNotMatch(JSON.stringify(codex.evidence),/raw-command/);
+});

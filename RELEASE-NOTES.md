@@ -2,6 +2,11 @@
 
 This file summarizes meaningful changes. Older source notes remain recoverable through Git history rather than as hundreds of permanent files in the current tree.
 
+## BLACKICE 2.40.85 — recovery candidate, not yet published
+
+- Reconciles the separate accepted Runtime architecture, published 2.40.84 source, overnight development work and verified installed-payload differences; original commits and recovery copies remain intact.
+- Adds GitHub Actions accepted-development lineage verification, visible warnings, and a release-fingerprint-bound explicit acknowledgement gate without changing automatic release-request publication.
+- The 2.40.85 installer has not been qualified or published. Preserve 2.40.84 as installed until separate runtime and Windows installation validation is complete.
 ## BLACKICE 2.40.84 — Windows release
 
 - Retained Astra's Codex public OAuth client compatibility patch: permit only exact localhost/127.0.0.1 loopback callbacks with bounded ports, preserve approved Codex grants, and reject untrusted redirect destinations.

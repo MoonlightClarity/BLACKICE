@@ -85,3 +85,54 @@ test('saved layer edits reach model-facing developer, prompt and tool definition
  assert.doesNotMatch(second.received.prompt,/CUSTOM_PROMPT_LAYER_A/);
  assert.deepEqual(first.saved.nodes.agent.instructionAudit,firstCaptured,'later user edits cannot mutate saved receipts');
 });
+
+test('Runtime roles and tool disabling change real provider channels, not just labels',async t=>{
+ const dataDir=await mkdtemp(path.join(tmpdir(),'blackice-runtime-roles-'));
+ const runtime=new Runtime(),layers=await new ExecutionLayerOverrides({dataDir}).init(),
+  tools=await new ToolDescriptionOverrides({dataDir}).init();
+ const engine=await new HarnessEngine({runtime,dataDir,defaultCwd:dataDir,executionLayers:layers,toolDescriptions:tools}).init();
+ t.after(async()=>{await engine.close();await rm(dataDir,{recursive:true,force:true,maxRetries:12,retryDelay:100});});
+ const defs=await engine.executionLayerDefinitions();
+ let row=await layers.save({action:'update',id:'capabilities',fields:{
+   role:'prompt',title:'Owner routing label',text:'RUNTIME_ROUTING_IN_PROMPT_418',
+   description:'User-authored role test'},expectedRevision:0},defs);
+ assert.equal(row.layers.find(item=>item.id==='capabilities').role,'prompt');
+ row=await layers.save({action:'update',id:'workspace-tools',fields:{
+   role:'developer',text:'RUNTIME_WORKSPACE_IN_DEVELOPER_419'},expectedRevision:row.revision},defs);
+ const native=engine.nativeToolDefinitions(),workspace=native.find(tool=>tool.name==='relay_workspace');
+ assert.ok(workspace);
+ const schema=structuredClone(workspace.inputSchema);
+ schema.properties.action.description='OWNER_EDITED_TOOL_SCHEMA_420';
+ let toolRow=await tools.save({name:'relay_workspace',description:'OWNER_EDITED_TOOL_DESCRIPTION_421',
+   inputSchema:schema,expectedRevision:0},native);
+ assert.equal(toolRow.revision,1);
+ let number=0;
+ const invoke=async()=>{
+  const input='Check file-tool availability without performing external actions.';
+  const workflow=createMissionWorkflow({id:'runtime-role-fixture-'+(++number),task:input,
+   model:'fixture',cwd:dataDir,planningMode:'off'});
+  const run=engine.startRun({workflow,input});
+  await engine.executions.get(run.id);
+  const saved=engine.getRun(run.id);
+  assert.equal(saved.status,'completed',saved.error);
+  return{request:runtime.received.at(-1),saved};
+ };
+ const first=await invoke();
+ assert.match(first.request.prompt,/RUNTIME_ROUTING_IN_PROMPT_418/);
+ assert.doesNotMatch(first.request.developerInstructions,/RUNTIME_ROUTING_IN_PROMPT_418/);
+ assert.match(first.request.developerInstructions,/RUNTIME_WORKSPACE_IN_DEVELOPER_419/);
+ assert.doesNotMatch(first.request.prompt,/RUNTIME_WORKSPACE_IN_DEVELOPER_419/);
+ assert.ok(first.saved.nodes.agent.instructionAudit.sections.some(section=>
+   section.id==='workspace-tools'&&section.role==='developer'&&section.text==='RUNTIME_WORKSPACE_IN_DEVELOPER_419'));
+ const delivered=first.request.dynamicTools.find(item=>item.name==='relay_workspace');
+ assert.equal(delivered.description,'OWNER_EDITED_TOOL_DESCRIPTION_421');
+ assert.equal(delivered.inputSchema.properties.action.description,'OWNER_EDITED_TOOL_SCHEMA_420');
+ assert.notEqual(workspace.inputSchema.properties.action.description,'OWNER_EDITED_TOOL_SCHEMA_420');
+ const priorAudit=structuredClone(first.saved.nodes.agent.instructionAudit);
+ await tools.save({name:'relay_workspace',action:'disable',expectedRevision:1},native);
+ const second=await invoke();
+ assert.ok(!second.request.dynamicTools.some(tool=>tool.name==='relay_workspace'),
+   'disabling a tool must remove the provider-facing definition');
+ assert.deepEqual(first.saved.nodes.agent.instructionAudit,priorAudit,
+   'later tool availability edits must not rewrite a saved audit');
+});

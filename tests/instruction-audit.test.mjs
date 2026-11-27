@@ -179,9 +179,14 @@ test('engine audits owner skill replacements, deleted overlays, active SOUL and 
  const intent=await catalog.detail({id:'library-intent-inference'});
  const longIntent='# Owner intent method\n'+'a'.repeat(21000)+'\nINTENT_TAIL_SENT';
  await catalog.save({id:intent.id,value:{expectedRevision:intent.revision,content:longIntent}});
+ // Simulate a legacy saved override created before receipt-only IDs were retired.
+ engine.executionLayers.state.overrides['skill-library-intent-inference']={enabled:true,role:'developer',text:'STALE_SHADOW_SKILL_871'};
+ const definitions=await engine.executionLayerDefinitions([{id:'skill-library-intent-inference',layer:'prompt',text:'STALE_SHADOW_SKILL_871'}]);
+ assert.ok(!engine.executionLayers.list(definitions).layers.some(row=>row.id==='skill-library-intent-inference'));
  const selected=engine.startRun({workflow:{...workflow,id:'mission_chat_audit_fixture',description:'A focused task started from Mission.'},input:{task:'Use the Owner intent method skill. Explain its steps.',directoryMode:'off'}});
  await engine.executions.get(selected.id);assert.equal(engine.getRun(selected.id).status,'completed',engine.getRun(selected.id).error);
  assert.match(runtime.calls.at(-1).prompt,/INTENT_TAIL_SENT/);
+ assert.doesNotMatch(runtime.calls.at(-1).prompt+runtime.calls.at(-1).developerInstructions,/STALE_SHADOW_SKILL_871/);
  assert.match(engine.getRun(selected.id).nodes.agent.instructionAudit.sections.find(item=>item.id==='skill-library-intent-inference').text,/INTENT_TAIL_SENT/);
 
 });
@@ -202,7 +207,7 @@ test('delegated execution has a separate exact audit with frozen SOUL and assign
   store={get:()=>({baseUrl:'https://fixture.invalid/v1'})};
   status(){return {connected:true,authenticated:true,defaultModel:'fixture::remote',models:[{id:'fixture::remote',supportsTools:true}]};}
   async runAgent(options){
-   const child=options.prompt.startsWith('You are a short-lived BLACKICE subagent.');
+   const child=options.hostAgentRole==='delegate';
    options.onInstructionAuditPrepared?.({developerInstructions:options.developerInstructions+(child?'\nCHILD_ADAPTER':'\nPARENT_ADAPTER'),adapter:'fixture',role:'system',source:'offline delegate test'});
    options.onPromptAccepted?.(options.prompt);
    if(child){childCall=options;return {output:'Worker checked the assigned fixture.'};}

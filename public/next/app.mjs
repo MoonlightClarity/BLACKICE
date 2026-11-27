@@ -15,7 +15,7 @@ const modules={
   cronjobs:()=>import('./workspaces/tasks.mjs').then(m=>m.createCronjobsWorkspace),
   workflows:()=>import('./workspaces/workflow-execution.mjs').then(m=>m.createWorkflowWorkspace),
   browser:()=>import('./workspaces/browser.mjs').then(m=>m.createBrowserWorkspace),
-  skills:()=>import('./workspaces/skills.mjs').then(m=>m.createSkillsWorkspace),
+  runtime:()=>import('./workspaces/runtime.mjs').then(m=>m.createRuntimeWorkspace),
   settings:()=>import('./workspaces/settings.mjs').then(m=>m.createSettingsWorkspace),
 };
 const notify=(message,error=false)=>{
@@ -56,6 +56,8 @@ function openWorkspaceTarget(space){
 async function show(name,{conversationId,requestId,nodeId,modelProviderId,knowledgeId,settingsSection}={}){
   // Legacy Tasks/Activity hashes now open scheduled automation rather than a task dashboard.
   if(name==='activity'||name==='tasks'){name='cronjobs';try{history.replaceState(null,'','#cronjobs');}catch{}}
+  // Old Skills bookmarks and deep links resolve to the single Runtime editor.
+  if(name==='skills'){name='runtime';try{history.replaceState(null,'','#runtime');}catch{}}
   if(!modules[name])return;
   const previous=current;const target=++revision;
   const navigation={conversationId,requestId,nodeId,modelProviderId,knowledgeId,settingsSection};
@@ -112,7 +114,7 @@ for(const tab of tabs){
 }
 window.addEventListener('hashchange',()=>{
   const name=location.hash.slice(1);
-  if(name==='activity'||name==='tasks'||(modules[name]&&current!==name))void show(name);
+  if(name==='activity'||name==='tasks'||name==='skills'||(modules[name]&&current!==name))void show(name);
 });
 // Tear down only after navigation is accepted; a dirty editor can veto beforeunload.
 window.addEventListener('pagehide',()=>{
@@ -124,7 +126,7 @@ window.addEventListener('pagehide',()=>{
 globalThis.blackiceNextGuard?.ready();
 events.start();
 const requested=location.hash.slice(1);
-const first=requested==='activity'||requested==='tasks'?'cronjobs':modules[requested]?requested:'chat';
+const first=requested==='activity'||requested==='tasks'?'cronjobs':requested==='skills'?'runtime':modules[requested]?requested:'chat';
 void show(first);
 void api('/api/status','GET',undefined,{deadlineMs:60000}).then(info=>{
   status=info;spaces.get(current)?.instance?.updateStatus?.(status);

@@ -33,7 +33,7 @@ for (const outcome of ['completed','failed','cancelled']) test('ordinary workers
  class Runtime extends EventEmitter{
  status(){return {connected:true,authenticated:true,defaultModel:'fixture::remote'};}
  async runAgent(options){
-  if(options.prompt.startsWith('You are a short-lived BLACKICE subagent.')){
+  if(options.hostAgentRole==='delegate'){
    workerCalls++;assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_workspace'));assert.ok(!options.dynamicTools.some(tool=>tool.name.startsWith('relay_swarm')));
    denials.push(await options.onToolCall({name:'relay_swarm_read',arguments:{action:'list'}}));
    if(outcome==='failed')throw Error('Fixture worker failure');

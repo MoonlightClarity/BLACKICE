@@ -5,7 +5,7 @@ import { text, formatDate } from '../core/dom.mjs';
 import { runText, displayChatRequest, messagesOfRun, chatResponseState, windowedRuns, windowedMessages, CHAT_MESSAGE_BATCH, rootId, lastRunId, running, CHAT_INDEX_BATCH, conversationIndexWindow, conversationGoalStatus, projectSkillLoadReceipts, projectPlanningModuleReceipts } from './model.mjs';
 import { chatOptionChoices } from './options-model.mjs';
 import { createRegisteredArtifactResolver } from '../../conversation-model.mjs';
-import { chatToolFailure } from './tool-failure.mjs';
+import { chatToolFailure,projectToolFailureHistory } from './tool-failure.mjs';
 import { taskPlanView } from '../../task-plan-model.mjs';
 import { chatDisplayPhases, chatWorkSummary, chatProgressPreview, chatOutlineStatusLabel } from './planning-timeline.mjs';
 
@@ -408,10 +408,10 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     const delivery=chatResponseState(run,allMessages);
     const {shown:messages,hidden:olderMessages}=windowedMessages(
       allMessages,messageLimits?.get(run.id)??CHAT_MESSAGE_BATCH);
-    const failure=chatRunError(run),toolFailure=run.toolFailure??chatToolFailure(run);
+    const failure=chatRunError(run),toolFailure=run.toolFailure??chatToolFailure(run),toolFailureHistory=projectToolFailureHistory(run.toolFailureHistory);
     const skillLoads=projectSkillLoadReceipts(run.skillLoadReceipts);
     const planningModules=projectPlanningModuleReceipts(run);
-    const signature=[run,...planningModules.flatMap(receipt=>[receipt.moduleId,receipt.phase]),...skillLoads.flatMap(receipt=>[receipt.type,receipt.skillId,receipt.title]),run.status,run.settled,run.output,failure?.message,failure?.code,toolFailure?.label,toolFailure?.detail,request,run.retryOf,earlier&&displayChatRequest(earlier),
+    const signature=[run,...planningModules.flatMap(receipt=>[receipt.moduleId,receipt.phase]),...skillLoads.flatMap(receipt=>[receipt.type,receipt.skillId,receipt.title]),run.status,run.settled,run.output,failure?.message,failure?.code,toolFailure?.label,toolFailure?.detail,JSON.stringify(toolFailureHistory),request,run.retryOf,earlier&&displayChatRequest(earlier),
       run===shown.at(-1),run.taskState,run.taskState?.revision,run.planningActivity,run.workflow,markdown,
       delivery.missing,delivery.pausedAfterPlan,delivery.needsFollowup,delivery.errors.join('\n'),
       messageLimits?.get(run.id),allMessages.length,...(run.attachmentIds||[]).flatMap(id=>[id,getAttachment?.(id)?.name]),
@@ -625,7 +625,16 @@ export function paintHistory(view, runs, { count=12, markdown, onOlder, onStop, 
     const completedLabel=directoryIncomplete?'Task incomplete':delivery.missing?'No response received':delivery.pausedAfterPlan?'Plan ready':'Response saved';
     const pill=text(footer,run.status==='completed'&&run.settled===true?completedLabel:run.status==='completed'&&run.settled===false?'Finishing…':run.status||'saved','span','next-status-pill');
     pill.dataset.state=run.status||'saved';
-    if(toolFailure&&run.settled===true){
+    if(toolFailureHistory?.receipts?.length){
+      const history=text(footer,'','details','next-turn-note');
+      text(history,'Tool failure receipts ('+toolFailureHistory.total+')','summary');
+      for(const row of toolFailureHistory.receipts){
+        const stamp=row.at?row.at.replace('T',' ').replace(/\.\d{3}Z$/,' UTC'):'';
+        const disposition=row.recovered?' · recovered':row.actionDispatched===false?' · not dispatched':row.actionDispatched===true?' · dispatched':' · dispatch unknown';
+        text(history,[stamp,row.tool,row.action,row.code,Number.isInteger(row.exitCode)?'exit '+row.exitCode:''].filter(Boolean).join(' · ')+disposition,'p');
+      }
+      if(toolFailureHistory.omitted)text(history,toolFailureHistory.omitted+' older failures not included in this bounded Chat receipt.','p');
+    }else if(toolFailure&&run.settled===true){
       const receipt=text(footer,'','details','next-turn-note');
       text(receipt,toolFailure.label,'summary');
       text(receipt,toolFailure.detail,'p');

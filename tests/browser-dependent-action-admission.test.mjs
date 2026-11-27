@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BrowserWorkspace,createBrowserToolHandler} from '../lib/browser.mjs';
+import {projectBrowserReferenceDiagnostic} from '../lib/browser-reference-diagnostic.mjs';
+import {TaskExternalContextStore} from '../lib/task-external-context.mjs';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject}};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -120,4 +125,128 @@ test('causality state survives a new handler instance for the same trusted task 
  const token=receipt(observed).observationReceipt;assert.match(token,/^obs-[a-f0-9-]{36}$/);
  assert.equal((await f.handler(invoke('one','click',{ref:'second',observationReceipt:token}))).success,true);
  assert.deepEqual(f.calls.map(call=>call.action),['fill','read','click']);
+});
+
+test('covered-target recovery supplies a fresh receipt, not a second click',async t=>{
+ const f=fixture(t,async (args,n)=>{
+  if(n===1)throw Object.assign(new Error('covered'),{code:'BROWSER_TARGET_COVERED',inputDispatched:false,blocker:{modalPresent:true}});
+  return {tabId:'one',url:'https://example.test/form',documentId:'one:1',frames:[{frame:'main',elements:[{ref:'close-dialog',name:'Close dialog',role:'button'}]}]};
+ });
+ const failed=await f.handler(invoke('one','click',{ref:'covered'}));
+ assert.equal(failed.code,'BROWSER_TARGET_COVERED');
+ assert.equal(failed.inputDispatched,false);
+ assert.deepEqual(f.calls.map(x=>x.action),['click','snapshot']);
+ const {recovery}=receipt(failed);
+ assert.equal(recovery.inspectVisualCall.action,'screenshot');
+ assert.match(recovery.observationReceipt,/^obs-/);
+ assert.equal((await f.handler(invoke('one','click',{ref:'close-dialog',observationReceipt:recovery.observationReceipt}))).success,true);
+ assert.deepEqual(f.calls.map(x=>x.action),['click','snapshot','click']);
+});
+test('snapshot uses the current owned tab when prior identity fields are carried into a read',async t=>{
+ const f=fixture(t);
+ const fresh=await f.handler(invoke('one','snapshot',{expectedUrl:'https://example.test/old',expectedDocumentId:'old-document'}));
+ assert.equal(fresh.success,true);
+ assert.equal(f.calls[0].expectedUrl,undefined);
+ assert.equal(f.calls[0].expectedDocumentId,undefined);
+ assert.equal(receipt(fresh).documentId,'one:1');
+});
+
+test('settled navigation and waits supply the observation required by the next action',async t=>{
+ const f=fixture(t,async args=>({tabId:args.tabId,url:args.url||'https://example.test/a',documentId:'one:2',frames:[{}]}));
+ const first=await f.handler(invoke('one','navigate',{url:'https://example.test/a'}));
+ assert.match(receipt(first).observationReceipt,/^obs-/);
+ const wait=await f.handler(invoke('one','wait',{text:'ready'}));
+ assert.match(receipt(wait).observationReceipt,/^obs-/);
+ const nav=await f.handler(invoke('one','navigate',{url:'https://example.test/b',observationReceipt:receipt(wait).observationReceipt}));
+ assert.equal(nav.success,true);
+ assert.equal((await f.handler(invoke('one','click',{ref:'control'}))).code,'BROWSER_REOBSERVE_REQUIRED');
+ assert.deepEqual(f.calls.map(x=>x.action),['navigate','wait','navigate']);
+});
+
+test('a paged browser observation can drive the next owned action without reopening the archive',async t=>{
+ const dataDir=await mkdtemp(path.join(tmpdir(),'blackice-browser-observation-'));
+ t.after(()=>rm(dataDir,{recursive:true,force:true}));
+ const archive=new TaskExternalContextStore({taskId:taskOwner.taskId,dataDir,thresholdBytes:500});
+ const f=fixture(t,async args=>({tabId:args.tabId,url:'https://example.test/form',documentId:'one:3',
+   frames:[{frame:'main',elements:[{ref:'next',name:'Next',role:'button'},...Array.from({length:150},(_,i)=>({ref:'ref'+i,name:'long control '+i,value:'x'.repeat(80),tag:'input'}))]}]}));
+ assert.equal((await f.handler(invoke('one','click',{ref:'previous'}))).success,true);
+ const request=invoke('one','snapshot');
+ const observed=await f.handler(request);
+ const paged=receipt(await archive.archiveResult({...request,callId:'large-observation'},observed));
+ assert.equal(paged.externalContext,true);
+ assert.equal(paged.browserObservation.observationReceipt,receipt(observed).observationReceipt);
+ const current=paged.browserObservation.frames.flatMap(f=>f.elements).find(x=>x.role==='button');
+ assert.equal(current?.ref,'next');
+ const input=await f.handler(invoke('one','click',{ref:current.ref,observationReceipt:paged.browserObservation.observationReceipt}));
+ assert.equal(input.success,true);
+ assert.deepEqual(f.calls.map(x=>x.action),['click','snapshot','click']);
+});
+
+test('pointer hit verification diagnostics distinguish failure classes without raw page data',()=>{
+ for(const pointerVerification of ['renderer-exception','hit-mismatch','identity-changed','control-disconnected','no-verification']){
+  const result=projectBrowserReferenceDiagnostic({reason:'binding-mismatch',pointerCheck:'verify-hit',pointerVerification,
+     observedRevision:2,currentRevision:2,rawPage:'secret',selector:'secret'});
+  assert.deepEqual(result,{bindingReason:'binding-mismatch',pointerCheck:'verify-hit',pointerVerification,observedRevision:2,currentRevision:2});
+ }
+ assert.equal(projectBrowserReferenceDiagnostic({reason:'binding-mismatch',pointerCheck:'verify-hit',pointerVerification:'unknown raw text'}).pointerVerification,undefined);
+});
+
+test('equivalent observations keep one receipt until the next same-tab mutation consumes it', async t => {
+  const f = fixture(t);
+  await f.handler(invoke('one', 'click', { ref: 'first' }));
+  const [snapshot, read] = await Promise.all([
+    f.handler(invoke('one', 'snapshot')),
+    f.handler(invoke('one', 'read')),
+  ]);
+  const observationReceipt = receipt(snapshot).observationReceipt;
+  assert.match(observationReceipt, /^obs-/);
+  assert.equal(receipt(read).observationReceipt, observationReceipt);
+  assert.equal((await f.handler(invoke('one', 'click', { ref: 'second', observationReceipt }))).success, true);
+  assert.equal((await f.handler(invoke('one', 'click', { ref: 'third', observationReceipt }))).code, 'BROWSER_REOBSERVE_REQUIRED');
+});
+
+for (const kind of ['file_chooser', 'javascript_dialog']) {
+  test('pending '+kind+' carries the one-use receipt for its exact completion without DOM frames', async t => {
+    const page = { tabId: 'one', url: 'https://example.test/form', documentId: 'one:1', frames: [] };
+    const pendingInteraction = { ...page, kind, status: 'pending', id: 'browser_input_29fcb0a5-19b1-4ea1-be0f-e9c990988384' };
+    const f = fixture(t, async args => ['click', 'snapshot'].includes(args.action) ? { ...page, pendingInteraction } : page);
+    const click = receipt(await f.handler(invoke('one', 'click', { ref: 'open' })));
+    const snapshot = receipt(await f.handler(invoke('one', 'snapshot')));
+    assert.match(click.observationReceipt, /^obs-/);
+    assert.equal(snapshot.observationReceipt, click.observationReceipt);
+    const call = kind === 'file_chooser' ? click.chooserUpload.nextCall : click.resolveDialog.nextCall;
+    assert.equal(call.observationReceipt, click.observationReceipt);
+    assert.equal(call.expectedDocumentId, page.documentId);
+    assert.equal(call.expectedUrl, page.url);
+    const fields = kind === 'file_chooser' ? { paths: ['C:/fixture/resume.pdf'] } : { decision: 'dismiss' };
+    assert.equal((await f.handler({ name: 'relay_browser', arguments: { ...call, ...fields } })).success, true);
+    assert.equal(f.calls.at(-1).observationReceipt, undefined);
+    assert.equal((await f.handler({ name: 'relay_browser', arguments: { ...call, ...fields } })).code, 'BROWSER_REOBSERVE_REQUIRED');
+  });
+}
+
+test('settled post-input evidence can drive the next action directly', async t => {
+  const page = { tabId: 'one', url: 'https://example.test/form', documentId: 'one:1', frames: [{ elements: [{ ref: 'next' }] }] };
+  const f = fixture(t, async args => args.ref === 'unsettled' ? { ...page, navigationUnsettled: true } : page);
+  const first = receipt(await f.handler(invoke('one', 'click', { ref: 'first' })));
+  assert.match(first.observationReceipt, /^obs-/);
+  const second = await f.handler(invoke('one', 'click', { ref: 'next', observationReceipt: first.observationReceipt }));
+  assert.equal(second.success, true);
+  const current = receipt(second).observationReceipt;
+  const unsettled = receipt(await f.handler(invoke('one', 'click', { ref: 'unsettled', observationReceipt: current })));
+  assert.equal(unsettled.observationReceipt, undefined);
+  assert.equal((await f.handler(invoke('one', 'click', { ref: 'next', observationReceipt: current }))).code, 'BROWSER_REOBSERVE_REQUIRED');
+});
+
+test('current-page screenshots can recapture once across document turnover; guarded captures retain their binding', async t => {
+  const f = fixture(t, (args, n) => {
+    if (n === 1 || args.expectedDocumentId) throw Object.assign(new Error('document changed'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+    return { tabId: args.tabId, url: 'https://example.test/form', documentId: 'one:2', imageUrl: 'data:image/png;base64,AA==' };
+  });
+  const observed = await f.handler(invoke('one', 'screenshot'));
+  assert.equal(observed.success, true);
+  assert.equal(receipt(observed).documentId, 'one:2');
+  const guarded = await f.handler(invoke('one', 'screenshot', { expectedDocumentId: 'one:1', expectedUrl: 'https://example.test/form' }));
+  assert.equal(guarded.code, 'BROWSER_INPUT_DOCUMENT_CHANGED');
+  assert.deepEqual(f.calls.map(call => call.tabId), ['one', 'one', 'one']);
 });

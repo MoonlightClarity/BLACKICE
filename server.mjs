@@ -4,7 +4,6 @@ import {handleTaskActionDirectoryHttp} from './lib/task-action-directory-http.mj
 import {handleTurnReceiptsHttp} from './lib/turn-receipts-http.mjs';
 import {BLACKICE_CLIENT_INFO} from './lib/harness-identity.mjs';
 import { InstructionStore } from './lib/instruction-store.mjs';
-import {readDeveloperLayer,saveDeveloperLayer} from './lib/developer-layer.mjs';
 import { handleInstructionSettingsHttp } from './lib/instruction-settings-http.mjs';
 import { stoppedBrowserOwnerStatus, activeBrowserOwnerStatus, readStoppedTabEffects } from './lib/browser-stopped-adoption.mjs';
 import {VisualArtifacts,visualTool,nativeVisualTools,handleVisualHttp} from './lib/visual-artifacts.mjs';
@@ -1313,10 +1312,10 @@ export async function createHarnessServer(options = {}) {
       if (promptAction && req.method === 'POST' && ['delete', 'restore'].includes(promptAction[2])) { const value = await promptBody(req, promptAction[2] === 'delete' ? ['expectedRevision'] : ['expectedRevision', 'revision']); return json(res, 200, { template: await (promptAction[2] === 'delete' ? prompts.remove(promptAction[1], { expectedRevision: value.expectedRevision }) : prompts.restore(promptAction[1], { expectedRevision: value.expectedRevision, revision: value.revision })) }); }
       const promptMatch = pathname.match(/^\/api\/prompts\/([A-Za-z0-9_-]+)$/);
       if (promptMatch && req.method === 'GET') return json(res, 200, { template: prompts.get(promptMatch[1]) });
-      if(pathname==='/api/skills/folders'){
+      if(pathname==='/api/runtime/organization'||pathname==='/api/skills/folders'){
         if(req.method==='GET')return json(res,200,await skillFolders.read());
         if(req.method==='POST'){
-          if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Organize skills in BLACKICE on this computer.'});
+          if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Organize Runtime in BLACKICE on this computer.'});
           const saved=await skillFolders.mutate(await body(req));sendEvent({type:'skills.folders.updated'});return json(res,200,saved);
         }
       }
@@ -1414,18 +1413,10 @@ export async function createHarnessServer(options = {}) {
       }
       if(pathname==='/api/execution-layers'){
         if(Object.hasOwn(req.headers,'x-blackice-remote')&&req.method!=='GET')
-          return json(res,403,{error:'Edit execution layers locally in Config.'});
-        const runId=new URL(req.url,'http://localhost').searchParams.get('runId');
-        let observed=[];
-        if(runId){
-          if(!/^[a-zA-Z0-9_-]{1,120}$/.test(runId))
-            return json(res,400,{error:'Invalid execution ID.'});
-          const saved=await conversations.get(runId);
-          observed=Object.values(saved?.nodes||{}).flatMap(node=>node?.instructionAudit?.sections||[])
-            .filter(section=>['developer','prompt'].includes(section?.layer)
-              &&section.id!=='effective-developer'&&section.id!=='adapter-addendum');
-        }
-        const definitions=await engine.executionLayerDefinitions(observed);
+          return json(res,403,{error:'Edit execution layers locally in Runtime.'});
+        // The historical instruction endpoint retains immutable per-run receipts.
+        // The editor lists current delivery sources only, never historical copies.
+        const definitions=await engine.executionLayerDefinitions();
         if(req.method==='GET')return json(res,200,executionLayers.list(definitions));
         if(req.method==='PUT'){
           const input=await body(req);
@@ -1437,7 +1428,7 @@ export async function createHarnessServer(options = {}) {
       }
       if(pathname==='/api/tool-descriptions'){
         if(Object.hasOwn(req.headers,'x-blackice-remote')&&req.method!=='GET')
-          return json(res,403,{error:'Edit tool descriptions locally in Config.'});
+          return json(res,403,{error:'Edit tool descriptions locally in Runtime.'});
         const definitions=engine.nativeToolDefinitions?.()||[];
         if(req.method==='GET')return json(res,200,toolDescriptions.list(definitions));
         if(req.method==='PUT'){
@@ -1446,11 +1437,6 @@ export async function createHarnessServer(options = {}) {
           sendEvent({type:'tool-descriptions.updated',data:{revision:updated.revision,name:value?.name},at:new Date().toISOString()});
           return json(res,200,updated);
         }
-        return json(res,405,{error:'Use GET or PUT.'});
-      }
-      if(pathname==='/api/instructions/developer-layer'){
-        if(req.method==='GET')return json(res,200,await readDeveloperLayer(dataDir));
-        if(req.method==='PUT'){const value=await body(req);if(!value||!(value.content===null||typeof value.content==='string'))return json(res,400,{error:'Supply developer instruction text or null to restore automatic composition.'});return json(res,200,await mutateStorage(()=>saveDeveloperLayer(dataDir,value.content)));}
         return json(res,405,{error:'Use GET or PUT.'});
       }
       if(await handleInstructionSettingsHttp({req,res,pathname,store:instructionSettings,body,json,mutate:mutateStorage,onChange:data=>sendEvent({type:'instructions.updated',data,at:new Date().toISOString()})}))return;
@@ -1521,8 +1507,8 @@ export async function createHarnessServer(options = {}) {
         'workspaces/workflow-editor.mjs','workspaces/workflow-edit-model.mjs',
         'workspaces/workflow-overview-model.mjs','workspaces/workflow-canvas-model.mjs','workspaces/workflow-canvas.mjs','workspaces/workflow-graph-author.mjs',
         'workspaces/workflow-graph-edit.mjs','workspaces/browser-folders.mjs','workspaces/browser-model.mjs','workspaces/browser-ownership-ui.mjs','workspaces/browser-usage-ui.mjs','workspaces/browser-scoped-cleanup-ui.mjs','workspaces/browser-native.mjs',
-        'browser.css','skills.css','workspaces/skills.mjs','core/folder-tree.mjs',
-        'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/settings-instructions.mjs','workspaces/settings-instruction-editor.mjs','workspaces/settings-execution-layers.mjs','workspaces/settings-tool-descriptions.mjs','workspaces/instruction-audit.mjs','instruction-audit.css','workspaces/settings-passwords.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-mcp-apps.mjs','workspaces/settings-restart.mjs',
+        'browser.css','skills.css','runtime.css','workspaces/runtime.mjs','core/folder-tree.mjs',
+        'workspaces/browser.mjs','workspaces/activity.mjs','workspaces/activity-overview.mjs','workspaces/activity-model.mjs','activity.css','workspaces/settings.mjs','workspaces/instruction-audit.mjs','instruction-audit.css','workspaces/settings-passwords.mjs','workspaces/settings-storage.mjs','workspaces/settings-gemini-connector.mjs','workspaces/settings-claude-connector.mjs','workspaces/settings-mcp-apps.mjs','workspaces/settings-restart.mjs',
         'settings.css','settings-passwords.css','settings-identity.css','settings-providers.css',
         'workspaces/settings-identity.mjs','workspaces/applications.mjs','workspaces/settings-subscriptions.mjs','workspaces/settings-local-models.mjs','workspaces/llama-launch-settings.mjs','workspaces/settings-providers.mjs','workspaces/native-write-recovery.mjs'];
       for (const file of nextFiles) files['/next/' + file] = 'next/' + file;

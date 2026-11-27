@@ -234,3 +234,11 @@ test('accepted wire facts survive reopening and real same-task handoff without e
   assert.equal(fs.readFileSync(marker,'utf8'),'same-profile');
   assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).length,2,'Prior tasks remain saved; no profile reset supplies isolation.');
 });
+
+test('browser continuity preserves refs without storing password values from a multi-block result',()=>{
+  const saved=run(), event=delivered(JSON.stringify({frames:[{elements:[{ref:'field',type:'password',value:'fixture-secret'}]}]}));
+  event.call.name='relay_browser'; event.result.contentItems.push({type:'inputText',text:'second block'});
+  record(saved,'agent',event);
+  const row=saved.toolContinuity.records[0];
+  assert.equal(row.sensitiveContentOmitted,true); assert.match(row.text,/field/); assert.doesNotMatch(row.text,/fixture-secret/);
+});

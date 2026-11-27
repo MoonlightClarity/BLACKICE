@@ -1,9 +1,7 @@
 import {text,formatDate} from '../core/dom.mjs';
-import {createInstructionSettings} from './settings-instructions.mjs';
-import {createToolDescriptionSettings} from './settings-tool-descriptions.mjs';
 
 const KINDS=['soul','user'];
-const TABS=[...KINDS,'instructions','tools'];
+const TABS=[...KINDS];
 const LIMITS={soul:64000,user:96000};
 const NAMES={soul:'SOUL.md',user:'USER.md'};
 const HISTORY_PAGE=10,HISTORY_LIMIT=100;
@@ -22,7 +20,7 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
     '<p class="next-help">Instructions and profile shared across working folders. Saved changes apply to the next agent turn, not active work.</p>',
     '<div class="next-identity-tabs" role="tablist" aria-label="Identity files">',
     '<button id="next-identity-soul" type="button" role="tab" aria-controls="next-identity-editor">How BLACKICE works</button>',
-    '<button id="next-identity-user" type="button" role="tab" aria-controls="next-identity-editor">About you</button><button id="next-identity-instructions" type="button" role="tab" aria-controls="next-identity-instructions-panel">Instructions</button><button id="next-identity-tools" type="button" role="tab" aria-controls="next-identity-tools-panel">Tool descriptions</button></div>',
+    '<button id="next-identity-user" type="button" role="tab" aria-controls="next-identity-editor">About you</button></div>',
     '<div id="next-identity-editor" role="tabpanel" aria-labelledby="next-identity-soul">',
     '<div class="next-identity-heading"><div><h3 id="next-identity-name">SOUL.md</h3>',
     '<p id="next-identity-description" class="next-help"></p></div>',
@@ -46,16 +44,14 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
     '<p id="next-identity-history-info" class="next-help" role="status"></p>',
     '<ol id="next-identity-versions"></ol>',
     '<button id="next-identity-more" type="button" hidden>Show more revisions</button></section>',
-    '</div><div id="next-identity-instructions-panel" role="tabpanel" aria-labelledby="next-identity-instructions" hidden></div><div id="next-identity-tools-panel" role="tabpanel" aria-labelledby="next-identity-tools" hidden></div></section>',
+    '</div></section>',
   ].join('');
   const find=id=>mount.querySelector('#next-identity-'+id);
-  const ui=Object.fromEntries(['soul','user','instructions','instructions-panel','tools','tools-panel','editor','name','description','reload','path','warning','conflict',
+  const ui=Object.fromEntries(['soul','user','editor','name','description','reload','path','warning','conflict',
     'use-file','keep-draft','form','content','state','count','save','notice','recover','history','history-panel',
     'history-info','versions','more'].map(id=>[id,find(id)]));
   const states={soul:record(),user:record()};
-  let selected='soul',showingInstructions=false,showingTools=false,active=false,destroyed=false,unsubscribe=null;
-  const instructionSettings=createInstructionSettings({mount:ui['instructions-panel'],api,onSelectFile:kind=>select(kind)});
-  const toolSettings=createToolDescriptionSettings({mount:ui['tools-panel'],api,notify});
+  let selected='soul',active=false,destroyed=false,unsubscribe=null;
   const current=()=>states[selected];
   const dirty=state=>Boolean(state.doc)&&state.draft!==state.doc.content;
   function setNotice(state,value,error=false){state.notice={message:value,error};}
@@ -90,9 +86,8 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
   }
   function render({history=true}={}){
     if(!active||destroyed)return;
-    for(const kind of TABS){const chosen=showingTools?kind==='tools':showingInstructions?kind==='instructions':kind===selected;ui[kind].setAttribute('aria-selected',String(chosen));ui[kind].tabIndex=chosen?0:-1;}
-    ui.editor.hidden=showingInstructions||showingTools;ui['instructions-panel'].hidden=!showingInstructions;ui['tools-panel'].hidden=!showingTools;
-    if(showingInstructions||showingTools)return;
+    for(const kind of TABS){const chosen=kind===selected;ui[kind].setAttribute('aria-selected',String(chosen));ui[kind].tabIndex=chosen?0:-1;}
+    ui.editor.hidden=false;
     const state=current(),doc=state.doc;
     ui.editor.setAttribute('aria-labelledby','next-identity-'+selected);
     ui.name.textContent=NAMES[selected];
@@ -176,10 +171,7 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
   const restore=(kind,revision)=>mutate(kind,revision);
   function select(kind){
     if(!TABS.includes(kind)||destroyed)return;
-    showingInstructions=kind==='instructions';showingTools=kind==='tools';
-    if(showingInstructions){toolSettings.leave();render();if(active)instructionSettings.enter();return;}
-    if(showingTools){instructionSettings.leave();render();if(active)toolSettings.enter();return;}
-    instructionSettings.leave();toolSettings.leave();selected=kind;render();
+    selected=kind;render();
     const state=current();if(!state.doc||state.stale)void load(kind);
     if(state.historyOpen&&!state.history)void loadHistory(kind);
   }
@@ -213,11 +205,11 @@ export function createIdentitySettings({mount,api,events,notify=()=>{}}) {
   const onEvent=receipt=>{
     if(receipt?.type!=='identity.updated')return;
     for(const state of Object.values(states)){state.stale=true;state.history=null;}
-    if(active&&!showingInstructions&&!showingTools){void load(selected);if(current().historyOpen)void loadHistory(selected);}
+    if(active){void load(selected);if(current().historyOpen)void loadHistory(selected);}
   };
   return {
-    enter(){if(destroyed||active)return;active=true;unsubscribe=events?.subscribe?.(onEvent);render();if(showingTools)toolSettings.enter();else if(showingInstructions)instructionSettings.enter();else{void load(selected);if(current().historyOpen)void loadHistory(selected);}},
-    leave(){active=false;instructionSettings.leave();toolSettings.leave();unsubscribe?.();unsubscribe=null;for(const state of Object.values(states)){invalidateRead(state);invalidateHistory(state);}},
-    destroy(){this.leave();destroyed=true;instructionSettings.destroy();toolSettings.destroy();mount.textContent='';},
+    enter(){if(destroyed||active)return;active=true;unsubscribe=events?.subscribe?.(onEvent);render();void load(selected);if(current().historyOpen)void loadHistory(selected);},
+    leave(){active=false;unsubscribe?.();unsubscribe=null;for(const state of Object.values(states)){invalidateRead(state);invalidateHistory(state);}},
+    destroy(){this.leave();destroyed=true;mount.textContent='';},
   };
 }

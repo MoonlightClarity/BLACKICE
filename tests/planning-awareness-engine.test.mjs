@@ -72,7 +72,7 @@ test('manual saved corrections and presence remain visible without installing an
 test('a historical single-scope delegation is rejected before worker execution or saved-edit activity', async t => {
   let childCalls = 0;
   const f = await fixture(t, async options => {
-    if (options.prompt.startsWith('You are a short-lived BLACKICE subagent.')) {
+    if (options.hostAgentRole==='delegate') {
       childCalls++; assert.fail('A serial assignment must not start a child provider turn.');
     }
     const receipt = await call(options, 'relay_delegate', { tasks: [{ id: 'inspector', stepId: 'inspect', prompt: 'Implement only the assigned inspection result.' }] });

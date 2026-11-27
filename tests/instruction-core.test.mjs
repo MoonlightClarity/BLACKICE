@@ -15,6 +15,10 @@ test('the built-in core delegates behavior and contains no retired analytical/ap
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Current user directions replace conflicting behavioral defaults, skill instructions and earlier assistant plans/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /An ordinary request delegates the actions and choices needed to complete it/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /no extra autonomy or no-questions wording is required/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/First infer ordinary task scope/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/silence about a hypothetical exception does not make it a user constraint/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS,/Do not amplify an intent-inference error into a refusal/);
+  assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /A required agreement or legally consequential step is not by itself a new permission requirement/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Before treating a concern as a blocker, identify its premises, sources and actual scope/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /prepare-only, exclusions and cancellation/);
   assert.match(BLACKICE_HARNESS_INSTRUCTIONS, /Distinguish evidence, inference, uncertainty, authorization, feasibility and observed effects/);

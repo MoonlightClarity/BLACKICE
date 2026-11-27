@@ -193,7 +193,7 @@ for(const mode of ['off','ontology'])test('real delegated native worker has inde
   class Runtime extends EventEmitter{
     status(){return{connected:true,authenticated:true,defaultModel:'fixture',models:[{id:'fixture',supportsTools:true}]};}
     async runAgent(options){const review=fixtureOutcomeReview(options);if(review)return review;turns++;
-      if(options.prompt.startsWith('You are a short-lived BLACKICE subagent.')){
+      if(options.hostAgentRole==='delegate'){
         assert.ok(options.dynamicTools.some(tool=>tool.name==='relay_effects'));
         if(options.prompt.includes('Inspect the synthetic receipt catalog only.'))return finishFixtureCandidate(options,{output:'Independent receipt catalog inspection complete',threadId:'catalog-receipt-thread'});
         driver.owner={taskId:parentId,runId:parentId,nodeId:delegatedPlanNodeId('agent','receipt-worker')};

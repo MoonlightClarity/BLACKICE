@@ -14,7 +14,7 @@ const groupPriority=name=>name===methodsGroup?0:name===otherGroup?2:1;
 const compareGroups=(a,b)=>groupPriority(a)-groupPriority(b)||skillOrder.compare(a,b);
 /** The document is authoritative. Folders only organize the view. */
 export function createSkillsWorkspace({mount,api}) {
- mount.innerHTML='<div class="next-panel next-skills-root"><div class="next-panel-inner"><header class="next-panel-head"><div><h1>Skills</h1></div><div class="next-skills-actions"><button id="skills-new" type="button">New skill</button><button id="skills-refresh" type="button">Refresh</button></div></header><label class="next-label">Find a skill<input id="skills-query" class="next-field" type="search" maxlength="256"></label><p id="skills-status" role="status" aria-live="polite"></p><div class="next-skills-layout"><aside class="next-skills-aside" aria-label="Skills and folders"><form id="skills-folder-form" class="skills-inline-create" hidden><label class="next-label">New folder<input id="skills-folder-name" class="next-field" maxlength="60" required></label><button id="skills-create-save" type="submit">Create folder</button><button id="skills-create-cancel" type="button">Cancel</button></form><div id="skills-root" class="skills-tree-root" title="Drop here to move to the top level"><span>Skills</span><button id="skills-new-folder" type="button">New folder</button></div><ul id="skills-list" class="next-skills-list"></ul><details id="skills-trash"><summary>Deleted skills</summary><p class="next-help">Deleted skills are excluded from future skill lookups. Restore brings back your last saved edit, or the current bundled default. Discarded unsaved changes are not restored. Deleted skills keep their folder placement; restore and move them before deleting that folder.</p><ul id="skills-trash-list" class="next-skills-list"></ul></details></aside><section class="next-card next-skills-inspector" aria-label="Skill document"><h2 id="skills-heading">Select a skill</h2><p id="skills-detail-status" role="status" aria-live="polite"></p><form id="skills-editor" hidden><div class="next-skills-actions"><button id="skills-save" type="submit">Save</button><button id="skills-discard" type="button">Discard changes</button></div><p id="skills-save-status" role="status" aria-live="polite"></p><label class="next-label">Skill document<textarea id="skills-edit-content" maxlength="200000" class="next-field" rows="24" required spellcheck="false"></textarea></label></form><section id="skills-delete-confirm" class="skills-delete-confirm" hidden role="alert"><p id="skills-delete-message"></p><button id="skills-delete-yes" type="button">Delete skill</button><button id="skills-delete-cancel" type="button">Cancel</button></section></section></div></div></div>';
+ mount.innerHTML='<div class="next-panel next-skills-root"><div class="next-panel-inner"><header class="next-panel-head"><div><h1>Skills</h1></div><div class="next-skills-actions"><button id="skills-new" type="button">New skill</button><button id="skills-refresh" type="button">Refresh</button></div></header><label class="next-label">Find a skill<input id="skills-query" class="next-field" type="search" maxlength="256"></label><p id="skills-status" role="status" aria-live="polite"></p><div class="next-skills-layout"><aside class="next-skills-aside" aria-label="Skills and folders"><form id="skills-folder-form" class="skills-inline-create" hidden><label class="next-label">New folder<input id="skills-folder-name" class="next-field" maxlength="60" required></label><button id="skills-create-save" type="submit">Create folder</button><button id="skills-create-cancel" type="button">Cancel</button></form><div id="skills-root" class="skills-tree-root" title="Drop here to move to the top level"><span>Skills</span><button id="skills-new-folder" type="button">New folder</button><button id="skills-manage-folders-button" type="button">Manage folders</button></div><details id="skills-folder-manager"><summary>Manage folders and categories</summary><p class="next-help">Delete user folders or category folders without deleting skills. Folder contents move to their parent or to Other skills.</p><ul id="skills-folder-manager-list" class="next-skills-list"></ul></details><ul id="skills-list" class="next-skills-list"></ul><details id="skills-removed-categories"><summary>Deleted category folders</summary><ul id="skills-removed-category-list" class="next-skills-list"></ul></details><details id="skills-trash"><summary>Deleted skills</summary><p class="next-help">Deleted skills are excluded from future skill lookups. Restore brings back your last saved edit, or the current bundled default. Discarded unsaved changes are not restored. Deleted skills keep their folder placement; restore and move them before deleting that folder.</p><ul id="skills-trash-list" class="next-skills-list"></ul></details></aside><section class="next-card next-skills-inspector" aria-label="Skill document"><h2 id="skills-heading">Select a skill</h2><p id="skills-detail-status" role="status" aria-live="polite"></p><form id="skills-editor" hidden><div class="next-skills-actions"><button id="skills-save" type="submit">Save</button><button id="skills-discard" type="button">Discard changes</button></div><p id="skills-save-status" role="status" aria-live="polite"></p><label class="next-label">Skill document<textarea id="skills-edit-content" maxlength="200000" class="next-field" rows="24" required spellcheck="false"></textarea></label></form><section id="skills-delete-confirm" class="skills-delete-confirm" hidden role="alert"><p id="skills-delete-message"></p><button id="skills-delete-yes" type="button">Delete skill</button><button id="skills-delete-cancel" type="button">Cancel</button></section></section></div></div></div>';
  const retained=new Map();const el=id=>mount.querySelector('#skills-'+id)||retained.get(id),add=(parent,tag,text)=>{const node=mount.ownerDocument.createElement(tag);if(text!==undefined)node.textContent=String(text);parent.append(node);return node;};
  for(const id of ['folder-form','folder-name','create-save','create-cancel'])retained.set(id,el(id));
  const paths={folder:'M3 7V5h6l2 2h10v13H3z',plus:'M3 7V5h6l2 2h10v13H3z M12 10v7 M8.5 13.5h7',chevron:'m9 5 7 7-7 7',check:'m5 12 4 4 10-11',close:'m6 6 12 12 M18 6 6 18',trash:'M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13 M10 10v7 M14 10v7',refresh:'M20 7v5h-5 M19 12a7 7 0 1 0-2 5',move:'M3 8V6h6l2 2h10v11H3z M9 13h8 m-3-3 3 3-3 3',back:'m15 5-7 7 7 7',save:'M4 3h14l3 3v15H3V3z M7 3v6h10V3 M7 21v-8h10v8'};
@@ -41,6 +41,7 @@ export function createSkillsWorkspace({mount,api}) {
  const hostWindow=window,open=new Set(),closedCategories=new Set(),searchDisclosure=new Map(),drafts=new Map(),pages=new Map();
  let active=false,destroyed=false,listEpoch=0,detailEpoch=0,controller,detailController,timer,selected=null,items=[],organization=null,busy=false,saving=false,uncertain=false,creation=null,entry=null,rename=null,dragging=null,deleteTarget=null,trashItems=[],newDraft=null,moveTarget=null,folderDeleteTarget=null;
  const pageSize=10;
+ const displayGroup=item=>organization?.removedCategories?.includes('category:'+groupOf(item))?otherGroup:groupOf(item);
  const blocked=()=>busy||saving||!!deleteTarget||!!folderDeleteTarget||uncertain||!organization;
  const disclosureBlocked=()=>busy||saving||!!deleteTarget||!organization;
  function openFolder(id){open.add(id);if(el('query').value.trim())searchDisclosure.set(id,true);}
@@ -217,6 +218,7 @@ export function createSkillsWorkspace({mount,api}) {
   const activate=renderDisclosure(row,id,name,expanded,()=>{expanded?closedCategories.add(name):closedCategories.delete(name);});
   renderFolderIcon(row);
   const label=add(row,'button',name);label.type='button';label.className='skills-folder-name';label.dataset.categoryToggle=id;label.setAttribute('aria-expanded',String(expanded));label.addEventListener('click',activate);
+   if(name!==otherGroup){const remove=add(row,'button','Delete');remove.type='button';remove.className='skills-folder-remove';remove.dataset.deleteCategory=name;remove.setAttribute('aria-label','Delete category folder '+name);remove.addEventListener('click',()=>requestFolderDelete('category:'+name));}
   const children=add(branch,'ul');children.className='next-skills-list';children.hidden=!expanded;if(expanded)for(const item of pageRows(documents,id,children,name))renderDocument(item,children);
  }
  function paint(){
@@ -232,8 +234,8 @@ export function createSkillsWorkspace({mount,api}) {
    const grouped=parentId===null&&!searching;
    if(!searching)documents.sort(compareSkills);
    const groups=new Map();
-   if(grouped)for(const item of items)groups.set(groupOf(item),[]);
-   if(grouped)for(const item of documents){const name=placement(item)?.startsWith('category:')?placement(item).slice(9):groupOf(item);if(!groups.has(name))groups.set(name,[]);groups.get(name).push(item);}
+   if(grouped)for(const item of items)groups.set(displayGroup(item),[]);
+   if(grouped)for(const item of documents){const name=placement(item)?.startsWith('category:')&&!organization?.removedCategories?.includes(placement(item))?placement(item).slice(9):displayGroup(item);if(!groups.has(name))groups.set(name,[]);groups.get(name).push(item);}
    const children=[...rows.filter(row=>row.parentId===parentId).map(row=>({row})),...(grouped?[...groups.keys()].sort(compareGroups).map(category=>({category})):documents.map(item=>({item})))];
    for(const child of pageRows(children,parentId,parent)){
     if(child.item){renderDocument(child.item,parent);continue;}
@@ -267,9 +269,36 @@ export function createSkillsWorkspace({mount,api}) {
 
   if(!items.length)add(list,'li','No matching skills.');
   el('trash-list').replaceChildren();for(const item of pageRows(trashItems,'trash',el('trash-list'))){const li=add(el('trash-list'),'li'),assigned=organization?.assignments?.[item.id],location=folderRows(organization?.folders||[]).find(row=>row.id===assigned)?.path;add(li,'span',item.title+(location?' · '+location:''));const restore=add(li,'button','Restore');restore.type='button';restore.dataset.restoreSkill=item.id;icon(restore,'refresh','Restore '+item.title);restore.addEventListener('click',()=>void restoreSkill(item));}if(!trashItems.length)add(el('trash-list'),'li','No deleted skills.');
-  controls();
- }
- function showNewSkill(){
+   renderFolderManager();
+   controls();
+  }
+   function renderFolderManager(){
+    const manager=el('folder-manager-list'),deleted=el('removed-category-list');manager.replaceChildren();deleted.replaceChildren();
+    const categories=[...new Set([...functionalGroups.values(),otherGroup])].filter(name=>name!==otherGroup);
+    for(const row of organization?.folders||[]){
+      const line=add(manager,'li');line.className='runtime-folder-management-line';
+      add(line,'span',row.name);
+      const deleteButton=add(line,'button','Delete');deleteButton.type='button';deleteButton.dataset.manageFolderDelete=row.id;
+      deleteButton.setAttribute('aria-label','Delete folder '+row.name);
+      deleteButton.addEventListener('click',()=>requestFolderDelete(row.id));
+    }
+    for(const category of categories){
+      if(organization?.removedCategories?.includes('category:'+category)){
+        const line=add(deleted,'li');line.className='runtime-folder-management-line';
+        add(line,'span',category);
+        const restore=add(line,'button','Restore');restore.type='button';restore.dataset.restoreCategory=category;
+        restore.addEventListener('click',()=>void mutate({action:'restore_category',category:'category:'+category},
+          {successMessage:'Category folder restored.'}));
+      }else{
+        const line=add(manager,'li');line.className='runtime-folder-management-line';
+        add(line,'span',category+' · automatic category');
+        const del=add(line,'button','Delete');del.type='button';del.dataset.manageCategoryDelete=category;
+        del.addEventListener('click',()=>requestFolderDelete('category:'+category));
+      }
+    }
+    el('removed-categories').hidden=!organization?.removedCategories?.length;
+  }
+  function showNewSkill(){
   entry=null;inspectorMove.hidden=true;el('heading').textContent='New skill';el('editor').hidden=false;
   el('detail-status').textContent='Start with # Your skill name, then write when and how to use it.';
   el('edit-content').value=newDraft.content;el('save-status').textContent=newDraft.error;
@@ -324,8 +353,16 @@ export function createSkillsWorkspace({mount,api}) {
   catch(error){if(!active||destroyed)return;uncertain=true;el('status').textContent=error.message+' Refresh before another folder edit. Your changes are preserved.';}
   finally{busy=false;if(active&&!destroyed){controls();if(completed)afterPaint();}}
  }
- function requestFolderDelete(id){
+  function requestFolderDelete(id){
   if(blocked()||creation||rename||newDraft)return;
+  if(id.startsWith('category:')){
+    const category=id.slice('category:'.length);
+    if(category===otherGroup||organization?.removedCategories?.includes(id))return;
+    const count=items.filter(item=>displayGroup(item)===category).length;
+    folderDeleteTarget={id,kind:'category',category,revision:organization.revision};
+    deleteFolderInfo.textContent='Delete category folder "'+category+'"? '+count+' skill(s) will move to Other skills. No skill documents will be deleted.';
+    deleteFolderPanel.hidden=false;controls();deleteFolderCancel.focus?.();return;
+  }
   const folder=organization.folders.find(row=>row.id===id);if(!folder)return;
   const skills=Object.values(organization.assignments||{}).filter(value=>value===id).length;
   const children=organization.folders.filter(row=>row.parentId===id).length;
@@ -337,10 +374,10 @@ export function createSkillsWorkspace({mount,api}) {
  deleteFolderCancel.addEventListener('click',cancelFolderDelete);
  deleteFolderYes.addEventListener('click',()=>{
   const target=folderDeleteTarget;if(!target||busy||saving)return;cancelFolderDelete();
-  void mutate({action:'remove',id:target.id,relocateContents:true},{expectedRevision:target.revision,
+  void mutate(target.kind==='category'?{action:'remove_category',category:target.id}:{action:'remove',id:target.id,relocateContents:true},{expectedRevision:target.revision,
    onSaved:()=>{open.delete(target.id);pages.delete(target.id);if(target.parentId)open.add(target.parentId);},
    afterPaint:()=>target.parentId?focusFolder(target.parentId):el('new-folder').focus?.(),
-   successMessage:'Folder deleted. All skills and child folders were preserved and moved to its parent.'});
+   successMessage:target.kind==='category'?'Category folder deleted; skills are preserved in Other skills.':'Folder deleted. All skills and child folders were preserved and moved to its parent.'});
  });
  function startCreate(parentId){
   if(blocked()||rename||creation)return;
@@ -349,7 +386,8 @@ export function createSkillsWorkspace({mount,api}) {
   if(parentId)openFolder(parentId);pages.delete(parentId);el('folder-name').value='';paint();el('folder-name').focus?.();
  }
  function cancelCreate(){const parentId=creation?.parentId;creation=null;el('folder-name').value='';paint();if(parentId)focusFolder(parentId);else el('new-folder').focus?.();}
- el('new-folder').addEventListener('click',()=>startCreate(null));
+  el('new-folder').addEventListener('click',()=>startCreate(null));
+  el('manage-folders-button').addEventListener('click',()=>{el('folder-manager').open=true;el('folder-manager').scrollIntoView?.({block:'nearest'});});
  el('create-cancel').addEventListener('click',cancelCreate);
  el('folder-form').addEventListener('keydown',event=>{if(event.key==='Escape'&&!busy){event.preventDefault();cancelCreate();}});
  el('folder-form').addEventListener('submit',event=>{event.preventDefault();if(!creation||(creation.parentId&&!organization.folders.some(row=>row.id===creation.parentId)))return;const name=el('folder-name').value.trim();if(!name)return;const current=creation;void mutate({action:'create',id:current.id,name,parentId:current.parentId},{expectedRevision:current.revision,onSaved:()=>{creation=null;el('folder-name').value='';if(current.parentId)openFolder(current.parentId);},afterPaint:()=>focusFolder(current.id)});});

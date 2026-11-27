@@ -226,3 +226,35 @@ test('history rejects a real filesystem link for the legacy registry when links 
  assert.deepEqual(result.errors,['.application-registry/claims.json']);
  assert.deepEqual(result.matches,[]);
 });
+
+test('Workday requisition identity survives locale, apply suffix and tracking parameters, never merges different tenants or IDs',()=>{
+  const u='https://calix.wd1.myworkdayjobs.com/en-US/External/job/Remote---USA/Competitive-and-Market-Intelligence-Manager_R-11977';
+  const a=applicationTarget(u);
+  assert.ok(a);assert.equal(a.key,'workday:calix.wd1.myworkdayjobs.com:calix:r-11977');
+  assert.equal(applicationTarget(u.replace('/en-US','')+'/apply?source=careers').key,a.key);
+  assert.notEqual(applicationTarget(u.replace('R-11977','R-11978')).key,a.key);
+  assert.notEqual(applicationTarget(u.replace('calix.wd1','other.wd1')).key,a.key);
+  assert.equal(applicationTarget('https://calix.wd1.myworkdayjobs.com/en-US/External/candidateHome'),null);
+  assert.equal(applicationTarget('https://calix.wd1.myworkdayjobs.com.example.test/External/job/Remote/Role_R-11977'),null);
+  assert.equal(applicationTarget('https://calix.wd1.myworkdayjobs.com/External/job/Remote/Role_withoutid'),null);
+});
+test('recovered ledger state is case-insensitive, exact, and keeps attempted distinct from confirmed',async t=>{
+  const f=await fixture(t);
+  await mkdir(path.join(f.cwd,'Application History'));
+  const wk='https://calix.wd1.myworkdayjobs.com/en-US/External/job/Remote---USA/Role_R-11977';
+  await f.write('Application History/BLACKICE_goal_applications_fixture.json',JSON.stringify({entries:[
+    {employer:'ExampleCo',role:'Senior Product Manager',url,state:'Confirmed'},
+    {employer:'ExampleCo',role:'Senior Product Manager',url:other,state:'Attempted',evidence:'No application was submitted.'},
+    {employer:'Calix',role:'Role',url:wk,state:'confirmed'},
+    {employer:'Calix',role:'Role',url:wk.replace('11977','11978'),state:'skipped',evidence:'No application submitted.'},
+    {employer:'ExampleCo',role:'Senior Product Manager',state:'Confirmed'},
+  ]}));
+  const confirmed=await inspectApplicationHistory(f.cwd,target());assert.equal(confirmed.scanComplete,true);
+  assert.equal(confirmed.matches.length,1);assert.equal(confirmed.matches[0].reportedStatus,'confirmed');
+  const attempted=await inspectApplicationHistory(f.cwd,target(other));assert.equal(attempted.matches.length,1);
+  assert.equal(attempted.matches[0].reportedStatus,'attempted');
+  const workday=await inspectApplicationHistory(f.cwd,{...applicationTarget(wk+'/apply'),title:'Role'});
+  assert.equal(workday.matches.length,1);assert.equal(workday.matches[0].reportedStatus,'confirmed');
+  const skipped=await inspectApplicationHistory(f.cwd,{...applicationTarget(wk.replace('11977','11978')),title:'Role'});
+  assert.equal(skipped.matches.length,0);
+});

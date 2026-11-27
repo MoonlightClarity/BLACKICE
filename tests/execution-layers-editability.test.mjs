@@ -27,7 +27,7 @@ test('model-facing execution layers support revisioned replace, disable, restore
  assert.equal(store.project('capabilities','Computed routes').text,'Short editable routing text');
  await assert.rejects(store.save({action:'disable',id:'capabilities',expectedRevision:0},definitions),{status:409});
  result=await store.save({action:'disable',id:'browser-signin',expectedRevision:1},definitions);
- assert.deepEqual(store.project('browser-signin','Default browser steps'),{enabled:false,text:'',mode:'disabled'});
+ assert.deepEqual(store.project('browser-signin','Default browser steps'),{enabled:false,text:'',mode:'disabled',role:'prompt',order:0});
  result=await store.save({action:'add',title:'My planning note',role:'developer',text:'My custom execution note',expectedRevision:2},definitions);
  const id=result.affected;assert.match(id,/^custom-/);
  assert.equal(store.additions('developer')[0].text,'My custom execution note');

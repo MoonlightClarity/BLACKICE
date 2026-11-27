@@ -48,21 +48,24 @@ test('native render synchronization respects identity, cancellation, and the ove
  await assert.rejects(captureHiddenPage(invalid),{code:'BROWSER_CAPTURE_RENDER_UNAVAILABLE'});assert.equal(invalid.calls,0);
 });
 
-test('parked native views do not make a throttled animation frame a capture prerequisite',async()=>{
+test('parked native views refuse an old bitmap if Chromium does not advance a render frame',async()=>{
  let frames=0;const contents=fake(()=>image);
  contents.isOffscreen=()=>false;
  contents.executeJavaScriptInIsolatedWorld=()=>{frames++;return new Promise(()=>{});};
- const started=Date.now(),result=await captureHiddenPage(contents,{timeoutMs:400,retryDelays:[0,0]});
- assert.equal(result.image,image);assert.equal(contents.calls,1);assert.equal(frames,0);
- assert.ok(Date.now()-started<300);
+ const started=Date.now();
+ await assert.rejects(captureHiddenPage(contents,{timeoutMs:80,retryDelays:[0,0]}),error=>
+   error.code==='BROWSER_CAPTURE_TIMEOUT'&&error.captureStage==='render-boundary');
+ assert.equal(contents.calls,0);assert.equal(frames,1);
+ assert.ok(Date.now()-started<1000);
 });
 
-test('parked native views retry a transient compositor failure without an animation wait',async()=>{
- let frames=0;const contents=fake(call=>{if(call===1)throw Error('UnknownVizError');return image;});
+test('parked native views require fresh compositor boundaries on every capture retry',async()=>{
+ const order=[],contents=fake(call=>{order.push('copy'+call);if(call===1)throw Error('UnknownVizError');return image;});
  contents.isOffscreen=()=>false;
- contents.executeJavaScriptInIsolatedWorld=()=>{frames++;return new Promise(()=>{});};
- const result=await captureHiddenPage(contents,{timeoutMs:800,retryDelays:[30,0]});
- assert.equal(result.image,image);assert.equal(result.retries,1);assert.equal(contents.calls,2);assert.equal(frames,0);
+ contents.executeJavaScriptInIsolatedWorld=async()=>{order.push('frame');return true;};
+ const result=await captureHiddenPage(contents,{timeoutMs:800,retryDelays:[0,0]});
+ assert.equal(result.image,image);assert.equal(result.retries,1);
+ assert.deepEqual(order,['frame','copy1','frame','copy2']);
 });
 
 test('true offscreen rendering retains its frame freshness boundary',async()=>{

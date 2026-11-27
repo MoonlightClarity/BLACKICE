@@ -18,7 +18,7 @@ test('no renderer or Electron IPC entry point can launch a native application', 
 test('unrelated workspace tabs stay registered', () => {
   const html = text('public/next/index.html');
   // Removed spaces must not return as replacement tabs or lazy routes.
-  for (const space of ['chat','cronjobs','browser','skills','settings'])
+  for (const space of ['chat','cronjobs','browser','runtime','settings'])
     assert.match(html, new RegExp('data-space="' + space + '"'));
   assert.doesNotMatch(html, /data-space="planning"|data-space="workbench"|data-space="swarm"|data-space="knowledge"|data-space="todos"|data-space="userWorkflows"/);
 });
