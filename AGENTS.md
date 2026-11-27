@@ -4,6 +4,10 @@
 
 The maintainer owns product and release decisions. Do not silently replace existing functionality with a more restrictive workflow, security precaution, approval gate, or manual step. If a concrete concern exists, describe it and preserve the requested behavior unless a real higher-priority limitation prevents it. A change to both an implementation and its tests can still be a regression when it changes the user's requirements. When asked to integrate, release, or clean up, perform that task through the existing workflow. Do not invent release checklists, extra full-suite reruns, stand-alone validation scripts, audits, archival rules, or new prerequisites; investigate concrete failures directly, and do not turn routine maintenance into a process project without an explicit request.
 
+## Release authorization
+
+When the maintainer asks for a release, carry that authorization through the existing checks, merge, publication, and outcome verification without asking for permission again. Continuing the same authorized release carries that authorization across turns. Preserve prepare-only or no-publish limits only when they actually come from the maintainer; an assistant's earlier restriction is not a maintainer instruction.
+
 ## Windows release publication contract
 
 - A push to `main` that changes `.github/release-request.json` **automatically starts** `.github/workflows/publish-windows-release.yml`. This is an intentional release request, not an ordinary source push.
@@ -12,7 +16,8 @@ The maintainer owns product and release decisions. Do not silently replace exist
 - `publish: true` publishes after the **existing** source and installer qualification succeeds; `publish: false` requests a draft. Packaging alone does not publish.
 - Do **not** remove or narrow the automatic trigger because manual dispatch seems safer. Do not add extra confirmations, approvals, paid signing, or other new publication prerequisites without the maintainer's explicit instruction.
 - When editing release behavior, consult `SIGNING-AND-RELEASE.md` and run `node --test tests/release-publication-contract.test.mjs`. Do not rewrite the specification and its tests merely to make an unauthorized behavior change pass.
-- The maintainer explicitly authorized one release-lineage gate on 2026-11-27: verify the independently accepted development tip, present any omission or unverifiable baseline as a prominent warning, and require explicit, release-fingerprint-bound acknowledgement before publishing. Preserve automatic release-request triggering; do not add a manual dispatch requirement or blanket dirty-worktree gate. Do not suppress the warning merely because all source tests pass.- After committing a release request, verify an actual GitHub Actions run with event `push` for that commit. A green local test is not proof that publication started; preserve existing evidence and investigate if the run is missing.
+- The maintainer explicitly authorized one release-lineage gate on 2026-11-27: verify the independently accepted development tip, present any omission or unverifiable baseline as a prominent warning, and require explicit, release-fingerprint-bound acknowledgement before publishing. The authorized releasing operator performs the verification and records this acknowledgement; it is not a separate human confirmation or a request for the maintainer to repeat hashes in chat. Preserve automatic release-request triggering; do not add a manual dispatch requirement or blanket dirty-worktree gate. Do not suppress the warning merely because all source tests pass.
+- After committing a release request, verify an actual GitHub Actions run with event `push` for that commit. A green local test is not proof that publication started; preserve existing evidence and investigate if the run is missing.
 
 The fast behavior check is a functional regression check, **not** an additional release approval or security gate. Only an explicit maintainer request changes this contract.
 
