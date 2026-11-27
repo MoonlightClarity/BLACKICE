@@ -165,9 +165,16 @@ test('ordinary engine Chat delivers history facts in the real compatible browser
  await runtime.store.init();
  await runtime.saveProvider({id:'fixture',type:'compatible',baseUrl:'http://127.0.0.1:'+server.address().port+'/v1',models:[{id:'fixture',contextWindowTokens:65536,maxOutputTokens:4096}]},{preserveDefault:true});
  const dataDir=path.join(f.directory,'engine');identity=await new IdentityStore({dataDir}).init();
- engine=await new HarnessEngine({runtime,dataDir,defaultCwd:f.cwd,identity,browser}).init();
+ const attachments=await new AttachmentStore({dataDir}).init();
+ const ledger=await attachments.importBytes({name:'external_application_history.json',bytes:Buffer.from(JSON.stringify({entries:[
+  {url,state:'confirmed'},
+  {url:other,state:'confirmed'},
+  {url,state:'draft'},
+ ]}))});
+ const unattached=await attachments.importBytes({name:'unattached_application_history.json',bytes:Buffer.from(JSON.stringify({url,status:'submitted'}))});
+ engine=await new HarnessEngine({runtime,dataDir,defaultCwd:f.cwd,identity,browser,attachments}).init();
  const workflow=createMissionWorkflow({id:'mission_chat_history_fixture',task,cwd:f.cwd,model:'fixture::fixture',planningMode:'off'});
- const start=engine.startRun({workflow,input:{task,cwd:f.cwd,planningMode:'off',chatPlanning:'off',directoryActions:'off'}});
+ const start=engine.startRun({workflow,input:{task,cwd:f.cwd,planningMode:'off',chatPlanning:'off',directoryActions:'off',attachmentIds:[ledger.id]}});
  await engine.executions.get(start.id);const run=engine.getRun(start.id);
  assert.equal(run.status,'completed',run.error||run.nodes.agent.error);
  assert.equal(run.input,task);
@@ -182,6 +189,10 @@ test('ordinary engine Chat delivers history facts in the real compatible browser
  assert.equal(observed.applicationHistory.workspace,f.cwd,'the engine wires the actual run cwd');
  assert.equal(observed.applicationHistory.target.key,applicationTarget(url).key);
  assert.deepEqual(observed.applicationHistory.matches,[{source:source.name,record:241,reason:'reported-prior-requisition'}]);
+ assert.deepEqual(observed.applicationHistory.attached.sources,[{id:ledger.id,name:'external_application_history.json'}]);
+ assert.deepEqual(observed.applicationHistory.attached.matches,[{id:ledger.id,source:'external_application_history.json',record:1,reason:'reported-prior-requisition'}]);
+ assert.deepEqual(observed.applicationHistory.attached.errors,[]);
+ assert.ok(!delivered.content.includes(unattached.id),'unattached reports never enter the tool result');
  assert.ok(allRequests.every(request=>JSON.stringify(request.messages).includes(task)),'the task prompt stays unchanged');
  assert.equal(await readFile(path.join(f.cwd,source.name),'utf8'),source.content);
 });
