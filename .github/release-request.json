@@ -1,7 +1,16 @@
 {
-    "format":  1,
-    "version":  "2.40.84",
-    "publish":  true,
-    "appFingerprint":  "c852436b0033f5dc850f62a0b8f0cbd962a94f23ca922612f0ca01b8df0bba43",
-    "sourceTestReceipt":  "verification/windows-source-publication-2.40.84.json"
+  "format": 1,
+  "version": "2.40.85",
+  "publish": true,
+  "appFingerprint": "b0b846fa02f28d462b59361d8e65d5d0e181d075a4eac81bf7a763f8a3f86639",
+  "sourceTestReceipt": "verification/windows-source-publication-2.40.85.json",
+  "lineageReview": {
+    "format": 1,
+    "acknowledged": true,
+    "reviewedVersion": "2.40.85",
+    "reviewedAppFingerprint": "b0b846fa02f28d462b59361d8e65d5d0e181d075a4eac81bf7a763f8a3f86639",
+    "reviewedAcceptedTip": "a25a12f775daa976bf6522fbe4c0812c4da1e8c5",
+    "reviewedOutcome": "included",
+    "note": "Verified the independent accepted-development tip after its deliberate fast-forward to the already qualified recovery merge. The candidate preserves the accepted Runtime, published 2.40.84, overnight work, all thirteen morning repair commits and recovered WIP; its application fingerprint and canonical source index match the archived full Windows qualification. This review records source lineage; merging this release request separately initiates publication."
+  }
 }
