@@ -56,9 +56,17 @@ for(const isolatedHistory of [false,true])for(const remote of [false,true])test(
     assert.deepEqual(run.skillLoadReceipts||[],[]);
     if(n===3){
       assert.equal(goals.skillObjectiveForDispatch(run),null);
+      assert.doesNotMatch(options.developerInstructions,/bounded batch of result cards|routine card rejection/);
     }else{
       assert.match(options.developerInstructions,/PERSISTENT CONVERSATION GOAL/);
       assert.ok(options.developerInstructions.includes(objective),'the immutable objective remains in the active Goal contract');
+      const contract=goals.instructions(run);
+      assert.ok(options.developerInstructions.includes(contract),'the provider receives the complete current Goal contract on both initial and successor turns');
+      assert.match(contract,/When the user requires remote work,[\s\S]*supported remote-only filters[\s\S]*before queuing or assigning a role/);
+      assert.match(contract,/explicit, unambiguous onsite, in-office or hybrid attendance requirements[\s\S]*individual artifact or checkpoint[\s\S]*end the turn just to reject/);
+      assert.match(contract,/Continue in the same turn[\s\S]*routine card rejection is not a real work increment/);
+      assert.match(contract,/one narrow check for unknown or conflicting work arrangements[\s\S]*location name alone does not establish onsite work/);
+      assert.match(contract,/current user directions, pauses and cutoffs/);
       if(n===2){
         assert.equal(goals.skillObjectiveForDispatch(run),objective);
         const bound=run.goalDispatch;
@@ -227,6 +235,7 @@ test('Goal instruction text preserves counterparty reasoning across non-job-sear
   assert.match(instructions,/continue independent work/);
   assert.match(instructions,/genuinely blocked/);
   assert.doesNotMatch(instructions,/Treat counterparties When handing off/);
+  assert.doesNotMatch(instructions,/remote-only filters|bounded batch of result cards|routine card rejection/,'job discovery policy cannot create remote-work constraints for another Goal');
 });
 
 test('one goal continues for three turns in the same conversation and finishes with evidence', async t => {
