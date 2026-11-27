@@ -3524,3 +3524,29 @@ test('an abort without a replacement remains a failure until a top-level page ac
   assert.equal((await read()).url, destination);
   assert.equal(window.loads.filter(url => url === source).length, 1);
 });
+
+test('guarded directional scroll dispatches only on the current page through the browser workspace and router', async t => {
+  const { driver, windows } = await fixture(t);
+  const owner = { taskId: 'active-role', nodeId: 'agent', runId: 'run' };
+  const tab = driver.newTab('https://example.test/application', { owner }); await tab.loading;
+  const browser = new BrowserWorkspace({ driver: new BrowserRouter({ independent: driver }) });
+  t.after(() => browser.close());
+  let dispatched = 0;
+  const contents = windows[0].webContents;
+  const execute = contents.executeJavaScript;
+  contents.executeJavaScript = async script => {
+    if (!script.includes('document.scrollingElement||document.documentElement')) return execute(script);
+    dispatched++;
+    return { scrollY: 240, scrollX: 0 };
+  };
+  const request = { action: 'scroll', browser: 'relay', direction: 'down', amount: 240, tabId: tab.id,
+    expectedUrl: tab.window.url, expectedDocumentId: tab.id + ':' + tab.revision };
+  const result = await browser.perform(request, { source: 'agent', owner });
+  assert.deepEqual(result.receipt, { scrollY: 240, scrollX: 0 });
+  assert.equal(dispatched, 1);
+  for (const stale of [{expectedUrl: 'https://example.test/other'}, {expectedDocumentId: tab.id + ':stale'}])
+    await assert.rejects(browser.perform({ ...request, ...stale }, { source: 'agent', owner }), {
+      code: 'BROWSER_INPUT_DOCUMENT_CHANGED', actionDispatched: false,
+    });
+  assert.equal(dispatched, 1);
+});

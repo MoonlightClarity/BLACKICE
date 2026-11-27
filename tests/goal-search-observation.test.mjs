@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createFileSearch } from '../lib/workspace-file-search.mjs';
 import { createWorkspaceToolHandler } from '../lib/workspace-tools.mjs';
 import {ConversationGoals} from '../lib/conversation-goals.mjs';
-import {observeGoalToolOutcome,inFlightEffectSignature,assessGoalProgress,detectUnknownEffectReplay} from '../lib/goal-recovery-policy.mjs';
+import {observeGoalToolOutcome,inFlightEffectSignature,assessGoalProgress,detectUnknownEffectReplay,reviewJobSearchScreening} from '../lib/goal-recovery-policy.mjs';
 
 const session=randomUUID(), cursor=(n,s=session)=>'fs1:'+s+':'+String(n).padStart(8,'0')+'-0000-0000-0000-000000000000';
 const search=(input)=>({name:'relay_find_files',arguments:{query:'resume',...(input?{cursor:input}:{})}});
@@ -287,4 +287,53 @@ test('an explicit admission of unfinished work triggers one bounded Goal continu
    assert.match(first.prompt,/Execute the next useful available action/);
    assert.equal(f.goals.beforeCheckpoint(run,candidate),null,'a second corrective admission would loop');
  }});
+});
+
+test('job-search Goals correct unsupported screening at a late checkpoint even after another role was submitted', async () => {
+ const f=fixture();
+ const objective='Restart my ongoing remote job search now and work end to end until 6:00 a.m. EST.';
+ await f.goals.save('root',{...f.goals.raw('root'),objective});
+ const output='Constellation’s official careers page confirms the remote opening. The form also requires a citizenship answer not supported by the résumé, so I’ve asked for that fact and will keep screening other leads while it’s pending.';
+ await f.turn(search(null),receipt(cursor(1),100),{beforeSettle:run=>{
+  run.startedAt=new Date(Date.now()-180000).toISOString();
+  f.goals.observeConfirmedCommit(run,{adapter:'relay_browser',effect:'commit',effectKey:'already-confirmed-separate-role',operationId:'native:job'});
+  assert.match(f.goals.instructions(run),/A résumé is not required to establish citizenship/);
+  assert.match(f.goals.instructions(run),/apply the applicant’s explicit default/i);
+  assert.match(f.goals.instructions(run),/ignore numerical years-of-experience requirements completely/i);
+  assert.match(f.goals.instructions(run),/consider adjacent roles for application/i);
+  assert.match(f.goals.instructions(run),/silence .* insufficient grounds to screen out a role or stop work/i);
+  const corrective=f.goals.beforeCheckpoint(run,{output});
+  assert.equal(corrective?.continue,true);
+  assert.match(corrective.prompt,/resume-used-for-eligibility/);
+  assert.equal(f.goals.beforeCheckpoint(run,{output}),null,'One correction per turn');
+  run.output=output;
+ }});
+ const goal=f.goals.raw('root');
+ assert.equal(goal.lastSettlementAssessment.applicationScreeningReview,'resume-used-for-eligibility');
+ await f.goals.dispatch('root');
+ assert.match(f.dispatched[0].message,/Review the last role decision/);
+ assert.doesNotMatch(f.dispatched[0].message,/Do not privilege the most advanced branch/);
+});
+
+test('a genuine unsupported form choice is not mistaken for screening on résumé silence', async () => {
+ const f=fixture();
+ await f.goals.save('root',{...f.goals.raw('root'),objective:'Restart my ongoing remote job search.'});
+ await f.turn(search(null),receipt(cursor(1),100),{beforeSettle:run=>{
+  run.startedAt=new Date(Date.now()-180000).toISOString();
+  run.output='I deferred the school field. The résumé confirms the actual college, but the employer selector rejects that known value and offers no Other entry.';
+  assert.equal(f.goals.beforeCheckpoint(run,{output:run.output}),null);
+ }});
+ assert.equal(f.goals.raw('root').lastSettlementAssessment.applicationScreeningReview,undefined);
+});
+
+test('job screening recovery flags unsupported decision grounds and preserves actual blockers', () => {
+ assert.equal(reviewJobSearchScreening('The duties fit, but the résumé doesn’t establish production experience. No application was submitted.'), 'resume-silence-used-for-fit');
+ assert.equal(reviewJobSearchScreening('The form also requires a citizenship answer not supported by the résumé, so I’ve asked for that fact and will keep screening other leads while it’s pending.'), 'resume-used-for-eligibility');
+ assert.equal(reviewJobSearchScreening('The posting requires 10 years of experience. I skipped it.'), 'experience-duration-screen');
+ assert.equal(reviewJobSearchScreening('The title was only adjacent to their previous work, so I passed on it.'), 'adjacent-experience-dismissed');
+ assert.equal(reviewJobSearchScreening('I rejected it because I am unsure whether the applicant is a U.S. citizen.'), 'eligibility-uncertainty-used-to-exclude');
+ assert.equal(reviewJobSearchScreening('I deferred the citizenship field as unresolved, saved the draft and completed the independent fields.'), null);
+ assert.equal(reviewJobSearchScreening('The résumé does not mention citizenship. I opened the employer form and continued.'), null);
+ assert.equal(reviewJobSearchScreening('I deferred the school field. The résumé confirms the actual college, but the employer selector rejected it.'), null);
+ assert.equal(reviewJobSearchScreening('I skipped the role after the official posting stated weekly travel and the user requested no travel.'), null);
 });

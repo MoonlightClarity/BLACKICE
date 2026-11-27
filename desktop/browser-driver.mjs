@@ -2574,7 +2574,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     // page identity instead of silently reading a new destination.
     if (args.action==='read' && (args.expectedUrl!==undefined||args.expectedDocumentId!==undefined))
       this.assertInputDocument(tab,args);
-    if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)||args.action==='scroll'&&args.ref) {
+    if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)||args.action==='scroll'&&!wheel) {
       try { this.assertInputDocument(tab, args); }
       catch (cause) {
         // Restoring a suspended navigation or preparing a popup can already
