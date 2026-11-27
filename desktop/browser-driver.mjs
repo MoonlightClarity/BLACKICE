@@ -468,8 +468,10 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
     el.value = args.value; el.dispatchEvent(new Event('input', { bubbles: true, composed: true })); el.dispatchEvent(new Event('change', { bubbles: true, composed: true })); return { selected: el.value };
   }
   if (action === 'upload') {
-    if (el.tagName !== 'INPUT' || el.type !== 'file') throw new Error('Choose a file input from a fresh snapshot.');
-    if (el.webkitdirectory || !el.multiple && args.files.length > 1) throw new Error('Choose files matching this input; directory selection is not supported.');
+    if (el.tagName !== 'INPUT' || el.type !== 'file')
+      return { __blackiceElementError: { message: 'Use the current file input ref, or click the upload control and observe its exact pending chooser.', code: 'BROWSER_UPLOAD_TARGET_NOT_FILE_INPUT', inputDispatched: false } };
+    if (el.webkitdirectory || !el.multiple && args.files.length > 1)
+      return { __blackiceElementError: { message: 'Choose files matching this input; directory selection is not supported.', code: 'BROWSER_UPLOAD_SELECTION_UNSUPPORTED', inputDispatched: false } };
     const transfer = new DataTransfer();
     for (const file of args.files) { const raw = atob(file.data); const bytes = Uint8Array.from(raw, c => c.charCodeAt(0)); transfer.items.add(new File([bytes], file.name, { type: file.type })); }
     el.files = transfer.files;
@@ -1649,13 +1651,16 @@ export class ElectronBrowserDriver extends EventEmitter {
         'BROWSER_FIELD_NOT_EDITABLE','BROWSER_INPUT_FOCUS_CHANGED','BROWSER_INPUT_SELECTION_FAILED'].includes(code);
       const inputPrevented = inputDispatched === false
         && (action === 'select' || ['fill','fill-ready'].includes(action)&&textPreflight || action === 'prepare' && code === 'BROWSER_TARGET_COVERED');
-       const blocker=code==='BROWSER_TARGET_COVERED'&&action==='prepare'&&inputDispatched===false&&result.__blackiceElementError.blocker;
+      const uploadRefused = action === 'upload' && inputDispatched === false &&
+        ['BROWSER_UPLOAD_TARGET_NOT_FILE_INPUT', 'BROWSER_UPLOAD_SELECTION_UNSUPPORTED'].includes(code);
+      const blocker=code==='BROWSER_TARGET_COVERED'&&action==='prepare'&&inputDispatched===false&&result.__blackiceElementError.blocker;
       throw Object.assign(error(message), {
         code,
         ...(blocker?{blocker:{modalPresent:blocker.modalPresent===true,viewportOverlay:blocker.viewportOverlay===true,outOfViewport:blocker.outOfViewport===true}}:{}),
         ...(code === 'BROWSER_REF_STALE' ? { browserReferenceDiagnostic: { ...this.referenceDiagnostic(tab, args.ref, 'control-changed'), ...projectBrowserControlBinding(result.__blackiceElementError, action) } } : {}),
         ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true, ...(action==='prepare'?{inputDispatched:false,pointerStage:'pre-pointer-identity'}:{}) }
-          : inputPrevented ? { inputDispatched: false, ...(action==='prepare'?{pointerStage:'pre-pointer-identity'}:{}),
+          : uploadRefused ? { actionDispatched: false, inputDispatched: false }
+           : inputPrevented ? { inputDispatched: false, ...(action==='prepare'?{pointerStage:'pre-pointer-identity'}:{}),
               ...(['fill','fill-ready'].includes(action)?{keyboardStage:'pre-key-input'}:{}) } : {}),
       });
     }
