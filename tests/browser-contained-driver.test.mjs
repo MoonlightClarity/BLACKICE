@@ -510,8 +510,8 @@ test('a detached renderer ref preserves its message across a boundary that loses
 });
 
 async function goalPointerFixture(t, { covered = true, modal = false, inputError, embeddedCandidates, frameOwnerError, pointerMismatch = false } = {}) {
-  let ref, scrolls = 0, captures = 0, overlay = covered, candidates = embeddedCandidates, pointerContext;
-  const scrollAlignments = [];
+  let ref, scrolls = 0, captures = 0, overlay = covered, candidates = embeddedCandidates, pointerContext, observing = 0;
+  const scrollAlignments = [], targetLookups = [];
   const childURL = 'https://identity.example.test/control', quad = [150, 80, 450, 80, 450, 230, 150, 230];
   const childViewport = { width: 300, height: 150 };
   const f = await fixture(t, { command: async (method, params, window, sessionId) => {
@@ -519,12 +519,15 @@ async function goalPointerFixture(t, { covered = true, modal = false, inputError
       if (method === 'Page.getFrameTree') return { frameTree: sessionId
         ? { frame: { id: 'owned-frame', url: childURL } }
         : { frame: { id: 'root', url: window.url }, childFrames: [] } };
-      if (method === 'Target.getTargets') return { targetInfos: [
-        { type: 'iframe', targetId: 'unrelated-parent', url: childURL, parentFrameId: 'other-root' },
-        { type: 'page', targetId: 'same-url-page', url: childURL, parentFrameId: 'root' },
-        ...Array.from({ length: candidates }, (_, index) => ({ type: 'iframe',
-          targetId: index ? 'duplicate-frame' : 'owned-frame', url: childURL, parentFrameId: 'root' })),
-      ] };
+      if (method === 'Target.getTargets') {
+        targetLookups.push(observing ? 'observation' : 'action');
+        return { targetInfos: [
+          { type: 'iframe', targetId: 'unrelated-parent', url: childURL, parentFrameId: 'other-root' },
+          { type: 'page', targetId: 'same-url-page', url: childURL, parentFrameId: 'root' },
+          ...Array.from({ length: candidates }, (_, index) => ({ type: 'iframe',
+            targetId: index ? 'duplicate-frame' : 'owned-frame', url: childURL, parentFrameId: 'root' })),
+        ] };
+      }
       if (method === 'DOM.getFrameOwner') { if (frameOwnerError) throw frameOwnerError; return { backendNodeId: 7 }; }
       if (method === 'DOM.getBoxModel') return { model: { content: quad } };
       if (method === 'Runtime.evaluate') {
@@ -546,6 +549,14 @@ async function goalPointerFixture(t, { covered = true, modal = false, inputError
     if(method==='Runtime.callFunctionOn'&&pointerMismatch)return {result:{value:{verified:false}}};
     return pointerProof(method, params, ref, embeddedCandidates === undefined ? undefined : childViewport);
   } });
+  // Initial and recovery snapshots can inspect iframe visibility independently
+  // of action frame resolution. Trace their real boundary without replacing it.
+  const snapshot = f.driver.snapshot.bind(f.driver);
+  f.driver.snapshot = async (...args) => {
+    observing++;
+    try { return await snapshot(...args); }
+    finally { observing--; }
+  };
   const tab = f.driver.newTab('https://example.test/covered-control'); await tab.loading;
   const control = {
     tagName: 'BUTTON', type: 'button', children: [], childNodes: [], labels: [],
@@ -598,7 +609,7 @@ async function goalPointerFixture(t, { covered = true, modal = false, inputError
   ref = first.frames.flatMap(frame => frame.elements)[0].ref;
   const original = { name: 'relay_browser', arguments: { action: 'click', tabId: tab.id, ref,
     expectedDocumentId: first.documentId, expectedUrl: first.url } };
-  return { ...f, tab, control, conversations, run, wrapped, observe, original,
+  return { ...f, tab, control, conversations, run, wrapped, observe, original, targetLookups,
     scrolls: () => scrolls, scrollAlignments, captures: () => captures, uncover: () => { overlay = false; }, resolveFrame: () => { candidates = 1; } };
 }
 
@@ -636,7 +647,8 @@ for (const candidates of [0, 2]) for (const action of ['click', 'hover']) {
     assert.match(body.error, /Embedded frame identity is ambiguous/);
     assert.equal(f.scrolls(), 1, 'The real renderer preparation already scrolled the child control.');
     assert.equal(f.captures(), captures, 'An exact observed control must not require a bitmap before native frame resolution.');
-    assert.equal(f.tab.window.protocol.filter(call => call.method === 'Target.getTargets').length, 1);
+    assert.equal(f.targetLookups.filter(phase => phase === 'action').length, 1,
+      'Action frame resolution must perform exactly one target lookup, independently of observation reads.');
     assert.equal(f.tab.window.protocol.filter(call => call.method.startsWith('Input.')).length, 0);
     assert.equal(body.inputDispatched, false);
     assert.equal(body.actionDispatched, undefined, 'Preparation is not evidence that the whole action had no effects.');
@@ -676,7 +688,7 @@ test('a page-thrown frame-identity code cannot counterfeit the host no-input gua
   assert.equal(first.success, false); assert.equal(first.code, 'BROWSER_FRAME_IDENTITY_AMBIGUOUS');
   assert.equal(body.inputDispatched, undefined); assert.equal(body.actionDispatched, undefined);
   assert.equal(f.scrolls(), 1);
-  assert.equal(f.tab.window.protocol.some(call => call.method === 'Target.getTargets'), false,
+  assert.equal(f.targetLookups.filter(phase => phase === 'action').length, 0,
     'The spoof fails in page preparation before the host frame-identity guard is reached.');
   assert.equal(f.tab.window.protocol.some(call => call.method.startsWith('Input.')), false);
   assert.equal(f.run.goalEvidence.at(-1).kind, 'uncertain_external_effect');
