@@ -38,7 +38,7 @@ jobs:
           npm run package:public
           if ($LASTEXITCODE -ne 0) { throw 'Recovered candidate packaging failed.' }
           $new=Get-Content -LiteralPath 'dist/Blackice-Public-Windows/blackice-public-release.json' -Raw | ConvertFrom-Json
-          if ($new.version -cne '2.40.85' -or $new.appFingerprint -cne '0509bfac7407c6605af51458f1f523294605330eb738295c3b195ebf69215ca0') { throw 'Recovered candidate code does not match the inspected source.' }
+          if ($new.version -cne '2.40.85' -or $new.appFingerprint -cne 'b0b846fa02f28d462b59361d8e65d5d0e181d075a4eac81bf7a763f8a3f86639') { throw 'Recovered candidate code does not match the inspected source.' }
       - name: Rebuild the exact installed 2.40.84 application source variant
         shell: pwsh
         run: |

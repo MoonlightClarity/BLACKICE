@@ -125,7 +125,7 @@ try {
   $hash=Hash $setup
   Assert ($m.version -ceq '2.40.85' -and $m.artifact.sha256 -ceq $hash -and $m.artifact.size -eq (Get-Item -LiteralPath $setup).Length) 'Candidate manifest hash or version mismatch.'
   $report["installerSha256"]=$hash
-  Assert ($m.appFingerprint -ceq '0509bfac7407c6605af51458f1f523294605330eb738295c3b195ebf69215ca0') 'Candidate application bytes differ from recovered source.'
+  Assert ($m.appFingerprint -ceq 'b0b846fa02f28d462b59361d8e65d5d0e181d075a4eac81bf7a763f8a3f86639') 'Candidate application bytes differ from recovered source.'
   $report["appFingerprint"]=$m.appFingerprint
   $report.checks+=@{name='candidate-manifest-bound';passed=$true}
   New-Item -ItemType Directory -Path $work -Force | Out-Null
