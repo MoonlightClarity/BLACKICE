@@ -33,6 +33,25 @@ jobs:
           node-version: '24.22.2'
           package-manager-cache: false
 
+      - name: Verify development lineage and require explicit acknowledgement
+        run: |
+          $ErrorActionPreference='Stop'
+          # Accepted development is a separately maintained ref, not a source
+          # chosen by the release branch. Experimental worktrees do not count.
+          $reference='refs/heads/accepted-development'
+          $remote=@(git ls-remote origin $reference)
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the accepted development ref.' }
+          if ($remote.Count -gt 0) {
+            git fetch --no-tags origin '+refs/heads/accepted-development:refs/remotes/origin/accepted-development'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not fetch the independently accepted development tip.' }
+          } else {
+            Write-Host '::warning::No accepted-development branch is published; this unverified baseline requires explicit acknowledgement.'
+          }
+          # Report objective lineage facts, then require a matching explicit
+          # release-request acknowledgement before running an installer build.
+          # Reviewed omissions may proceed; unreviewed omissions cannot.
+          node scripts/release-lineage-guard.mjs --repo . --candidate $env:GITHUB_SHA --accepted-ref refs/remotes/origin/accepted-development --require-checkout-match --request .github/release-request.json --summary $env:GITHUB_STEP_SUMMARY --enforce
+          if ($LASTEXITCODE -ne 0) { throw 'Explicit source-lineage verification and acknowledgement are required before publishing.' }
       - name: Bind the explicit request to this exact source and its Windows tests
         run: |
           $ErrorActionPreference='Stop'

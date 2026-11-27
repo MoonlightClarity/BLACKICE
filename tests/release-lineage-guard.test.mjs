@@ -4,12 +4,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { auditReleaseLineage } from '../scripts/release-lineage-guard.mjs';
+import { readFileSync } from 'node:fs';
+import { auditReleaseLineage, verifyReleaseAcknowledgement, releaseReviewSummary } from '../scripts/release-lineage-guard.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'blackice-release-lineage-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', windowsHide: true }).trim();
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', windowsHide: true, stdio: ['ignore','pipe','ignore'] }).trim();
   git('init', '-b', 'main');
   git('config', 'user.name', 'BLACKICE Test');
   git('config', 'user.email', 'blackice-test@example.invalid');
@@ -19,52 +20,100 @@ function fixture(t) {
   git('branch', 'accepted');
   writeFileSync(join(root, 'release.txt'), 'self driving\n');
   git('add', '.');
-  git('commit', '-m', 'self-driving release from older shared source');
+  git('commit', '-m', 'release from old shared source');
   const candidate = git('rev-parse', 'HEAD');
   git('checkout', 'accepted');
-  writeFileSync(join(root, 'runtime.txt'), 'runtime controls\n');
+  writeFileSync(join(root, 'runtime.txt'), 'accepted runtime\n');
   git('add', '.');
-  git('commit', '-m', 'unpublished accepted Runtime work');
+  git('commit', '-m', 'accepted Runtime work');
   const accepted = git('rev-parse', 'HEAD');
   git('checkout', 'main');
   return { root, git, candidate, accepted };
 }
 
-test('a tested release fork fails if it omits independently accepted Runtime HEAD', t => {
-  const f = fixture(t);
-  const result = auditReleaseLineage({ repository: f.root, candidate: f.candidate, acceptedRefs: ['accepted'], canonical: f.root });
-  assert.equal(result.passed, false);
-  const missing = result.checks.find(item => item.kind === 'accepted-ref');
-  assert.equal(missing.commit, f.accepted);
-  assert.equal(missing.status, 'fail');
+const requestFor = (audit, overrides = {}) => {
+  const accepted = audit.checks.find(item => item.kind === 'accepted-ref');
+  const outcome = !accepted?.commit ? 'unavailable' : accepted.status === 'pass' ? 'included' : 'omitted';
+  return {
+    format: 1, version: '2.40.85', appFingerprint: 'b'.repeat(64),
+    lineageReview: {
+      format: 1, acknowledged: true, reviewedVersion: '2.40.85',
+      reviewedAppFingerprint: 'b'.repeat(64),
+      reviewedAcceptedTip: accepted?.commit || null, reviewedOutcome: outcome,
+      note: 'I checked this version and the accepted-development baseline and reviewed the exact gap.',
+      ...overrides
+    }
+  };
+};
+const check = (f, opts = {}) => auditReleaseLineage({ repository: f.root, candidate: opts.candidate || f.candidate, acceptedRefs: opts.acceptedRefs || ['accepted'], ...(opts.canonical ? {canonical:f.root}:{}), requireCheckoutMatch: opts.requireCheckoutMatch===true });
+
+test('the exact 2.40.84 fork failure is an omission warning and blocks without acknowledgement', t => {
+  const f = fixture(t), audit = check(f);
+  assert.equal(audit.passed, false);
+  assert.equal(audit.checks.find(item => item.kind === 'accepted-ref').commit, f.accepted);
+  const missing = verifyReleaseAcknowledgement({ audit, request: { version:'2.40.85',appFingerprint:'b'.repeat(64) }, acceptedRef:'accepted' });
+  assert.equal(missing.outcome, 'omitted');
+  assert.equal(missing.authorized, false);
+  assert.match(missing.warning, /omits accepted development tip/);
 });
 
-test('a merge with both lines passes when the canonical workspace is clean', t => {
+test('a fully informed acknowledgement allows an intentional known omission, without silently treating it as included', t => {
+  const f = fixture(t), audit = check(f);
+  const review = verifyReleaseAcknowledgement({ audit, request: requestFor(audit), acceptedRef:'accepted' });
+  assert.equal(review.authorized, true);
+  assert.equal(review.outcome, 'omitted');
+  assert.match(releaseReviewSummary(review), /WARNING: Candidate omits/);
+});
+
+test('an accepted ancestor with explicit acknowledgement can release, even if unrelated WIP exists', t => {
   const f = fixture(t);
   f.git('merge', '--no-ff', '--no-edit', 'accepted');
-  const result = auditReleaseLineage({ repository: f.root, candidate: 'HEAD', acceptedRefs: ['accepted'], canonical: f.root, requireCheckoutMatch: true });
-  assert.equal(result.passed, true, JSON.stringify(result.checks));
+  writeFileSync(join(f.root, 'experimental-branch-work.txt'), 'uncommitted experiment');
+  const audit = check(f, {candidate:'HEAD',canonical:true,requireCheckoutMatch:true});
+  assert.equal(audit.checks.find(item => item.kind === 'accepted-ref').status, 'pass');
+  assert.equal(audit.checks.find(item => item.kind === 'canonical-worktree').status, 'warning');
+  const review = verifyReleaseAcknowledgement({ audit, request: requestFor(audit), acceptedRef:'accepted' });
+  assert.equal(review.outcome, 'included');
+  assert.equal(review.authorized, true);
+  assert.equal(review.warning, null);
 });
 
-test('dirty canonical source blocks declaring any release complete', t => {
-  const f = fixture(t);
-  f.git('merge', '--no-ff', '--no-edit', 'accepted');
-  writeFileSync(join(f.root, 'uncommitted-code.mjs'), 'new work\n');
-  const result = auditReleaseLineage({ repository: f.root, candidate: 'HEAD', acceptedRefs: ['accepted'], canonical: f.root });
-  assert.equal(result.passed, false);
-  assert.equal(result.checks.find(item => item.kind === 'canonical-worktree').status, 'fail');
+test('review is bound to version, app fingerprint, baseline tip, outcome, explicit boolean and specific note', t => {
+  const f = fixture(t), audit = check(f);
+  for(const patch of [
+    { acknowledged:false }, {acknowledged:'true'}, {reviewedVersion:'2.40.84'},
+    {reviewedAppFingerprint:'c'.repeat(64)}, {reviewedAcceptedTip:'f'.repeat(40)},
+    {reviewedOutcome:'included'}, {note:'ok'}, {note:42}
+  ]) {
+    const request=requestFor(audit,patch);
+    assert.equal(verifyReleaseAcknowledgement({audit,request,acceptedRef:'accepted'}).authorized,false,JSON.stringify(patch));
+  }
 });
 
-test('no accepted baseline is always an error (no opt-out by omission)', t => {
+test('unavailable independent baseline is conspicuously warned and must be acknowledged as unavailable', t => {
   const f = fixture(t);
-  const result = auditReleaseLineage({ repository: f.root, candidate: 'HEAD' });
-  assert.equal(result.passed, false);
-  assert.equal(result.checks.find(item => item.kind === 'baseline').status, 'fail');
+  const audit = check(f,{acceptedRefs:['not-published']});
+  const missing = verifyReleaseAcknowledgement({audit,request:{version:'2.40.85',appFingerprint:'b'.repeat(64)},acceptedRef:'not-published'});
+  assert.equal(missing.outcome,'unavailable');
+  assert.equal(missing.authorized,false);
+  assert.match(missing.warning,/No independent accepted/);
+  const reviewed=verifyReleaseAcknowledgement({audit,request:requestFor(audit),acceptedRef:'not-published'});
+  assert.equal(reviewed.authorized,true);
+  assert.equal(reviewed.outcome,'unavailable');
 });
 
-test('invalid accepted ref fails closed rather than assuming it is merged', t => {
-  const f = fixture(t);
-  const result = auditReleaseLineage({ repository: f.root, candidate: 'HEAD', acceptedRefs: ['not-a-real-branch'] });
-  assert.equal(result.passed, false);
-  assert.equal(result.checks.find(item => item.kind === 'accepted-ref').status, 'fail');
+test('invalid source commit always rejects even with an acknowledgement', t => {
+  const f = fixture(t), audit = check(f,{candidate:'does-not-exist'});
+  assert.equal(verifyReleaseAcknowledgement({audit,request:requestFor(audit),acceptedRef:'accepted'}).authorized,false);
+});
+
+test('actual publishing workflow includes acknowledgement gate without changing automatic publish trigger', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/publish-windows-release.yml', import.meta.url),'utf8');
+  assert.match(workflow,/paths: \['\.github\/release-request\.json'\]/);
+  assert.match(workflow,/workflow_dispatch:/);
+  assert.match(workflow,/Verify development lineage and require explicit acknowledgement/);
+  assert.match(workflow,/release-lineage-guard\.mjs --repo \. --candidate \$env:GITHUB_SHA/);
+  assert.match(workflow,/--summary \$env:GITHUB_STEP_SUMMARY --enforce/);
+  assert.match(workflow,/refs\/heads\/accepted-development/);
+  assert.ok(workflow.indexOf('release-lineage-guard.mjs')<workflow.indexOf('Build the locked Windows candidate'));
 });
