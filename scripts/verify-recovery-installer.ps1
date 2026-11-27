@@ -58,7 +58,7 @@ function InvokeSetup([string]$exe,[string]$arguments) {
     $done=Wait-Job -Job $job -Timeout 300
     Assert ($null -ne $done -and $job.State -eq 'Completed') 'Installer process tree exceeded 300 seconds.'
     $result=@(Receive-Job -Job $job -ErrorAction Stop)
-    Assert ($result.Count -eq 1 -and $result[0] -eq 0) 'Installer returned nonzero exit code.'
+    Assert ($result.Count -eq 1 -and $result[0] -eq 0) ('Installer returned nonzero exit code: '+($result -join ','))
   }finally{
     if($job.State -eq 'Running'){Stop-Job -Job $job}
     Remove-Job -Job $job -Force
@@ -101,7 +101,7 @@ Assert ($EvidenceDirectory.StartsWith([IO.Path]::GetFullPath($env:RUNNER_TEMP).T
 $commit=(& git -C $SourceRoot rev-parse HEAD).Trim()
 Assert ($LASTEXITCODE -eq 0 -and $commit -ceq $env:GITHUB_SHA) 'Diagnostic checkout does not match workflow commit.'
 $work=Join-Path $env:RUNNER_TEMP ('blackice-diagnostic-'+[Guid]::NewGuid().ToString('N'))
-$install=Join-Path $work 'install'
+$install=if($Mode -eq 'upgrade') {Join-Path $env:LOCALAPPDATA 'Programs\BLACKICE'} else {Join-Path $work 'install'}
 $exe=Join-Path $install 'BLACKICE.exe'
 $app=Join-Path $install 'resources\app'
 $profile=Join-Path $env:APPDATA 'Relay'

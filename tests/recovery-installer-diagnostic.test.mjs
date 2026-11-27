@@ -66,3 +66,11 @@ test('diagnostic evidence assignments cannot silently become standalone PowerShe
  assert.match(script,/\$report\.passed=\$mainPassed -and \$cleanupPassed/);
  assert.match(script,/SavedReport/);
 });
+test('upgrade diagnostic uses canonical per-user installation without weakening real upgrade preflight',()=>{
+ const guard=readFileSync(path.join(root,'desktop/upgrade-preflight.ps1'),'utf8');
+ assert.match(script,/\$install=if\(\$Mode -eq 'upgrade'\) \{Join-Path \$env:LOCALAPPDATA 'Programs\\BLACKICE'\} else \{Join-Path \$work 'install'\}/);
+ assert.match(guard,/Only the existing per-user BLACKICE installation can be updated/);
+ assert.match(guard,/\$root -ine \$expected/);
+ assert.doesNotMatch(guard,/RUNNER_TEMP|recovery-installer|diagnostic bypass/i);
+ assert.match(script,/Installer returned nonzero exit code: '\+\(\$result -join ','\)/);
+});
