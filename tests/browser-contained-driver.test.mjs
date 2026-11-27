@@ -423,13 +423,15 @@ test('a detached renderer ref preserves its message across a boundary that loses
     error: 'This element ref is stale. Take a new snapshot and choose its current ref. Do not reuse this ref. Observe the current page, then select the intended control\'s ref from frames[].elements[].ref. No page input was dispatched.',
     code: 'BROWSER_REF_STALE',
     actionDispatched: false,
+    inputDispatched: false,
+    pointerStage: 'pre-pointer-identity',
     recovery: { nextCall: { action: 'snapshot', browser: 'relay', tabId: tab.id }, refSource: 'frames[].elements[].ref' },
   });
   assert.equal(tab.window.protocol.some(item => item.method.startsWith('Input.')), false, 'A detached target must fail before browser input.');
   assert.equal(tab.window.captureArgs, undefined, 'A detached target must fail before pointer preparation.');
 });
 
-async function goalPointerFixture(t, { covered = true, inputError, embeddedCandidates, frameOwnerError, pointerMismatch = false } = {}) {
+async function goalPointerFixture(t, { covered = true, modal = false, inputError, embeddedCandidates, frameOwnerError, pointerMismatch = false } = {}) {
   let ref, scrolls = 0, captures = 0, overlay = covered, candidates = embeddedCandidates;
   const scrollAlignments = [];
   const childURL = 'https://identity.example.test/control', quad = [150, 80, 450, 80, 450, 230, 150, 230];
@@ -467,11 +469,12 @@ async function goalPointerFixture(t, { covered = true, inputError, embeddedCandi
     getRootNode: () => document, contains: other => other === control, closest: () => null,
     scrollIntoView: options => { scrolls++; scrollAlignments.push(options); },
   };
-  const covering = { contains: () => false };
+  const covering = { contains: () => false, getBoundingClientRect: () => ({x:0,y:0,width:1280,height:900}) };
+  const dialogElement={getBoundingClientRect:()=>({x:400,y:300,width:450,height:230})};
   const document = {
     forms: [], title: 'Covered control', readyState: 'complete',
     documentElement: { children: [control] }, getElementById: () => null,
-    querySelectorAll: () => [], elementFromPoint: () => overlay ? covering : control,
+    querySelectorAll: selector => modal && selector.includes('dialog') ? [dialogElement] : [], elementFromPoint: () => overlay ? covering : control,
   };
   const main = tab.window.webContents.mainFrame;
   let frame = main;
@@ -2051,6 +2054,9 @@ test('reloading a suspended page preserves a failed activation instead of report
   assert.equal(result.success, false); assert.equal(result.code, 'BROWSER_NAVIGATION_FAILED');
   const receipt = JSON.parse(result.contentItems[0].text); assert.equal(receipt.actionDispatched, true); assert.match(receipt.error, /ERR_CONNECTION_REFUSED/);
   assert.equal(attempts, 1, 'Resuming reload dispatches exactly one navigation.'); assert.match(tab.loadError, /ERR_CONNECTION_REFUSED/);
+  const unsafe=await handler({name:'relay_browser',arguments:{action:'click',tabId:tab.id,ref:'unobserved-button'}});
+  assert.equal(unsafe.code,'BROWSER_REOBSERVE_REQUIRED');assert.equal(unsafe.actionDispatched,false);
+  assert.equal(attempts,1,'A failed navigation does not authorize unobserved page input.');
   rejected = false;
   const recovered = await handler({ name: 'relay_browser', arguments: { action: 'navigate', tabId: tab.id, url: 'https://saved.example/release' } });
   assert.equal(recovered.success, true); assert.equal(attempts, 2);
@@ -3463,4 +3469,24 @@ test('browser tool wrapper accepts screenshot document guards without human prev
  assert.equal(captured.documentId,request.expectedDocumentId);
  await assert.rejects(browser.perform({...request,expectedDocumentId:tab.id+':retired'},{source:'user'}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
  assert.equal(captures,1);
+});
+
+test('native guarded browser read accepts current identity and rejects stale identity',async t=>{
+ const {driver}=await fixture(t);await driver.init();
+ const owner={taskId:'read-task',runId:'read-run',nodeId:'agent',conversationId:'read-task'};
+ const tab=driver.newTab('https://fixture.example.test/profile',{owner});await tab.loading;
+ const valid={action:'read',tabId:tab.id,expectedUrl:tab.url,expectedDocumentId:tab.id+':'+tab.revision};
+ const result=await driver.perform(valid,{owner});assert.equal(result.tabId,tab.id);
+ await assert.rejects(driver.perform({...valid,expectedDocumentId:tab.id+':0',expectedUrl:'https://other.fixture.test/'},{owner}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+});
+test('covered page modal returns actionable blocker evidence without dispatch',async t=>{
+ const f=await goalPointerFixture(t,{modal:true});
+ const first=await f.wrapped(f.original),body=JSON.parse(first.contentItems[0].text);
+ assert.equal(first.success,false);assert.equal(first.code,'BROWSER_TARGET_COVERED');
+ assert.equal(body.inputDispatched,false);assert.equal(body.actionDispatched,undefined);
+ assert.deepEqual(JSON.parse(JSON.stringify(body.blocker)),{modalPresent:true,viewportOverlay:true,outOfViewport:false});
+ assert.match(body.recovery.hint,/resolve the dialog before any new click/);
+ assert.equal(f.tab.window.protocol.filter(call=>call.method==='Input.dispatchMouseEvent'&&call.params.type==='mousePressed').length,0);
+ const safe=await goalPointerFixture(t);const blocked=await safe.wrapped(safe.original),other=JSON.parse(blocked.contentItems[0].text);
+ assert.equal(other.blocker.modalPresent,false);
 });

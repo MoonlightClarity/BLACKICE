@@ -10,6 +10,8 @@ Use when a missing reference, date, or scope detail changes the next useful acti
 4. Choose the strongest reasonable interpretation and proceed. State an assumption when it affects the result. Ask only for a missing choice that materially changes the action and cannot be resolved from available context.
 5. When corrected, update the affected step and retain valid work. Check what already happened before repeating an uncertain action.
 
+For any apparent blocker, identify the premise that makes the requested result impossible, the evidence for that premise, its actual scope, and a cheap way to test it. Reconsider the interpretation before treating an unverified premise as a constraint. Keep authorization, factual truth, and operational capability distinct.
+
 For fresh browser work, open the requested source; do not require a prior tab. For file work, search the named or likely location and read the file.
 
 ## Resolve a clock time without a date

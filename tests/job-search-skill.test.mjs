@@ -72,7 +72,9 @@ const sharedConfirmationContract=[
   "check the user's matching mailbox through available tools, including connected Gmail when available",
   "Match the message to this attempt and complete its required link or code step, then inspect the destination outcome",
   "Keep the attempt pending until the required confirmation and requested outcome are observed",
-  "allow delivery time and recheck; an empty first search is not a final failure",
+  "minimum 90-second delivery window",
+  "no earlier than 90 seconds after the observed request",
+  "A user cutoff still stops work on time",
   "Use short waits and continue independent requested work between checks, within the user's actual cutoff",
   "Report a failed route accurately and continue independent work or allowed alternatives toward the requested outcome",
   "Preserve an explicitly fixed target; a different result does not complete it",
@@ -355,4 +357,25 @@ test('Compatible provider uses job skills only when explicitly requested and hon
  const deleted=await invoke(explicitTask);
  assert.deepEqual(deleted.receipts,[]);
  assert.doesNotMatch(deleted.prompt,/OWNER_CURRENT_JOB_8181/);
+});
+
+
+test('location selector fallback uses nearest metro without changing actual residence',async()=>{
+ const {content}=await createSkillsCatalog().detail({id});
+ assert.match(content,/If a job-board, employer, or application location selector does not recognize the user's locality, use the nearest accepted metropolitan area/);
+ assert.match(content,/retain their actual city and street address in factual residence fields/);
+ assert.match(content,/do not infer willingness to relocate or work on-site/);
+});
+
+
+test('source filtering precedes listing expansion and preserves unknown eligibility',async()=>{
+ const {content}=await createSkillsCatalog().detail({id});
+ for(const phrase of [
+  "Set every applicable supported filter before fetching or expanding vacancy results",
+  "Adding the word “remote” to a text query does not substitute for the source's remote-only filter",
+  "Use only filters the source truly supports",
+  "first triage a bounded result batch",
+  "do not spend page-level inspection time on cards that already contradict a hard requirement",
+  "Record which filters were applied, unavailable, or not verified"
+ ])assert.ok(content.toLowerCase().includes(phrase.toLowerCase()),phrase);
 });

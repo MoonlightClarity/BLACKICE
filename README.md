@@ -30,6 +30,13 @@ Two complementary test configurations isolate different failure classes:
 
 Failures are investigated as evidence for improvements to the *harness*, rather than assuming that a larger model alone will solve them. BLACKICE remains in staging while this testing and reliability work continues.
 
+## Still in active development
+
+- **Self-driving and Goal continuity:** Self-driving uses the existing Goal Mode, not a separate agent engine. Goal scheduling, interruption recovery, and outcome verification are being exercised with end-to-end fixtures; unattended success across all models and sites is not established.
+- **Browser and tool reliability:** Browser recovery, stale-reference handling, uncertain external effects, and provider-independent tool contracts remain active test areas. A passing simulated test is not evidence of a real-world submission or action.
+- **Local models and context:** MiniCPM and other local models are being evaluated for inference, tool use, and compaction. No universal improvement is claimed from benchmarks or architecture alone.
+- **Distribution and upgrades:** Every candidate requires its own source-bound Windows installer and runtime checks. Installing locally and verifying the saved profile precede cleanup; preserve a verified rollback installer and all durable user data.
+
 ## Install and use
 
 1. On 64-bit Windows, get the installer from the BLACKICE project's [GitHub Releases](https://github.com/MoonlightClarity/BLACKICE/releases) page. Download model weights or sign in to a model provider separately.

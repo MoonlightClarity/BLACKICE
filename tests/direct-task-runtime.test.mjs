@@ -45,7 +45,7 @@ async function fixture(t){
     if(page.lostResponse)throw Object.assign(Error('Native response lost'),{code:'BROWSER_RESPONSE_LOST',actionDispatched:true});
    }else if(args.action==='read')reads++;
    else if(args.action==='fill'){interactions++;page.optional=args.text;}
-   return {tabId,documentId:page.documentId,url:page.url,text:page.status||'No receipt',frames:[]};
+   return {tabId,documentId:page.documentId,url:page.url,text:page.status||'No receipt',frames:[{frameId:page.frameId,readyState:'complete',elements:[{ref:'submit',role:'button',name:'Submit'},{ref:'optional',role:'textbox',name:'Optional field'}]}]};
   }
  };
  const finalizers=[];const browser=new BrowserWorkspace({driver});let runtime=new DirectTaskRuntime({dataDir:root,browser}),seq=0;
@@ -55,7 +55,13 @@ async function fixture(t){
   return runtime.bind({ownerId,taskId,tabId,workItemId:'enroll',criterionId:'receipt',identityFields:['participantId','workshopId'],ref:'submit',expectedUrl:page.url,expectedDocumentId:page.documentId});
  };
  const reconcile=(binding,phase='baseline',taskId='task')=>runtime.reconcile({ownerId,taskId,tabId,bindingId:binding.bindingId,phase});
- const execute=(verb='click',extra={})=>{
+ const execute=async(verb='click',extra={})=>{
+    if(['click','fill','select','navigate','press','type','upload'].includes(verb)){
+      const observed=await runtime.handler(ownerId)({name:'relay_browser',arguments:{action:'snapshot',browser:'relay',tabId}});
+      assert.equal(observed.success,true,JSON.stringify(observed));
+      const token=payload(observed).observationReceipt;
+      if(token){assert.match(token,/^obs-[a-f0-9-]{36}$/);extra={...extra,observationReceipt:token};}
+    }
   const call={name:'relay_browser',arguments:{action:verb,browser:'relay',tabId,...(verb==='click'?{ref:'submit',expectedUrl:page.url,expectedDocumentId:page.documentId}:{}),...extra}};
   return runtime.execute({ownerId,operationId:'op-'+(++seq),handler:runtime.handler(ownerId),call});
  };

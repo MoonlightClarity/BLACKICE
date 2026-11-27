@@ -71,7 +71,9 @@ test('required follow-up confirmation allows delivery latency and preserves the 
   "check the user's matching mailbox through available tools, including connected Gmail when available",
   "Match the message to this attempt and complete its required link or code step, then inspect the destination outcome",
   "Keep the attempt pending until the required confirmation and requested outcome are observed",
-  "allow delivery time and recheck; an empty first search is not a final failure",
+  "minimum 90-second delivery window",
+  "no earlier than 90 seconds after the observed request",
+  "A user cutoff still stops work on time",
   "Use short waits and continue independent requested work between checks, within the user's actual cutoff",
   "Report a failed route accurately and continue independent work or allowed alternatives toward the requested outcome",
   "Preserve an explicitly fixed target; a different result does not complete it",
@@ -151,4 +153,11 @@ test('shared completion distinguishes new effects from existing-state and histor
   "| Verified effect within the current request's time and count | Count it once and continue. |"
  ])assert.ok(content.includes(expected),expected);
  assert.match(content,/Unknown after timeout\/lost response \| Inspect the destination before repeating the action/);
+});
+
+
+test('timed Goal wait is an alternative to repeated empty email checks',async()=>{
+ const {content}=await createSkillsCatalog().detail({id:'library-what-makes-done'});
+ assert.match(content,/timed wait action until the observed request timestamp plus 90 seconds/);
+ assert.match(content,/Never schedule that wait beyond an earlier user cutoff/);
 });

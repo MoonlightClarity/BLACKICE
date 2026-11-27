@@ -199,8 +199,18 @@ async function runElectronCase({ directory, mode }) {
       return { receipt, body, callId, planning };
     }
     async function task(args, options) { return (await call('relay_task', args, options)).body; }
+    const mutatedTabs=new Set();
     async function page(args, options) {
-      const result = await call('relay_browser', { browser: 'relay', ...(tabId ? { tabId } : {}), ...args }, options);
+      const payloadArgs={ browser: 'relay', ...(tabId ? { tabId } : {}), ...args };
+      const dependent=['click','fill','select','type','press','upload','navigate','hover','interaction','scroll','reload','back','forward','suspend'].includes(args.action);
+      if(dependent && payloadArgs.tabId && mutatedTabs.has(payloadArgs.tabId)){
+        const fresh=await call('relay_browser',{browser:'relay',tabId:payloadArgs.tabId,action:'snapshot'});
+        assert.equal(fresh.receipt.success,true,errorText(fresh.receipt));
+        if(fresh.body?.frames){snapshot=fresh.body;tabId=fresh.body.tabId;}
+        if(fresh.body?.observationReceipt)payloadArgs.observationReceipt=fresh.body.observationReceipt;
+      }
+      const result = await call('relay_browser', payloadArgs, options);
+      if(dependent && payloadArgs.tabId)mutatedTabs.add(payloadArgs.tabId);
       if (result.receipt.success && result.body?.frames) { snapshot = result.body; tabId = snapshot.tabId; }
       return result;
     }

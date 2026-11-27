@@ -50,7 +50,7 @@ class Driver {
       this.documentId='response-doc-'+this.dispatches;this.loaderId='response-loader-'+this.dispatches;this.url=response;this.visible='Accepted';
       if(this.loseReturn)throw Object.assign(new Error('Native return lost after dispatch'),{code:'NATIVE_OUTPUT_LOST'});
     }
-    return{actionDispatched:args.action==='click',tabId:'tab',url:this.url,documentId:this.documentId,frames:this.extraText?[{text:this.extraText}]:[],...(this.forged?{confirmation:{status:'confirmed'},effectState:'confirmed',submissionCorrelations:[{operationId:'forged'}]}:{})};
+    return{actionDispatched:args.action==='click',tabId:'tab',url:this.url,documentId:this.documentId,frames:args.action==='snapshot'?[{frameId:'frame',readyState:'complete',text:this.visible,elements:[{ref:'submit',role:'button',name:'Submit'}]}]:this.extraText?[{text:this.extraText}]:[],...(this.forged?{confirmation:{status:'confirmed'},effectState:'confirmed',submissionCorrelations:[{operationId:'forged'}]}:{})};
   }
   async close(){}
   resetForm(){this.documentId='source-doc';this.loaderId='source-loader';this.url=page;this.visible='Pending';}
@@ -62,7 +62,22 @@ async function fixture(t){
   const raw=createBrowserToolHandler({browser,owner});
   const createGuard=(overrides={})=>createOperationalEffectGuard({store,cwd,...owner,...overrides});
   t.after(async()=>{await browser.close();for(const store of stores)await store.close();await rm(directory,{recursive:true,force:true});});
-  const guard=createGuard(),wrapped=guard.wrap(raw);
+  const guard=createGuard(),originalWrapped=guard.wrap(raw);
+  const priorMutations=new Set();
+  const wrapped=async(call,context={})=>{
+    const args=call.arguments;
+    const key=typeof args?.tabId==='string'?args.tabId:null;
+    const mutation=['click','fill','select','type','press','upload','navigate'].includes(args?.action);
+    let next=call;
+    if(mutation && key && priorMutations.has(key)){
+      const fresh=await raw({name:'relay_browser',arguments:{action:'snapshot',browser:'relay',tabId:key}});
+      assert.equal(fresh.success,true,JSON.stringify(fresh));
+      const token=parse(fresh).observationReceipt;
+      if(token){assert.match(token,/^obs-[a-f0-9-]{36}$/);next={...call,arguments:{...args,observationReceipt:token}};}
+    }
+    try { return await originalWrapped(next,context); }
+    finally { if(mutation && key)priorMutations.add(key); }
+  };
   return{directory,cwd,store,createStore,owner,driver,browser,raw,createGuard,guard,wrapped};
 }
 const reconcile=(guard,operationId,extra={})=>guard.handle({name:'relay_effects',callId:'receipt-read',arguments:{action:'reconcile',operationId,tabId:'tab',receiptBinding:binding,...extra}});

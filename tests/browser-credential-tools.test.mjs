@@ -7,6 +7,7 @@ import path from 'node:path';
 import { BrowserWorkspace, BROWSER_ACTIONS } from '../lib/browser.mjs';
 import { BROWSER_CREDENTIAL_TOOL, createBrowserCredentialToolHandler, createDirectBrowserCredentialTools } from '../lib/browser-credential-tools.mjs';
 import { DirectExecutionAPI } from '../lib/direct-execution-api.mjs';
+import {observeGoalToolOutcome} from '../lib/goal-recovery-policy.mjs';
 
 const origin = 'https://login.example.test', password = 'OwnedFixtureOnly-S3cr3t!';
 const entry = { credentialId: 'credential_fixture', revision: 1, origin, username: 'owned@example.test', label: 'Owned login', source: 'generated' };
@@ -173,4 +174,25 @@ test('native and direct SSO association preserve opaque account binding and requ
   assert.equal(calls[1].args.requestId,'direct_link');assert.equal(calls[1].options.expectedRevision,8);assert.match(calls[1].options.ownerId,/^tool_/);assert.ok(authorizations>=4);
   const denied=createBrowserCredentialToolHandler({vault,ownerId:'native'});
   assert.equal((await denied({name:'relay_credentials',arguments:{action:'associate',...args}})).success,false);assert.equal(calls.length,2);
+});
+
+test('credential preflight failure is known not dispatched while a failed vault generate remains uncertain',async()=>{
+ const vault=vaultFixture(),handler=createBrowserCredentialToolHandler({vault,ownerId:"task:owned"});
+ const invalid={name:"relay_credentials",arguments:{action:"generate",origin,requestId:"bad id",length:8}};
+ const refused=await handler(invalid);
+ assert.equal(refused.success,false);assert.equal(refused.code,"BROWSER_CREDENTIAL_VALIDATION");
+ assert.equal(refused.actionDispatched,false);
+ assert.equal(receipt(refused).actionDispatched,false);
+ assert.equal(vault.generated.length,0,"Validation must not touch the vault");
+ assert.equal(observeGoalToolOutcome(invalid,refused).kind,"recoverable_no_dispatch");
+ const repaired={name:"relay_credentials",arguments:{action:"generate",origin,requestId:"good_request",length:24}};
+ const success=await handler(repaired);assert.equal(success.success,true);assert.equal(vault.generated.length,1);
+ const damaged={...vault,async generate(){throw Object.assign(Error("Secret vault failure"),{code:"BROWSER_CREDENTIAL_FAILED"});}};
+ const failing=createBrowserCredentialToolHandler({vault:damaged,ownerId:"task:owned"});
+ const uncertain=await failing({name:"relay_credentials",arguments:{action:"generate",origin,requestId:"uncertain_attempt"}});
+ assert.equal(uncertain.success,false);assert.equal(uncertain.code,"BROWSER_CREDENTIAL_FAILED");
+ assert.equal(uncertain.actionDispatched,undefined,"An attempted vault write must never claim no dispatch");
+ assert.equal(receipt(uncertain).actionDispatched,undefined);
+ assert.equal(observeGoalToolOutcome({name:"relay_credentials",arguments:{action:"generate",origin,requestId:"uncertain_attempt"}},uncertain).kind,"uncertain_external_effect");
+ assert.doesNotMatch(JSON.stringify(uncertain),/Secret vault failure/);
 });

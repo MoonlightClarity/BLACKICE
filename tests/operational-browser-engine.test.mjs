@@ -35,7 +35,8 @@ test('real HarnessEngine browser pathway observes explicit actions without histo
           attachmentDigests:[],submitLabel:'Submit application',
         }}};
     },
-    perform:async args=>{dispatches++;return{actionDispatched:true,tabId:args.tabId,
+    perform:async args=>{if(args.action==='snapshot')return{tabId:args.tabId,url:tabs.find(item=>item.tabId===args.tabId).url,documentId:'document-1',frames:[{frameId:'main',elements:[{ref:'submit',role:'button',name:'Submit'}]}]};
+      dispatches++;return{actionDispatched:true,tabId:args.tabId,
       url:tabs.find(item=>item.tabId===args.tabId).url,documentId:'document-1',frames:[]};},
     close:async()=>{},
   };
@@ -47,7 +48,12 @@ test('real HarnessEngine browser pathway observes explicit actions without histo
       assert.ok(options.dynamicTools.find(tool=>tool.name==='relay_browser'),'browser must be attached');
       const a=await options.onToolCall(call('job-a',urlA,'submit-a'));
       assert.equal(a.success,true);
-      const duplicate=await options.onToolCall(call('job-a',urlA,'submit-again'));
+      const fresh=await options.onToolCall({name:'relay_browser',callId:'observe-after-submit',arguments:{action:'snapshot',browser:'relay',tabId:'job-a'}});
+      assert.equal(fresh.success,true,JSON.stringify(fresh));
+      const token=JSON.parse(fresh.contentItems[0].text).observationReceipt;
+      assert.match(token,/^obs-[a-f0-9-]{36}$/);
+      const next=call('job-a',urlA,'submit-again');next.arguments.observationReceipt=token;
+      const duplicate=await options.onToolCall(next);
       assert.equal(duplicate.success,true);
       const b=await options.onToolCall(call('job-b',urlB,'submit-b'));
       assert.equal(b.success,true,'a different requisition must continue');

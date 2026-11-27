@@ -23,7 +23,7 @@ test('a verified same-tab navigate after an undispatched stale click advances an
     }
     if(args.action==='click'){clicks++;throw Object.assign(Error('Stale control'),{code:'BROWSER_REF_STALE',actionDispatched:false});}
     if(args.action==='navigate')return {...(matchingTab?tab:other),documentId:'destination-document',url:args.url,frames:[]};
-    if(args.action==='snapshot')return {...tab,frames:[]};
+    if(args.action==='snapshot')return {...tab,frames:[{frameId:'main',elements:[{ref:'stale-ref',role:'button',name:'Fixture action'}]}]};
     throw Error('Unexpected browser operation');
    }
   };
@@ -43,7 +43,14 @@ test('a verified same-tab navigate after an undispatched stale click advances an
    const stale=await call('relay_browser',{action:'click',tabId:'fixture-tab',ref:'stale-ref',expectedDocumentId:'fixture-document',expectedUrl:url});
    assert.equal(stale.code,'BROWSER_REF_STALE');
    assert.equal(stale.actionDispatched,false);
-   const navigation=receipt(await call('relay_browser',{action:'navigate',tabId:matchingTab?'fixture-tab':'other-tab',url:'https://example.test/destination'}));
+   const navArgs={action:'navigate',tabId:matchingTab?'fixture-tab':'other-tab',url:'https://example.test/destination'};
+    if(matchingTab){
+      const observed=await call('relay_browser',{action:'snapshot',tabId:'fixture-tab'});
+      assert.equal(observed.success,true,JSON.stringify(observed));
+      navArgs.observationReceipt=JSON.parse(observed.contentItems[0].text).observationReceipt;
+      assert.match(navArgs.observationReceipt,/^obs-[a-f0-9-]{36}$/);
+    }
+    const navigation=receipt(await call('relay_browser',navArgs));
    assert.equal((await partial(navigation,'A destination opened; its decisive evidence still needs inspection.')).success,true);
    if(matchingTab){
     const next=await review();

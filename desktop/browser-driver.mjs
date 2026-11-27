@@ -340,7 +340,10 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
       return { __blackiceElementError: { message: 'This observed control changed. Take a fresh snapshot and choose its current ref.', code: 'BROWSER_REF_STALE', inputDispatched: false, controlBindingCause: cause, ...mismatch } };
     }
   }
-  if (el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true') throw new Error('This element is disabled. Inspect what is required first.');
+  if (el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true') {
+    if (['fill','fill-ready'].includes(action)) return { __blackiceElementError: { message: 'The selected field is disabled. Inspect the form for its prerequisite.', code: 'BROWSER_FIELD_DISABLED', inputDispatched: false } };
+    throw new Error('This element is disabled. Inspect what is required first.');
+  }
   if (action === 'host-inspect') return inspectOperation(el, state, args);
   if (action === 'keyboard-verify') {
     // The browser may have advanced its whole-page revision for an unrelated
@@ -391,15 +394,29 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
     if(!targetPoint){
       // Scrolling may already have changed the page. No pointer input was
       // dispatched; leave genuinely covered controls blocked.
-      return {__blackiceElementError:{message:'Another element covers this target or no part is in view. Inspect the covering control or scroll.',code:'BROWSER_TARGET_COVERED',inputDispatched:false}};
+      // Report bounded blocker geometry and modal presence, not arbitrary
+       // page text, selectors, class names or hidden DOM. Never redirect input.
+       const outOfViewport=!(right>left&&bottom>topEdge);
+       const probeX=Math.max(0,Math.min(innerWidth-1,(left+right)/2));
+       const probeY=Math.max(0,Math.min(innerHeight-1,(topEdge+bottom)/2));
+       const blocker=outOfViewport?null:document.elementFromPoint(probeX,probeY);
+       const coverBox=blocker?.getBoundingClientRect?.();
+       const viewportOverlay=Boolean(coverBox&&coverBox.width>=innerWidth*.85&&coverBox.height>=innerHeight*.85);
+       const dialogs=[...document.querySelectorAll('dialog,[role="dialog"],[aria-modal="true"]')].slice(0,16);
+       const modalPresent=dialogs.some(dialog=>{const bounds=dialog.getBoundingClientRect(),style=getComputedStyle(dialog);
+         return bounds.width>0&&bounds.height>0&&style.display!=='none'&&style.visibility==='visible';});
+       return {__blackiceElementError:{message:modalPresent
+         ?'A visible modal dialog or backdrop is blocking this control. Inspect and resolve the modal before clicking behind it.'
+         :'Another element covers this target or no part is in view. Inspect the covering control or scroll.',
+         code:'BROWSER_TARGET_COVERED',inputDispatched:false,blocker:{modalPresent,viewportOverlay,outOfViewport}}};
     }
     return {...targetPoint,viewportWidth:innerWidth,viewportHeight:innerHeight};
   }
   if (action === 'click') { el.click(); return { clicked: true }; }
   if (action === 'focus') { el.focus({ preventScroll: true }); return { focused: document.activeElement === el || el.getRootNode()?.activeElement === el }; }
   if (action === 'fill-ready') {
-    if (el.readOnly) throw new Error('This field is read only.');
-    if (document.activeElement !== el && el.getRootNode()?.activeElement !== el) throw new Error('The fill target lost focus before text input. Take a fresh snapshot before trying again.');
+    if (el.readOnly) return { __blackiceElementError: { message: 'This field is read only. Inspect the form instead of forcing a value.', code: 'BROWSER_FIELD_READ_ONLY', inputDispatched: false } };
+    if (document.activeElement !== el && el.getRootNode()?.activeElement !== el) return { __blackiceElementError: { message: 'The fill target lost focus before text input. Take a fresh snapshot before trying again.', code: 'BROWSER_INPUT_FOCUS_CHANGED', inputDispatched: false } };
     // Selection is preparation only; Chromium delivers the single trusted edit.
     // A keyboard select-all acknowledgement does not prove selection completed.
     let selected;
@@ -408,16 +425,18 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
       range.selectNodeContents(el); selection.removeAllRanges(); selection.addRange(range);
       selected = selection.rangeCount === 1 && selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, range) === 0 && selection.getRangeAt(0).compareBoundaryPoints(Range.END_TO_END, range) === 0;
     } else {
-      el.select();
+      try { el.select(); }
+      catch { return { __blackiceElementError: { message: 'This field did not support selection for trusted text replacement. Inspect its current control type.', code: 'BROWSER_INPUT_SELECTION_FAILED', inputDispatched: false } }; }
       // Email and number fields expose no selectionStart/End. Native select()
       // still selects their editing contents, including an invalid partial number.
       selected = typeof el.selectionStart !== 'number' || el.selectionStart === 0 && el.selectionEnd === el.value.length;
     }
-    if (!selected || !el.isConnected || el.readOnly || el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true' || document.activeElement !== el && el.getRootNode()?.activeElement !== el) throw new Error('The fill target could not be selected for replacement. Inspect the field before trying again.');
+    if (!selected || !el.isConnected || el.readOnly || el.disabled || el.matches?.(':disabled') || el.getAttribute('aria-disabled') === 'true' || document.activeElement !== el && el.getRootNode()?.activeElement !== el)
+      return { __blackiceElementError: { message: 'The fill target could not be selected for replacement. Inspect the current field before trying again.', code: 'BROWSER_INPUT_SELECTION_FAILED', inputDispatched: false } };
     return { focused: true };
   }
   if (action === 'fill') {
-    if (el.readOnly) throw new Error('This field is read only.');
+    if (el.readOnly) return { __blackiceElementError: { message: 'This field is read only. Inspect the form instead of forcing a value.', code: 'BROWSER_FIELD_READ_ONLY', inputDispatched: false } };
     if (el.tagName === 'INPUT' && el.type === 'month') {
       // Chromium's segmented month control does not accept ordinary text
       // replacement. Set only canonical YYYY-MM values through its native
@@ -436,14 +455,16 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
       el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
       return { filled: true, characters: args.text.length, input: 'browser-native-month' };
     }
-    if (!el.isContentEditable && (!['INPUT', 'TEXTAREA'].includes(el.tagName) || el.tagName === 'INPUT' && !['text','search','tel','url','email','password','number'].includes(el.type))) throw new Error('Choose an editable text field to fill. Use the page controls for dates, colors, files or other non-text inputs.');
+    if (!el.isContentEditable && (!['INPUT', 'TEXTAREA'].includes(el.tagName) || el.tagName === 'INPUT' && !['text','search','tel','url','email','password','number'].includes(el.type)))
+      return { __blackiceElementError: { message: 'Choose an editable text field to fill. Use the page controls for dates, colors, files or other non-text inputs.', code: 'BROWSER_FIELD_NOT_EDITABLE', inputDispatched: false } };
     el.focus({ preventScroll: true });
-    if (!el.isConnected || document.activeElement !== el && el.getRootNode()?.activeElement !== el) throw new Error('This field could not be focused for text input. Take a fresh snapshot before trying again.');
+    if (!el.isConnected || document.activeElement !== el && el.getRootNode()?.activeElement !== el)
+      return { __blackiceElementError: { message: 'This field could not be focused for text input. Take a fresh snapshot before trying again.', code: 'BROWSER_INPUT_FOCUS_CHANGED', inputDispatched: false } };
     return { needsTrustedTextInput: true };
   }
   if (action === 'select') {
-    if (el.tagName !== 'SELECT') return { __blackiceElementError: { message: 'This is not a native select. Click it and inspect the available options.', code: 'BROWSER_ELEMENT_ACTION_FAILED', inputDispatched: false } };
-    if (![...el.options].some(o => o.value === args.value)) return { __blackiceElementError: { message: 'Select value is not available.', code: 'BROWSER_ELEMENT_ACTION_FAILED', inputDispatched: false } };
+    if (el.tagName !== 'SELECT') return { __blackiceElementError: { message: 'This is not a native select. Click it and inspect the available options.', code: 'BROWSER_SELECT_NOT_NATIVE', inputDispatched: false } };
+    if (![...el.options].some(o => o.value === args.value)) return { __blackiceElementError: { message: 'Select value is not available. Inspect the current observed option values; do not invent a value.', code: 'BROWSER_SELECT_VALUE_UNAVAILABLE', inputDispatched: false } };
     el.value = args.value; el.dispatchEvent(new Event('input', { bubbles: true, composed: true })); el.dispatchEvent(new Event('change', { bubbles: true, composed: true })); return { selected: el.value };
   }
   if (action === 'upload') {
@@ -1595,7 +1616,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (disposedFrame(reason)) {
         const diagnostic = this.referenceDiagnostic(tab, args.ref, 'frame-changed');
         this.retireReference(tab, args.ref, diagnostic);
-        throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: diagnostic });
+        throw Object.assign(error('The observed frame was replaced. Take a fresh snapshot and choose an element ref.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: diagnostic, ...(action==='prepare'?{inputDispatched:false,pointerStage:'pre-pointer-identity'}:{}) });
       }
       throw reason;
     }
@@ -1603,16 +1624,21 @@ export class ElectronBrowserDriver extends EventEmitter {
       const { message, code, inputDispatched } = result.__blackiceElementError;
       // Only fixed renderer guards return this metadata; the generic catch
       // strips page-supplied dispatch claims even when its code matches a guard.
+      const textPreflight=['BROWSER_VALIDATION','BROWSER_FIELD_READ_ONLY','BROWSER_FIELD_DISABLED',
+        'BROWSER_FIELD_NOT_EDITABLE','BROWSER_INPUT_FOCUS_CHANGED','BROWSER_INPUT_SELECTION_FAILED'].includes(code);
       const inputPrevented = inputDispatched === false
-        && (action === 'select' || action === 'fill' && code === 'BROWSER_VALIDATION' || action === 'prepare' && code === 'BROWSER_TARGET_COVERED');
+        && (action === 'select' || ['fill','fill-ready'].includes(action)&&textPreflight || action === 'prepare' && code === 'BROWSER_TARGET_COVERED');
+       const blocker=code==='BROWSER_TARGET_COVERED'&&action==='prepare'&&inputDispatched===false&&result.__blackiceElementError.blocker;
       throw Object.assign(error(message), {
         code,
+        ...(blocker?{blocker:{modalPresent:blocker.modalPresent===true,viewportOverlay:blocker.viewportOverlay===true,outOfViewport:blocker.outOfViewport===true}}:{}),
         ...(code === 'BROWSER_REF_STALE' ? { browserReferenceDiagnostic: { ...this.referenceDiagnostic(tab, args.ref, 'control-changed'), ...projectBrowserControlBinding(result.__blackiceElementError, action) } } : {}),
-        ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true }
-          : inputPrevented ? { inputDispatched: false } : {}),
+        ...(code === 'BROWSER_REF_STALE' && inputDispatched === false ? { actionDispatched: false, refreshObservedControls: true, ...(action==='prepare'?{inputDispatched:false,pointerStage:'pre-pointer-identity'}:{}) }
+          : inputPrevented ? { inputDispatched: false, ...(action==='prepare'?{pointerStage:'pre-pointer-identity'}:{}),
+              ...(['fill','fill-ready'].includes(action)?{keyboardStage:'pre-key-input'}:{}) } : {}),
       });
     }
-    if (!this.referenceCurrent(tab, args.ref)) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref) });
+    if (!this.referenceCurrent(tab, args.ref)) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref), ...(action==='prepare'?{inputDispatched:false,pointerStage:'pre-pointer-identity'}:{}) });
     return { frame, result };
   }
   async observeOperation(args, { signal, owner: context, receiptBindings = [], expectedDocumentId, expectedUrl, recoveryInspection = false } = {}) {
@@ -1902,7 +1928,9 @@ export class ElectronBrowserDriver extends EventEmitter {
       ? expected.expectedDocumentId.slice(prefix.length) : '';
     if (/^\d{1,16}$/.test(suffix) && Number.isSafeInteger(Number(suffix)))
       browserReferenceDiagnostic.requestedRevision = Number(suffix);
-    throw Object.assign(error('The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', browserReferenceDiagnostic, [pointerIdentityGuard]:true });
+    throw Object.assign(error(expected.action==='read'
+      ? 'The observed page changed before this guarded read. Take a fresh snapshot, then retry the read with the current URL and document identity.'
+      : 'The page changed before keyboard or pointer input. Refresh the preview and click the intended field again.'), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED', browserReferenceDiagnostic, [pointerIdentityGuard]:true });
   }
   async cdp(tab, method, params = {}, signal, expected, sessionId) {
     let dispatched = false;
@@ -2511,12 +2539,17 @@ export class ElectronBrowserDriver extends EventEmitter {
     // Reloading a saved page already dispatches its one navigation in activate.
     // A failed activation cannot be cleared by the no-op "already reloaded" arm.
     if (tab.loadError && (resumed && args.action === 'reload' || !['navigate', 'reload', 'back', 'forward'].includes(args.action))) throw navigationFailure(tab);
+    // A guarded read is observational but must honor the caller's current
+    // page identity instead of silently reading a new destination.
+    if (args.action==='read' && (args.expectedUrl!==undefined||args.expectedDocumentId!==undefined))
+      this.assertInputDocument(tab,args);
     if (['type', 'press', 'click', 'hover', 'fill', 'select', 'upload'].includes(args.action)||args.action==='scroll'&&args.ref) {
       try { this.assertInputDocument(tab, args); }
       catch (cause) {
         // Restoring a suspended navigation or preparing a popup can already
         // affect the page, even though the requested input has not been sent.
         if (!activationMayAffectPage && !tab.popupViewport) cause.actionDispatched = false;
+        if(['click','hover'].includes(args.action) && cause.code==='BROWSER_INPUT_DOCUMENT_CHANGED' && cause[pointerIdentityGuard]===true)preservePrePointerRefusal(cause);
         throw cause;
       }
     }

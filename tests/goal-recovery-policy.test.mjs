@@ -413,6 +413,11 @@ test('native select pre-input refusal does not create an unknown external effect
   for (const response of [result(false, code, {code}), result(false, code, {code,inputDispatched:true}), {...receipt,inputDispatched:true}, result(false,code,{code,inputDispatched:false,actionDispatched:true}), result(false,'BROWSER_ACTION_FAILED',{code,inputDispatched:false})]) {
     assert.equal(observeGoalToolOutcome(operation,response).kind,'uncertain_external_effect');
   }
+  for(const distinct of ['BROWSER_SELECT_NOT_NATIVE','BROWSER_SELECT_VALUE_UNAVAILABLE']){
+    const safe=result(false,distinct,{code:distinct,inputDispatched:false});
+    assert.equal(observeGoalToolOutcome(operation,safe).kind,'recoverable_no_input');
+    assert.equal(observeGoalToolOutcome(operation,result(false,distinct,{code:distinct})).kind,'uncertain_external_effect');
+  }
   assert.equal(observeGoalToolOutcome(call('relay_browser',{action:'click',tabId:'form',ref:'control'}),receipt).kind,'uncertain_external_effect');
 });
 
@@ -459,4 +464,17 @@ test('novel reasoning without host evidence is a useful report but does not rese
  assert.equal(result.progressKind,'provisional_reasoning');
  assert.equal(result.progress,false);
  assert.equal(result.observedMilestone,null);
+});
+
+test('typed native fill pre-input refusals remain recoverable without forgiving unknown key dispatch',()=>{
+ const operation=call('relay_browser',{action:'fill',tabId:'form',ref:'field',text:'test'});
+ for(const code of ['BROWSER_INPUT_FOCUS_CHANGED','BROWSER_INPUT_SELECTION_FAILED','BROWSER_FIELD_READ_ONLY','BROWSER_FIELD_DISABLED','BROWSER_FIELD_NOT_EDITABLE','BROWSER_VALIDATION']){
+  const safe=result(false,code,{code,inputDispatched:false,keyboardStage:'pre-key-input'});
+  const row=observeGoalToolOutcome(operation,safe);assert.equal(row.kind,'recoverable_no_input',code);
+  assert.equal(row.inputDispatched,false);assert.equal(row.actionDispatched,null);
+  assert.equal(detectUnknownEffectReplay([row],operation),null);
+  for(const untrusted of [result(false,code,{code,inputDispatched:false}),result(false,code,{code,inputDispatched:true,keyboardStage:'pre-key-input'}),
+     result(false,code,{code,inputDispatched:false,keyboardStage:'pre-key-input',actionDispatched:true})])
+    assert.equal(observeGoalToolOutcome(operation,untrusted).kind,'uncertain_external_effect',code);
+ }
 });

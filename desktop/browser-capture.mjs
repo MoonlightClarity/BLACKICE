@@ -34,8 +34,14 @@ export async function captureHiddenPage(contents, { signal, assertCurrent = () =
     current(); if (Date.now() >= deadline) throw failure('The browser did not produce a frame before the capture deadline.', 'BROWSER_CAPTURE_TIMEOUT');
     let image;
     try {
+      // Parked WebContentsView pages use native rendering even though their
+      // BaseWindow is hidden. Electron 44 may throttle requestAnimationFrame
+      // to ~1.3s while capturePage provides fresh pixels in milliseconds.
+      // Do not make that scheduling delay a prerequisite for each screenshot.
+      // True offscreen renderers retain their frame freshness boundary.
+      const nativeParkedView = contents.isOffscreen?.() === false;
       const frameDeadline = Math.min(deadline, Date.now() + 1500);
-      const frame=nativeFrameBoundary(contents);
+      const frame=nativeParkedView ? null : nativeFrameBoundary(contents);
       if(frame){
         let ready;
         try { ready=await bounded(frame,signal,frameDeadline-Date.now()); }
