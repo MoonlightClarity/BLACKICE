@@ -3490,3 +3490,37 @@ test('covered page modal returns actionable blocker evidence without dispatch',a
  const safe=await goalPointerFixture(t);const blocked=await safe.wrapped(safe.original),other=JSON.parse(blocked.contentItems[0].text);
  assert.equal(other.blocker.modalPresent,false);
 });
+
+test('a top-level replacement commit beats the superseded loadURL abort', async t => {
+  const source = 'https://jobs.test/starting', destination = 'https://jobs.test/current';
+  const { driver } = await fixture(t, { loadURL: async (url, window) => {
+    if (url !== source) return;
+    window.url = destination;
+    window.webContents.emit('did-frame-navigate', {}, destination, 200, 'OK', true, 1, 1);
+    throw Object.assign(new Error("ERR_ABORTED (-3) loading '" + source + "'"), { code: 'ERR_ABORTED', errno: -3 });
+  } });
+  const tab = driver.newTab(source);
+  await tab.loading;
+  const result = await driver.perform({ action: 'snapshot', tabId: tab.id }, { source: 'user' });
+  assert.equal(result.url, destination);
+  assert.equal(tab.loadError ?? null, null);
+  assert.equal(tab.window.loads.filter(url => url === source).length, 1);
+});
+
+test('an abort without a replacement remains a failure until a top-level page actually commits', async t => {
+  const source = 'https://jobs.test/aborted', destination = 'https://jobs.test/replacement';
+  const { driver } = await fixture(t, { loadURL: async url => {
+    if (url === source) throw Object.assign(new Error("ERR_ABORTED (-3) loading '" + source + "'"), { code: 'ERR_ABORTED', errno: -3 });
+  } });
+  const tab = driver.newTab(source);
+  await tab.loading;
+  const read = () => driver.perform({ action: 'snapshot', tabId: tab.id }, { source: 'user' });
+  await assert.rejects(read(), { code: 'BROWSER_NAVIGATION_FAILED' });
+  const window = tab.window;
+  window.webContents.emit('did-frame-navigate', {}, destination, 200, 'OK', false, 2, 2);
+  await assert.rejects(read(), { code: 'BROWSER_NAVIGATION_FAILED' });
+  window.url = destination;
+  window.webContents.emit('did-frame-navigate', {}, destination, 200, 'OK', true, 1, 1);
+  assert.equal((await read()).url, destination);
+  assert.equal(window.loads.filter(url => url === source).length, 1);
+});
