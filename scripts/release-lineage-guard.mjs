@@ -115,7 +115,7 @@ if (called) {
     console.log(JSON.stringify({ audit, review: result }, null, 2));
     if (summaryPath) appendFileSync(summaryPath, releaseReviewSummary(result), 'utf8');
     if (result.warning) console.log('::warning::' + result.warning);
-    if (enforce && !result.authorized) {
+    if (enforce && request.publish !== false && !result.authorized) {
       console.error('::error::Release blocked: verify and explicitly acknowledge the current source lineage.');
       process.exitCode = 2;
     }

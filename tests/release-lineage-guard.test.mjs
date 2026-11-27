@@ -1,9 +1,10 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { auditReleaseLineage, verifyReleaseAcknowledgement, releaseReviewSummary } from '../scripts/release-lineage-guard.mjs';
 
@@ -111,9 +112,25 @@ test('actual publishing workflow includes acknowledgement gate without changing 
   const workflow = readFileSync(new URL('../.github/workflows/publish-windows-release.yml', import.meta.url),'utf8');
   assert.match(workflow,/paths: \['\.github\/release-request\.json'\]/);
   assert.match(workflow,/workflow_dispatch:/);
+  assert.match(workflow,/fetch-depth: 0/);
   assert.match(workflow,/Verify development lineage and require explicit acknowledgement/);
   assert.match(workflow,/release-lineage-guard\.mjs --repo \. --candidate \$env:GITHUB_SHA/);
   assert.match(workflow,/--summary \$env:GITHUB_STEP_SUMMARY --enforce/);
   assert.match(workflow,/refs\/heads\/accepted-development/);
   assert.ok(workflow.indexOf('release-lineage-guard.mjs')<workflow.indexOf('Build the locked Windows candidate'));
+});
+test('CLI requires acknowledgement for publishing, but not draft-only builds', t => {
+  const f=fixture(t);
+  const requestPath=join(f.root,'lineage-review-request.json');
+  const script=fileURLToPath(new URL('../scripts/release-lineage-guard.mjs',import.meta.url));
+  const command=()=>spawnSync(process.execPath,[script,'--repo',f.root,'--candidate',f.candidate,'--accepted-ref','accepted','--request',requestPath,'--enforce'],{encoding:'utf8'});
+  writeFileSync(requestPath,JSON.stringify({format:1,version:'2.40.85',appFingerprint:'b'.repeat(64),publish:true}));
+  const rejected=command();
+  assert.equal(rejected.status,2);
+  assert.match(rejected.stderr,/Release blocked/);
+  writeFileSync(requestPath,JSON.stringify({format:1,version:'2.40.85',appFingerprint:'b'.repeat(64),publish:false}));
+  assert.equal(command().status,0);
+  const audit=check(f),request=requestFor(audit);request.publish=true;
+  writeFileSync(requestPath,JSON.stringify(request));
+  assert.equal(command().status,0);
 });
