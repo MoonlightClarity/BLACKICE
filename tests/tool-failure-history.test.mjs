@@ -1,3 +1,6 @@
+import {toolResultEvent} from '../lib/tool-outcomes.mjs';
+import {searchRunActivity} from '../lib/run-activity-view.mjs';
+import {projectTurnReceipts} from '../lib/turn-receipts.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
@@ -83,4 +86,41 @@ test('duplicate host delivery of one failed call does not inflate the receipt co
  assert.equal(retainToolFailureHistory(once,e),once);
  const different={...e,data:{...e.data,callId:'different-call-id'}};
  assert.equal(retainToolFailureHistory(once,different).total,2);
+});
+
+test('specific failure evidence and a sample call survive archive capture and individual receipt rollover', async t => {
+ const directory=await mkdtemp(path.join(os.tmpdir(),'blackice-durable-evidence-'));
+ class Fake extends EventEmitter{runs=new Map();listRuns(){return [...this.runs.values()]}getRun(id){return structuredClone(this.runs.get(id))}}
+ const engine=new Fake(),archive=await new ConversationArchive({dataDir:directory,engine}).init();
+ t.after(async()=>{await archive.close();await rm(directory,{recursive:true,force:true})});
+ const capture=(id,receiptState)=>toolResultEvent({
+  name:'relay_browser',callId:id,arguments:{action:'upload',chooserId:'SECRET_CHOOSER',paths:['SECRET_PATH']},
+ }, {success:false,code:'BROWSER_REOBSERVE_REQUIRED',actionDispatched:false,inputDispatched:false,contentItems:[
+  {type:'inputText',text:JSON.stringify({code:'BROWSER_REOBSERVE_REQUIRED',receiptState,error:'SECRET_ERROR'})},
+ ]});
+ const first=capture('rare-call','missing-after-observation'),common=capture('common-call','new-observation-needed');
+ let state=retainToolFailureHistory(undefined,event(1,'relay_browser','upload',null,undefined,first));
+ for(let n=2;n<=132;n++)state=retainToolFailureHistory(state,event(n,'relay_browser','upload',null,undefined,{...common,callId:'common-'+n}));
+ assert.equal(state.distinctKinds.length,2);
+ assert.equal(state.receipts.some(row=>row.callId==='rare-call'),false);
+
+ const run={id:'turn-fixture',taskId:'turn-fixture',createdAt:'2026-11-26T15:00:00Z',input:'Test',status:'completed',settled:true,output:'ok',
+   workflow:{name:'Chat',nodes:[{id:'agent',type:'agent'}]},nodes:{agent:{status:'completed'}},events:[event(1,'relay_browser','upload',null,undefined,first)],toolFailureHistory:state};
+ engine.runs.set(run.id,run);
+ await archive.capture(run);
+ const raw=await readFile(path.join(directory,'conversations',run.id+'.json'),'utf8');
+ assert.doesNotMatch(raw,/SECRET_|operationKey|receiptIdentity/);
+ const saved=JSON.parse(raw),groups=searchRunActivity(saved,{view:'failures',distinct:true,q:'missing-after-observation'});
+ assert.equal(groups.totalMatches,1);
+ const sample=JSON.parse(groups.items[0].text);
+ assert.equal(sample.retainedOccurrences,0);
+ assert.equal(sample.sampleCallId,'rare-call');
+ assert.equal(sample.evidence.receiptState,'missing-after-observation');
+ assert.equal(sample.evidence.argumentTypes.paths,'array');
+ const turn=projectTurnReceipts(saved,{view:'failures',distinct:true,q:'missing-after-observation'});
+ assert.equal(turn.actions.length,1);
+ assert.equal(JSON.parse(turn.actions[0].summary).sampleCallId,'rare-call');
+ const recent=projectTurnReceipts(saved,{view:'failures',limit:1}).actions[0];
+ assert.equal(recent.inputDispatched,false);
+ assert.equal(recent.evidence.receiptState,'new-observation-needed');
 });

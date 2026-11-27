@@ -118,3 +118,14 @@ test('task-scoped distinct indices cannot surface another worker node',()=>{
  assert.equal(searchTaskFailures({rootId:'root',runs:[value]},{view:'failures',distinct:true}).totalMatches,0);
  assert.equal(projectTurnReceipts(value,{view:'failures',distinct:true}).actions.length,0);
 });
+
+test('legacy Activity uses explicit recorded error metadata when it is still available', () => {
+ const row=failed(1,'BROWSER_CAPTURE_TIMEOUT',{inputDispatched:false});
+ row.data.message='SECRET_LEGACY_MESSAGE';
+ const state={...run('turn-a'),events:[row]};
+ const result=searchRunActivity(state,{view:'failures',distinct:true});
+ assert.equal(result.totalMatches,1);
+ assert.equal(result.items[0].attention,'input not dispatched');
+ assert.match(result.items[0].title,/BROWSER_CAPTURE_TIMEOUT/);
+ assert.doesNotMatch(JSON.stringify(result),/SECRET_LEGACY_MESSAGE/);
+});
