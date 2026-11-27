@@ -4,6 +4,7 @@ This file summarizes meaningful changes. Older source notes remain recoverable t
 
 ## Current candidate source: 2.40.84 (unpublished)
 
+- Retained Astra's Codex public OAuth client compatibility patch: permit only exact localhost/127.0.0.1 loopback callbacks with bounded ports, preserve approved Codex grants, and reject untrusted redirect destinations.
 - Added **Self-driving** as an editable starting objective within ordinary Goal Mode. It uses the existing Goal scheduler, constraints, Stop, deadlines, and revision-checked controls; it is not a separate autonomy engine or permission mode.
 - Improved browser action causality, recovery diagnostics, provider-host failure-loop classification, and distinct failure receipts without treating uncertain effects as completed or safe to replay.
 - Preserved the compact Goal status strip and validated the Self-driving editor at desktop and narrow-screen widths.

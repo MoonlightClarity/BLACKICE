@@ -107,6 +107,45 @@ test('untrusted client URLs and redirects are rejected before any metadata fetch
   assert.equal(calls.length, 0); assert.equal(oauth.pending().length, 0);
 });
 
+test('Codex public loopback OAuth client stays bound to localhost, PKCE and single-use owner approval', async t => {
+  const { oauth, calls, dataDir, now } = await setup(t);
+  const codex = 'https://chatgpt.com/oauth/codex/client.json';
+  const redirect = 'http://127.0.0.1:1455/callback';
+  for (const candidate of [
+    'http://evil.example:1455/callback', 'https://127.0.0.1:1455/callback',
+    'http://localhost.evil.example:1455/callback', 'http://127.0.0.2:1455/callback',
+    'http://127.0.0.1:65536/callback', 'http://127.0.0.1:1455/callback?x=1',
+    'http://127.0.0.1:1455/callback#fragment', 'http://x@localhost:1455/callback',
+    'http://127.0.0.1:1455/other'
+  ]) {
+    const bad = await route(oauth, 'GET', '/chatgpt/oauth/authorize?' + new URLSearchParams(authorization({ client_id: codex, redirect_uri: candidate })));
+    assert.equal(bad.status, 400, candidate);
+    assert.equal(bad.json.error, 'invalid_client', candidate);
+  }
+  const request = await begin(oauth, { client_id: codex, redirect_uri: redirect });
+  assert.equal(calls.length, 0, 'Codex client identity is built-in; never fetch arbitrary metadata');
+  await oauth.approve(request.id);
+  const poll = await route(oauth, 'GET', '/chatgpt/oauth/pending/' + request.id, { headers: { cookie: request.cookie } });
+  assert.equal(poll.status, 200, poll.body);
+  const callback = new URL(poll.json.redirect);
+  assert.equal(callback.origin + callback.pathname, redirect);
+  assert.equal(callback.searchParams.get('state'), 'owned-state-123');
+  const code = callback.searchParams.get('code');
+  assert.ok(code);
+  const exchange = () => route(oauth, 'POST', '/chatgpt/oauth/token', { form: {
+    grant_type: 'authorization_code', client_id: codex, code, code_verifier: VERIFIER, redirect_uri: redirect, resource: RESOURCE
+  } });
+  const issued = await exchange();
+  assert.equal(issued.status, 200, issued.body);
+  const client = await oauth.authenticateRequest(bearer(issued.json.access_token));
+  assert.equal(client?.label, 'Codex');
+  const reopened = await new ChatGPTOAuth({ dataDir, origin: ORIGIN, now }).init();
+  const stillConnected = await reopened.authenticateRequest(bearer(issued.json.access_token));
+  assert.equal(stillConnected?.label, 'Codex', 'Persisted public Codex grant remains recognized');
+  await reopened.close();
+  assert.equal((await exchange()).status, 400, 'The OAuth code cannot be replayed');
+  assert.equal(await oauth.authenticateRequest(bearer(issued.json.access_token)), null, 'A replay revokes the affected grant');
+});
 test('CIMD fetch is pinned, credential-free, redirect-free and strictly verified', async t => {
   const { oauth, calls } = await setup(t);
   await begin(oauth);
