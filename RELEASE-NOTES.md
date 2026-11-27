@@ -10,6 +10,12 @@ This file summarizes meaningful changes. Older source notes remain recoverable t
 - Local upgrade and cleanup protocol: preserve the existing profile and user work, verify the new installation and restart before cleanup, retain one verified previous-version rollback installer, and remove only audited regenerable build/staging/cache artifacts. Do not delete model data, chats, receipts, credentials, or source trees.
 - This candidate requires its own Windows-hosted installation, uninstallation, and exact-source release evidence before publication.
 
+## Still in active development
+
+- Autonomous Goal reliability and completion-evidence accounting continue to be tested against actual external effects, not model-authored completion claims.
+- Local model performance, context management, and MiniCPM improvements are active evaluation work; no general capability gain is asserted from these source changes.
+- The 2.40.84 candidate remains separate from the published v2.40.83. An exact-source Windows installer, installed-version verification, rollback readiness, and post-install audited disk cleanup are distinct release obligations. No date or publication is promised by these notes.
+
 ## Previous published Windows release: 2.40.83 (November 25, 2026)
 
 - Windows in-place upgrades now ask BLACKICE to exit normally, then retire only the prior installation's detached remote-availability and Crashpad helper processes before replacing files.
