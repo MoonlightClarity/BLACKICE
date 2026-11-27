@@ -10,6 +10,7 @@ import vm from 'node:vm';
 import { pathToFileURL } from 'node:url';
 import { BrowserWorkspace, createBrowserToolHandler } from '../lib/browser.mjs';
 import { BrowserRouter } from '../desktop/browser-router.mjs';
+import { toolResultEvent } from '../lib/tool-outcomes.mjs';
 import { ConversationGoals } from '../lib/conversation-goals.mjs';
 import { observeGoalToolOutcome, detectUnknownEffectReplay } from '../lib/goal-recovery-policy.mjs';
 
@@ -432,7 +433,7 @@ test('a detached renderer ref preserves its message across a boundary that loses
 });
 
 async function goalPointerFixture(t, { covered = true, modal = false, inputError, embeddedCandidates, frameOwnerError, pointerMismatch = false } = {}) {
-  let ref, scrolls = 0, captures = 0, overlay = covered, candidates = embeddedCandidates;
+  let ref, scrolls = 0, captures = 0, overlay = covered, candidates = embeddedCandidates, pointerContext;
   const scrollAlignments = [];
   const childURL = 'https://identity.example.test/control', quad = [150, 80, 450, 80, 450, 230, 150, 230];
   const childViewport = { width: 300, height: 150 };
@@ -457,6 +458,14 @@ async function goalPointerFixture(t, { covered = true, modal = false, inputError
       if (method === 'Target.attachToTarget') { assert.equal(params.targetId, 'owned-frame'); return { sessionId: 'exact-child-session' }; }
     }
     if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed' && inputError) throw inputError;
+    if (pointerMismatch === 'different-native-hit') {
+      if (method === 'Page.getLayoutMetrics') return {cssLayoutViewport:{pageX:0,pageY:240.5,clientWidth:1280,clientHeight:900}};
+      if (method === 'Runtime.callFunctionOn') {
+        pointerContext.pointerFixtureArgumentValues = params.arguments.map(argument => argument.value);
+        const value = vm.runInContext('('+params.functionDeclaration+').apply(pointerFixtureHit, pointerFixtureArgumentValues)', pointerContext);
+        return {result:{value:JSON.parse(JSON.stringify(value))}};
+      }
+    }
     if(method==='Runtime.callFunctionOn'&&pointerMismatch)return {result:{value:{verified:false}}};
     return pointerProof(method, params, ref, embeddedCandidates === undefined ? undefined : childViewport);
   } });
@@ -485,6 +494,9 @@ async function goalPointerFixture(t, { covered = true, modal = false, inputError
   const context = vm.createContext({ document, location: { href: frame === main ? tab.url : childURL },
     innerWidth: frame === main ? 1280 : childViewport.width, innerHeight: frame === main ? 900 : childViewport.height,
     getComputedStyle: () => ({ display: 'block', visibility: 'visible' }) });
+  control.ownerDocument = document;
+  pointerContext = context;
+  context.pointerFixtureHit = {nodeType:1,tagName:'DIV',isConnected:true,ownerDocument:document,id:'PRIVATE_FIXED_OVERLAY'};
   frame.executeJavaScript = async code => {
     // Exercise the real renderer functions across the same plain-data boundary
     // that loses non-enumerable properties of uncaught renderer Errors.
@@ -512,6 +524,31 @@ async function goalPointerFixture(t, { covered = true, modal = false, inputError
   return { ...f, tab, control, conversations, run, wrapped, observe, original,
     scrolls: () => scrolls, scrollAlignments, captures: () => captures, uncover: () => { overlay = false; }, resolveFrame: () => { candidates = 1; } };
 }
+
+test('native mismatches preserve the independent renderer hit and existing no-input result', async t => {
+  const f=await goalPointerFixture(t,{covered:false,pointerMismatch:'different-native-hit'});
+  const result=await f.wrapped(f.original);
+  assert.equal(result.success,false);
+  assert.equal(result.code,'BROWSER_REF_STALE');
+  assert.equal(result.inputDispatched,false);
+  const receipt=toolResultEvent(f.original,result);
+  const {evidence}=receipt;
+  assert.equal(evidence.pointerCheck,'verify-hit');
+  assert.equal(evidence.pointerVerification,'hit-mismatch');
+  assert.equal(evidence.pointerInputPhase,'move');
+  assert.equal(evidence.pointerSession,'top-level');
+  assert.equal(evidence.pointerObservedFrame,'main');
+  assert.equal(evidence.pointerHitRelationship,'unrelated');
+  assert.equal(evidence.pointerNativeHitKind,'other-element');
+  assert.equal(evidence.pointerRendererHit,'target');
+  assert.equal(evidence.pointerWithinTargetBox,true);
+  assert.equal(evidence.pointerScrollY,241);
+  assert.equal(evidence.pointerLookupRoundingY,-50);
+  assert.equal(evidence.pointerRecovery,'same-point');
+  assert.equal(evidence.pointerRecoveryDistance,0);
+  assert.doesNotMatch(JSON.stringify(evidence),/PRIVATE_FIXED_OVERLAY|example\.test/);
+  assert.ok(f.tab.window.protocol.every(entry=>!entry.method.startsWith('Input.')));
+});
 
 for (const candidates of [0, 2]) for (const action of ['click', 'hover']) {
   test(`ambiguous embedded frame identity with ${candidates} candidates preserves unissued ${action} through Goal recovery`, async t => {

@@ -124,3 +124,36 @@ test('specific failure evidence and a sample call survive archive capture and in
  assert.equal(recent.inputDispatched,false);
  assert.equal(recent.evidence.receiptState,'new-observation-needed');
 });
+
+test('pointer hit causes and sample geometry remain inspectable after occurrence rollover', () => {
+ const pointerEvent=(n,rendererHit,pointerScrollY)=>toolResultEvent({
+  name:'relay_browser',arguments:{action:'click',ref:'PRIVATE_REF'},callId:'pointer-'+n,
+ },{success:false,code:'BROWSER_REF_STALE',inputDispatched:false,pointerStage:'pre-pointer-identity',
+  browserReferenceDiagnostic:{reason:'binding-mismatch',pointerCheck:'verify-hit',pointerVerification:'hit-mismatch',
+    pointerSession:'top-level',pointerInputPhase:'move',pointerHitRelationship:'unrelated',
+    pointerNativeHitKind:'other-element',pointerRendererHit:rendererHit,pointerScrollY,pointerScrollX:2000001,
+    pointerLookupRoundingY:-25,pointerRecovery:'same-point',pointerRecoveryDistance:0,hitLabel:'PRIVATE_HIT_LABEL',
+    pointerWithinTargetBox:true,exactX:579,pointerFirstRendererHit:'PRIVATE_VALUE'},
+ });
+ let history;
+ for(let n=1;n<=131;n++) {
+  const detail=pointerEvent(n,n===1?'target':'other',n===1?420:n);
+  history=retainToolFailureHistory(history,event(n%59,'relay_browser','click',null,undefined,detail));
+ }
+ const durable=archivedToolFailureHistory(history);
+ assert.equal(durable.distinctKinds.length,2,'scroll position must not create a new cause group');
+ assert.equal(durable.receipts.some(row=>row.callId==='pointer-1'),false);
+ const group=durable.distinctKinds.find(row=>row.evidence.pointerRendererHit==='target');
+ assert.equal(group.sampleCallId,'pointer-1');
+ assert.equal(group.evidence.pointerScrollY,420);
+ assert.equal(group.evidence.pointerScrollX,undefined);
+ assert.equal(group.evidence.pointerLookupRoundingY,-25);
+ assert.equal(group.evidence.pointerWithinTargetBox,true);
+ assert.equal(group.inputDispatched,false);
+ assert.doesNotMatch(JSON.stringify(durable),/PRIVATE_|exactX|hitLabel/);
+ const run={id:'turn-pointer',nodes:{agent:{status:'completed'}},toolFailureHistory:durable,events:[]};
+ const receipt=projectTurnReceipts(run,{view:'failures',distinct:true,q:'pointer-1'}).actions;
+ assert.ok(receipt.some(line=>JSON.parse(line.summary).evidence.pointerRendererHit==='target'));
+ const activity=searchRunActivity(run,{view:'failures',distinct:true,q:'pointer-1'}).items;
+ assert.ok(activity.some(line=>JSON.parse(line.text).evidence.pointerScrollY===420));
+});

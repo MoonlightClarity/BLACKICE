@@ -35,11 +35,38 @@ export function failureRequestShape(original, parsed, invalidJson) {
     argumentTypes: Object.fromEntries(argumentNames.filter(name => Object.hasOwn(parsed, name)).map(name => [name, typeOf(parsed[name])])) };
 }
 
+const pointerEvidenceChoices = {
+  pointerSession: ['top-level', 'child-target'],
+  pointerObservedFrame: ['main', 'embedded'],
+  pointerInputPhase: ['move', 'press', 'wheel'],
+  pointerHitRelationship: ['disconnected', 'different-document', 'invalid-local-point', 'shadow-root-unavailable',
+    'shadow-hit-unavailable', 'shadow-hit-unrelated', 'unrelated'],
+  pointerNativeHitKind: ['text', 'frame', 'control', 'other-element', 'other-node'],
+  pointerRendererHit: ['target', 'other', 'none', 'unavailable'],
+  pointerFirstRendererHit: ['target', 'other', 'none', 'unavailable'],
+  pointerRecovery: ['not-eligible', 'same-point', 'preparation-failed', 'retry-failed'],
+};
+const pointerEvidenceRanges = { pointerScrollX: [-1000000, 1000000], pointerScrollY: [-1000000, 1000000],
+  pointerLookupRoundingX: [-100, 0], pointerLookupRoundingY: [-100, 0], pointerRecoveryDistance: [0, 1000000] };
+
+// Persist a bounded comparison, with no hit node, exact pointer position or page content.
+export function projectPointerEvidence(input) {
+  const safe = {};
+  for (const [key, allowed] of Object.entries(pointerEvidenceChoices)) if (allowed.includes(input?.[key])) safe[key] = input[key];
+  for (const [key, [minimum, maximum]] of Object.entries(pointerEvidenceRanges)) {
+    const value = input?.[key];
+    if (Number.isSafeInteger(value) && value >= minimum && value <= maximum) safe[key] = value === 0 ? 0 : value;
+  }
+  if (typeof input?.pointerWithinTargetBox === 'boolean') safe.pointerWithinTargetBox = input.pointerWithinTargetBox;
+  return safe;
+}
+
 /** Only bounded classifications and argument types may cross the saved-receipt boundary. */
 export function projectFailureEvidence(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
   const safe = {};
   for (const [key, allowed] of Object.entries(choices)) if (allowed.includes(input[key])) safe[key] = input[key];
+  if (safe.pointerCheck) Object.assign(safe, projectPointerEvidence(input));
   for (const key of flags) if (typeof input[key] === 'boolean') safe[key] = input[key];
   for (const key of counts) if (Number.isSafeInteger(input[key]) && input[key] >= 0) safe[key] = input[key];
   const types = argumentNames.filter(name => fieldTypes.includes(input.argumentTypes?.[name]));
@@ -58,6 +85,10 @@ export function failureCause(evidence) {
   const cause = [receiptState, pointerStage, keyboardStage, bindingReason, pointerCheck, pointerVerification,
     controlBindingCause, modalPresent, viewportOverlay, outOfViewport, commandStatus, commandError,
     argumentForm === 'invalid-json' ? argumentForm : undefined, invalidFields];
+  // Group by failure mechanism. Keep scroll amounts and movement distances as sample evidence.
+  const pointer = [evidence.pointerSession, evidence.pointerObservedFrame, evidence.pointerInputPhase,
+    evidence.pointerHitRelationship, evidence.pointerNativeHitKind, evidence.pointerRendererHit];
+  if (pointer.some(value => value !== undefined)) cause.push(...pointer);
   return cause.some(value => value !== undefined) ? cause : [];
 }
 

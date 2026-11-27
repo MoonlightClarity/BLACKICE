@@ -13,7 +13,7 @@ import { browserURL, browserCredentialTarget, browserOwner, browserOwnerKey, bro
 import { captureHiddenPage } from './browser-capture.mjs';
 import { NativePasswordManager, passwordManagerURL, passwordManagerPreload } from './native-password-manager.mjs';
 import { prepareBrowserCompatibility } from './browser-compatibility.mjs';
-import { projectBrowserControlBinding } from '../lib/browser-reference-diagnostic.mjs';
+import { projectBrowserControlBinding, projectPointerEvidence } from '../lib/browser-reference-diagnostic.mjs';
 import { BrowserDiagnostics } from '../lib/browser-diagnostics.mjs';
 import { BrowserTabDiagnostics, diagnosticText } from '../lib/browser-tab-diagnostics.mjs';
 import { BrowserProtection, protectionOrigin } from '../lib/browser-protection.mjs';
@@ -358,8 +358,27 @@ function elementAction(key, ref, action, args, scrollPage, inspectOperation, des
     return {focused,documentFocused};
   }
   if (action === 'pointer-verify') {
-    if (!pointerHitMatches(el, args.hit, args.point)) return {verified:false,reason:'pointer-hit-mismatch'};
-    return { verified: true };
+    const diagnostic = {};
+    if (pointerHitMatches(el, args.hit, args.point, diagnostic)) return { verified: true };
+    // Compare the renderer's current topmost hit with the CDP hit. Evidence
+    // here describes the refusal only and never permits pointer dispatch.
+    diagnostic.pointerRendererHit = 'unavailable';
+    try {
+      diagnostic.pointerNativeHitKind = args.hit?.nodeType === 3 ? 'text'
+        : ['IFRAME', 'FRAME'].includes(args.hit?.tagName) ? 'frame'
+          : ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'OPTION', 'LABEL'].includes(args.hit?.tagName) ? 'control'
+            : args.hit?.nodeType === 1 ? 'other-element' : 'other-node';
+      const { x, y } = args.point || {};
+      if (Number.isFinite(x) && Number.isFinite(y) && typeof document.elementFromPoint === 'function') {
+        const box = el.getBoundingClientRect();
+        if ([box.x, box.y, box.width, box.height].every(Number.isFinite)) {
+          diagnostic.pointerWithinTargetBox = x >= box.x && y >= box.y && x < box.x + box.width && y < box.y + box.height;
+        }
+        const hit = document.elementFromPoint(x, y);
+        diagnostic.pointerRendererHit = hit ? (pointerHitMatches(el, hit, args.point) ? 'target' : 'other') : 'none';
+      }
+    } catch { /* A secondary diagnostic cannot change the dispatch refusal. */ }
+    return { verified: false, reason: 'pointer-hit-mismatch', diagnostic };
   }
   if (action === 'prepare') {
     // A visible menu option, autocomplete result or similar transient control
@@ -2006,14 +2025,24 @@ export class ElectronBrowserDriver extends EventEmitter {
   }
   async assertPointerReference(tab, expected, point, signal, sessionId) {
     let objectId,check='layout-metrics',geometryChanged=false,pointerVerification;
+    const observedLineage = tab.refContexts?.get(expected.ref)?.stamp?.lineage;
+    const diagnostic = { pointerSession: sessionId ? 'child-target' : 'top-level',
+      ...(observedLineage?.length ? { pointerObservedFrame: observedLineage.length === 1 ? 'main' : 'embedded' } : {}),
+      pointerInputPhase: { mouseMoved: 'move', mousePressed: 'press', mouseWheel: 'wheel' }[point.type] };
     try {
       // Input coordinates are viewport CSS pixels. DOM hit lookup uses document
       // CSS pixels in this exact target session, including a scrolled OOP frame.
       const metrics = await this.cdp(tab, 'Page.getLayoutMetrics', {}, signal, undefined, sessionId);
       const viewport = metrics.cssLayoutViewport;
       if (!viewport || !['pageX', 'pageY', 'clientWidth', 'clientHeight'].every(key => Number.isFinite(viewport[key]))) throw error('The pointer viewport could not be verified.');
+      const lookupX = point.x + viewport.pageX, lookupY = point.y + viewport.pageY;
+      const x = Math.floor(lookupX), y = Math.floor(lookupY);
+      diagnostic.pointerScrollX = Math.round(viewport.pageX);
+      diagnostic.pointerScrollY = Math.round(viewport.pageY);
+      diagnostic.pointerLookupRoundingX = Math.round((x - lookupX) * 100);
+      diagnostic.pointerLookupRoundingY = Math.round((y - lookupY) * 100);
       check='hit-location';
-      const hit = await this.cdp(tab, 'DOM.getNodeForLocation', { x: Math.floor(point.x + viewport.pageX), y: Math.floor(point.y + viewport.pageY) }, signal, undefined, sessionId);
+      const hit = await this.cdp(tab, 'DOM.getNodeForLocation', { x, y }, signal, undefined, sessionId);
       if (!Number.isInteger(hit.backendNodeId)) throw error('The pointer hit node is unavailable.');
       check='resolve-hit';
       const resolved = await this.cdp(tab, 'DOM.resolveNode', { backendNodeId: hit.backendNodeId }, signal, undefined, sessionId);
@@ -2027,6 +2056,10 @@ export class ElectronBrowserDriver extends EventEmitter {
         const proof=checked.result?.value;
         const rejected=proof?.__blackiceElementError;
         geometryChanged=!checked.exceptionDetails&&proof?.verified===false&&proof.reason==='pointer-hit-mismatch';
+        if (geometryChanged && proof.diagnostic) {
+          const { pointerHitRelationship, pointerRendererHit, pointerNativeHitKind, pointerWithinTargetBox } = proof.diagnostic;
+          Object.assign(diagnostic, { pointerHitRelationship, pointerRendererHit, pointerNativeHitKind, pointerWithinTargetBox });
+        }
         pointerVerification=checked.exceptionDetails?'renderer-exception':geometryChanged?'hit-mismatch':
           ['control-disconnected','hidden','no-box','identity-changed'].includes(rejected?.controlBindingCause)
             ? rejected.controlBindingCause : 'no-verification';
@@ -2038,7 +2071,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     } catch (cause) {
       if (cause?.name === 'AbortError' || ['BROWSER_CONTAINMENT_LOST', 'BROWSER_RENDERER_GONE', 'BROWSER_INTERACTION_PENDING'].includes(cause?.code)) throw cause;
       if(check==='hit-location'&&/No node found at given location/i.test(String(cause?.message||cause)))geometryChanged=true;
-      throw Object.assign(error('The pointer target changed or could not be verified ('+check+'). Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: {...this.referenceDiagnostic(tab, expected.ref),pointerCheck:check,...(pointerVerification?{pointerVerification}:{})}, [pointerIdentityGuard]:true, [pointerGeometryRecovery]:geometryChanged });
+      throw Object.assign(error('The pointer target changed or could not be verified ('+check+'). Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: {...this.referenceDiagnostic(tab, expected.ref),pointerCheck:check,...projectPointerEvidence(diagnostic),...(pointerVerification?{pointerVerification}:{})}, [pointerIdentityGuard]:true, [pointerGeometryRecovery]:geometryChanged });
     } finally {
       if (objectId) void this.cdp(tab, 'Runtime.releaseObject', { objectId }, undefined, undefined, sessionId).catch(() => {});
     }
@@ -2681,7 +2714,12 @@ export class ElectronBrowserDriver extends EventEmitter {
           // input has not been dispatched and the SAME observed node survives.
           // Never remap by label, retry a consequential input, or consume a
           // previously granted deliberate-retry permit a second time.
-          if(cause?.[pointerGeometryRecovery]!==true||cause.inputDispatched!==false||cause.pointerStage!=='pre-pointer-identity'||recoveryInput||tab.pendingInteraction||!this.referenceCurrent(tab,args.ref,args.expectedDocumentId))throw cause;
+          if(cause?.[pointerGeometryRecovery]!==true||cause.inputDispatched!==false||cause.pointerStage!=='pre-pointer-identity')throw cause;
+          const diagnostic = cause.browserReferenceDiagnostic;
+          if(recoveryInput||tab.pendingInteraction||!this.referenceCurrent(tab,args.ref,args.expectedDocumentId)) {
+            diagnostic.pointerRecovery = 'not-eligible';
+            throw cause;
+          }
           cancel(signal);
           let next;
           try {
@@ -2691,11 +2729,29 @@ export class ElectronBrowserDriver extends EventEmitter {
             const current=tab.popupViewport?await this.element(tab,args,'prepare',signal):prepared;
             if(current.frame!==prepared.frame||!this.referenceCurrent(tab,args.ref,args.expectedDocumentId))throw cause;
             next=await this.browserPoint(tab,current.frame,current.result,signal);
-            if(!Number.isFinite(next.x)||!Number.isFinite(next.y)||Math.hypot(next.x-point.x,next.y-point.y)<1)throw cause;
+            const distance = Math.hypot(next.x - point.x, next.y - point.y);
+            if (Number.isFinite(distance)) diagnostic.pointerRecoveryDistance = Math.round(distance);
+            if(!Number.isFinite(next.x)||!Number.isFinite(next.y)||distance<1) {
+              if (Number.isFinite(distance)) diagnostic.pointerRecovery = 'same-point';
+              throw cause;
+            }
             await this.assertOperationCommit(args,operationDescriptor,{signal,owner});
-          }catch(nextError){if(signal?.aborted)throw nextError;throw cause;}
+          }catch(nextError){
+            if(signal?.aborted)throw nextError;
+            diagnostic.pointerRecovery ||= 'preparation-failed';
+            throw cause;
+          }
           // No automatic repetition follows this second dispatch attempt.
-          await this.pointerInput(tab,next,args.action,signal,args,onClickPopup);
+          try { await this.pointerInput(tab,next,args.action,signal,args,onClickPopup); }
+          catch (retryError) {
+            if (retryError?.[pointerIdentityGuard] === true && retryError.browserReferenceDiagnostic) {
+              Object.assign(retryError.browserReferenceDiagnostic, projectPointerEvidence({
+                pointerRecovery: 'retry-failed', pointerRecoveryDistance: diagnostic.pointerRecoveryDistance,
+                pointerFirstRendererHit: diagnostic.pointerRendererHit,
+              }));
+            }
+            throw retryError;
+          }
         }
         receipt = { [args.action === 'click' ? 'clicked' : 'hovered']: args.ref, input: 'browser protocol' };
       } else {
