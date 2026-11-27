@@ -146,7 +146,7 @@ test('Skill loaded corresponds to a real model tool result, not discovery or a m
   catalog=createSkillsCatalog({dataDir:path.join(dir,'engine')});
   const packaged=await catalog.detail({id:completion});
   assert.equal(packaged.provenance.revision,completionSkill.provenance.revision);
-  const edited=await catalog.save({id:completion,value:{expectedRevision:packaged.revision,content:'# What Makes Done\nOwner completion fixture 9321.'}});
+  const edited=await catalog.save({id:completion,value:{expectedRevision:packaged.revision,content:'# What Makes Done\n\nDescribe completion criteria for the current task.\n\n## Procedure\nOwner completion fixture 9321.'}});
   const editedRun=await run('Use the current completion method.');
   const editedWire=wire(turns.get(editedRun.id).workerStart);
   assertCore(editedWire);

@@ -7,13 +7,16 @@ import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 import {readReleaseSkill} from '../lib/release-skills.mjs';
 import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
 import {managedContextPaths} from '../lib/managed-context-paths.mjs';
+import {SkillEditStore} from '../lib/skill-edits.mjs';
+import {DatabaseSync} from 'node:sqlite';
+const persisted=(root,id)=>{const db=new DatabaseSync(path.join(root,'skill-edits','skills.sqlite'));try{return JSON.parse(db.prepare('SELECT record_json FROM skill_edits WHERE id=?').get(id).record_json);}finally{db.close();}};
 const value=base=>({expectedRevision:base.revision,content:'# Human-authored method\ncustom discoverable wording.\n'});
 test('human edits persist, model sees effective content, originals stay immutable, CAS prevents lost edits',async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'skill-edits-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const catalog=createSkillsCatalog({dataDir:root}),base=await catalog.detail({id:'builtin-decomposition'}),edit=value(base);
  assert.equal(base.userEditable,true);const saved=await catalog.save({id:base.id,value:edit});assert.equal(saved.revision,2);assert.equal(saved.source,'user');assert.equal(saved.title,'Human-authored method');assert.equal('summary' in saved,false);
  assert.equal(readReleaseSkill(base.id).content,base.content);
- const persisted=JSON.parse(await readFile(path.join(root,'skill-edits','skills.json'),'utf8')).entries[base.id];assert.deepEqual(Object.keys(persisted).sort(),['content','revision']);assert.equal(persisted.content,edit.content);
+ const record=persisted(root,base.id);assert.deepEqual(Object.keys(record).sort(),['content','revision']);assert.equal(record.content,edit.content);
  const fresh=createSkillsCatalog({dataDir:root});assert.deepEqual(await fresh.detail({id:base.id}),saved);
  assert.equal((await fresh.list({query:'custom discoverable'})).entries[0].id,base.id);
  await assert.rejects(catalog.save({id:base.id,value:edit}),{status:409});
@@ -35,7 +38,7 @@ test('invalid edits and corrupt persistence fail rather than replacing original 
 
 test('killed lock owner recovers without stealing a live lock or losing a concurrent edit',async t=>{
  const {spawn}=await import('node:child_process');const {once}=await import('node:events');const {mkdir}=await import('node:fs/promises');
- const root=await mkdtemp(path.join(tmpdir(),'skill-crash-'));t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(path.join(root,'skill-edits'));
+ const root=await mkdtemp(path.join(tmpdir(),'skill-crash-'));t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(path.join(root,'skill-edits'));const initial=new SkillEditStore({dataDir:root});await initial.listMetadata();await initial.close();
  const child=spawn(process.execPath,['--input-type=module','-e',`import {SkillEditStore} from ${JSON.stringify(new URL('../lib/skill-edits.mjs',import.meta.url).href)}; const store=new SkillEditStore({dataDir:${JSON.stringify(root)}});await store.acquireLock(store.file+'.lock','killed-owner');console.log('LOCKED');setInterval(()=>{},1000);`],{stdio:['ignore','pipe','pipe']});
  t.after(()=>{if(child.exitCode===null)child.kill();});await once(child.stdout,'data');
  const catalog=createSkillsCatalog({dataDir:root}),base=await catalog.detail({id:'builtin-decomposition'}),edit=value(base);

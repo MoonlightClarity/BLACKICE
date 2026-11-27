@@ -15,6 +15,11 @@ const wait=async(check,label='UI state')=>{
  for(let i=0;i<130;i++){if(await check())return;await new Promise(resolve=>setTimeout(resolve,10));}
  throw Error(label+' did not settle');
 };
+async function expand(f,id){
+ const button=f.mount.querySelectorAll('[data-toggle-category]').find(node=>node.dataset.toggleCategory===id);
+ assert.ok(button,'Category '+id+' exists');
+ if(button.getAttribute('aria-expanded')!=='true')await f.click(button);
+}
 async function env(t){
  const dataDir=await mkdtemp(path.join(tmpdir(),'blackice-runtime-editor-test-'));
  t.after(()=>rm(dataDir,{recursive:true,force:true,maxRetries:12,retryDelay:100}));
@@ -60,7 +65,9 @@ test('Runtime top-level editor updates canonical system text, tool schemas and c
  t.after(()=>ui.destroy());ui.enter();
  await wait(()=>f.$('[data-runtime-item="layer:core"]'),'Runtime navigation');
  assert.ok(f.$('[data-runtime-item="tool:relay_browser"]'),'tool listed');
- assert.ok(f.$('[data-runtime-item="skill:library-job-search"]'),'Job Search listed');
+ await f.input('#runtime-search','library-job-search');
+ assert.ok(f.$('[data-runtime-item="skill:library-job-search"]'),'Job Search found across category pages');
+ await f.input('#runtime-search','');
  assert.equal(f.mount.querySelector('#next-developer-layer-text'),null,'no global developer override');
  await wait(()=>f.$('#runtime-text').value==='SYSTEM_ORIGINAL_716','system text loaded').catch(error=>{console.log('RUNTIME_DEBUG',f.$('#runtime-status')?.textContent,f.$('#runtime-save-status')?.textContent,f.$('#runtime-heading')?.textContent,'calls='+calls.map(x=>x.method+' '+x.route).join(';'));throw error;});
  assert.equal(f.$('#runtime-text').value,'SYSTEM_ORIGINAL_716');
@@ -121,7 +128,7 @@ test('Runtime top-level editor updates canonical system text, tool schemas and c
  await f.$('#runtime-editor').dispatch('submit');
  await wait(()=>tools.project(toolDefinitions)[0].description==='OWNED_BROWSER_DESCRIPTION_725','model-visible tool edit');
  assert.equal(tools.project(toolDefinitions)[0].inputSchema.properties.action.description,'OWNED_ACTION_SCHEMA_726');
- await f.click('[data-runtime-item="skill:library-job-search"]');
+ ui.openSkillId('library-job-search');
  await wait(()=>f.$('#runtime-text').value.includes('# Job Search'),'skill detail');
  await f.input('#runtime-text','# Job Search\n\nOWNER_JOB_SEARCH_CURRENT_731');
  await f.$('#runtime-editor').dispatch('submit');
@@ -162,10 +169,12 @@ test('Runtime category hierarchy preserves legacy skills, nested folders, item r
   await wait(()=>f.$('#runtime-category-form').hidden,'create complete');
   return (await folderStore.read()).folders.find(row=>row.name===name).id;
  };
+ await expand(f,'old-parent');await expand(f,'old-child');
  assert.ok(branch('runtime:skill').contains(branch('old-parent')));
  assert.ok(branch('old-parent').contains(branch('old-child')));
  assert.ok(branch('old-child').contains(item('skill:library-job-search')));
  const parent=await create('runtime:system','Operating principles');
+ await expand(f,parent);
  const child=await create(parent,'Owner policy');
  assert.ok(branch('runtime:system').contains(branch(parent)));
  assert.ok(branch(parent).contains(branch(child)));
@@ -302,10 +311,12 @@ test('Runtime supports adding, editing, disabling, deleting and restoring catalo
  await wait(()=>!dom.$('#runtime-restore').disabled,'restore tool available');
  await dom.click('#runtime-restore');
  await wait(()=>tools.project(toolDefs).length===1,'tool restored');
- await dom.click('[data-runtime-item="skill:library-job-search"]');
+ ui.openSkillId('library-job-search');
  await wait(()=>dom.$('#runtime-text').value.startsWith('#'),'job skill loaded');
  await dom.click('#runtime-delete');
  await dom.click('#runtime-delete-yes');
+ await wait(()=>dom.$('#runtime-status').textContent.includes('Runtime item changed'),'skill deletion settled');
+ await expand(dom,'runtime:deleted');
  await wait(()=>dom.$('[data-runtime-item="deleted:library-job-search"]'),'deleted skill listed');
  await dom.click('[data-runtime-item="deleted:library-job-search"]');
  await wait(()=>!dom.$('#runtime-restore').disabled,'restore skill available');
@@ -335,6 +346,8 @@ test('selection queued during an asynchronous skill read opens the latest reques
  };
  const dom=planningDOM(t),ui=createRuntimeWorkspace({mount:dom.mount,api});
  t.after(()=>ui.destroy());ui.enter();
+ await wait(()=>dom.$('[data-runtime-item="layer:core"]'),'Runtime loaded');
+ await expand(dom,'category:Other skills');
  await wait(()=>dom.$('[data-runtime-item="skill:custom-queued-skill"]'),'skill listed');
  await dom.click('[data-runtime-item="skill:custom-queued-skill"]');
  await wait(()=>typeof finishSkillRead==='function','skill request started');

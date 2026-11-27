@@ -742,6 +742,7 @@
       "title": "First Principles Reasoning",
       "description": "Rebuild an unfamiliar problem from mechanisms, constraints and evidence. Challenge inherited assumptions, compare designs, select relevant reasoning methods, and test the decisive unknown.",
       "tags": [
+        "methods",
         "reasoning",
         "first-principles",
         "mechanisms",

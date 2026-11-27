@@ -139,7 +139,7 @@ export async function createHarnessServer(options = {}) {
   const browser = options.browser || new BrowserWorkspace();
   const applicationWorkspace=options.applicationWorkspace||await new ApplicationWorkspace({dataDir,runtime:options.applicationRuntime,catalog:options.applicationCatalog}).init();
   const skillsCatalog=createSkillsCatalog({dataDir});
-  const skillFolders=new SkillFolderStore({dataDir});
+  const skillFolders=new SkillFolderStore({dataDir,skillExists:id=>skillsCatalog.has(id)});
   const planningBrowser = options.planningBrowser || await new PlanningBrowserStore({ dataDir: path.resolve(dataDir) }).init();
   const planningBrowserRuntime = options.planningBrowserRuntime || new PlanningBrowserRuntime({ store: planningBrowser, runtime, getSettings: () => runtimeSettings.get(), defaultCwd, onUpdated: event => sendEvent(event) });
   const prompts = options.prompts || new PromptTemplateStore({ dataDir }); await prompts.init();
@@ -1321,7 +1321,11 @@ export async function createHarnessServer(options = {}) {
       }
       if(pathname==='/api/skills'&&req.method==='GET'){
         const query=new URL(req.url,`http://${host}`).searchParams;
-        return json(res,200,await skillsCatalog.list({cwd:query.get('cwd')||undefined,query:query.get('query')||'',source:query.get('source')||'all',refresh:query.get('refresh')==='true'}));
+        const offset=query.has('offset')?Number(query.get('offset')):0,limit=query.has('limit')?Number(query.get('limit')):200;
+        if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>500
+          ||query.has('offset')&&!/^\d+$/.test(query.get('offset'))||query.has('limit')&&!/^\d+$/.test(query.get('limit')))
+          return json(res,400,{error:'Supply a nonnegative integer offset and a page limit from 1 to 500.'});
+        return json(res,200,await skillsCatalog.list({query:query.get('query')||'',source:query.get('source')||'all',offset,limit}));
       }
       if(pathname==='/api/skills'&&req.method==='POST'){
         if(req.headers['x-blackice-remote']==='1')return json(res,403,{error:'Create skills in BLACKICE on this computer.'});

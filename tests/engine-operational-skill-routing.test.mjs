@@ -282,7 +282,7 @@ test('both entry points honor saved owner core and explicitly chosen current ski
  const prior=await f.instructions.read();
  const ownerCore=await f.instructions.update({content:"OWNER_COMMON_INSTRUCTIONS\nPreserve the user's current limits.",expectedRevision:prior.revision,expectedHash:prior.hash});
  const previous=await f.catalog.detail({id:'library-job-search'});
- const skill=await f.catalog.save({id:'library-job-search',value:{expectedRevision:previous.revision,content:'# Job Search\nOwner method: verify the actual application result.'}});
+ const skill=await f.catalog.save({id:'library-job-search',value:{expectedRevision:previous.revision,content:'# Job Search\n\nSearch current employment opportunities and track application outcomes.\n\n## Procedure\nOwner method: verify the actual application result.'}});
  for(const route of ['mission','direct']){
   const ambient=await f.invoke(route);requireAbsent(ambient);
   const core=ambient.sections.find(section=>section.id==='core');

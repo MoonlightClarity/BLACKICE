@@ -17,20 +17,24 @@ class Runtime extends EventEmitter{status(){return{connected:true,authenticated:
   prepare:async context=>{await server.beginRestart(context);if(!await gate({signal:context.signal}))throw Object.assign(Error('Renderer veto'),{code:'DESKTOP_RESTART_QUIT_VETOED'});},
   release:()=>server.endRestart(),relaunch:()=>{server.assertRestartPrepared();assert.equal(win.isDestroyed(),true);events.push('relaunch');},quit:()=>events.push('quit')
  });
- await win.loadURL(url+'/#skills');await until('!!document.querySelector("[data-skill-id=builtin-decomposition]")');
- await run('document.querySelector("[data-skill-id=builtin-decomposition]").click()');await until('!document.querySelector("#skills-editor").hidden');
- const draft='Actual Skills draft survives cancelled restart and remains savable.';
- await run('document.querySelector("#skills-edit-content").value='+JSON.stringify(draft)+';document.querySelector("#skills-edit-content").dispatchEvent(new Event("input",{bubbles:true}))');
+ await win.loadURL(url+'/#runtime');
+ await until("document.querySelector(\"#runtime-status\")?.textContent.includes(\"runtime sources loaded\")");
+ await run("document.querySelector(\"#runtime-search\").value=\"Task Decomposition\";document.querySelector(\"#runtime-search\").dispatchEvent(new Event(\"input\",{bubbles:true}))");
+ await until("!!document.querySelector(\"[data-runtime-item=\\\"skill:builtin-decomposition\\\"]\")");
+ await run("document.querySelector(\"[data-runtime-item=\\\"skill:builtin-decomposition\\\"]\").click()");
+ await until("!document.querySelector(\"#runtime-editor\").hidden&&!document.querySelector(\"#runtime-text\").disabled&&document.querySelector(\"#runtime-text\").value.length>0");
+ const draft='Actual Runtime draft survives cancelled restart and remains savable.';
+ await run('document.querySelector("#runtime-text").value='+JSON.stringify(draft)+';document.querySelector("#runtime-text").dispatchEvent(new Event("input",{bubbles:true}))');
  for(let attempt=0;attempt<2;attempt++){
   await controller.request({requestId:'dirty-restart-'+attempt});const receipt=await controller.waitForHandoff();
   assert.equal(receipt.status,'failed');assert.equal(receipt.error.code,'DESKTOP_RESTART_QUIT_VETOED');assert.equal(receipt.durable,true);
   assert.equal(server.engine.maintenanceRequested,false);assert.deepEqual(events,[]);assert.equal(win.isDestroyed(),false);
-  assert.equal(await run('document.querySelector("#skills-edit-content").value'),draft);
+  assert.equal(await run('document.querySelector("#runtime-text").value'),draft);
  }
- await run('document.querySelector("#skills-editor").requestSubmit()');await until('document.querySelector("#skills-save-status").textContent==="Saved."');
+ await run('document.querySelector("#runtime-editor").requestSubmit()');await until("document.querySelector(\"#runtime-save-status\").textContent.includes(\"saved for future turns\")");
  assert.equal(await run('(async()=>{const r=await fetch("/api/skills/builtin-decomposition");return(await r.json()).content})()'),draft);
  await controller.request({requestId:'clean-retry'});const receipt=await controller.waitForHandoff();assert.equal(receipt.status,'restarting');assert.deepEqual(events,['relaunch','quit']);
- await server.close();server=null;fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({passed:true,checks:['two actual mounted Skills vetoes produce failed durable receipts','maintenance gate released after each veto','no relaunch or quit armed before consent','exact draft survives','real backend mutation succeeds after veto','clean retry accepts window closure before relaunch and quit']},null,2));app.quit();
+ await server.close();server=null;fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({passed:true,checks:['two actual mounted Runtime vetoes produce failed durable receipts','maintenance gate released after each veto','no relaunch or quit armed before consent','exact draft survives','real backend mutation succeeds after veto','clean retry accepts window closure before relaunch and quit']},null,2));app.quit();
 })().catch(async e=>{fs.writeFileSync(path.join(out,'error.txt'),e.stack);try{server?.endRestart();await server?.close();}finally{app.exit(1);}});
 setTimeout(()=>{fs.writeFileSync(path.join(out,'timeout.txt'),'Timed out');app.exit(2)},30000).unref();
 

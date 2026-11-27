@@ -8,6 +8,8 @@ import {createSkillsCatalog} from '../lib/skills-catalog.mjs';
 import {readReleaseSkill} from '../lib/release-skills.mjs';
 import {createRetrievalToolHandler} from '../lib/retrieval-tools.mjs';
 import {createHarnessServer} from '../server.mjs';
+import {DatabaseSync} from 'node:sqlite';
+const persisted=(root,id)=>{const db=new DatabaseSync(path.join(root,'skill-edits','skills.sqlite'));try{return JSON.parse(db.prepare('SELECT record_json FROM skill_edits WHERE id=?').get(id).record_json);}finally{db.close();}};
 const temporary=async t=>{const dir=await mkdtemp(path.join(tmpdir(),'skill-delete-'));t.after(()=>rm(dir,{recursive:true,force:true}));return dir;};
 test('bundled deletion persists, excludes model access, restores unchanged default, and leaves unrelated files intact',async t=>{
  const root=await temporary(t),catalog=createSkillsCatalog({dataDir:root}),id='builtin-decomposition';
@@ -15,8 +17,8 @@ test('bundled deletion persists, excludes model access, restores unchanged defau
  await writeFile(path.join(root,'unrelated.txt'),'Untouched content');
  const deleted=await catalog.delete({id,value:{expectedRevision:original.revision}});
  assert.deepEqual(deleted,{id,revision:2,deleted:true});
- const persisted=JSON.parse(await readFile(path.join(root,'skill-edits','skills.json'),'utf8')).entries[id];
- assert.deepEqual(persisted,{revision:2,deleted:true});
+ const record=persisted(root,id);
+ assert.deepEqual(record,{revision:2,deleted:true});
  const fresh=createSkillsCatalog({dataDir:root});
  assert.ok(!(await fresh.list()).entries.some(x=>x.id===id));
  assert.ok(!(await fresh.list({source:'bundled'})).entries.some(x=>x.id===id));
@@ -46,7 +48,7 @@ test('edited document deletion restores exact saved bytes and concurrent stale s
  assert.equal(outcomes.find(x=>x.status==='rejected').reason.status,409);
  let trash=(await a.list({source:'deleted'})).entries;
  if(!trash.length){const active=await a.detail({id});await a.delete({id,value:{expectedRevision:active.revision}});trash=(await a.list({source:'deleted'})).entries;}
- const raw=JSON.parse(await readFile(path.join(root,'skill-edits','skills.json'),'utf8')).entries[id];
+ const raw=persisted(root,id);
  const restored=await b.restore({id,value:{expectedRevision:trash[0].revision}});
  assert.equal(restored.content,raw.content);assert.equal(restored.source,'user');
  // A separate deterministic saved edit confirms exact requested document round-trip.

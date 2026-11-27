@@ -66,14 +66,18 @@ test('large catalog uses sparse candidates but preserves declared resource-alloc
   assert(![...fresh.automatic,...fresh.candidates].some(x=>x.id==='rust'),'deleted skill not cached');
  }finally{index.close();}
 });
-test('small catalogs retain legacy discovery rather than imposing sparse exclusions',()=>{
+test('catalog size never switches retrieval strategy',()=>{
  const entries=[{id:'doc',title:'Document analysis',description:'Analyze reports and documents',source:'bundled',revision:1},
   {id:'skills',title:'Skill comparison',description:'Compare task execution methods',source:'bundled',revision:1}];
  const request='Analyze this document';
  const a=discoverTaskSkills(request,entries,{fieldThreshold:100000}),b=discoverTaskSkills(request,entries,{fieldThreshold:128});
  assert.deepEqual(a.automatic.map(x=>x.id),b.automatic.map(x=>x.id));
  assert.deepEqual(a.candidates.map(x=>x.id),b.candidates.map(x=>x.id));
- assert.equal(b.selection.firstStage,undefined);
+ assert.equal(a.selection.firstStage.kind,'field-aware-sparse');
+ assert.equal(b.selection.firstStage.kind,'field-aware-sparse');
+ const large=discoverTaskSkills(request,[...entries,...Array.from({length:128},(_,i)=>({id:'irrelevant-'+i,title:'Marine coral',description:'Ocean salinity',source:'bundled',revision:1}))]);
+ assert.deepEqual(a.automatic.map(x=>x.id),large.automatic.map(x=>x.id));
+ assert.deepEqual(a.candidates.map(x=>x.id),large.candidates.map(x=>x.id));
 });
 
 

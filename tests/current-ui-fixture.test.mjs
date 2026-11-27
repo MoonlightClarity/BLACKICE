@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {makeFixture} from './next-fixture-server.mjs';
-test('current UI fixture serves release Skills without loading a removed memory store',async t=>{
+test('current UI fixture serves Runtime and redirects retired Skills without loading a removed memory store',async t=>{
  const fixture=makeFixture();await new Promise(resolve=>fixture.server.listen(0,'127.0.0.1',resolve));
  t.after(async()=>{fixture.server.closeAllConnections();await new Promise(resolve=>fixture.server.close(resolve));await fixture.close();});
  const base='http://127.0.0.1:'+fixture.server.address().port;
@@ -17,6 +17,8 @@ test('current UI fixture serves release Skills without loading a removed memory 
  const app=await (await get('/next/app.mjs')).text();
  assert.doesNotMatch(app,/import\('\.\/workspaces\/skills\.mjs'\)/);
  assert.match(app,/if\(name==='skills'\)\{name='runtime'/);
+ assert.equal((await get('/next/workspaces/runtime.mjs')).status,200);
+ assert.equal((await get('/next/workspaces/skills.mjs')).status,404);
  assert.equal((await get('/next/core/folder-tree.mjs')).status,200);
  assert.equal(typeof fixture.close,'function');assert.equal('knowledge'in fixture,false);
 });

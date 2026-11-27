@@ -9,6 +9,7 @@ import { createDirectExecutionContextTool } from '../lib/direct-execution-contex
 import { DirectExecutionAPI } from '../lib/direct-execution-api.mjs';
 import { InstructionStore } from '../lib/instruction-store.mjs';
 import { createSkillsCatalog } from '../lib/skills-catalog.mjs';
+import { SkillEditStore } from '../lib/skill-edits.mjs';
 
 const name = 'blackice_execution_context';
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -108,7 +109,8 @@ test('effective skill discovery and reads honor real owner edits and deletions w
   const dataDir = await directory(t), catalog = createSkillsCatalog({ dataDir });
   t.after(() => catalog.close());
   const id = 'builtin-decomposition', edited = await catalog.save({ id, value: { content: '# Owner method\nUse the current owner method.', expectedRevision: 1 } });
-  const file = path.join(dataDir, 'skill-edits', 'skills.json'), before = await fs.readFile(file, 'utf8');
+  const store = new SkillEditStore({ dataDir }); t.after(() => store.close());
+  const before = { metadata: await store.listMetadata(), record: await store.readOne(id) };
   const tool = createDirectExecutionContextTool({ skillsCatalog: catalog });
   const first = await read(tool, { action: 'skill_search', limit: 2 });
   assert.equal(first.entries.length, 2); assert.equal(first.nextOffset, 2); assert.equal(first.truncated, true);
@@ -119,10 +121,70 @@ test('effective skill discovery and reads honor real owner edits and deletions w
   assert.ok(found.entries.some(entry => entry.id === id && entry.source === 'user'));
   const detail = await read(tool, { action: 'skill_read', id });
   assert.equal(detail.content, edited.content); assert.equal(detail.source.origin, 'user'); assert.equal(detail.source.revision, edited.revision);
-  assert.equal(detail.source.hash, hash(edited.content)); assert.equal(await fs.readFile(file, 'utf8'), before);
+  assert.equal(detail.source.hash, hash(edited.content));
+  assert.deepEqual({ metadata: await store.listMetadata(), record: await store.readOne(id) }, before, 'Context reads preserve owner records and generation.');
   await catalog.delete({ id, value: { expectedRevision: edited.revision } });
   await assert.rejects(read(tool, { action: 'skill_read', id }), { status: 404 });
   assert.ok(!(await read(tool, { action: 'skill_search', query: 'Owner method' })).entries.some(entry => entry.id === id));
+});
+
+
+test('skill discovery follows deep pages past 11000 with bounded body-free results and exact on-demand reads', async () => {
+  const entries = Array.from({ length: 11103 }, (_, index) => ({
+    id: 'library-deep-' + index, title: 'Deep method ' + index, source: 'bundled', revision: 3,
+    content: 'Full current body for deep method ' + index,
+  }));
+  const calls = []; let bodyReads = 0;
+  const tool = createDirectExecutionContextTool({ skillsCatalog: {
+    async list(args) {
+      calls.push(args);
+      const page = entries.slice(args.offset, args.offset + args.limit);
+      const nextOffset = args.offset + page.length < entries.length ? args.offset + page.length : null;
+      return { entries: page, totalMatches: entries.length, nextOffset, truncated: nextOffset !== null, catalogVersion: 'deep-fixture:3' };
+    },
+    async detail({ id }) { bodyReads++; return entries.find(entry => entry.id === id); },
+  } });
+  const searchSchema = tool.definition.inputSchema.oneOf.find(value => value.properties.action.const === 'skill_search');
+  assert.equal(searchSchema.properties.offset.maximum, undefined, 'The advertised schema must admit the same deep pages as execution.');
+  assert.equal(searchSchema.properties.limit.maximum, 50);
+  const found = []; let offset = 11001;
+  do {
+    const result = await read(tool, { action: 'skill_search', offset, limit: 50 });
+    assert.ok(result.entries.length > 0 && result.entries.length <= 50);
+    assert.ok(result.entries.every(entry => !Object.hasOwn(entry, 'content')));
+    assert.equal(result.totalMatches, entries.length);
+    assert.equal(result.catalogVersion, 'deep-fixture:3');
+    assert.equal(result.truncated, result.nextOffset !== null);
+    found.push(...result.entries);
+    if (result.nextOffset === null) break;
+    assert.equal(result.nextOffset, offset + result.entries.length);
+    offset = result.nextOffset;
+  } while (calls.length < 4);
+  assert.deepEqual(calls.map(value => value.offset), [11001, 11051, 11101]);
+  assert.ok(calls.every(value => value.source === 'all' && value.query === '' && value.limit === 50));
+  assert.deepEqual(found.map(value => value.id), entries.slice(11001).map(value => value.id));
+  assert.equal(bodyReads, 0, 'Discovery does not read bodies.');
+  const last = found.at(-1), detail = await read(tool, { action: 'skill_read', id: last.id });
+  assert.equal(detail.content, entries.at(-1).content);
+  assert.equal(detail.source.id, last.id); assert.equal(detail.source.revision, 3);
+  assert.equal(bodyReads, 1);
+  const exhausted = await read(tool, { action: 'skill_search', offset: Number.MAX_SAFE_INTEGER });
+  assert.deepEqual(exhausted.entries, []); assert.equal(exhausted.nextOffset, null);
+  assert.equal(exhausted.truncated, false); assert.equal(calls.at(-1).limit, 12);
+});
+
+test('skill discovery rejects malformed offsets and oversized pages before catalog access', async () => {
+  let calls = 0;
+  const tool = createDirectExecutionContextTool({ skillsCatalog: {
+    async list() { calls++; return { entries: [] }; },
+  } });
+  for (const offset of [-1, 0.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1, '11001', null, {}, []]) {
+    await assert.rejects(read(tool, { action: 'skill_search', offset }), { code: 'EXECUTION_CONTEXT_INVALID' });
+  }
+  for (const limit of [0, 51, 1.5]) {
+    await assert.rejects(read(tool, { action: 'skill_search', offset: 11001, limit }), { code: 'EXECUTION_CONTEXT_INVALID' });
+  }
+  assert.equal(calls, 0);
 });
 
 test('an empty effective skill stays empty if the catalog supplies one', async () => {
@@ -140,7 +202,7 @@ test('strict actions reject unrelated or invalid fields before any store read', 
     { action: 'instructions', kind: 'user' }, { action: 'instructions', offset: -1 },
     { action: 'instructions', maxChars: 16001 }, { action: 'instructions', expectedHash: 'bad' },
     { action: 'identity', kind: 'other' }, { action: 'skill_read', id: '../USER.md' },
-    { action: 'skill_search', limit: 51 }, { action: 'skill_search', offset: 11001 },
+    { action: 'skill_search', limit: 51 }, { action: 'skill_search', offset: Number.MAX_SAFE_INTEGER + 1 },
     { action: 'skill_search', query: 'x'.repeat(2001) }, { action: 'skill_search', maxChars: 12 },
     { action: 'save', content: 'new owner policy' }, { action: 'instructions', taskContext: 'unrelated-task' },
   ]) await assert.rejects(read(tool, args), { code: 'EXECUTION_CONTEXT_INVALID' });

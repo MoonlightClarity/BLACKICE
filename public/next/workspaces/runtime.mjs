@@ -4,6 +4,41 @@ const nice=(el,tag,value='',className='')=>{
  const node=el.ownerDocument.createElement(tag);node.textContent=esc(value);if(className)node.className=className;el.append(node);return node;
 };
 const enc=value=>encodeURIComponent(value);
+
+const RUNTIME_SKILL_PAGE_SIZE=200;
+const RUNTIME_ROWS_PER_PAGE=50;
+const sourceLabel=item=>item.catalog==='installed'?(item.source==='user'?'Owner edit · Installed library':'Installed library'):(item.source||'');
+export async function readRuntimeSkillPages(api,{source='all',isCurrent=()=>true}={}){
+ const entries=[],ids=new Set();let offset=0,first;
+ for(;;){
+  const params=new URLSearchParams();
+  if(source!=='all')params.set('source',source);
+  if(offset){params.set('offset',String(offset));params.set('limit',String(RUNTIME_SKILL_PAGE_SIZE));}
+  const page=await api('/api/skills'+(params.size?'?'+params.toString():''),'GET');
+  if(!isCurrent())return null;
+  if(!page||!Array.isArray(page.entries))throw Error('The skill catalog returned an invalid page.');
+  if(!first)first=page;
+  else if(page.catalogVersion!==first.catalogVersion||page.totalMatches!==first.totalMatches)
+   throw Error('The skill catalog changed while loading. Refresh to load its current version.');
+  if(page.totalMatches!==undefined&&(!Number.isSafeInteger(page.totalMatches)||page.totalMatches<0))
+   throw Error('The skill catalog returned an invalid total.');
+  for(const row of page.entries){
+   if(!row||typeof row.id!=='string'||ids.has(row.id))
+    throw Error('The skill catalog returned overlapping or invalid pages. Refresh to reload it.');
+   ids.add(row.id);entries.push(row);
+  }
+  const next=page.nextOffset??null;
+  if(next===null){
+   if(page.truncated===true||page.totalMatches!==undefined&&entries.length!==page.totalMatches)
+    throw Error('The skill catalog stopped before all matching skills were loaded.');
+   return {...first,entries,nextOffset:null,truncated:false};
+  }
+  if(!Number.isSafeInteger(next)||next<=offset||next!==offset+page.entries.length)
+   throw Error('The skill catalog returned an invalid continuation.');
+  offset=next;
+ }
+}
+
 const key=(kind,id)=>kind+':'+id;
 const GROUPS=[
  ['system','System instructions'],
@@ -121,6 +156,7 @@ export function createRuntimeWorkspace({mount,api,notify=()=>{}}){
   core=null,coreDefault=null,current=null,editDrafts=new Map(),confirmation=null,
   organization=null,organizationReady=false,organizing=false,categoryParent=null,orgEpoch=0;
  const expanded=new Set(GROUPS.filter(([id])=>id!=='deleted').map(([id])=>ROOT(id)));
+ const itemPages=new Map();
  const selectedItem=()=>items.find(item=>item.key===selected);
  const changed=()=>{
   if(!current)return false;
@@ -191,7 +227,9 @@ export function createRuntimeWorkspace({mount,api,notify=()=>{}}){
  }
  function reveal(item){
   const {nodes,place}=treeModel();
-  for(let node=nodes.get(place(item));node;node=nodes.get(node.parent))expanded.add(node.id);
+  const parent=nodes.get(place(item));
+  if(parent)itemPages.set(parent.id,Math.floor(Math.max(0,parent.items.findIndex(row=>row.key===item.key))/RUNTIME_ROWS_PER_PAGE));
+  for(let node=parent;node;node=nodes.get(node.parent))expanded.add(node.id);
  }
  function paint(){
   const query=$('search').value.trim().toLowerCase(),tree=$('tree'),{roots}=treeModel();
@@ -223,15 +261,28 @@ export function createRuntimeWorkspace({mount,api,notify=()=>{}}){
    }
    const children=nice(branch,'ul','','next-skills-list runtime-category-children');
    children.hidden=!open;
-   for(const child of node.children)render(children,child,selfMatched);
-   for(const item of documents){
+   const page=Math.min(itemPages.get(node.id)||0,Math.max(0,Math.ceil(documents.length/RUNTIME_ROWS_PER_PAGE)-1));
+   itemPages.set(node.id,page);
+   if(open)for(const child of node.children)render(children,child,selfMatched);
+   for(const item of open?documents.slice(page*RUNTIME_ROWS_PER_PAGE,(page+1)*RUNTIME_ROWS_PER_PAGE):[]){
     const li=nice(children,'li','','skills-document-line');
     const button=nice(li,'button',item.name,'skills-document-row');
     button.type='button';button.dataset.runtimeItem=item.key;button.setAttribute('aria-pressed',String(selected===item.key));
     button.addEventListener('click',()=>void select(item.key));
     nice(li,'span',item.deleted?'Deleted':item.enabled===false?'Disabled':item.kind==='skill'?'Skill':item.kind==='tool'?'Tool':'Layer','runtime-kind');
    }
-   if(query&&!selfMatched&&!children.children.length&&!visibleCount(node))return;
+    if(open&&documents.length>RUNTIME_ROWS_PER_PAGE){
+     const pager=nice(children,'li','','skills-pagination'),pages=Math.ceil(documents.length/RUNTIME_ROWS_PER_PAGE);
+     const previous=nice(pager,'button','Previous');previous.type='button';previous.disabled=page===0;
+     previous.dataset.runtimePage=node.id;previous.dataset.pageDirection='previous';previous.setAttribute('aria-label','Previous page in '+node.title);
+     nice(pager,'span',(page+1)+' / '+pages);
+     const next=nice(pager,'button','Next');next.type='button';next.disabled=page+1>=pages;
+     next.dataset.runtimePage=node.id;next.dataset.pageDirection='next';next.setAttribute('aria-label','Next page in '+node.title);
+     const turn=direction=>{itemPages.set(node.id,page+direction);paint();
+      [...mount.querySelectorAll('[data-runtime-page]')].find(button=>button.dataset.runtimePage===node.id&&!button.disabled)?.focus?.();};
+     previous.addEventListener('click',()=>turn(-1));next.addEventListener('click',()=>turn(1));
+    }
+    if(query&&!selfMatched&&!children.children.length&&!visibleCount(node))return;
    parent.append(branch);
   };
   for(const root of roots)render(tree,root);
@@ -304,7 +355,7 @@ export function createRuntimeWorkspace({mount,api,notify=()=>{}}){
   if(!item){hideEditors();$('heading').textContent='Select a runtime item';return;}
   const token=++epoch;
   $('heading').textContent=item.name;
-  $('source').textContent=item.source||'';
+  $('source').textContent=sourceLabel(item);
   $('editor').hidden=false;
   let body=item.detail;
   if(item.kind==='skill'&&!item.deleted){
@@ -337,7 +388,7 @@ export function createRuntimeWorkspace({mount,api,notify=()=>{}}){
   $('role').value=values.role;$('order').value=String(values.order);$('enabled').checked=values.enabled;
   $('text').value=values.text;$('schema').value=values.schema;refreshPlacement();
   $('default').textContent=skill?body?.content||'':tool?(item.defaultDescription||'')+'\n\n'+JSON.stringify(item.defaultSchema??{},null,2):item.defaultText??'No shipped text; the source is generated for each task.';
-  $('source').textContent=(item.source||'')+' · '+(skill?'Skill revision '+(body?.revision??'?'):layer?'Layer configuration revision '+revisions.layer:'Tool catalog revision '+revisions.tool);
+  $('source').textContent=sourceLabel(item)+' · '+(skill?'Skill revision '+(body?.revision??'?'):layer?'Layer configuration revision '+revisions.layer:'Tool catalog revision '+revisions.tool);
   $('delete').textContent=skill?'Delete skill':item.kind==='tool'?'Disable tool':'Delete / disable layer';
   $('restore').textContent=skill?'Restore skill':item.kind==='tool'?'Restore tool defaults':item.custom?'Enable custom layer':'Restore shipped layer';
   status(item.schemaWarning|| (item.deleted?'This skill is deleted. Restore it to edit.':
@@ -365,7 +416,7 @@ export function createRuntimeWorkspace({mount,api,notify=()=>{}}){
   for(const [kind,catalog] of [['skill',data.skill],['deleted',data.deleted]]){
    for(const skill of catalog.entries||[]){
     rows.push({kind:'skill',key:key(kind,skill.id),group:kind==='deleted'?'deleted':'skill',id:skill.id,name:skill.title,
-     description:skill.description||'',source:skill.source,enabled:kind!=='deleted',deleted:kind==='deleted',
+     description:skill.description||'',source:skill.source,catalog:skill.catalog,enabled:kind!=='deleted',deleted:kind==='deleted',
      revision:skill.revision,loaded:skill.loaded,tags:skill.tags||[]});
    }
   }
@@ -378,8 +429,8 @@ export function createRuntimeWorkspace({mount,api,notify=()=>{}}){
    const [layer,tool,skill,deleted,ownerCore,ownerCoreDefault,org]=await Promise.all([
     api('/api/execution-layers','GET'),
     api('/api/tool-descriptions','GET'),
-    api('/api/skills','GET'),
-    api('/api/skills?source=deleted','GET'),
+    readRuntimeSkillPages(api,{isCurrent:()=>active&&!destroyed&&token===epoch}),
+    readRuntimeSkillPages(api,{source:'deleted',isCurrent:()=>active&&!destroyed&&token===epoch}),
     api('/api/instructions/core','GET'),
     api('/api/instructions/core/versions/0','GET'),
     api('/api/runtime/organization','GET').then(value=>({value}),error=>({error}))
@@ -471,12 +522,12 @@ export function createRuntimeWorkspace({mount,api,notify=()=>{}}){
   const operation=item.kind==='skill'?{action:'assign',skillId:item.id,folderId}:{action:'assign_runtime',itemKey:item.key,folderId};
   if(await organize(operation,'Item moved. Runtime behavior is unchanged.')){reveal(item);paint();refreshPlacement();}
  });
- $('search').addEventListener('input',paint);
+ $('search').addEventListener('input',()=>{itemPages.clear();paint();});
  $('refresh').addEventListener('click',()=>void load());
  $('editor').addEventListener('input',()=>{draft();controls();status('Unsaved changes.',true);});
  $('editor').addEventListener('change',()=>{draft();controls();});
  $('editor').addEventListener('submit',event=>{event.preventDefault();void mutate('save');});
- $('discard').addEventListener('click',()=>{if(current){editDrafts.delete(current.item.key);void select(current.item.key);}});
+ $('discard').addEventListener('click',()=>{if(current){const target=current.item.key;editDrafts.delete(target);current=null;void select(target);}});
  $('delete').addEventListener('click',()=>{
   if(!current)return;
   confirmation={item:current.item};
@@ -501,8 +552,13 @@ export function createRuntimeWorkspace({mount,api,notify=()=>{}}){
    editDrafts.delete(item.key);current=null;saving=false;await load();status('Restored for future turns.');
   }catch(error){saving=false;controls();status(err(error),true);}
  });
+ function resetNewDraft(){
+  for(const id of ['new-title','new-description','new-text'])$(id).value='';
+  $('new-source-label').value='Owner-added execution layer';$('new-role').value='developer';
+  $('new-order').value='0';$('new-enabled').checked=true;
+ }
  $('add').addEventListener('click',()=>{if(saving)return;hideEditors();selected=null;paint();$('heading').textContent='New Runtime item';$('new-form').hidden=false;$('new-title').focus?.();});
- $('new-cancel').addEventListener('click',()=>{ $('new-form').hidden=true;if(items[0])void select(items[0].key);});
+ $('new-cancel').addEventListener('click',()=>{resetNewDraft();$('new-form').hidden=true;if(items[0])void select(items[0].key);});
  $('new-form').addEventListener('submit',async event=>{
   event.preventDefault();if(saving)return;
   const kind=$('new-kind').value,title=$('new-title').value.trim(),text=$('new-text').value,role=$('new-role').value;
@@ -518,7 +574,7 @@ export function createRuntimeWorkspace({mount,api,notify=()=>{}}){
     const result=await api('/api/skills','POST',{content:skillWithTitle(text,title)});
     selected=key('skill',result.id);
    }
-   saving=false;current=null;$('new-form').hidden=true;await load();status('New Runtime item created.');
+   resetNewDraft();saving=false;current=null;$('new-form').hidden=true;await load();status('New Runtime item created.');
   }catch(error){saving=false;controls();status(err(error));}
  });
  $('inspect').addEventListener('click',async()=>{
