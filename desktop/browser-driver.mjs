@@ -1996,7 +1996,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
   }
   async assertPointerReference(tab, expected, point, signal, sessionId) {
-    let objectId,check='layout-metrics',geometryChanged=false;
+    let objectId,check='layout-metrics',geometryChanged=false,pointerVerification;
     try {
       // Input coordinates are viewport CSS pixels. DOM hit lookup uses document
       // CSS pixels in this exact target session, including a scrolled OOP frame.
@@ -2015,7 +2015,12 @@ export class ElectronBrowserDriver extends EventEmitter {
         functionDeclaration: `function(key,ref,point){return (${elementAction.toString()})(key,ref,'pointer-verify',{hit:this,point},undefined,undefined,${browserControlDescriptor.toString()},${browserPointerHitMatches.toString()});}`,
         arguments: [{ value: this.key }, { value: expected.ref }, { value: expected.pointerLocalPoint || { x: point.x, y: point.y } }], returnByValue: true }, signal, undefined, sessionId);
       if (checked.exceptionDetails || checked.result?.value?.verified !== true) {
-        geometryChanged=!checked.exceptionDetails&&checked.result?.value?.verified===false&&checked.result.value.reason==='pointer-hit-mismatch';
+        const proof=checked.result?.value;
+        const rejected=proof?.__blackiceElementError;
+        geometryChanged=!checked.exceptionDetails&&proof?.verified===false&&proof.reason==='pointer-hit-mismatch';
+        pointerVerification=checked.exceptionDetails?'renderer-exception':geometryChanged?'hit-mismatch':
+          ['control-disconnected','hidden','no-box','identity-changed'].includes(rejected?.controlBindingCause)
+            ? rejected.controlBindingCause : 'no-verification';
         throw error('The pointer no longer hits the exact observed control in its document.');
       }
       check='viewport-recheck';
@@ -2024,7 +2029,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     } catch (cause) {
       if (cause?.name === 'AbortError' || ['BROWSER_CONTAINMENT_LOST', 'BROWSER_RENDERER_GONE', 'BROWSER_INTERACTION_PENDING'].includes(cause?.code)) throw cause;
       if(check==='hit-location'&&/No node found at given location/i.test(String(cause?.message||cause)))geometryChanged=true;
-      throw Object.assign(error('The pointer target changed or could not be verified ('+check+'). Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: {...this.referenceDiagnostic(tab, expected.ref),pointerCheck:check}, [pointerIdentityGuard]:true, [pointerGeometryRecovery]:geometryChanged });
+      throw Object.assign(error('The pointer target changed or could not be verified ('+check+'). Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: {...this.referenceDiagnostic(tab, expected.ref),pointerCheck:check,...(pointerVerification?{pointerVerification}:{})}, [pointerIdentityGuard]:true, [pointerGeometryRecovery]:geometryChanged });
     } finally {
       if (objectId) void this.cdp(tab, 'Runtime.releaseObject', { objectId }, undefined, undefined, sessionId).catch(() => {});
     }

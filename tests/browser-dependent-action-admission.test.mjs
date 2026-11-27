@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BrowserWorkspace,createBrowserToolHandler} from '../lib/browser.mjs';
+import {projectBrowserReferenceDiagnostic} from '../lib/browser-reference-diagnostic.mjs';
+import {TaskExternalContextStore} from '../lib/task-external-context.mjs';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject}};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -156,4 +161,32 @@ test('settled navigation and waits supply the observation required by the next a
  assert.equal(nav.success,true);
  assert.equal((await f.handler(invoke('one','click',{ref:'control'}))).code,'BROWSER_REOBSERVE_REQUIRED');
  assert.deepEqual(f.calls.map(x=>x.action),['navigate','wait','navigate']);
+});
+
+test('a paged browser observation can drive the next owned action without reopening the archive',async t=>{
+ const dataDir=await mkdtemp(path.join(tmpdir(),'blackice-browser-observation-'));
+ t.after(()=>rm(dataDir,{recursive:true,force:true}));
+ const archive=new TaskExternalContextStore({taskId:taskOwner.taskId,dataDir,thresholdBytes:500});
+ const f=fixture(t,async args=>({tabId:args.tabId,url:'https://example.test/form',documentId:'one:3',
+   frames:[{frame:'main',elements:[{ref:'next',name:'Next',role:'button'},...Array.from({length:150},(_,i)=>({ref:'ref'+i,name:'long control '+i,value:'x'.repeat(80),tag:'input'}))]}]}));
+ assert.equal((await f.handler(invoke('one','click',{ref:'previous'}))).success,true);
+ const request=invoke('one','snapshot');
+ const observed=await f.handler(request);
+ const paged=receipt(await archive.archiveResult({...request,callId:'large-observation'},observed));
+ assert.equal(paged.externalContext,true);
+ assert.equal(paged.browserObservation.observationReceipt,receipt(observed).observationReceipt);
+ const current=paged.browserObservation.frames.flatMap(f=>f.elements).find(x=>x.role==='button');
+ assert.equal(current?.ref,'next');
+ const input=await f.handler(invoke('one','click',{ref:current.ref,observationReceipt:paged.browserObservation.observationReceipt}));
+ assert.equal(input.success,true);
+ assert.deepEqual(f.calls.map(x=>x.action),['click','snapshot','click']);
+});
+
+test('pointer hit verification diagnostics distinguish failure classes without raw page data',()=>{
+ for(const pointerVerification of ['renderer-exception','hit-mismatch','identity-changed','control-disconnected','no-verification']){
+  const result=projectBrowserReferenceDiagnostic({reason:'binding-mismatch',pointerCheck:'verify-hit',pointerVerification,
+     observedRevision:2,currentRevision:2,rawPage:'secret',selector:'secret'});
+  assert.deepEqual(result,{bindingReason:'binding-mismatch',pointerCheck:'verify-hit',pointerVerification,observedRevision:2,currentRevision:2});
+ }
+ assert.equal(projectBrowserReferenceDiagnostic({reason:'binding-mismatch',pointerCheck:'verify-hit',pointerVerification:'unknown raw text'}).pointerVerification,undefined);
 });
