@@ -34,14 +34,15 @@ export async function captureHiddenPage(contents, { signal, assertCurrent = () =
     current(); if (Date.now() >= deadline) throw failure('The browser did not produce a frame before the capture deadline.', 'BROWSER_CAPTURE_TIMEOUT');
     let image;
     try {
-      // Parked WebContentsView pages use native rendering even though their
-      // BaseWindow is hidden. Electron 44 may throttle requestAnimationFrame
-      // to ~1.3s while capturePage provides fresh pixels in milliseconds.
-      // Do not make that scheduling delay a prerequisite for each screenshot.
-      // True offscreen renderers retain their frame freshness boundary.
-      const nativeParkedView = contents.isOffscreen?.() === false;
+      // A hidden or parked WebContentsView can acknowledge a DOM mutation
+      // before Chromium submits its new compositor surface. capturePage then
+      // returns a nonempty but stale bitmap (observed one paint behind, 24/24).
+      // The same isolated double-rAF boundary required for offscreen views is
+      // also required for native parked views; never treat old pixels as fresh.
+      // A throttled renderer must report a bounded render-stage failure rather
+      // than silently returning the previous surface.
       const frameDeadline = Math.min(deadline, Date.now() + 1500);
-      const frame=nativeParkedView ? null : nativeFrameBoundary(contents);
+      const frame=nativeFrameBoundary(contents);
       if(frame){
         let ready;
         try { ready=await bounded(frame,signal,frameDeadline-Date.now()); }

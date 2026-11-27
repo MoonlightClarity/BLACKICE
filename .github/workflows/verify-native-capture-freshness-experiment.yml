@@ -1,0 +1,61 @@
+name: Verify native capture compositor freshness in isolated Windows
+
+on:
+  push:
+    branches:
+      - verification/native-capture-freshness-20261127
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blackice-native-capture-freshness-20261127
+  cancel-in-progress: true
+
+jobs:
+  native-capture:
+    if: github.ref == 'refs/heads/verification/native-capture-freshness-20261127'
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - name: Install exact locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify source-level cancellation and compositor freshness contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          node --test --test-reporter=tap tests/browser-capture.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Native capture unit contracts failed.' }
+      - name: Verify three independent real Chromium stress scenarios
+        shell: pwsh
+        env:
+          RELAY_LIVE_BROWSER_QA: '1'
+        run: |
+          $ErrorActionPreference='Stop'
+          $tap=Join-Path $PWD 'native-capture-freshness.tap'
+          node --test --test-concurrency=1 --test-reporter=tap tests/browser-engine-stress.integration.test.mjs tests/browser-native-lifecycle-stress.integration.test.mjs tests/browser-stabilization.integration.test.mjs > $tap 2>&1
+          $code=$LASTEXITCODE
+          Get-Content -LiteralPath $tap -Tail 110
+          if ($code -ne 0) { throw 'Real Chromium compositor freshness regression failed.' }
+          $out=Get-Content -LiteralPath $tap -Raw
+          foreach($pattern in @('(?m)^# tests 3\s*$','(?m)^# pass 3\s*$','(?m)^# fail 0\s*$','(?m)^# skipped 0\s*$')) {
+            if ($out -notmatch $pattern) { throw 'Real native Chromium regression inventory incomplete.' }
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-capture-freshness-diagnostic-not-publication
+          path: native-capture-freshness.tap
+          if-no-files-found: warn
+          retention-days: 7
+
+# Only tests a source branch on disposable Windows.
+# Never installs or publishes BLACKICE on the user computer.
