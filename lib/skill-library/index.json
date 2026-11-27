@@ -736,6 +736,1931 @@
         "revision": "code-artifacts-20261122"
       },
       "bodyFile": "modular-development.md"
+    },
+    {
+      "id": "library-fp-first-principles",
+      "title": "First Principles Reasoning",
+      "description": "Rebuild an unfamiliar problem from mechanisms, constraints and evidence. Challenge inherited assumptions, compare designs, select relevant reasoning methods, and test the decisive unknown.",
+      "tags": [
+        "reasoning",
+        "first-principles",
+        "mechanisms",
+        "assumptions",
+        "models",
+        "constraints"
+      ],
+      "aliases": [
+        "first principles reasoning",
+        "reason from first principles",
+        "rethink underlying assumptions",
+        "derive the mechanism",
+        "rebuild the problem"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-first-principles.md"
+    },
+    {
+      "id": "library-fp-bound-system",
+      "title": "Bound the System",
+      "description": "Define system boundaries, timescales, inputs, outputs, actors, and external conditions before reasoning about capacity, cost, failures, or end-to-end behavior.",
+      "tags": [
+        "first-principles",
+        "systems",
+        "boundaries",
+        "interfaces",
+        "scope"
+      ],
+      "aliases": [
+        "system boundary",
+        "end to end scope",
+        "what must be included",
+        "inside and outside",
+        "define the system"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-bound-system.md"
+    },
+    {
+      "id": "library-fp-decompose-first-principles",
+      "title": "Decompose from First Principles",
+      "description": "Rebuild an explanation or solution from components, mechanisms, definitions, observations, and actual constraints; question inherited assumptions without discarding valid empirical knowledge.",
+      "tags": [
+        "first-principles",
+        "decomposition",
+        "mechanisms",
+        "models",
+        "representation"
+      ],
+      "aliases": [
+        "reason from first principles",
+        "break down the problem",
+        "derive the mechanism",
+        "question core assumptions",
+        "rebuild the explanation"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-decompose-first-principles.md"
+    },
+    {
+      "id": "library-fp-track-assumptions",
+      "title": "Track Consequential Assumptions",
+      "description": "Identify which unverified premises drive a conclusion, distinguish assumptions from observations, and choose checks according to whether they could change the next action.",
+      "tags": [
+        "first-principles",
+        "assumptions",
+        "uncertainty",
+        "dependencies",
+        "decisions"
+      ],
+      "aliases": [
+        "check my assumptions",
+        "hidden assumptions",
+        "which premise matters",
+        "assumption ledger",
+        "what are we assuming"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-track-assumptions.md"
+    },
+    {
+      "id": "library-fp-reconcile-constraints",
+      "title": "Reconcile Constraints and Feasibility",
+      "description": "Determine whether requirements can coexist, distinguish hard limits from preferences, and isolate the smallest conflicting set in schedules, budgets, specifications, and resource plans.",
+      "tags": [
+        "first-principles",
+        "constraints",
+        "feasibility",
+        "optimization",
+        "requirements"
+      ],
+      "aliases": [
+        "conflicting requirements",
+        "check requirement feasibility",
+        "impossible constraints",
+        "fit within the budget",
+        "reconcile the limits"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-reconcile-constraints.md"
+    },
+    {
+      "id": "library-fp-check-dimensions",
+      "title": "Check Dimensions and Units",
+      "description": "Verify equations, conversions, rates, memory estimates, and resource calculations by tracking units, stock-versus-flow meaning, and dimensional consistency.",
+      "tags": [
+        "first-principles",
+        "units",
+        "dimensions",
+        "quantitative",
+        "calculation"
+      ],
+      "aliases": [
+        "dimensional analysis",
+        "check the units",
+        "convert the units",
+        "rate versus stock",
+        "memory calculation"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-check-dimensions.md"
+    },
+    {
+      "id": "library-fp-estimate-scale",
+      "title": "Estimate Scale and Dominant Terms",
+      "description": "Make Fermi estimates and order-of-magnitude bounds for cost, storage, runtime, demand, or capacity; refine the inputs that dominate the answer.",
+      "tags": [
+        "first-principles",
+        "estimation",
+        "fermi",
+        "bounds",
+        "scale"
+      ],
+      "aliases": [
+        "rough estimate",
+        "order of magnitude",
+        "Fermi estimate",
+        "back of envelope",
+        "dominant cost"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-estimate-scale.md"
+    },
+    {
+      "id": "library-fp-test-limits",
+      "title": "Test Limits and Boundary Cases",
+      "description": "Challenge formulas, algorithms, and explanations with zero, maximum, symmetric, degenerate, and extreme cases to expose contradictions and establish valid scope.",
+      "tags": [
+        "first-principles",
+        "limits",
+        "boundaries",
+        "sanity-checks",
+        "models"
+      ],
+      "aliases": [
+        "limiting cases",
+        "edge case reasoning",
+        "test extreme values",
+        "sanity check formula",
+        "boundary behavior"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-test-limits.md"
+    },
+    {
+      "id": "library-fp-balance-flows",
+      "title": "Balance Stocks, Flows, and Residuals",
+      "description": "Reconcile inventories, task counts, money, data, material, or energy by accounting for opening state, additions, removals, transformations, and closing state.",
+      "tags": [
+        "first-principles",
+        "accounting",
+        "conservation",
+        "stocks-flows",
+        "reconciliation"
+      ],
+      "aliases": [
+        "balance the totals",
+        "stock and flow",
+        "missing items",
+        "reconcile counts",
+        "conservation equation"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-balance-flows.md"
+    },
+    {
+      "id": "library-fp-trace-evidence",
+      "title": "Trace Evidence and Provenance",
+      "description": "Trace claims to original observations, identify copied reports and shared sources, and preserve dates, versions, scope, and transformations when evaluating evidence.",
+      "tags": [
+        "first-principles",
+        "evidence",
+        "provenance",
+        "sources",
+        "independence"
+      ],
+      "aliases": [
+        "trace the source",
+        "independent evidence",
+        "original observation",
+        "source provenance",
+        "copied reports"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-trace-evidence.md"
+    },
+    {
+      "id": "library-fp-test-entailment",
+      "title": "Test Whether Evidence Supports the Claim",
+      "description": "Check that sources, measurements, and tests support the exact conclusion, including quantifiers, population, version, conditions, and the difference between intermediate and final outcomes.",
+      "tags": [
+        "first-principles",
+        "evidence",
+        "claims",
+        "logic",
+        "scope"
+      ],
+      "aliases": [
+        "does this prove it",
+        "support the claim",
+        "citation check",
+        "evidence scope",
+        "claim entailment"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-test-entailment.md"
+    },
+    {
+      "id": "library-fp-compare-hypotheses",
+      "title": "Compare Competing Hypotheses",
+      "description": "Diagnose ambiguous observations by comparing rival explanations, their predictions, contradicting evidence, and the next observation that can separate them.",
+      "tags": [
+        "first-principles",
+        "hypotheses",
+        "diagnosis",
+        "evidence",
+        "abduction"
+      ],
+      "aliases": [
+        "competing explanations",
+        "alternative hypothesis",
+        "why did this happen",
+        "differential diagnosis",
+        "compare possible causes",
+        "compare competing hypotheses"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-compare-hypotheses.md"
+    },
+    {
+      "id": "library-fp-draw-causal-model",
+      "title": "Draw a Causal Model",
+      "description": "Represent mechanisms, confounders, mediators, selection effects, and temporal order with a causal graph before interpreting correlations or choosing adjustment variables.",
+      "tags": [
+        "first-principles",
+        "causality",
+        "graphs",
+        "confounding",
+        "selection"
+      ],
+      "aliases": [
+        "causal graph",
+        "cause and effect diagram",
+        "confounding variables",
+        "mediator versus collider",
+        "draw the mechanism"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-draw-causal-model.md"
+    },
+    {
+      "id": "library-fp-reason-interventions",
+      "title": "Reason About Interventions and Counterfactuals",
+      "description": "Specify what changing an action would cause, distinguish observation from intervention, and assess causal effects, counterfactual comparisons, and identification assumptions.",
+      "tags": [
+        "first-principles",
+        "causality",
+        "interventions",
+        "counterfactuals",
+        "estimands"
+      ],
+      "aliases": [
+        "what if we change",
+        "effect of intervention",
+        "counterfactual comparison",
+        "causal effect",
+        "observing versus changing"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-reason-interventions.md"
+    },
+    {
+      "id": "library-fp-design-discriminating-test",
+      "title": "Design a Discriminating Test",
+      "description": "Choose the next diagnostic observation or small experiment by how clearly it separates plausible explanations, with explicit predicted outcomes and practical action branches.",
+      "tags": [
+        "first-principles",
+        "diagnosis",
+        "experiments",
+        "hypotheses",
+        "information"
+      ],
+      "aliases": [
+        "next diagnostic test",
+        "separate the causes",
+        "discriminating experiment",
+        "which test first",
+        "test rival explanations"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-design-discriminating-test.md"
+    },
+    {
+      "id": "library-fp-define-measurement",
+      "title": "Define the Measurement",
+      "description": "Operationalize vague metrics such as success, speed, quality, reliability, and engagement with explicit units, events, collection rules, denominators, and error sources.",
+      "tags": [
+        "first-principles",
+        "measurement",
+        "metrics",
+        "operationalization",
+        "validity"
+      ],
+      "aliases": [
+        "define the metric",
+        "measure success",
+        "measurement validity",
+        "what does quality mean",
+        "operational definition"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-define-measurement.md"
+    },
+    {
+      "id": "library-fp-audit-selection",
+      "title": "Audit Sampling and Selection",
+      "description": "Audit selection bias in benchmarks, surveys, and reported success rates. Compare the target population with admitted, observed, completed, missing and excluded cases; retain crashes in the appropriate denominator.",
+      "tags": [
+        "first-principles",
+        "sampling",
+        "selection-bias",
+        "missing-data",
+        "generalization"
+      ],
+      "aliases": [
+        "survivorship bias",
+        "sample selection",
+        "missing data bias",
+        "who was excluded",
+        "representative sample",
+        "selection bias"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-audit-selection.md"
+    },
+    {
+      "id": "library-fp-update-beliefs",
+      "title": "Update Beliefs with Base Rates and Evidence",
+      "description": "Use prior plausibility, likelihood ratios, base rates, and evidence dependence to revise explanations without confusing a reliable test with certainty or inventing probabilities.",
+      "tags": [
+        "first-principles",
+        "bayesian",
+        "probability",
+        "base-rates",
+        "evidence"
+      ],
+      "aliases": [
+        "Bayesian update",
+        "base rate reasoning",
+        "update the probability",
+        "likelihood ratio",
+        "how much evidence"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-update-beliefs.md"
+    },
+    {
+      "id": "library-fp-propagate-uncertainty",
+      "title": "Propagate Uncertainty Through Calculations",
+      "description": "Carry uncertain inputs through formulas using intervals, sensitivity coefficients, covariance, or simulation; distinguish correlated error, standard uncertainty, and confidence bounds.",
+      "tags": [
+        "first-principles",
+        "uncertainty",
+        "covariance",
+        "error-propagation",
+        "simulation"
+      ],
+      "aliases": [
+        "error propagation",
+        "combine uncertainty",
+        "correlated errors",
+        "uncertainty budget",
+        "range of the result"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-propagate-uncertainty.md"
+    },
+    {
+      "id": "library-fp-design-experiment",
+      "title": "Design an Informative Experiment",
+      "description": "Plan controlled comparisons, randomization, blocking, replication, factorial variation, and stopping rules so experiments answer the intended causal or performance question.",
+      "tags": [
+        "first-principles",
+        "experiments",
+        "randomization",
+        "blocking",
+        "factorial"
+      ],
+      "aliases": [
+        "design an experiment",
+        "controlled comparison",
+        "randomized test",
+        "factorial design",
+        "replicate the experiment"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-design-experiment.md"
+    },
+    {
+      "id": "library-fp-compare-effects",
+      "title": "Compare Effects and Practical Magnitude",
+      "description": "Estimate differences, ratios, paired effects, and uncertainty; separate practical importance from statistical significance and avoid interpreting an inconclusive result as equivalence.",
+      "tags": [
+        "first-principles",
+        "statistics",
+        "effect-size",
+        "comparison",
+        "uncertainty"
+      ],
+      "aliases": [
+        "effect size",
+        "meaningful difference",
+        "compare the results",
+        "statistical versus practical",
+        "is this improvement real"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-compare-effects.md"
+    },
+    {
+      "id": "library-fp-expose-tradeoffs",
+      "title": "Expose Tradeoffs and Dominated Options",
+      "description": "Compare feasible alternatives across user objectives, remove dominated choices, and make cost, quality, speed, reliability, and flexibility tradeoffs explicit without arbitrary scoring.",
+      "tags": [
+        "first-principles",
+        "decisions",
+        "tradeoffs",
+        "pareto",
+        "preferences"
+      ],
+      "aliases": [
+        "compare tradeoffs",
+        "Pareto frontier",
+        "dominated options",
+        "which option is better",
+        "multiple objectives"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-expose-tradeoffs.md"
+    },
+    {
+      "id": "library-fp-test-sensitivity",
+      "title": "Test Sensitivity and Decision Thresholds",
+      "description": "Vary consequential assumptions, locate break-even points, and determine whether a conclusion survives plausible changes in cost, demand, timing, parameters, or model structure.",
+      "tags": [
+        "first-principles",
+        "sensitivity",
+        "thresholds",
+        "robustness",
+        "scenarios"
+      ],
+      "aliases": [
+        "sensitivity analysis",
+        "break even point",
+        "when does the decision change",
+        "robust conclusion",
+        "vary the assumptions"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-test-sensitivity.md"
+    },
+    {
+      "id": "library-fp-value-information",
+      "title": "Value Information Before Gathering It",
+      "description": "Choose whether to inspect, test, research, or act by estimating how new information could improve the decision relative to its cost, delay, and effect on available options.",
+      "tags": [
+        "first-principles",
+        "decisions",
+        "information-value",
+        "research",
+        "uncertainty"
+      ],
+      "aliases": [
+        "value of information",
+        "is another test worth it",
+        "research versus action",
+        "best next observation",
+        "cost of uncertainty"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-value-information.md"
+    },
+    {
+      "id": "library-fp-sequence-decisions",
+      "title": "Sequence Decisions to Learn and Preserve Options",
+      "description": "Order actions by dependencies, information gained, reversibility, deadlines, and option value; start useful independent work while resolving uncertainties that affect expensive commitments.",
+      "tags": [
+        "first-principles",
+        "decisions",
+        "sequencing",
+        "dependencies",
+        "reversibility"
+      ],
+      "aliases": [
+        "order the decisions",
+        "preserve options",
+        "reversible experiment",
+        "what should happen first",
+        "learning before commitment"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-sequence-decisions.md"
+    },
+    {
+      "id": "library-fp-prove-invariants",
+      "title": "Prove Invariants Across State Changes",
+      "description": "Verify that a required property survives every allowed transition using initial conditions, inductive preservation, explicit assumptions, and counterexample traces.",
+      "tags": [
+        "first-principles",
+        "invariants",
+        "logic",
+        "state-machines",
+        "verification"
+      ],
+      "aliases": [
+        "prove an invariant",
+        "always holds",
+        "state transition proof",
+        "inductive invariant",
+        "preserve the property"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-prove-invariants.md"
+    },
+    {
+      "id": "library-fp-find-counterexamples",
+      "title": "Find Minimal Counterexamples",
+      "description": "Challenge universal claims, algorithms, policies, and generalizations by constructing a small valid case that violates the stated property and reveals the missing condition.",
+      "tags": [
+        "first-principles",
+        "counterexamples",
+        "logic",
+        "falsification",
+        "edge-cases"
+      ],
+      "aliases": [
+        "find a counterexample",
+        "disprove the claim",
+        "smallest failing case",
+        "break the rule",
+        "test a generalization"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-find-counterexamples.md"
+    },
+    {
+      "id": "library-fp-validate-model",
+      "title": "Validate Models Against Their Intended Use",
+      "description": "Check implementation, assumptions, predictive behavior, held-out cases, calibration, and deployment conditions separately so a fitted model or passing example is not mistaken for demonstrated usefulness.",
+      "tags": [
+        "first-principles",
+        "validation",
+        "models",
+        "generalization",
+        "calibration"
+      ],
+      "aliases": [
+        "validate the model",
+        "model checking",
+        "held out evaluation",
+        "does the model generalize",
+        "prediction versus fit"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-validate-model.md"
+    },
+    {
+      "id": "library-fp-map-analogies",
+      "title": "Map Structural Analogies and Transfer",
+      "description": "Transfer a useful method across domains by mapping relationships, identifying mismatches, testing a prediction, and extracting a narrow reusable rule with explicit conditions.",
+      "tags": [
+        "first-principles",
+        "analogy",
+        "transfer",
+        "abstraction",
+        "generalization"
+      ],
+      "aliases": [
+        "reason by analogy",
+        "transfer the method",
+        "structural analogy",
+        "learn a reusable lesson",
+        "apply across domains"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-map-analogies.md"
+    },
+    {
+      "id": "library-fp-state-machine-invariants",
+      "title": "State Machine Invariants",
+      "description": "Derive legal states, transitions and invariants for tasks, workflows and persistent processes. Use for cancellation races, resume bugs, impossible states, admission checks and lifecycle correctness.",
+      "tags": [
+        "first-principles",
+        "software",
+        "state-machines",
+        "invariants",
+        "lifecycle"
+      ],
+      "aliases": [
+        "state machine invariants",
+        "task lifecycle correctness",
+        "legal state transitions",
+        "cancellation state races"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-state-machine-invariants.md"
+    },
+    {
+      "id": "library-fp-trace-interface-contracts",
+      "title": "Trace Interface Contracts",
+      "description": "Find where a value changes meaning across APIs, adapters, serialization, storage and UI. Trace units, identity, optional fields, encoding, schemas and error semantics to the first broken boundary.",
+      "tags": [
+        "first-principles",
+        "software",
+        "interfaces",
+        "schemas",
+        "debugging"
+      ],
+      "aliases": [
+        "trace interface contracts",
+        "boundary contract mismatch",
+        "serialization meaning change",
+        "adapter schema debugging"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-trace-interface-contracts.md"
+    },
+    {
+      "id": "library-fp-model-concurrent-interleavings",
+      "title": "Model Concurrent Interleavings",
+      "description": "Find race conditions by ordering reads, writes, waits and effects across workers. Use for lost updates, stale callbacks, duplicate execution, revision conflicts and cancellation interleavings.",
+      "tags": [
+        "first-principles",
+        "software",
+        "concurrency",
+        "race-conditions",
+        "ordering"
+      ],
+      "aliases": [
+        "model concurrent interleavings",
+        "lost update races",
+        "stale callback ordering",
+        "concurrent revision conflicts"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-model-concurrent-interleavings.md"
+    },
+    {
+      "id": "library-fp-recover-idempotent-effects",
+      "title": "Recover Idempotent Effects",
+      "description": "Recover an API request after a timeout or interrupted response. Separate an uncertain committed effect from transport failure, reconcile the original intent, and prevent duplicate effects when deciding whether to retry.",
+      "tags": [
+        "first-principles",
+        "software",
+        "idempotency",
+        "recovery",
+        "effects"
+      ],
+      "aliases": [
+        "recover idempotent effects",
+        "timeout effect recovery",
+        "safe request retries",
+        "uncertain mutation outcome",
+        "request timed out",
+        "duplicate effects"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-recover-idempotent-effects.md"
+    },
+    {
+      "id": "library-fp-reconcile-version-lineage",
+      "title": "Reconcile Version Lineage",
+      "description": "Establish which changes are actually present in a source or installed artifact. Compare version labels, ancestry, patch content, build inputs and hashes for rollbacks, integration and release diagnosis.",
+      "tags": [
+        "first-principles",
+        "software",
+        "provenance",
+        "versions",
+        "integration"
+      ],
+      "aliases": [
+        "reconcile version lineage",
+        "unexpected source rollback",
+        "release ancestry comparison",
+        "installed artifact provenance",
+        "source ancestry"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-reconcile-version-lineage.md"
+    },
+    {
+      "id": "library-fp-localize-regressions",
+      "title": "Localize Regressions",
+      "description": "Reduce a reproducible regression to the smallest supported change using stable predicates, good/bad boundaries and controlled comparisons. Use for bisecting performance, behavior and integration failures.",
+      "tags": [
+        "first-principles",
+        "software",
+        "regressions",
+        "debugging",
+        "experiments"
+      ],
+      "aliases": [
+        "localize software regressions",
+        "bisect behavioral failure",
+        "find first bad revision",
+        "reduce regression cause"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-localize-regressions.md"
+    },
+    {
+      "id": "library-fp-test-semantic-properties",
+      "title": "Test Semantic Properties",
+      "description": "Derive tests from behavioral laws instead of copying implementation. Use invariants, round trips, metamorphic relations, boundary cases and shrinking to expose meaningful counterexamples.",
+      "tags": [
+        "first-principles",
+        "software",
+        "testing",
+        "properties",
+        "verification"
+      ],
+      "aliases": [
+        "test semantic properties",
+        "metamorphic testing relations",
+        "behavioral invariant tests",
+        "shrink failing examples"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-test-semantic-properties.md"
+    },
+    {
+      "id": "library-fp-calculate-memory-liveness",
+      "title": "Calculate Memory Liveness",
+      "description": "Estimate actual peak memory from allocations and overlapping lifetimes. Use for RAM or VRAM requirements, model loading, temporary copies, fragmentation, cache growth and out-of-memory diagnosis.",
+      "tags": [
+        "first-principles",
+        "computing",
+        "memory",
+        "capacity",
+        "profiling"
+      ],
+      "aliases": [
+        "calculate memory liveness",
+        "peak memory requirements",
+        "model loading allocations",
+        "VRAM allocation budget"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-calculate-memory-liveness.md"
+    },
+    {
+      "id": "library-fp-profile-compute-data-movement",
+      "title": "Profile Compute and Data Movement",
+      "description": "Identify whether execution is limited by arithmetic, memory traffic, transfers or scheduling. Use roofline bounds, measured bandwidth and focused profiling to choose effective performance changes.",
+      "tags": [
+        "first-principles",
+        "computing",
+        "performance",
+        "roofline",
+        "bandwidth"
+      ],
+      "aliases": [
+        "profile compute data movement",
+        "memory bandwidth bottleneck",
+        "arithmetic intensity analysis",
+        "compute bound diagnosis"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-profile-compute-data-movement.md"
+    },
+    {
+      "id": "library-fp-analyze-critical-paths",
+      "title": "Analyze Execution Dependencies",
+      "description": "Analyze execution dependencies, overlap, queueing, startup and latency to locate the longest necessary path. Derive speedup bounds and distinguish usable completion from early screen display.",
+      "tags": [
+        "first-principles",
+        "computing",
+        "dependencies",
+        "latency",
+        "parallelism"
+      ],
+      "aliases": [
+        "analyze execution critical paths",
+        "latency critical path",
+        "execution dependency timing",
+        "startup dependency overlap"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-analyze-critical-paths.md"
+    },
+    {
+      "id": "library-fp-bound-queueing-and-backpressure",
+      "title": "Bound Queueing and Backpressure",
+      "description": "Diagnose growing queues, overload and retry amplification from arrival rates, service demand and deadlines. Derive stable capacity and backpressure behavior without assuming more concurrency always helps.",
+      "tags": [
+        "first-principles",
+        "computing",
+        "queueing",
+        "capacity",
+        "backpressure"
+      ],
+      "aliases": [
+        "bound queueing backpressure",
+        "growing request backlog",
+        "retry overload amplification",
+        "service capacity stability"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-bound-queueing-and-backpressure.md"
+    },
+    {
+      "id": "library-fp-reason-cache-validity",
+      "title": "Reason About Cache Validity",
+      "description": "Derive when cached results remain valid from semantic inputs and dependencies. Use for stale state, missing invalidation, incorrect cache keys, concurrent refresh and expensive recomputation.",
+      "tags": [
+        "first-principles",
+        "computing",
+        "caching",
+        "identity",
+        "invalidation"
+      ],
+      "aliases": [
+        "reason cache validity",
+        "semantic cache identity",
+        "stale result invalidation",
+        "cache dependency versions"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-reason-cache-validity.md"
+    },
+    {
+      "id": "library-fp-analyze-complexity-and-scale",
+      "title": "Analyze Computational Complexity and Scale",
+      "description": "Derive how time, memory and work grow with actual input dimensions. Use operation counts, empirical scaling, crossover analysis and worst-case structure to forecast computational feasibility.",
+      "tags": [
+        "first-principles",
+        "computing",
+        "algorithms",
+        "complexity",
+        "scaling"
+      ],
+      "aliases": [
+        "analyze computational scaling",
+        "algorithm growth complexity",
+        "input size cost forecast",
+        "computational crossover analysis"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-analyze-complexity-and-scale.md"
+    },
+    {
+      "id": "library-fp-benchmark-comparable-work",
+      "title": "Benchmark Comparable Work",
+      "description": "Design fair performance comparisons with matched tasks, quality, artifacts, timing boundaries and hardware state. Separate cold start, warm throughput, latency, resource use and output correctness.",
+      "tags": [
+        "first-principles",
+        "computing",
+        "benchmarking",
+        "measurement",
+        "performance"
+      ],
+      "aliases": [
+        "benchmark comparable work",
+        "fair backend comparison",
+        "matched performance measurement",
+        "cold warm benchmark"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-benchmark-comparable-work.md"
+    },
+    {
+      "id": "library-fp-isolate-model-runtime-failures",
+      "title": "Isolate Model and Runtime Failures",
+      "description": "Separate model limitations from conversion, precision, tokenizer, preprocessing and kernel defects. Use matched-runtime comparisons, layer traces and controlled ablations for inference diagnosis.",
+      "tags": [
+        "first-principles",
+        "machine-learning",
+        "inference",
+        "debugging",
+        "ablation"
+      ],
+      "aliases": [
+        "isolate model runtime failures",
+        "inference backend divergence",
+        "model conversion diagnosis",
+        "controlled inference ablation"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-isolate-model-runtime-failures.md"
+    },
+    {
+      "id": "library-fp-analyze-quantization-error",
+      "title": "Analyze Quantization Error",
+      "description": "Trace how clipping, rounding, grouping, calibration and accumulation affect model behavior. Use tensor-level error, activation sensitivity and selective precision experiments to diagnose quantized inference.",
+      "tags": [
+        "first-principles",
+        "machine-learning",
+        "quantization",
+        "precision",
+        "numerics"
+      ],
+      "aliases": [
+        "analyze quantization error",
+        "low bit model degradation",
+        "activation sensitive quantization",
+        "selective precision experiment"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-analyze-quantization-error.md"
+    },
+    {
+      "id": "library-fp-budget-context-and-kv-cache",
+      "title": "Budget Context and KV Cache",
+      "description": "Calculate context memory from actual attention architecture, cache dtype and concurrency. Separate configured context length, allocated capacity, latency and demonstrated long-context accuracy.",
+      "tags": [
+        "first-principles",
+        "machine-learning",
+        "context",
+        "kv-cache",
+        "memory"
+      ],
+      "aliases": [
+        "budget context KV cache",
+        "long context memory calculation",
+        "attention cache capacity",
+        "context extension feasibility"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-budget-context-and-kv-cache.md"
+    },
+    {
+      "id": "library-fp-diagnose-training-signals",
+      "title": "Diagnose Training Signals",
+      "description": "Trace examples, labels, losses, gradients and parameter updates to determine what training actually learns. Use for falling-loss failures, frozen parameters, masking defects and objective mismatch.",
+      "tags": [
+        "first-principles",
+        "machine-learning",
+        "training",
+        "gradients",
+        "objectives"
+      ],
+      "aliases": [
+        "diagnose training signals",
+        "falling loss no improvement",
+        "gradient update debugging",
+        "training objective mismatch"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-diagnose-training-signals.md"
+    },
+    {
+      "id": "library-fp-detect-evaluation-leakage",
+      "title": "Detect Evaluation Leakage",
+      "description": "Identify hidden information paths that inflate measured model performance. Inspect prediction-time availability, grouped duplicates, temporal splits, preprocessing fit and test-driven tuning.",
+      "tags": [
+        "first-principles",
+        "machine-learning",
+        "evaluation",
+        "leakage",
+        "data"
+      ],
+      "aliases": [
+        "detect evaluation leakage",
+        "train test contamination",
+        "prediction time information",
+        "grouped temporal splitting"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-detect-evaluation-leakage.md"
+    },
+    {
+      "id": "library-fp-test-distribution-transfer",
+      "title": "Test Distribution Transfer",
+      "description": "Assess whether learned behavior transfers when populations, sensors, timing, labels or mechanisms change. Diagnose distribution shift with subgroup tests, controlled comparisons and support checks.",
+      "tags": [
+        "first-principles",
+        "machine-learning",
+        "generalization",
+        "distribution-shift",
+        "evaluation"
+      ],
+      "aliases": [
+        "test distribution transfer",
+        "deployment distribution shift",
+        "cross domain generalization",
+        "out of distribution evaluation"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-test-distribution-transfer.md"
+    },
+    {
+      "id": "library-fp-inspect-multimodal-alignment",
+      "title": "Inspect Multimodal Alignment",
+      "description": "Trace images, audio or video through preprocessing, patches, projectors, templates and output coordinates. Use for vision failures, missing media, token alignment and incorrect spatial interpretation.",
+      "tags": [
+        "first-principles",
+        "machine-learning",
+        "multimodal",
+        "vision",
+        "alignment"
+      ],
+      "aliases": [
+        "inspect multimodal alignment",
+        "vision preprocessing mismatch",
+        "image token alignment",
+        "multimodal projector diagnosis"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-inspect-multimodal-alignment.md"
+    },
+    {
+      "id": "library-fp-model-conservation-networks",
+      "title": "Model Conservation Networks",
+      "description": "Build balance equations for material, energy, charge or inventory across connected compartments. Use control volumes, accumulation and flow accounting to diagnose missing quantities and impossible models.",
+      "tags": [
+        "first-principles",
+        "engineering",
+        "conservation",
+        "systems",
+        "balances"
+      ],
+      "aliases": [
+        "model conservation networks",
+        "control volume balance",
+        "flow accumulation accounting",
+        "material energy balance"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-model-conservation-networks.md"
+    },
+    {
+      "id": "library-fp-balance-thermal-power",
+      "title": "Balance Thermal Power",
+      "description": "Derive temperature behavior from heat storage, power input and transport paths. Use thermal capacity, conductance, steady state and time constants to reason about cooling, heating and thermal limits.",
+      "tags": [
+        "first-principles",
+        "engineering",
+        "thermal",
+        "energy",
+        "dynamics"
+      ],
+      "aliases": [
+        "balance thermal power",
+        "heat storage cooling model",
+        "thermal time constant",
+        "temperature power budget"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-balance-thermal-power.md"
+    },
+    {
+      "id": "library-fp-reason-force-and-constraint",
+      "title": "Reason About Forces and Constraints",
+      "description": "Derive mechanical behavior from a defined body, external forces and constraints. Use free-body models, equilibrium, acceleration, friction limits and moment balances to resolve motion problems.",
+      "tags": [
+        "first-principles",
+        "engineering",
+        "mechanics",
+        "forces",
+        "constraints"
+      ],
+      "aliases": [
+        "reason forces constraints",
+        "free body model",
+        "friction equilibrium analysis",
+        "mechanical force balance"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-reason-force-and-constraint.md"
+    },
+    {
+      "id": "library-fp-select-physical-regimes",
+      "title": "Select Physical Regimes",
+      "description": "Choose valid physical approximations and scaling rules from competing effects and dimensionless ratios. Use for prototype transfer, flow regimes, timescale separation and model applicability.",
+      "tags": [
+        "first-principles",
+        "engineering",
+        "scaling",
+        "dimensionless",
+        "regimes"
+      ],
+      "aliases": [
+        "select physical regimes",
+        "prototype similarity scaling",
+        "dimensionless regime comparison",
+        "physical approximation validity"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-select-physical-regimes.md"
+    },
+    {
+      "id": "library-fp-analyze-feedback-stability",
+      "title": "Analyze Feedback Stability",
+      "description": "Analyze control feedback loops for stability, gain, delay and saturation. Derive closed-loop dynamics, identify when corrective action becomes unstable, and test the assumptions behind a stable operating range.",
+      "tags": [
+        "first-principles",
+        "engineering",
+        "control",
+        "feedback",
+        "stability"
+      ],
+      "aliases": [
+        "analyze feedback stability",
+        "closed loop oscillation",
+        "controller gain stability",
+        "feedback delay dynamics"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-analyze-feedback-stability.md"
+    },
+    {
+      "id": "library-fp-assess-system-reliability",
+      "title": "Assess System Reliability",
+      "description": "Derive system failure from component dependencies, redundancy and common causes. Use series/parallel models, mission intervals and repair assumptions to assess reliability claims and failure exposure.",
+      "tags": [
+        "first-principles",
+        "engineering",
+        "reliability",
+        "redundancy",
+        "dependencies"
+      ],
+      "aliases": [
+        "assess system reliability",
+        "common cause redundancy",
+        "series parallel failure",
+        "reliability dependency model"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-assess-system-reliability.md"
+    },
+    {
+      "id": "library-fp-verify-simulation-convergence",
+      "title": "Verify Simulation Convergence",
+      "description": "Separate solver convergence, discretization error, implementation correctness and physical validation. Use mesh/time refinement, conservation and independent reference cases to assess simulation evidence.",
+      "tags": [
+        "first-principles",
+        "engineering",
+        "simulation",
+        "numerics",
+        "verification"
+      ],
+      "aliases": [
+        "verify simulation convergence",
+        "mesh time refinement",
+        "numerical discretization error",
+        "solver validation evidence"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-verify-simulation-convergence.md"
+    },
+    {
+      "id": "library-fp-unit-economics",
+      "title": "Derive Unit Economics",
+      "description": "Derive contribution, break-even volume and scale limits from a business unit's revenue and incremental costs. Use for profitability, customer economics, service margins and cost-to-serve analysis.",
+      "tags": [
+        "first-principles",
+        "economics",
+        "business",
+        "profitability",
+        "costs"
+      ],
+      "aliases": [
+        "unit economics",
+        "contribution margin",
+        "break even volume",
+        "cost to serve"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-unit-economics.md"
+    },
+    {
+      "id": "library-fp-cash-timing",
+      "title": "Reconcile Cash Timing",
+      "description": "Trace collections, payments, working capital and financing to explain how profitable activity can consume cash. Use for runway, liquidity, cash conversion and profit-to-cash reconciliation.",
+      "tags": [
+        "first-principles",
+        "economics",
+        "cash-flow",
+        "accounting",
+        "business"
+      ],
+      "aliases": [
+        "cash timing",
+        "cash conversion",
+        "profit versus cash",
+        "working capital",
+        "cash runway"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-cash-timing.md"
+    },
+    {
+      "id": "library-fp-pricing-response",
+      "title": "Derive Pricing Response Thresholds",
+      "description": "Calculate how a price cut or increase changes contribution and required sales volume. Derive the break-even quantity with variable costs, demand response, customer mix and capacity steps made explicit.",
+      "tags": [
+        "first-principles",
+        "economics",
+        "pricing",
+        "elasticity",
+        "experiments"
+      ],
+      "aliases": [
+        "pricing response",
+        "discount break even",
+        "price elasticity",
+        "pricing experiment",
+        "volume threshold",
+        "price cut",
+        "required sales volume"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-pricing-response.md"
+    },
+    {
+      "id": "library-fp-market-substitution",
+      "title": "Map Market Substitution",
+      "description": "Identify competition through customer alternatives, switching costs and supply responses. Use for market boundaries, competitive analysis, substitutes, positioning and entry barriers.",
+      "tags": [
+        "first-principles",
+        "economics",
+        "markets",
+        "competition",
+        "strategy"
+      ],
+      "aliases": [
+        "market substitution",
+        "competitive alternatives",
+        "market boundaries",
+        "switching costs",
+        "entry barriers"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-market-substitution.md"
+    },
+    {
+      "id": "library-fp-make-buy-contract",
+      "title": "Compare Making, Buying and Contracting",
+      "description": "Compare internal development, procurement and partnership using lifecycle cost, adaptability, asset specificity and exit constraints. Use for build-versus-buy, outsourcing and vendor dependence.",
+      "tags": [
+        "first-principles",
+        "economics",
+        "organizations",
+        "procurement",
+        "strategy"
+      ],
+      "aliases": [
+        "build versus buy",
+        "make or buy",
+        "outsourcing decision",
+        "vendor dependence",
+        "transaction costs"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-make-buy-contract.md"
+    },
+    {
+      "id": "library-fp-commons-externalities",
+      "title": "Reason About Commons and Externalities",
+      "description": "Trace shared-resource use, spillovers and institutional rules from benefits, costs and replenishment. Use for congestion, common resources, externalities, quotas and collective-action design.",
+      "tags": [
+        "first-principles",
+        "economics",
+        "institutions",
+        "resources",
+        "externalities"
+      ],
+      "aliases": [
+        "shared resource",
+        "common pool resource",
+        "external costs",
+        "collective action",
+        "congestion rules"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-commons-externalities.md"
+    },
+    {
+      "id": "library-fp-incentive-design",
+      "title": "Derive Incentive Responses",
+      "description": "Map actions, observations and rewards to predict effort allocation and unintended behavior. Use for contracts, compensation, agent objectives, principal-agent problems and incentive compatibility.",
+      "tags": [
+        "first-principles",
+        "organizations",
+        "incentives",
+        "economics",
+        "agents"
+      ],
+      "aliases": [
+        "incentive design",
+        "principal agent problem",
+        "reward design",
+        "effort allocation",
+        "incentive compatibility"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-incentive-design.md"
+    },
+    {
+      "id": "library-fp-metric-gaming",
+      "title": "Test Metrics Against Adaptive Behavior",
+      "description": "Identify ways a target score can improve without the intended outcome. Use for KPI design, benchmark gaming, reward proxies, denominator shifts and measurement after incentives change.",
+      "tags": [
+        "first-principles",
+        "measurement",
+        "organizations",
+        "incentives",
+        "evaluation"
+      ],
+      "aliases": [
+        "metric gaming",
+        "Goodhart law",
+        "KPI design",
+        "benchmark gaming",
+        "proxy objective"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-metric-gaming.md"
+    },
+    {
+      "id": "library-fp-coordination-rights",
+      "title": "Locate Coordination Failures",
+      "description": "Trace information, authority, execution and feedback across handoffs. Use for decision rights, organizational bottlenecks, repeated escalation, unclear ownership and coordination failure.",
+      "tags": [
+        "first-principles",
+        "organizations",
+        "coordination",
+        "operations",
+        "decisions"
+      ],
+      "aliases": [
+        "decision rights",
+        "coordination failure",
+        "unclear ownership",
+        "organizational bottleneck",
+        "handoff problems"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-coordination-rights.md"
+    },
+    {
+      "id": "library-fp-adoption-friction",
+      "title": "Explain Adoption Friction",
+      "description": "Identify the benefit, effort, uncertainty and complementary changes behind adoption behavior. Use for product adoption, organizational change, switching friction, onboarding and resistance to change.",
+      "tags": [
+        "first-principles",
+        "organizations",
+        "product",
+        "adoption",
+        "behavior"
+      ],
+      "aliases": [
+        "adoption friction",
+        "resistance to change",
+        "switching friction",
+        "product adoption",
+        "change management"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-adoption-friction.md"
+    },
+    {
+      "id": "library-fp-negotiation-trades",
+      "title": "Construct Negotiation Trades",
+      "description": "Build concrete agreement packages from alternatives, constraints and different preferences across issues. Use for negotiation preparation, bargaining ranges, BATNA analysis and multi-issue trades.",
+      "tags": [
+        "first-principles",
+        "economics",
+        "negotiation",
+        "decisions",
+        "strategy"
+      ],
+      "aliases": [
+        "negotiation trades",
+        "bargaining range",
+        "BATNA analysis",
+        "agreement packages",
+        "multi issue negotiation"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-negotiation-trades.md"
+    },
+    {
+      "id": "library-fp-rules-in-use",
+      "title": "Identify Rules in Use",
+      "description": "Distinguish formal policy from actual allocation, enforcement, exceptions and revision practices. Use for institutional analysis, informal governance, rules in use and organizational behavior.",
+      "tags": [
+        "first-principles",
+        "institutions",
+        "organizations",
+        "governance",
+        "behavior"
+      ],
+      "aliases": [
+        "institutional working rules",
+        "informal governance",
+        "institutional analysis",
+        "policy versus practice",
+        "enforcement mechanism"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-rules-in-use.md"
+    },
+    {
+      "id": "library-fp-intelligence-requirements",
+      "title": "Frame Intelligence Requirements",
+      "description": "Turn a broad research topic into decision-relevant questions and observable collection priorities. Use for intelligence requirements, collection plans, indicators, research scope and decision support.",
+      "tags": [
+        "first-principles",
+        "intelligence",
+        "research",
+        "evidence",
+        "decisions"
+      ],
+      "aliases": [
+        "intelligence requirements",
+        "collection priorities",
+        "decision relevant research",
+        "research requirement",
+        "warning indicators"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-intelligence-requirements.md"
+    },
+    {
+      "id": "library-fp-competing-accounts",
+      "title": "Compare Competing Accounts",
+      "description": "Compare plausible explanations against discriminating evidence without counting repeated claims or turning ordinal scores into probabilities. Use for competing hypotheses, contested narratives and alternative explanations.",
+      "tags": [
+        "first-principles",
+        "intelligence",
+        "research",
+        "hypotheses",
+        "evidence"
+      ],
+      "aliases": [
+        "intelligence competing hypotheses",
+        "alternative explanations",
+        "competing accounts",
+        "contested narrative",
+        "diagnostic evidence"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-competing-accounts.md"
+    },
+    {
+      "id": "library-fp-deception-analysis",
+      "title": "Test Adversarial Accounts",
+      "description": "Examine selective disclosure, concealment and fabrication using actor incentives and independently observable constraints. Use for deception analysis, strategic claims, manipulated evidence and adversarial narratives.",
+      "tags": [
+        "first-principles",
+        "intelligence",
+        "evidence",
+        "adversarial",
+        "research"
+      ],
+      "aliases": [
+        "deception analysis",
+        "strategic disclosure",
+        "adversarial account",
+        "manipulated evidence",
+        "selective disclosure"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-deception-analysis.md"
+    },
+    {
+      "id": "library-fp-historical-causation",
+      "title": "Reconstruct Historical Causes",
+      "description": "Explain past events through chronology, contemporary information, mechanisms and bounded case comparison. Use for historical causation, archival evidence, hindsight bias and comparative historical analysis.",
+      "tags": [
+        "first-principles",
+        "history",
+        "research",
+        "causality",
+        "evidence"
+      ],
+      "aliases": [
+        "historical causation",
+        "historical comparison",
+        "archival evidence",
+        "hindsight bias",
+        "contemporary context"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-historical-causation.md"
+    },
+    {
+      "id": "library-fp-user-task-model",
+      "title": "Derive the User's Task Model",
+      "description": "Translate a feature request into the user's desired state change, required information and actions. Use for task analysis, user needs, product requirements, workflows and outcome-based design.",
+      "tags": [
+        "first-principles",
+        "product",
+        "design",
+        "user-needs",
+        "workflows"
+      ],
+      "aliases": [
+        "user task model",
+        "task analysis",
+        "user needs",
+        "product requirements",
+        "desired outcome"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-user-task-model.md"
+    },
+    {
+      "id": "library-fp-interaction-state",
+      "title": "Model Observable Interaction States",
+      "description": "Map user actions to visible states, feedback and recovery paths. Use for interface state machines, ambiguous submissions, error recovery, accessible feedback and end-to-end interaction design.",
+      "tags": [
+        "first-principles",
+        "product",
+        "design",
+        "state-machines",
+        "accessibility"
+      ],
+      "aliases": [
+        "interaction state",
+        "interface state machine",
+        "error recovery",
+        "submission feedback",
+        "observable status"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-interaction-state.md"
+    },
+    {
+      "id": "library-fp-information-findability",
+      "title": "Organize Information for Retrieval",
+      "description": "Build labels, categories and search routes from concrete retrieval tasks. Use for information architecture, navigation, taxonomies, skill discovery, terminology mismatch and findability.",
+      "tags": [
+        "first-principles",
+        "design",
+        "information",
+        "retrieval",
+        "navigation"
+      ],
+      "aliases": [
+        "information findability",
+        "information architecture",
+        "navigation labels",
+        "retrieval tasks",
+        "taxonomy design"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-information-findability.md"
+    },
+    {
+      "id": "library-fp-qualitative-needs",
+      "title": "Derive Needs from Qualitative Evidence",
+      "description": "Separate observations, interpretations and proposed changes while comparing interviews and task sessions. Use for qualitative research, user interviews, thematic analysis, unmet needs and contradictory cases.",
+      "tags": [
+        "first-principles",
+        "research",
+        "qualitative",
+        "product",
+        "evidence"
+      ],
+      "aliases": [
+        "qualitative evidence",
+        "user interviews",
+        "thematic analysis",
+        "unmet needs",
+        "contradictory cases"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-qualitative-needs.md"
+    },
+    {
+      "id": "library-fp-concept-teaching",
+      "title": "Teach Through Conceptual Distinctions",
+      "description": "Teach a concept by helping a learner distinguish valid examples from near misses, explain the underlying rule, and transfer it to a new problem. Check understanding through a fresh application.",
+      "tags": [
+        "first-principles",
+        "learning",
+        "teaching",
+        "explanation",
+        "concepts"
+      ],
+      "aliases": [
+        "concept teaching",
+        "contrasting examples",
+        "misconception diagnosis",
+        "worked example learning",
+        "transfer check",
+        "distinguish a concept",
+        "concept transfer"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-concept-teaching.md"
+    },
+    {
+      "id": "library-fp-policy-mechanism",
+      "title": "Derive Policy Mechanisms and Delivery",
+      "description": "Expand an intervention into resources, delivery, behavior and outcomes, then test implementation dependencies. Use for theory of change, program evaluation, policy mechanisms and implementation feasibility.",
+      "tags": [
+        "first-principles",
+        "policy",
+        "causality",
+        "implementation",
+        "evaluation"
+      ],
+      "aliases": [
+        "policy mechanism",
+        "theory of change",
+        "program evaluation",
+        "implementation feasibility",
+        "delivery chain"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-policy-mechanism.md"
+    },
+    {
+      "id": "library-fp-policy-incidence",
+      "title": "Trace Policy Incidence and Responses",
+      "description": "Trace how taxes, fees, subsidies or rules shift costs, prices, behavior and benefits across groups. Use for policy incidence, economic burden, distributional effects and behavioral response.",
+      "tags": [
+        "first-principles",
+        "economics",
+        "policy",
+        "distribution",
+        "incentives"
+      ],
+      "aliases": [
+        "policy incidence",
+        "economic burden",
+        "tax incidence",
+        "distributional effects",
+        "behavioral response"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-policy-incidence.md"
+    },
+    {
+      "id": "library-fp-legal-rule-application",
+      "title": "Apply Legal Rules to Supported Facts",
+      "description": "Map current controlling authority to elements, exceptions and case facts. Use for legal analysis, jurisdiction, rule application, contract interpretation and distinguishing law from policy.",
+      "tags": [
+        "first-principles",
+        "law",
+        "rules",
+        "evidence",
+        "interpretation"
+      ],
+      "aliases": [
+        "legal rule application",
+        "jurisdiction analysis",
+        "contract interpretation",
+        "elements and facts",
+        "law versus policy"
+      ],
+      "source": {
+        "kind": "first-party",
+        "revision": "first-principles-20261127"
+      },
+      "bodyFile": "fp-legal-rule-application.md"
     }
   ]
 }
