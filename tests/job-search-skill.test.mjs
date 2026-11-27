@@ -115,6 +115,7 @@ test('explicit operational workflow commands select Job Search without selecting
   'Please perform the job search workflow.',
   'Could you conduct my remote job search?',
   'Begin the remote job search.',
+  'Restart my ongoing remote job search now and work end to end until 6:00 a.m. EST.',
    'Continue my real overnight remote job search and submit genuine applications until 6 AM EST.',
  ]) {
   assert.equal(wantsJobSearchExecutionSkill(input),true,input);

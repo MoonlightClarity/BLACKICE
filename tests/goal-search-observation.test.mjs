@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createFileSearch } from '../lib/workspace-file-search.mjs';
 import { createWorkspaceToolHandler } from '../lib/workspace-tools.mjs';
 import {ConversationGoals} from '../lib/conversation-goals.mjs';
-import {observeGoalToolOutcome,inFlightEffectSignature,assessGoalProgress,detectUnknownEffectReplay} from '../lib/goal-recovery-policy.mjs';
+import {observeGoalToolOutcome,inFlightEffectSignature,assessGoalProgress,detectUnknownEffectReplay,reviewJobSearchScreening} from '../lib/goal-recovery-policy.mjs';
 
 const session=randomUUID(), cursor=(n,s=session)=>'fs1:'+s+':'+String(n).padStart(8,'0')+'-0000-0000-0000-000000000000';
 const search=(input)=>({name:'relay_find_files',arguments:{query:'resume',...(input?{cursor:input}:{})}});
@@ -44,6 +44,19 @@ test('named filename discovery is passive on success, failure and in-flight dete
  assert.equal(detectUnknownEffectReplay([unknown],effect).code,'GOAL_EFFECT_UNRESOLVED');
  assert.equal(detectUnknownEffectReplay([unknown],call),null);
 });
+test('a delivered unknown login receipt is saved as an unresolved external effect', () => {
+ const args={action:'authenticate',requestId:'original',credentialId:'fixture-credential',revision:1,origin:'https://example.test',intent:'login',tabId:'tab',submitRef:'submit'};
+ const call={name:'relay_credentials',arguments:args};
+ const observation=receipt=>observeGoalToolOutcome(call,{success:true,contentItems:[{type:'inputText',text:JSON.stringify(receipt)}]});
+ const payload={requestId:args.requestId,credentialId:args.credentialId,revision:1,origin:args.origin,authenticated:false,submissionRequested:null,outcome:'unknown'};
+ const row=observation(payload);
+ assert.equal(row.kind,'uncertain_external_effect');
+ assert.equal(row.code,'BROWSER_CREDENTIAL_AUTH_UNCONFIRMED');
+ assert.equal(detectUnknownEffectReplay([row],{...call,arguments:{...args,requestId:'changed'}})?.code,'GOAL_EFFECT_UNRESOLVED');
+ assert.equal(observation({...payload,requestId:'different'}).kind,'tool_executed_unverified');
+ assert.equal(observation({...payload,submissionRequested:true,outcome:'dispatched'}).kind,'tool_executed_unverified');
+});
+
 test('nine advancing cursor turns settle and dispatch beyond seven without claiming completion; user turn budget still stops',async()=>{
  const f=fixture();await f.goals.save('root',{...f.goals.raw('root'),maxTurns:9});
  for(let n=1;n<=9;n++){
@@ -313,4 +326,72 @@ test('an explicit no-submission ending earns one same-turn correction',async()=>
    assert.equal(result?.continue,true);
    assert.equal(f.goals.beforeCheckpoint(run,{output:'No new application submitted.'}),null);
  }});
+});
+
+test('job-search Goals correct unsupported screening at a late checkpoint even after another role was submitted', async () => {
+ const f=fixture();
+ const objective='Restart my ongoing remote job search now and work end to end until 6:00 a.m. EST.';
+ await f.goals.save('root',{...f.goals.raw('root'),objective});
+ const output='Constellation’s official careers page confirms the remote opening. The form also requires a citizenship answer not supported by the résumé, so I’ve asked for that fact and will keep screening other leads while it’s pending.';
+ await f.turn(search(null),receipt(cursor(1),100),{beforeSettle:run=>{
+  run.startedAt=new Date(Date.now()-180000).toISOString();
+  f.goals.observeConfirmedCommit(run,{adapter:'relay_browser',effect:'commit',effectKey:'already-confirmed-separate-role',operationId:'native:job'});
+  assert.match(f.goals.instructions(run),/A résumé is not required to establish citizenship/);
+  assert.match(f.goals.instructions(run),/apply the applicant’s explicit default/i);
+  assert.match(f.goals.instructions(run),/ignore numerical years-of-experience requirements completely/i);
+  assert.match(f.goals.instructions(run),/consider adjacent roles for application/i);
+  assert.match(f.goals.instructions(run),/silence .* insufficient grounds to screen out a role or stop work/i);
+  const corrective=f.goals.beforeCheckpoint(run,{output});
+  assert.equal(corrective?.continue,true);
+  assert.match(corrective.prompt,/resume-used-for-eligibility/);
+  assert.equal(f.goals.beforeCheckpoint(run,{output}),null,'One correction per turn');
+  run.output=output;
+ }});
+ const goal=f.goals.raw('root');
+ assert.equal(goal.lastSettlementAssessment.applicationScreeningReview,'resume-used-for-eligibility');
+ await f.goals.dispatch('root');
+ assert.match(f.dispatched[0].message,/Review the last role decision/);
+ assert.doesNotMatch(f.dispatched[0].message,/Do not privilege the most advanced branch/);
+});
+
+test('late job-search checkpoints execute a saved actionable form step without replaying uncertain effects', async () => {
+ for(const variant of ['actionable','blocked','uncertain','stale-report']){
+  const f=fixture();
+  await f.goals.save('root',{...f.goals.raw('root'),objective:'Resume my ongoing remote job search.'});
+  const op={name:'relay_browser',arguments:{action:'snapshot',tabId:'tab'}};
+  await f.turn(op,{success:true,contentItems:[]},{beforeSettle:run=>{
+   run.startedAt=new Date(Date.now()-180000).toISOString();
+   f.goals.observeConfirmedCommit(run,{adapter:'relay_browser',effect:'commit',effectKey:'fixture-other-role',operationId:'native:fixture'});
+   run.goalProgress={runId:run.id,at:new Date(Date.now()+(variant==='stale-report'?-10000:100)).toISOString(),summary:'The application is still open.',evidence:'Browser observation',
+    nextAction:'Identify the current password control and continue the application form.',...(variant==='blocked'?{blockedBranch:'The employer has paused intake.'}:{})};
+   if(variant==='uncertain') run.goalEvidence.push({tool:'relay_credentials',action:'authenticate',kind:'uncertain_external_effect',success:false});
+   const correction=f.goals.beforeCheckpoint(run,{output:'I left the application open and saved the next step.'});
+   if(variant==='actionable'){assert.equal(correction?.continue,true);assert.match(correction.prompt,/actionable application step/);
+    assert.equal(f.goals.beforeCheckpoint(run,{output:'I left the application open and saved the next step.'}),null);}
+   else assert.equal(correction,null,variant);
+  }});
+ }
+});
+
+test('a genuine unsupported form choice is not mistaken for screening on résumé silence', async () => {
+ const f=fixture();
+ await f.goals.save('root',{...f.goals.raw('root'),objective:'Restart my ongoing remote job search.'});
+ await f.turn(search(null),receipt(cursor(1),100),{beforeSettle:run=>{
+  run.startedAt=new Date(Date.now()-180000).toISOString();
+  run.output='I deferred the school field. The résumé confirms the actual college, but the employer selector rejects that known value and offers no Other entry.';
+  assert.equal(f.goals.beforeCheckpoint(run,{output:run.output}),null);
+ }});
+ assert.equal(f.goals.raw('root').lastSettlementAssessment.applicationScreeningReview,undefined);
+});
+
+test('job screening recovery flags unsupported decision grounds and preserves actual blockers', () => {
+ assert.equal(reviewJobSearchScreening('The duties fit, but the résumé doesn’t establish production experience. No application was submitted.'), 'resume-silence-used-for-fit');
+ assert.equal(reviewJobSearchScreening('The form also requires a citizenship answer not supported by the résumé, so I’ve asked for that fact and will keep screening other leads while it’s pending.'), 'resume-used-for-eligibility');
+ assert.equal(reviewJobSearchScreening('The posting requires 10 years of experience. I skipped it.'), 'experience-duration-screen');
+ assert.equal(reviewJobSearchScreening('The title was only adjacent to their previous work, so I passed on it.'), 'adjacent-experience-dismissed');
+ assert.equal(reviewJobSearchScreening('I rejected it because I am unsure whether the applicant is a U.S. citizen.'), 'eligibility-uncertainty-used-to-exclude');
+ assert.equal(reviewJobSearchScreening('I deferred the citizenship field as unresolved, saved the draft and completed the independent fields.'), null);
+ assert.equal(reviewJobSearchScreening('The résumé does not mention citizenship. I opened the employer form and continued.'), null);
+ assert.equal(reviewJobSearchScreening('I deferred the school field. The résumé confirms the actual college, but the employer selector rejected it.'), null);
+ assert.equal(reviewJobSearchScreening('I skipped the role after the official posting stated weekly travel and the user requested no travel.'), null);
 });

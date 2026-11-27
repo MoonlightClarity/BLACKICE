@@ -218,3 +218,17 @@ test('extension mapping is case-insensitive and unknown bytes retain binary fall
   assert.deepEqual(result.receipt.uploaded.map(file => file.name), ['cv.DOCX', 'attachment.unknown']);
 });
 
+
+test('an observed button passed to upload is rejected before any file assignment or DOM event', async t => {
+  const f = await fixture(t);
+  const { request } = await requestFor(f, 'ref');
+  f.input.tagName = 'BUTTON';
+  f.input.type = 'button';
+  await assert.rejects(f.driver.perform(request), {
+    code: 'BROWSER_UPLOAD_TARGET_NOT_FILE_INPUT',
+    actionDispatched: false,
+    inputDispatched: false,
+  });
+  assert.deepEqual(f.input.received, []);
+  assert.deepEqual(f.input.events, []);
+});

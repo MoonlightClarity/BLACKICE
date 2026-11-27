@@ -82,6 +82,27 @@ test('native and direct helpers expose precise pre-dispatch fallback without lea
  }
  assert.doesNotMatch(direct.definition.description,/credential-only/);
 });
+test('vault and tool retain definite authentication refusal through the production boundary', async t => {
+ const {vault,input,auth}=await fixture(t);
+ const browser={status:()=>({available:true,contained:true}),fillCredential(){},async authenticateCredential(args){
+  return vault.authenticateOnce(args, async (_, mark) => {
+   if(args.requestId==='marked') await mark();
+   const code = args.requestId==='unsupported' ? 'BROWSER_CREDENTIAL_AUTH_UNSUPPORTED'
+     : args.requestId==='changed' ? 'BROWSER_CREDENTIAL_TARGET_CHANGED' : 'OTHER_ERROR';
+   throw Object.assign(Error('fixture-secret-text'),{code});
+  },auth);
+ }};
+ const handler=createBrowserCredentialToolHandler({vault,browser,ownerId:'fixture',beforeDispatch:async()=>{}});
+ const invoke=requestId=>handler({name:'relay_credentials',arguments:{...toolTarget,...input,requestId}});
+ for(const [id,code] of [['unsupported','BROWSER_CREDENTIAL_AUTH_UNSUPPORTED'], ['changed','BROWSER_CREDENTIAL_TARGET_CHANGED'], ['failed','BROWSER_CREDENTIAL_AUTH_NOT_DISPATCHED']]){
+  const result=await invoke(id),body=JSON.parse(result.contentItems[0].text);
+  assert.equal(result.code,code); assert.equal(result.actionDispatched,false); assert.equal(body.submissionRequested,false);
+  assert.doesNotMatch(JSON.stringify(result),/fixture-secret-text/);
+ }
+ const marked=await invoke('marked'),body=JSON.parse(marked.contentItems[0].text);
+ assert.equal(body.outcome,'unknown'); assert.equal(body.submissionRequested,null); assert.equal(marked.actionDispatched,undefined);
+});
+
 test('uncertain authentication failure never receives unsupported-form no-submission guidance',async()=>{
  const browser={status:()=>({available:true,contained:true}),fillCredential(){},
  async authenticateCredential(){throw Object.assign(Error('secret-fixture-value'),{code:'BROWSER_CREDENTIAL_AUTH_UNCONFIRMED'});}};
