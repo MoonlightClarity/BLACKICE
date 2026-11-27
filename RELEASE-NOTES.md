@@ -2,20 +2,21 @@
 
 This file summarizes meaningful changes. Older source notes remain recoverable through Git history rather than as hundreds of permanent files in the current tree.
 
-## Current candidate source: 2.40.84 (unpublished)
+## BLACKICE 2.40.84 — Windows release
 
 - Retained Astra's Codex public OAuth client compatibility patch: permit only exact localhost/127.0.0.1 loopback callbacks with bounded ports, preserve approved Codex grants, and reject untrusted redirect destinations.
 - Added **Self-driving** as an editable starting objective within ordinary Goal Mode. It uses the existing Goal scheduler, constraints, Stop, deadlines, and revision-checked controls; it is not a separate autonomy engine or permission mode.
 - Improved browser action causality, recovery diagnostics, provider-host failure-loop classification, and distinct failure receipts without treating uncertain effects as completed or safe to replay.
 - Preserved the compact Goal status strip and validated the Self-driving editor at desktop and narrow-screen widths.
+- **Unsigned Windows installer:** Windows cannot verify a BLACKICE publisher identity. Compare the Setup SHA-256 and release manifest before use.
 - Local upgrade and cleanup protocol: preserve the existing profile and user work, verify the new installation and restart before cleanup, retain one verified previous-version rollback installer, and remove only audited regenerable build/staging/cache artifacts. Do not delete model data, chats, receipts, credentials, or source trees.
-- This candidate requires its own Windows-hosted installation, uninstallation, and exact-source release evidence before publication.
+- The Windows release is qualified by its own source-test receipt and fresh GitHub-hosted installation/uninstallation verification, recorded alongside the release. This does not establish that every unattended workflow succeeds.
 
 ## Still in active development
 
 - Autonomous Goal reliability and completion-evidence accounting continue to be tested against actual external effects, not model-authored completion claims.
 - Local model performance, context management, and MiniCPM improvements are active evaluation work; no general capability gain is asserted from these source changes.
-- The 2.40.84 candidate remains separate from the published v2.40.83. An exact-source Windows installer, installed-version verification, rollback readiness, and post-install audited disk cleanup are distinct release obligations. No date or publication is promised by these notes.
+- Verification for v2.40.83 does not qualify v2.40.84. Its installer, running build identity, rollback readiness, and post-install disk cleanup require separate evidence; report actual outcomes rather than assuming completion.
 
 ## Previous published Windows release: 2.40.83 (November 25, 2026)
 
