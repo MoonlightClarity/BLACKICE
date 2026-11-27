@@ -173,6 +173,9 @@
 .next-chat-goal-actions #next-chat-goal-clear{margin-left:auto}
 .next-chat-goal-dialog{width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;background:var(--next-card-background);color:var(--text-primary);border-color:var(--line)}
 .next-chat-goal-dialog form{display:grid;gap:15px}
+/* Keep the action buttons reachable when the editable self-driving guidance
+   expands this modal beyond the available window height. */
+.next-chat-goal-dialog .next-chat-dialog-actions{position:sticky;bottom:0;z-index:1;margin-top:0;padding:12px 0 4px;background:var(--next-card-background);border-top:1px solid var(--line)}
 
 .next-chat-goal-dialog h2,.next-chat-goal-dialog p{margin:0}
 .next-chat-goal-dialog p{font-size:12px;line-height:1.6;color:var(--text-muted)}
