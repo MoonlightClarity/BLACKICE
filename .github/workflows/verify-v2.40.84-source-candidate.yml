@@ -1,0 +1,58 @@
+name: Verify BLACKICE 2.40.84 source candidate (no publication)
+
+on:
+  push:
+    branches:
+      - release/v2.40.84-self-driving-validation-20261126
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blackice-24084-source-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-qualification:
+    if: github.ref == 'refs/heads/release/v2.40.84-self-driving-validation-20261126'
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.2'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install locked test dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify documentation links
+        run: npm run docs:check
+      - name: Run full canonical Windows source suite
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PLANNING_BEHAVIOR_PYTHON = (Get-Command python).Source
+          $evidence = Join-Path $env:RUNNER_TEMP 'blackice-2.40.84-source-evidence'
+          node scripts/source-suite-receipt.mjs $evidence
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical Windows source suite failed; no release qualification.' }
+          $receipt = Get-Content -Raw (Join-Path $evidence 'windows-2.40.84.json') | ConvertFrom-Json
+          if ($receipt.passed -ne $true -or $receipt.version -cne '2.40.84' -or $receipt.tests.failed -ne 0 -or $receipt.tests.requiredSkipped -ne 0 -or $receipt.tests.cancelled -ne 0) { throw 'Source qualification receipt failed its binding checks.' }
+          Write-Output ('Verified Windows source tests: ' + $receipt.tests.passed + '/' + $receipt.tests.total)
+      - name: Preserve source qualification receipt only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blackice-2.40.84-source-qualification
+          path: |
+            ${{ runner.temp }}/blackice-2.40.84-source-evidence/windows-2.40.84.json
+            ${{ runner.temp }}/blackice-2.40.84-source-evidence/inventory.json
+          if-no-files-found: warn
+          retention-days: 7
+
+# This workflow does not build or publish a release, run an installer,
+# change the user's computer, or authorize removal of local disk artifacts.
