@@ -970,10 +970,18 @@ export class ElectronBrowserDriver extends EventEmitter {
     wc.on('will-attach-webview', event => event.preventDefault());
     if (this.liveSurface) wc.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (currentWindow() && isMainFrame === true) this.cancelAuthentication(tab); });
     wc.on('did-frame-navigate', (_event, _url, _responseCode, _statusText, isMainFrame, frameProcessId, frameRoutingId) => {
-      if (currentWindow()) this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url, 'frame-navigation');
+      if (!currentWindow()) return;
+      // Only a successful new top-level HTTP document can supersede an aborted
+      // load. Neither an iframe nor an in-page URL change proves this.
+      if (isMainFrame === true && /^https?:\/\//i.test(_url) && _responseCode >= 200 && _responseCode < 400) {
+        tab.successfulPageCommit = (tab.successfulPageCommit || 0) + 1;
+        if (tab.loadError && tab.abortedPageLoad === tab.loadError) tab.loadError = null;
+        tab.abortedPageLoad = null;
+      }
+      this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url, 'frame-navigation');
     });
     wc.on('did-navigate-in-page', (_event, _url, isMainFrame, frameProcessId, frameRoutingId) => { if (currentWindow()) this.navigationChanged(tab, isMainFrame, frameProcessId, frameRoutingId, _url, 'in-page-navigation'); });
-    wc.on('did-fail-load', (_event, code, description, _url, isMainFrame) => { if (currentWindow() && isMainFrame !== false && code !== -3) { tab.loadError = String(description || `Navigation failed (${code}).`); this.emit('changed'); } });
+    wc.on('did-fail-load', (_event, code, description, _url, isMainFrame) => { if (currentWindow() && isMainFrame !== false && code !== -3) { tab.abortedPageLoad = null; tab.loadError = String(description || `Navigation failed (${code}).`); this.emit('changed'); } });
     wc.on('page-title-updated', (_event, value) => { if (!currentWindow()) return; tab.title = value; this.persist(); this.emit('changed'); });
     const handoffExternal = (event, target) => {
       if (!currentWindow()) return;
@@ -1010,9 +1018,22 @@ export class ElectronBrowserDriver extends EventEmitter {
     tab.loading = suppliedWindow || tab.pendingURL ? Promise.resolve() : containment.then(async () => {
       if (tab.window !== window || tab.rendererFailure) throw rendererFailure(tab);
       tab.navigationDispatched = true;
-      try { if (tab.url !== 'about:blank') await wc.loadURL(tab.url); }
+      try { if (tab.url !== 'about:blank') await this.loadPage(tab, window, tab.url); }
       finally { if (tab.window === window) tab.preparingURL = null; }
     }).catch(reason => { if (tab.window === window) tab.loadError = reason.message; });
+  }
+  async loadPage(tab, window, url) {
+    const commitBeforeLoad = tab.successfulPageCommit || 0;
+    try { await window.webContents.loadURL(url); }
+    catch (reason) {
+      if (tab.window !== window) return;
+      const aborted = reason?.code === 'ERR_ABORTED' || reason?.errno === -3;
+      if (aborted && (tab.successfulPageCommit || 0) > commitBeforeLoad) return;
+      // An abort must not overwrite a separately reported hard load failure.
+      if (aborted && tab.loadError && !tab.abortedPageLoad) return;
+      tab.loadError = reason?.message || String(reason);
+      tab.abortedPageLoad = aborted ? tab.loadError : null;
+    }
   }
   tab(id) { const tab = this.tabs.get(id || this.activeTab); if (!tab || tab.window?.isDestroyed()) throw error('Choose an existing browser tab, or open a URL first.'); return tab; }
   removeTab(tab) {
@@ -1396,7 +1417,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     if (tab.pendingURL) {
       const url = tab.pendingURL; tab.pendingURL = null; tab.preparingURL = url; tab.loadError = null; tab.navigationDispatched = true;
       const window = tab.window;
-      tab.loading = (url === 'about:blank' && window.webContents.getURL() === url ? Promise.resolve() : window.webContents.loadURL(url))
+      tab.loading = (url === 'about:blank' && window.webContents.getURL() === url ? Promise.resolve() : this.loadPage(tab, window, url))
         .catch(reason => { if (tab.window === window) tab.loadError = reason.message; })
         .finally(() => { if (tab.window === window) tab.preparingURL = null; });
     }
@@ -1975,7 +1996,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     }
   }
   async assertPointerReference(tab, expected, point, signal, sessionId) {
-    let objectId,check='layout-metrics',geometryChanged=false;
+    let objectId,check='layout-metrics',geometryChanged=false,pointerVerification;
     try {
       // Input coordinates are viewport CSS pixels. DOM hit lookup uses document
       // CSS pixels in this exact target session, including a scrolled OOP frame.
@@ -1994,7 +2015,12 @@ export class ElectronBrowserDriver extends EventEmitter {
         functionDeclaration: `function(key,ref,point){return (${elementAction.toString()})(key,ref,'pointer-verify',{hit:this,point},undefined,undefined,${browserControlDescriptor.toString()},${browserPointerHitMatches.toString()});}`,
         arguments: [{ value: this.key }, { value: expected.ref }, { value: expected.pointerLocalPoint || { x: point.x, y: point.y } }], returnByValue: true }, signal, undefined, sessionId);
       if (checked.exceptionDetails || checked.result?.value?.verified !== true) {
-        geometryChanged=!checked.exceptionDetails&&checked.result?.value?.verified===false&&checked.result.value.reason==='pointer-hit-mismatch';
+        const proof=checked.result?.value;
+        const rejected=proof?.__blackiceElementError;
+        geometryChanged=!checked.exceptionDetails&&proof?.verified===false&&proof.reason==='pointer-hit-mismatch';
+        pointerVerification=checked.exceptionDetails?'renderer-exception':geometryChanged?'hit-mismatch':
+          ['control-disconnected','hidden','no-box','identity-changed'].includes(rejected?.controlBindingCause)
+            ? rejected.controlBindingCause : 'no-verification';
         throw error('The pointer no longer hits the exact observed control in its document.');
       }
       check='viewport-recheck';
@@ -2003,7 +2029,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     } catch (cause) {
       if (cause?.name === 'AbortError' || ['BROWSER_CONTAINMENT_LOST', 'BROWSER_RENDERER_GONE', 'BROWSER_INTERACTION_PENDING'].includes(cause?.code)) throw cause;
       if(check==='hit-location'&&/No node found at given location/i.test(String(cause?.message||cause)))geometryChanged=true;
-      throw Object.assign(error('The pointer target changed or could not be verified ('+check+'). Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: {...this.referenceDiagnostic(tab, expected.ref),pointerCheck:check}, [pointerIdentityGuard]:true, [pointerGeometryRecovery]:geometryChanged });
+      throw Object.assign(error('The pointer target changed or could not be verified ('+check+'). Take a fresh snapshot before acting.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: {...this.referenceDiagnostic(tab, expected.ref),pointerCheck:check,...(pointerVerification?{pointerVerification}:{})}, [pointerIdentityGuard]:true, [pointerGeometryRecovery]:geometryChanged });
     } finally {
       if (objectId) void this.cdp(tab, 'Runtime.releaseObject', { objectId }, undefined, undefined, sessionId).catch(() => {});
     }
@@ -2575,7 +2601,7 @@ export class ElectronBrowserDriver extends EventEmitter {
       if (recoveryInput) await recoveryInput({ signal, prepared: true });
       tab.loadError = null; tab.navigationDispatched = true;
       const wc = tab.window.webContents;
-      if (args.action === 'navigate') { tab.pendingURL = null; tab.url = browserURL(args.url); await this.pageWork(tab, wc.loadURL(tab.url).catch(e => { tab.loadError = e.message; }), signal, 20000); }
+      if (args.action === 'navigate') { tab.pendingURL = null; tab.url = browserURL(args.url); await this.pageWork(tab, this.loadPage(tab, tab.window, tab.url), signal, 20000); }
       else if (args.action === 'reload' && !resumed) wc.reload();
       else if (args.action === 'reload') { /* Resuming the suspended URL already performs this reload. */ }
       else if (args.action === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();

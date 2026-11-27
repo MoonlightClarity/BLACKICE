@@ -379,3 +379,13 @@ test('source filtering precedes listing expansion and preserves unknown eligibil
   "Record which filters were applied, unavailable, or not verified"
  ])assert.ok(content.toLowerCase().includes(phrase.toLowerCase()),phrase);
 });
+
+
+test('exact job applications discover the owner job-search method without restating remote work',async()=>{
+ const {discoverTaskSkills}=await import('../lib/task-skill-discovery.mjs');
+ const skill={id:'user-job-search',title:'Remote Job Search',description:'Use when the user delegates job discovery or applications.',source:'user',ownerCreated:true,revision:27,activation:[]};
+ const exact='Apply to these two jobs for me:\n\nCentene: https://jobs.centene.com/us/en/jobs/1678103/\nNMI: https://job-boards.greenhouse.io/nmi/jobs/5428012008';
+ assert.equal(discoverTaskSkills(exact,[skill]).automatic[0]?.id,skill.id);
+ for(const unrelated of ['Summarize this document.','Apply to jobs in this repository.','Explain how to apply to these jobs.'])
+   assert.equal(discoverTaskSkills(unrelated,[skill]).automatic.length,0,unrelated);
+});

@@ -376,3 +376,14 @@ test('goal field projection keeps exact edit receipt, live ref, and full archive
   const selectProjection=parsed(await store.archiveResult({name:'relay_browser',arguments:selectArgs},result(JSON.stringify(selectPage))));
   assert.deepEqual(selectProjection.receipt,{selected:'yes'});
 });
+
+test('invalid archive search term points to fixing the term instead of implying no archive match',async t=>{
+ const {store}=await fixture(t);
+ const saved=parsed(await store.archiveResult(readCall,result('unique term '+ 'long '.repeat(500))));
+ const failed=await store.handle({arguments:{action:'search',reference:saved.reference,needle:['unique term']}});
+ assert.equal(failed.code,'CONTEXT_ARCHIVE_INVALID');
+ assert.match(failed.contentItems[0].text,/one nonempty literal string/);
+ const done=await store.handle({arguments:{action:'search',reference:saved.reference,needle:'unique term'}});
+ assert.equal(done.success,true);
+ assert.equal(parsed(done).matches.length,1);
+});
