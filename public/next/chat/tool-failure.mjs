@@ -4,6 +4,7 @@ const choices = {
   receiptState: ['superseded-or-invalid', 'missing-after-observation', 'new-observation-needed'],
   pointerStage: ['pre-pointer-capture', 'pre-pointer-identity'],
   keyboardStage: ['pre-key-input'],
+  captureStage: ['render-boundary', 'bitmap-copy'],
   bindingReason: ['reference-missing', 'reference-unknown', 'reference-evicted', 'document-changed', 'frame-changed',
     'binding-mismatch', 'control-changed', 'input-identity-invalid', 'input-url-mismatch', 'input-document-mismatch', 'input-reference-mismatch'],
   bindingEvent: ['frame-navigation', 'in-page-navigation', 'renderer-gone', 'tab-suspended'],
@@ -89,6 +90,8 @@ export function failureCause(evidence) {
   const pointer = [evidence.pointerSession, evidence.pointerObservedFrame, evidence.pointerInputPhase,
     evidence.pointerHitRelationship, evidence.pointerNativeHitKind, evidence.pointerRendererHit];
   if (pointer.some(value => value !== undefined)) cause.push(...pointer);
+  // Preserve earlier fingerprints when no capture-stage evidence was recorded.
+  if (choices.captureStage.includes(evidence.captureStage)) cause.push(evidence.captureStage);
   return cause.some(value => value !== undefined) ? cause : [];
 }
 

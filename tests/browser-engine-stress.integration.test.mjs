@@ -29,4 +29,7 @@ test('native Chromium capture observes fresh compositor state across parked, res
    assert.equal(synchronized.trials,row.trials);assert.equal(synchronized.wrong,0,JSON.stringify(row));assert.equal(synchronized.errors,0,JSON.stringify(row));
  }
  assert.equal(report.modes[1].sameWebContents,true);
+ assert.equal(report.idle.length,4);
+ for(const row of report.idle){assert.equal(row.error,undefined,JSON.stringify(row));assert.equal(row.match,true,JSON.stringify(row));assert.equal(row.ticks,0,JSON.stringify(row));}
+ t.diagnostic(JSON.stringify({idle:report.idle}));
 });

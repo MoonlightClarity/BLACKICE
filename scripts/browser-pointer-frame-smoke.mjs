@@ -42,7 +42,7 @@ const save = () => { mkdirSync(path.dirname(reportPath), { recursive: true }); w
 const stage = name => { phase = name; report.stage = name; report.stages.push({ name, at: new Date().toISOString() }); save(); };
 const check = (name, fn) => { try { fn(); report.checks.push(name); } catch (error) { report.failures.push({ name, error: error.message }); } };
 const digest = async file => createHash('sha256').update(await fs.readFile(file)).digest('hex');
-const hashes = async () => Object.fromEntries(await Promise.all(['desktop/browser-driver.mjs', 'lib/browser.mjs'].map(async relative => [relative, await digest(path.join(source, relative))])));
+const hashes = async () => Object.fromEntries(await Promise.all(['desktop/browser-driver.mjs', 'desktop/browser-capture.mjs', 'lib/browser.mjs'].map(async relative => [relative, await digest(path.join(source, relative))])));
 async function deadline(work, ms, label) {
   let timer;
   try { return await Promise.race([work, new Promise((_, reject) => { timer = setTimeout(() => reject(Error(`${label} timed out`)), ms); })]); }
@@ -203,7 +203,7 @@ async function main() {
     report.frame = { url: frame.url, processId: frame.processId, mainProcessId: wc.mainFrame.processId };
     check('The target iframe really runs in a separate renderer', () => { assert.ok(Number.isInteger(frame.processId)); assert.ok(Number.isInteger(wc.mainFrame.processId)); assert.notEqual(frame.processId, wc.mainFrame.processId); });
     report.initialFrame = await frameRead(frame);
-    check('Cross-process frame remains sandboxed', () => assert.deepEqual(report.initialFrame.nodeGlobals, { process: 'undefined', require: 'undefined' }));
+    check('Cross-process frame exposes no Node globals', () => assert.deepEqual(report.initialFrame.nodeGlobals, { process: 'undefined', require: 'undefined' }));
 
     stage('reference-hover');
     const hoverRef = await freshReference(tabId);
@@ -216,11 +216,12 @@ async function main() {
     await verifyPhase(frame, tabId, 1, phase, afterRefHover.events.length);
 
     stage('reset-pointer-to-main-document');
-    await browser.perform({ action: 'hover', browser: 'relay', tabId, x: 45, y: 30 });
+    const resetObservation = await browser.perform({ action: 'snapshot', browser: 'relay', tabId });
+    await browser.perform({ action: 'hover', browser: 'relay', tabId, x: 45, y: 30, expectedUrl: resetObservation.url, expectedDocumentId: resetObservation.documentId });
     const point = await wc.executeJavaScript("(() => { const r=document.querySelector('#sign-in-frame').getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()");
     stage('coordinate-hover');
     const beforeCoordinate = await frameRead(frame);
-    await browser.perform({ action: 'hover', browser: 'relay', tabId, ...point });
+    await browser.perform({ action: 'hover', browser: 'relay', tabId, ...point, expectedUrl: resetObservation.url, expectedDocumentId: resetObservation.documentId });
     const afterCoordinateHover = await frameRead(frame);
     check('Screenshot-coordinate hover reaches the child as trusted input', () => assert.ok(afterCoordinateHover.events.slice(beforeCoordinate.events.length).some(event => event.type === 'pointermove' && event.trusted)));
     const preview = await browser.perform({ action: 'screenshot', browser: 'relay', tabId }, { source: 'user' });
@@ -229,6 +230,24 @@ async function main() {
     stage('coordinate-click');
     await browser.perform({ action: 'click', ...guard, ...point }, { source: 'user' });
     await verifyPhase(frame, tabId, 2, phase, afterCoordinateHover.events.length);
+
+    stage('hidden-embedding-ancestor-observation');
+    await frame.executeJavaScript(`(()=>{const nested=document.createElement('iframe');nested.id='nested-visibility';nested.src=${JSON.stringify(primaryOrigin+'/frame')};document.body.append(nested)})()`);
+    await stable(tab);
+    const beforeHidden=await browser.perform({action:'snapshot',browser:'relay',tabId},{source:'user'});
+    const childURLs=[secondaryOrigin+'/frame',primaryOrigin+'/frame'];
+    check('Both embedded documents are present before hiding their ancestor',()=>assert.equal(beforeHidden.frames.filter(value=>childURLs.includes(value.url)&&value.elements.length).length,2));
+    await wc.executeJavaScript("document.querySelector('#sign-in-frame').style.visibility='hidden'");
+    const hidden=await browser.perform({action:'snapshot',browser:'relay',tabId},{source:'user'});
+    report.hiddenFrames=hidden.frames.filter(value=>childURLs.includes(value.url)).map(value=>({url:value.url,elements:value.elements.length,embeddingVisibility:value.embeddingVisibility}));
+    check('A hidden embedding ancestor suppresses controls in its whole subtree',()=>{
+      assert.equal(report.hiddenFrames.length,2);assert.ok(report.hiddenFrames.every(value=>value.elements===0&&value.embeddingVisibility?.state==='hidden'));
+    });
+    await wc.executeJavaScript("document.querySelector('#sign-in-frame').style.visibility='visible'");
+    const revealed=await browser.perform({action:'snapshot',browser:'relay',tabId},{source:'user'});
+    check('Revealing the same embedding frame restores observable controls',()=>assert.equal(revealed.frames.filter(value=>childURLs.includes(value.url)&&value.elements.length).length,2));
+    await frame.executeJavaScript("document.querySelector('#nested-visibility').remove()");
+    await stable(tab);
 
     stage('stale-child-document-guard');
     await wc.executeJavaScript(`document.querySelector('#sign-in-frame').src=${JSON.stringify(secondaryOrigin + '/replacement')}`);
@@ -247,11 +266,67 @@ async function main() {
     const rootClicks = await wc.executeJavaScript('globalThis.__rootClicks');
     check('Ordinary main-document native input still works exactly once', () => assert.deepEqual(rootClicks, [{ trusted: true }]));
     check('Main-document input stays on the root protocol target', () => assert.ok(report.inputs.filter(input => input.phase === phase).every(input => input.sessionId === null)));
-    check('All fixture windows remained hidden, offscreen and sandboxed', () => {
+    stage('scrolled-main-document-reference');
+    await wc.executeJavaScript(`document.body.innerHTML='<button id="apply" style="position:fixed;left:60px;top:64px;width:180px;height:36px">Apply now</button><button id="other" style="position:fixed;left:60px;top:324px;width:180px;height:36px">Unrelated</button>';document.body.style.height='3000px';globalThis.__scrollHits=[];for(const button of document.querySelectorAll('button'))button.addEventListener('click',event=>__scrollHits.push({id:button.id,trusted:event.isTrusted}));scrollTo(0,260)`);
+    const scrolled = await browser.perform({action:'snapshot',browser:'relay',tabId},{source:'user'});
+    const apply = scrolled.frames.flatMap(value=>value.elements).find(value=>value.name==='Apply now');
+    assert.ok(apply,'The fixed scrolled target must be observed.');
+    const scrollPoint=await wc.executeJavaScript("(()=>{const r=document.querySelector('#apply').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,scrollX,scrollY}})()");
+    const nativeHit=async(x,y)=>{
+      try{
+        const hit=await driver.cdp(tab,'DOM.getNodeForLocation',{x:Math.floor(x),y:Math.floor(y)});
+        const described=await driver.cdp(tab,'DOM.describeNode',{backendNodeId:hit.backendNodeId});
+        const attributes=described.node.attributes||[];
+        return {node:described.node.nodeName,id:attributes[attributes.indexOf('id')+1]};
+      }catch(error){return {error:String(error.message||error)};}
+    };
+    report.scrolledHit={point:scrollPoint,viewport:await nativeHit(scrollPoint.x,scrollPoint.y),
+      document:await nativeHit(scrollPoint.x+scrollPoint.scrollX,scrollPoint.y+scrollPoint.scrollY)};
+    check('Native hit lookup uses document coordinates for a scrolled fixed control',()=>{
+      assert.equal(report.scrolledHit.document.id,'apply');assert.notEqual(report.scrolledHit.viewport.id,'apply');
+    });
+    const applyArgs={action:'click',browser:'relay',tabId,ref:apply.ref,expectedUrl:scrolled.url,expectedDocumentId:scrolled.documentId};
+    try{await browser.perform(applyArgs,{source:'user'});}
+    catch(error){report.failures.push({name:'A fresh reference clicks the scrolled fixed control',error:error.message,code:error.code,diagnostic:error.browserReferenceDiagnostic});}
+    report.scrollHits=await wc.executeJavaScript('__scrollHits');
+    check('Scrolled native input reaches the intended control exactly once',()=>assert.deepEqual(report.scrollHits,[{id:'apply',trusted:true}]));
+
+    stage('covered-and-replaced-control-guards');
+    await wc.executeJavaScript("(()=>{const cover=document.createElement('div');cover.id='cover';cover.style='position:fixed;inset:0;z-index:9999;background:#eee';document.body.append(cover)})()");
+    const covered=await browser.perform({action:'snapshot',browser:'relay',tabId},{source:'user'});
+    const coveredRef=covered.frames.flatMap(value=>value.elements).find(value=>value.name==='Apply now').ref;
+    await assert.rejects(browser.perform({...applyArgs,ref:coveredRef,expectedUrl:covered.url,expectedDocumentId:covered.documentId},{source:'user'}),{code:'BROWSER_TARGET_COVERED',inputDispatched:false});
+    const afterOverlay=await wc.executeJavaScript('__scrollHits');
+    check('A real overlay is rejected without another click',()=>assert.deepEqual(afterOverlay,report.scrollHits));
+    await wc.executeJavaScript("document.querySelector('#cover').remove();document.querySelector('#apply').replaceWith(document.querySelector('#apply').cloneNode(true))");
+    await assert.rejects(browser.perform({...applyArgs,ref:coveredRef,expectedUrl:covered.url,expectedDocumentId:covered.documentId},{source:'user'}),{code:'BROWSER_REF_STALE'});
+    const afterReplacement=await wc.executeJavaScript('__scrollHits');
+    check('A replaced control never receives an old-reference click',()=>assert.deepEqual(afterReplacement,report.scrollHits));
+
+    stage('select-triggered-in-page-navigation');
+    await wc.executeJavaScript(`document.body.style.height='';scrollTo(0,0);document.body.innerHTML='<select aria-label="Location filter"><option value="">All locations</option><option value="remote">Remote</option></select>';globalThis.__selectEvents=[];const select=document.querySelector('select');for(const type of ['input','change'])select.addEventListener(type,event=>{__selectEvents.push(type);if(type==='change')history.replaceState({},'', '/?location='+select.value)})`);
+    const filterBefore=await browser.perform({action:'snapshot',browser:'relay',tabId},{source:'user'});
+    const filter=filterBefore.frames.flatMap(value=>value.elements).find(value=>value.name==='Location filter');
+    assert.ok(filter,'The native filter must be observed.');
+    const filterArgs={action:'select',browser:'relay',tabId,ref:filter.ref,value:'remote',expectedUrl:filterBefore.url,expectedDocumentId:filterBefore.documentId};
+    let selected;
+    try{selected=await browser.perform(filterArgs,{source:'user'});}
+    catch(error){report.failures.push({name:'A completed select survives its own in-page navigation',error:error.message,code:error.code,diagnostic:error.browserReferenceDiagnostic});}
+    report.selectEvidence={events:await wc.executeJavaScript('__selectEvents'),url:wc.getURL(),value:await wc.executeJavaScript("document.querySelector('select').value"),receipt:selected?.receipt,observedUrl:selected?.url};
+    check('The native filter receipt preserves a completed selection and its resulting URL',()=>{
+      assert.equal(report.selectEvidence.receipt?.selected,'remote');assert.equal(report.selectEvidence.observedUrl,report.selectEvidence.url);
+      assert.equal(report.selectEvidence.value,'remote');assert.deepEqual(report.selectEvidence.events,['input','change']);
+    });
+    await assert.rejects(browser.perform(filterArgs,{source:'user'}),{code:'BROWSER_INPUT_DOCUMENT_CHANGED'});
+    const afterStaleFilter=await wc.executeJavaScript('__selectEvents');
+    check('A repeated old filter reference is rejected before input',()=>assert.deepEqual(afterStaleFilter,['input','change']));
+
+    check('All fixture windows retain the native containment contract', () => {
       assert.ok(report.popups.every(popup => popup.hidden && popup.offscreen));
       for (const window of BrowserWindow.getAllWindows()) {
         assert.equal(window.isVisible(), false); assert.equal(window.webContents.isOffscreen(), true);
-        const preferences = window.webContents.getLastWebPreferences(); assert.equal(preferences.sandbox, true); assert.equal(preferences.contextIsolation, true); assert.equal(preferences.nodeIntegration, false); assert.equal(preferences.webSecurity, true);
+        // Match the longstanding native-window contract asserted by assertContained.
+        const preferences = window.webContents.getLastWebPreferences(); assert.equal(preferences.sandbox, false); assert.equal(preferences.contextIsolation, true); assert.equal(preferences.nodeIntegration, false); assert.equal(preferences.webSecurity, true);
       }
     });
     const finalHashes = await hashes(); check('Candidate source stayed unchanged during the run', () => assert.deepEqual(finalHashes, report.sourceHashes));

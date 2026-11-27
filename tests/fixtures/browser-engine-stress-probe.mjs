@@ -11,7 +11,7 @@ const report={ok:false,electron:process.versions.electron,chromium:process.versi
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const timeout=(promise,ms=3000)=>new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(Error('native operation timeout')),ms);Promise.resolve(promise).then(v=>{clearTimeout(t);resolve(v)},e=>{clearTimeout(t);reject(e)})});
 let server,host;const handles=[];
-const html='<!doctype html><meta charset="utf-8"><style>body{margin:0}#marker{position:fixed;left:0;top:0;width:60px;height:60px;background:#ff0000}button{position:fixed;left:calc(50% - 80px);top:100px;width:160px;height:50px}</style><div id="marker"></div><button id="target">Native target</button><script>window.ticks=0;window.clicks=0;window.trusted=0;function tick(){ticks++;requestAnimationFrame(tick)}requestAnimationFrame(tick);target.addEventListener("click",e=>{clicks++;if(e.isTrusted)trusted++});window.setMarker=c=>{marker.style.background=c};window.rect=()=>{const r=target.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,w:innerWidth,h:innerHeight,visibility:document.visibilityState,ticks,clicks,trusted}}</script>';
+const html='<!doctype html><meta charset="utf-8"><style>body{margin:0}#marker{position:fixed;left:0;top:0;width:60px;height:60px;background:#ff0000}button{position:fixed;left:calc(50% - 80px);top:100px;width:160px;height:50px}</style><div id="marker"></div><button id="target">Native target</button><script>window.ticks=0;window.clicks=0;window.trusted=0;window.keepTicks=!location.search.includes("idle");function tick(){ticks++;if(keepTicks)requestAnimationFrame(tick)}if(keepTicks)requestAnimationFrame(tick);target.addEventListener("click",e=>{clicks++;if(e.isTrusted)trusted++});window.setMarker=c=>{marker.style.background=c};window.rect=()=>{const r=target.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,w:innerWidth,h:innerHeight,visibility:document.visibilityState,ticks,clicks,trusted}}</script>';
 async function probe(wc, mode, index, phase){
  const row={mode,index,phase};
  try {
@@ -72,6 +72,23 @@ app.whenReady().then(async()=>{
   handles.push(offscreen);await timeout(offscreen.webContents.loadURL(url+'/?offscreen'),12000);await sleep(250);
   const off=[];for(let round=0;round<3;round++)off.push(await probe(offscreen.webContents,'offscreen',0,round));report.modes.push({name:'offscreen-comparison',rows:off});
   report.summary=report.modes.map(m=>({mode:m.name,trials:m.rows.length,errors:m.rows.filter(r=>r.error).length,zeroFrames:m.rows.filter(r=>r.frames===0).length,wrongHit:m.rows.filter(r=>r.hitCorrect===false).length,wrongClick:m.rows.filter(r=>r.hitCorrect&&r.clickDelta!==1).length,captureMethods:['native-immediate','native-after-two-frames'].map(name=>{const samples=m.rows.flatMap(r=>r.captures||[]).filter(x=>x.name===name);const times=samples.map(x=>x.ms).filter(Number.isFinite).sort((a,b)=>a-b);return {name,trials:samples.length,wrong:samples.filter(x=>x.match===false).length,errors:samples.filter(x=>x.error).length,medianMs:times[Math.floor(times.length/2)],maxMs:times.at(-1)}})}));
+  // Dormant pages must not depend on a site's own animation loop to stay capturable.
+  const idle=views[1].webContents;await timeout(idle.loadURL(url+'/?idle'),12000);
+  for(const handle of handles)if(handle.webContents!==idle&&!handle.isDestroyed())handle.destroy();
+  report.idle=[];
+  for(let index=0;index<4;index++){
+   if(index===2){await idle.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});await idle.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:false});}
+   await sleep([1800,2400,3100,1800][index]);
+   const row={index,kind:index===2?'after-focus-release':'dormant',backgroundThrottling:idle.getBackgroundThrottling()},start=performance.now();
+   try{
+    const expected=index%2?'#ff0000':'#00ff00';
+    await timeout(idle.executeJavaScript('setMarker('+JSON.stringify(expected)+')'));
+    const result=await captureHiddenPage(idle),bytes=result.image.crop({x:10,y:10,width:1,height:1}).toBitmap();
+    row.marker=[bytes[2],bytes[1]];row.match=expected==='#00ff00'?bytes[1]>200&&bytes[2]<50:bytes[2]>200&&bytes[1]<50;
+    row.ticks=await timeout(idle.executeJavaScript('ticks'));row.retries=result.retries;
+   }catch(error){row.error=error.message;row.code=error.code;row.captureStage=error.captureStage;}
+   row.ms=Math.round(performance.now()-start);report.idle.push(row);
+  }
   report.ok=true;
  }catch(e){report.error=String(e.stack||e)}
  finally{for(const h of handles)try{if(!h.isDestroyed())h.destroy()}catch{};try{host?.destroy()}catch{};try{server?.closeAllConnections();await new Promise(r=>server?server.close(r):r())}catch{};fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(report,null,2));app.exit(report.ok?0:1)}

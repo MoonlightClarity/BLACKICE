@@ -26,7 +26,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "incremental-cleanup-20261121"
+        "revision": "browser-jobsearch-hardening-20261127"
       },
       "bodyFile": "browser-navigation.md"
     },
@@ -226,7 +226,7 @@
       ],
       "source": {
         "kind": "first-party",
-        "revision": "agency-efficiency-20261125"
+        "revision": "browser-jobsearch-hardening-20261127"
       },
       "bodyFile": "job-search.md"
     },

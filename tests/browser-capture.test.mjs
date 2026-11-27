@@ -75,3 +75,67 @@ test('true offscreen rendering retains its frame freshness boundary',async()=>{
  await captureHiddenPage(contents,{timeoutMs:1000});
  assert.deepEqual(order,["render-boundary","bitmap"]);
 });
+
+test('parked capture requests compositor frames before waiting for a fresh boundary',async()=>{
+ const order=[];let demanded=false;
+ const contents=fake(()=>{order.push('copy');assert.equal(demanded,true);return image;});
+ contents.isOffscreen=()=>false;
+ contents.beginFrameSubscription=callback=>{assert.equal(typeof callback,'function');order.push('begin');demanded=true;};
+ contents.endFrameSubscription=()=>{order.push('end');demanded=false;};
+ contents.executeJavaScriptInIsolatedWorld=()=>{order.push('frame');return demanded?Promise.resolve(true):new Promise(()=>{});};
+ assert.equal((await captureHiddenPage(contents,{timeoutMs:100})).image,image);
+ assert.deepEqual(order,['begin','frame','copy','end']);assert.equal(demanded,false);
+});
+
+test('overlapping captures share compositor demand and one cancellation cannot end the remaining capture',async()=>{
+ let begins=0,ends=0;const boundaries=[];
+ const contents=fake(()=>image);
+ contents.isOffscreen=()=>false;
+ contents.beginFrameSubscription=()=>{begins++;};
+ contents.endFrameSubscription=()=>{ends++;};
+ contents.executeJavaScriptInIsolatedWorld=()=>new Promise(resolve=>boundaries.push(resolve));
+ const controller=new AbortController();
+ const first=captureHiddenPage(contents,{signal:controller.signal,timeoutMs:500});
+ const second=captureHiddenPage(contents,{timeoutMs:500});
+ assert.equal(begins,1);assert.equal(boundaries.length,2);
+ controller.abort();await assert.rejects(first,{name:'AbortError'});
+ assert.equal(ends,0);
+ boundaries[0](true);boundaries[1](true);
+ assert.equal((await second).image,image);
+ assert.equal(contents.calls,1);assert.equal(ends,1);
+});
+
+test('render timeout releases compositor demand while preserving its failure stage',async()=>{
+ let ends=0;const contents=fake(()=>image);
+ contents.isOffscreen=()=>false;contents.beginFrameSubscription=()=>{};
+ contents.endFrameSubscription=()=>{ends++;};
+ contents.executeJavaScriptInIsolatedWorld=()=>new Promise(()=>{});
+ await assert.rejects(captureHiddenPage(contents,{timeoutMs:30}),error=>error.code==='BROWSER_CAPTURE_TIMEOUT'&&error.captureStage==='render-boundary');
+ assert.equal(ends,1);assert.equal(contents.calls,0);
+});
+
+test('bitmap timeout releases compositor demand while preserving its failure stage',async()=>{
+ let ends=0;const contents=fake(()=>new Promise(()=>{}));
+ contents.isOffscreen=()=>false;contents.beginFrameSubscription=()=>{};
+ contents.endFrameSubscription=()=>{ends++;};
+ contents.executeJavaScriptInIsolatedWorld=async()=>true;
+ await assert.rejects(captureHiddenPage(contents,{timeoutMs:30}),error=>error.code==='BROWSER_CAPTURE_TIMEOUT'&&error.captureStage==='bitmap-copy');
+ assert.equal(ends,1);assert.equal(contents.calls,1);
+});
+
+test('document replacement releases compositor demand before any bitmap copy',async()=>{
+ let ends=0,changed=false;const contents=fake(()=>image);
+ contents.isOffscreen=()=>false;contents.beginFrameSubscription=()=>{};
+ contents.endFrameSubscription=()=>{ends++;};
+ contents.executeJavaScriptInIsolatedWorld=async()=>{changed=true;return true;};
+ await assert.rejects(captureHiddenPage(contents,{assertCurrent:()=>{if(changed)throw Error('document replaced');}}),/document replaced/);
+ assert.equal(ends,1);assert.equal(contents.calls,0);
+});
+
+test('offscreen painting does not acquire a native presentation subscription',async()=>{
+ const contents=fake(()=>image);contents.isOffscreen=()=>true;
+ contents.beginFrameSubscription=()=>{throw Error('Offscreen capture must use its existing paint surface');};
+ contents.endFrameSubscription=()=>{throw Error('No native subscription was acquired');};
+ contents.executeJavaScriptInIsolatedWorld=async()=>true;
+ assert.equal((await captureHiddenPage(contents)).image,image);
+});

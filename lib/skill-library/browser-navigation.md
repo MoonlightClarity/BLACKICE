@@ -10,6 +10,18 @@ Before multi-step interaction, inspect the page and make a brief outline of its 
 
 After navigation, check the current URL, title, and expected content. If a click leaves the original page unchanged, check whether the link opened a new tab and inspect that destination. Wait briefly for expected loading content, then use a confirmed direct link or the site's search if necessary.
 
+## Use the current form and action contract
+
+Copy the opaque observationReceipt from the latest usable same-tab result into the next dependent mutation. A screenshot, read, snapshot, settled wait, or action result can carry it. If the error says missing-after-observation, use the receipt already returned with that observation; inspect again only when it is unavailable or the page has changed. Use a receipt for one mutation; obtain the next receipt from its result or a fresh observation. Keep it separate from element refs and page identity. Supply expectedUrl and expectedDocumentId only for actions that accept them: suspend takes the tab and observation receipt, not those two fields.
+
+For a native select, choose an exact value from its current options, not a guessed label or value. For BROWSER_SELECT_NOT_NATIVE, open the custom picker, inspect the visible options, and use their current refs. After a selection changes filters, URL, or required fields, inspect the resulting state before the next selection. A reported stale reference after input may mean the selection already took effect; check the current selected value instead of repeating it.
+
+For BROWSER_TARGET_COVERED, read the blocker details and inspect the actual visible page. Distinguish out-of-viewport targets from overlays and controls that disappeared. Bring the intended visible control into view or use the visible modal controls, then reobserve. An embedded provider frame does not establish a visible obstacle. Do not keep clicking the same inaccessible ref. After BROWSER_INPUT_FOCUS_CHANGED, inspect the current field and use its ref before sending more keys.
+
+A capture timeout does not prove the page is empty. Make one fresh observation of the same tab; use text and current refs for ordinary controls when they provide enough evidence. When the task needs visual information, obtain a current screenshot before interpreting or acting on it. After repeated identical failures, preserve the exact state and pursue independent authorized work.
+
+For sign-in, list the existing exact-origin credential first. CREDENTIAL_EXISTS means reuse its current identifier and revision, not generate another password. Bind credential operations to the observed username/password refs. If the authentication helper reports that this form is unsupported, follow its supported credential-fill route and the page's ordinary observed controls, then verify sign-in. Do not repeat the unsupported helper with the same arguments.
+
 ## Inspect a visual or embedded obstacle
 
 1. Inspect the intended tab without a text filter before concluding that content is absent. A provider name, iframe, or frame-local capture does not establish that a challenge is visible. Use a current screenshot to inspect visual content and the surrounding page.

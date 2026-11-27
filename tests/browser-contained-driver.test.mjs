@@ -79,6 +79,83 @@ const assertContained = window => {
   assert.equal(window.options.webPreferences.nodeIntegrationInSubFrames, undefined); assert.equal(window.options.webPreferences.preload, undefined);
 };
 
+test('snapshot suppresses hidden embedding subtrees and retires their old control refs', async t => {
+  let hidden = false, ambiguous = false, unavailable = false, childReads = 0;
+  let omittedChild = false, ambiguousTargets = false, missingTarget = false;
+  const f = await fixture(t, { command: async (method, params, window) => {
+    if (method === 'Page.getFrameTree') {
+      const child = { frame: { id: 'child', url: 'https://embedded.example.test/', name: '' },
+        childFrames: [{ frame: { id: 'nested', url: 'https://nested.example.test/', name: '' } }] };
+      return { frameTree: { frame: { id: 'main', url: window.url }, childFrames: omittedChild ? [] : ambiguous ? [child, child] : [child] } };
+    }
+    if (method === 'Target.getTargets') {
+      const target = { targetId: 'child', type: 'iframe', url: 'https://embedded.example.test/', parentFrameId: 'main' };
+      return { targetInfos: [{ ...target, targetId: 'unrelated', parentFrameId: 'different-parent', parentId: 'main' },
+        ...(missingTarget ? [] : ambiguousTargets ? [target, { ...target, targetId: 'duplicate' }] : [target])] };
+    }
+    if (method === 'DOM.getFrameOwner') {
+      if (unavailable) throw Error('Native owner unavailable');
+      return { backendNodeId: params.frameId === 'child' ? 10 : 11 };
+    }
+    if (method === 'DOM.resolveNode') return { object: { objectId: 'embedding-' + params.backendNodeId } };
+    if (method === 'Runtime.callFunctionOn') {
+      const element = { isConnected: true, tagName: 'IFRAME', getBoundingClientRect: () => ({ width: 400, height: 200 }) };
+      const value = vm.runInNewContext('('+params.functionDeclaration+').call(element)', { element,
+        getComputedStyle: () => ({ display: 'block', visibility: hidden && params.objectId === 'embedding-10' ? 'hidden' : 'visible' }) });
+      return { result: { value } };
+    }
+    return {};
+  } });
+  const tab = f.driver.newTab('https://parent.example.test/'); await tab.loading;
+  const main = tab.window.webContents.mainFrame;
+  const child = { parent: main, processId: 2, routingId: 2, url: 'https://embedded.example.test/', name: '', frames: [] };
+  const nested = { parent: child, processId: 3, routingId: 3, url: 'https://nested.example.test/', name: '', frames: [] };
+  main.url = tab.url; main.frames = [child]; child.frames = [nested]; main.framesInSubtree = [main, child, nested];
+  for (const [frame, ref] of [[child, 'child-control'], [nested, 'nested-control']]) frame.executeJavaScript = async () => {
+    childReads++; return { url: frame.url, elements: [{ ref, name: 'Embedded control' }], text: 'Embedded content', readyState: 'complete' };
+  };
+  let observed = await f.driver.perform({ action: 'snapshot', tabId: tab.id }, { source: 'user' });
+  assert.equal(observed.frames.filter(frame => frame.elements.length).length, 2);
+  assert.equal(f.driver.referenceCurrent(tab, 'nested-control'), true);
+  omittedChild = true; hidden = true; const reads = childReads;
+  observed = await f.driver.perform({ action: 'snapshot', tabId: tab.id }, { source: 'user' });
+  assert.equal(childReads, reads, 'Hidden embedded documents are not read as visible form controls.');
+  assert.ok(observed.frames.slice(1).every(frame => !frame.elements.length && frame.embeddingVisibility.state === 'hidden' && frame.observation === 'not-rendered'));
+  assert.equal(f.driver.referenceCurrent(tab, 'child-control'), false);
+  assert.equal(f.driver.referenceCurrent(tab, 'nested-control'), false);
+  await assert.rejects(f.driver.element(tab, { ref: 'nested-control' }, 'prepare'), { code: 'BROWSER_REF_STALE', actionDispatched: false });
+  hidden = false;
+  observed = await f.driver.perform({ action: 'snapshot', tabId: tab.id }, { source: 'user' });
+  assert.equal(observed.frames.filter(frame => frame.elements.length).length, 2);
+  assert.equal(f.driver.referenceCurrent(tab, 'nested-control'), true);
+  assert.equal(observed.frames[1].embeddingVisibility.state, 'visible', 'An exact OOP child target proves its own embedding.');
+  assert.equal(observed.frames[2].embeddingVisibility.state, 'unknown', 'Unproven OOP descendants stay independently observable.');
+  ambiguousTargets = true;
+  observed = await f.driver.perform({ action: 'snapshot', tabId: tab.id }, { source: 'user' });
+  assert.equal(observed.frames[1].embeddingVisibility.reason, 'owner-ambiguous');
+  assert.equal(observed.frames[1].elements.length, 1);
+  ambiguousTargets = false; missingTarget = true;
+  observed = await f.driver.perform({ action: 'snapshot', tabId: tab.id }, { source: 'user' });
+  assert.equal(observed.frames[1].embeddingVisibility.reason, 'owner-unavailable', 'A target under another parent cannot identify this owner.');
+  assert.equal(observed.frames[1].elements.length, 1);
+  missingTarget = false;
+  main.frames = [child, { ...child, routingId: 4 }];
+  observed = await f.driver.perform({ action: 'snapshot', tabId: tab.id }, { source: 'user' });
+  assert.equal(observed.frames[1].embeddingVisibility.reason, 'owner-ambiguous', 'A partial target list cannot disambiguate duplicate-URL siblings.');
+  assert.equal(observed.frames[1].elements.length, 1);
+  main.frames = [child]; omittedChild = false;
+  ambiguous = true;
+  observed = await f.driver.perform({ action: 'snapshot', tabId: tab.id }, { source: 'user' });
+  assert.equal(observed.frames[1].embeddingVisibility.state, 'unknown');
+  assert.equal(observed.frames[1].embeddingVisibility.reason, 'owner-ambiguous');
+  assert.equal(observed.frames[1].elements.length, 1, 'Ambiguous ownership cannot hide an independently readable frame.');
+  ambiguous = false; unavailable = true;
+  observed = await f.driver.perform({ action: 'snapshot', tabId: tab.id }, { source: 'user' });
+  assert.equal(observed.frames[1].embeddingVisibility.state, 'unknown');
+  assert.equal(observed.frames[1].embeddingVisibility.reason, 'inspection-unavailable');
+  assert.equal(observed.frames[1].elements.length, 1);
+});
+
 test('native cleanup checks a synthetic page without navigation and rejects form/person-touched state', async t => {
   const { driver, windows } = await fixture(t); await driver.init();
   const owner = { taskId: 'fixture-conversation', nodeId: 'research', runId: 'fixture-run',
@@ -717,6 +794,28 @@ async function observedSelectFixture(t, names) {
   frame.executeJavaScript = async code => JSON.parse(JSON.stringify(await vm.runInContext(code, context)));
   return { driver, tab, frame, context, document, controls };
 }
+
+test('a completed select preserves its receipt when its change event updates the page URL', async t => {
+  const f = await observedSelectFixture(t, ['Location filter']);
+  const before = await f.driver.perform({ action: 'snapshot', tabId: f.tab.id }, { source: 'user' });
+  const ref = before.frames[0].elements[0].ref, events = [];
+  const guard = { tabId: f.tab.id, expectedUrl: before.url, expectedDocumentId: before.documentId };
+  f.controls[0].dispatchEvent = event => {
+    events.push(event.type);
+    if (event.type !== 'change') return;
+    const url = 'https://example.test/form?location=remote';
+    f.tab.window.url = url; f.context.location.href = url;
+    f.tab.window.webContents.emit('did-navigate-in-page', {}, url, true, 1, 1);
+  };
+  const result = await f.driver.perform({ action: 'select', ...guard, ref, value: 'yes' }, { source: 'user' });
+  assert.deepEqual(result.receipt, { selected: 'yes' });
+  assert.equal(result.url, 'https://example.test/form?location=remote');
+  assert.equal(result.frames[0].elements[0].value, 'yes');
+  assert.notEqual(result.documentId, before.documentId);
+  assert.deepEqual(events, ['input', 'change'], 'One completed native selection must emit its events once.');
+  await assert.rejects(f.driver.perform({ action: 'select', ...guard, ref, value: 'yes' }, { source: 'user' }), { code: 'BROWSER_INPUT_DOCUMENT_CHANGED' });
+  assert.deepEqual(events, ['input', 'change'], 'Old refs stay retired before another input.');
+});
 
 test('filtered browser observations find unlabeled visible password controls past the default control bound', async t => {
   const f=await observedSelectFixture(t, Array.from({length:320}, (_,i)=>'Navigation '+i));

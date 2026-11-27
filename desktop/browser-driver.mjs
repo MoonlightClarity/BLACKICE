@@ -1549,6 +1549,74 @@ export class ElectronBrowserDriver extends EventEmitter {
     const cutoff = this.downloads.length - 100;
     this.downloads = this.downloads.filter((item, index) => index >= cutoff || item.status === 'downloading');
   }
+  async frameEmbeddingVisibility(tab, frame, signal, cache, deadline) {
+    const main = tab.window.webContents.mainFrame;
+    const unknown = reason => ({ state: 'unknown', reason });
+    const inspect = current => {
+      if (cache.frames.has(current)) return cache.frames.get(current);
+      const pending = (async () => {
+        if (current === main) {
+          const tree = (await this.cdp(tab, 'Page.getFrameTree', {}, signal)).frameTree;
+          return tree?.frame?.url === this.tabURL(tab) ? { state: 'visible', branch: tree } : unknown('owner-unavailable');
+        }
+        const parent = current.parent;
+        if (!parent) return unknown('owner-unavailable');
+        const parentVisibility = await inspect(parent);
+        if (parentVisibility.state === 'hidden') return parentVisibility;
+        if (!parentVisibility.branch) return unknown(parentVisibility.reason || 'owner-unavailable');
+        // URL/name must identify one child of this exact observed parent.
+        // Ambiguous or unavailable ownership is reported, never guessed by order.
+        let matches = (parentVisibility.branch.childFrames || []).filter(child =>
+          child.frame.url === current.url && (child.frame.name || '') === (current.name || ''));
+        if (!matches.length) {
+          // Chromium omits cross-process children from the parent frame tree.
+          // Target metadata has no frame name, so first exclude duplicate-URL
+          // siblings, then require the exact proven parent and one child target.
+          const siblings = parent.frames.filter(sibling => sibling.url === current.url);
+          if (siblings.length !== 1 || siblings[0] !== current) return unknown(siblings.length ? 'owner-ambiguous' : 'owner-unavailable');
+          const targets = (await (cache.targets ||= this.cdp(tab, 'Target.getTargets', {}, signal))).targetInfos || [];
+          matches = targets.filter(target => target.type === 'iframe' && target.url === current.url
+            && (target.parentFrameId || target.parentId) === parentVisibility.branch.frame.id)
+            .map(target => ({ frame: { id: target.targetId, url: target.url } }));
+        }
+        if (matches.length !== 1) return unknown(matches.length ? 'owner-ambiguous' : 'owner-unavailable');
+        const branch = matches[0];
+        let objectId;
+        try {
+          if (Date.now() >= deadline) return unknown('inspection-unavailable');
+          const owner = await this.cdp(tab, 'DOM.getFrameOwner', { frameId: branch.frame.id }, signal);
+          if (!Number.isInteger(owner.backendNodeId)) return unknown('owner-unavailable');
+          const resolved = await this.cdp(tab, 'DOM.resolveNode', { backendNodeId: owner.backendNodeId }, signal);
+          objectId = resolved.object?.objectId;
+          if (!objectId) return unknown('owner-unavailable');
+          const checked = await this.cdp(tab, 'Runtime.callFunctionOn', { objectId, returnByValue: true,
+            functionDeclaration: `function(){
+              if(!this.isConnected||!['IFRAME','FRAME'].includes(this.tagName))return {state:'unknown',reason:'owner-unavailable'};
+              const style=getComputedStyle(this),box=this.getBoundingClientRect();
+              if(style.display==='none'||style.visibility==='hidden'||style.visibility==='collapse')return {state:'hidden',reason:'embedding-hidden'};
+              if(!(box.width>0&&box.height>0))return {state:'hidden',reason:'embedding-zero-size'};
+              if(this.checkVisibility?.({checkOpacity:true,checkVisibilityCSS:true})===false)return {state:'hidden',reason:'embedding-not-rendered'};
+              return {state:'visible'};
+            }` }, signal);
+          const value = checked.result?.value;
+          if (checked.exceptionDetails || !['visible','hidden','unknown'].includes(value?.state)) return unknown('inspection-unavailable');
+          return { ...value, ...(value.state === 'visible' ? { branch } : {}) };
+        } finally {
+          if (objectId) void this.cdp(tab, 'Runtime.releaseObject', { objectId }).catch(() => {});
+        }
+      })();
+      cache.frames.set(current, pending);
+      return pending;
+    };
+    try {
+      const value = await bounded(inspect(frame), signal, Math.max(1, Math.min(500, deadline - Date.now())));
+      return { state: value.state, ...(value.reason ? { reason: value.reason } : {}) };
+    } catch (reason) {
+      cancel(signal);
+      if (['BROWSER_INTERACTION_PENDING','BROWSER_RENDERER_GONE'].includes(reason?.code)) throw reason;
+      return unknown('inspection-unavailable');
+    }
+  }
   async snapshot(tab, query, signal, { readContext = false } = {}) {
     if (tab.pendingInteraction?.automatic && tab.alertAcknowledgement) await bounded(tab.alertAcknowledgement, signal, 8500);
     if (tab.providerKeyProtected) return { tabId: tab.id, url: this.tabURL(tab), documentId: inputDocumentId(tab), frames: [], protectedContent: true, hint: 'This API-key page is masked for tools. Use protected provider key inspection or the local human browser view.' };
@@ -1558,7 +1626,7 @@ export class ElectronBrowserDriver extends EventEmitter {
     const deadline = Date.now() + 7000;
     for (let attempt = 0; attempt < 2; attempt++) {
       cancel(signal);
-      const frames = [], errors = [], captured = []; let remainingElements = 400, remainingText = 24000, frameDisposed = false, mainFrame, allFrames;
+      const frames = [], errors = [], captured = [], embeddingCache = { frames: new Map() }; let remainingElements = 400, remainingText = 24000, frameDisposed = false, mainFrame, allFrames;
       const observedDocumentId = inputDocumentId(tab), observedUrl = tab.window.webContents.getURL();
       let mainStamp, changedRead = false;
       try {
@@ -1592,6 +1660,22 @@ export class ElectronBrowserDriver extends EventEmitter {
             if (frame === mainFrame) { changedRead = true; break; }
             frameDisposed = true; errors.push({ frame: frameLabel, error: 'Child frame changed before inspection.' }); continue;
           }
+          const embeddingVisibility = frame === mainFrame ? undefined
+            : await this.frameEmbeddingVisibility(tab, frame, signal, embeddingCache, deadline);
+          if (embeddingVisibility?.state === 'hidden') {
+            if (!this.frameStampCurrent(tab, stamp)) {
+              frameDisposed = true; errors.push({ frame: frameLabel, error: 'Child frame changed during embedding inspection.' }); continue;
+            }
+            // A child document can report itself visible while its embedding
+            // iframe (or an ancestor iframe) is hidden. Do not publish its
+            // invisible controls as actionable challenge or form UI.
+            for (const [ref, observedFrame] of tab.refs) if (observedFrame === frame)
+              this.retireReference(tab, ref, { reason: 'control-changed' });
+            captured.push({ stamp, elements: [] });
+            frames.push({ frame: frameLabel, url: stamp.url, title: '', elements: [], text: '',
+              truncated: false, observation: 'not-rendered', embeddingVisibility });
+            continue;
+          }
           const prefix = `${stamp.mainRevision}-${stamp.lineage.map(value => value.revision).join('_')}-${frameLabel}`;
           const value = await this.pageWork(tab, frame.executeJavaScript(`(${pageSnapshot.toString()})(${JSON.stringify(this.key)},${JSON.stringify(prefix)},${JSON.stringify(query || '')},${Boolean(readContext)},${browserControlDescriptor.toString()},${browserAssociatedFileInput.toString()})`), signal, Math.max(1, Math.min(deadline - Date.now(), frame === mainFrame ? 5000 : 500)));
           if (!this.frameStampCurrent(tab, stamp)) {
@@ -1606,7 +1690,7 @@ export class ElectronBrowserDriver extends EventEmitter {
           // describes this capture only, not visibility of the embedding frame.
           const observation = query || value.truncated || value.readyState !== 'complete' ? 'unknown'
             : value.elements.length || value.text.trim() ? 'content-observed' : 'no-content-observed';
-          frames.push({ frame: frameLabel, ...value, observation });
+          frames.push({ frame: frameLabel, ...value, observation, ...(embeddingVisibility ? { embeddingVisibility } : {}) });
           if (query && frame === mainFrame && value.elements.length) break;
         } catch (reason) {
           cancel(signal);
@@ -1687,7 +1771,13 @@ export class ElectronBrowserDriver extends EventEmitter {
               ...(['fill','fill-ready'].includes(action)?{keyboardStage:'pre-key-input'}:{}) } : {}),
       });
     }
-    if (!this.referenceCurrent(tab, args.ref)) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref), ...(action==='prepare'?{inputDispatched:false,pointerStage:'pre-pointer-identity'}:{}) });
+    // A native select has already assigned its value and delivered both events
+    // when this receipt returns. Its change handler may update the route and
+    // retire the observed ref; that cannot turn completed input into a stale
+    // precondition failure. Keep the receipt and inspect the current destination.
+    // Preparation and incomplete/failed renderer calls retain their guards.
+    const completedSelection = action === 'select' && typeof result?.selected === 'string';
+    if (!this.referenceCurrent(tab, args.ref) && !completedSelection) throw Object.assign(error('The target frame changed while the element action was running. Inspect its actual effects before another attempt.'), { code: 'BROWSER_REF_STALE', browserReferenceDiagnostic: this.referenceDiagnostic(tab, args.ref), ...(action==='prepare'?{inputDispatched:false,pointerStage:'pre-pointer-identity'}:{}) });
     return { frame, result };
   }
   async observeOperation(args, { signal, owner: context, receiptBindings = [], expectedDocumentId, expectedUrl, recoveryInspection = false } = {}) {

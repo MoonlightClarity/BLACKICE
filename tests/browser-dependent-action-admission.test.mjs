@@ -250,3 +250,140 @@ test('current-page screenshots can recapture once across document turnover; guar
   assert.equal(guarded.code, 'BROWSER_INPUT_DOCUMENT_CHANGED');
   assert.deepEqual(f.calls.map(call => call.tabId), ['one', 'one', 'one']);
 });
+
+test('host field validation preserves the observation for a corrected suspend', async t => {
+  const f = fixture(t);
+  const initial = receipt(await f.handler(invoke('one', 'click', { ref: 'first' })));
+  const invalid = await f.handler(invoke('one', 'suspend', {
+    observationReceipt: initial.observationReceipt,
+    expectedUrl: initial.url, expectedDocumentId: initial.documentId,
+  }));
+  assert.equal(invalid.code, 'BROWSER_VALIDATION');
+  assert.equal(invalid.actionDispatched, false);
+  assert.deepEqual(f.calls.map(call => call.action), ['click']);
+  const corrected = await f.handler(invoke('one', 'suspend', { observationReceipt: initial.observationReceipt }));
+  assert.equal(corrected.success, true, 'A pre-queue field rejection must not consume the observed generation');
+  assert.deepEqual(f.calls.map(call => call.action), ['click', 'suspend']);
+  const recovery = receipt(invalid).recovery;
+  assert.equal(recovery.observationReceiptPreserved, true);
+  assert.deepEqual(recovery.actionFields, ['action', 'browser', 'tabId', 'observationReceipt']);
+  assert.deepEqual(recovery.omitFields, ['expectedUrl', 'expectedDocumentId']);
+  assert.doesNotMatch(JSON.stringify(invalid), new RegExp(initial.observationReceipt));
+});
+
+test('an invalid first mutation does not invent a preceding browser mutation', async t => {
+  const f = fixture(t);
+  const invalid = await f.handler(invoke('one', 'suspend', {
+    expectedUrl: 'https://example.test/form', expectedDocumentId: 'one:1',
+  }));
+  assert.equal(invalid.code, 'BROWSER_VALIDATION');
+  assert.equal((await f.handler(invoke('one', 'suspend'))).success, true);
+  assert.deepEqual(f.calls.map(call => call.action), ['suspend']);
+});
+
+test('missing observation receipt recovery uses already returned evidence and explains suspend fields', async t => {
+  const f = fixture(t);
+  const observed = receipt(await f.handler(invoke('one', 'click', { ref: 'first' })));
+  const missing = await f.handler(invoke('one', 'suspend'));
+  const details = receipt(missing);
+  assert.equal(details.receiptState, 'missing-after-observation');
+  assert.match(details.recovery.hint, /already returned/i);
+  assert.match(details.recovery.hint, /only if.*unavailable/i);
+  assert.match(details.recovery.hint, /omit expectedUrl and expectedDocumentId/i);
+  assert.deepEqual(details.recovery.actionFields, ['action', 'browser', 'tabId', 'observationReceipt']);
+  assert.doesNotMatch(JSON.stringify(missing), new RegExp(observed.observationReceipt));
+  assert.equal((await f.handler(invoke('one', 'suspend', { observationReceipt: observed.observationReceipt }))).success, true);
+  assert.deepEqual(f.calls.map(call => call.action), ['click', 'suspend'], 'Copying the delivered receipt needs no redundant snapshot');
+});
+
+test('driver validation errors do not restore a consumed observation generation', async t => {
+  const f = fixture(t, async args => {
+    if (args.action === 'suspend') throw Object.assign(new Error('driver validation after preparation'), {
+      code: 'BROWSER_VALIDATION', actionDispatched: false,
+    });
+    return { tabId: 'one', url: 'https://example.test/form', documentId: 'one:1', frames: [{}] };
+  });
+  const observed = receipt(await f.handler(invoke('one', 'click', { ref: 'first' })));
+  const failed = await f.handler(invoke('one', 'suspend', { observationReceipt: observed.observationReceipt }));
+  assert.equal(failed.code, 'BROWSER_VALIDATION');
+  assert.notEqual(receipt(failed).recovery?.observationReceiptPreserved, true);
+  const next = await f.handler(invoke('one', 'click', { ref: 'next', observationReceipt: observed.observationReceipt }));
+  assert.equal(next.code, 'BROWSER_REOBSERVE_REQUIRED');
+  assert.equal(receipt(next).receiptState, 'new-observation-needed');
+  assert.deepEqual(f.calls.map(call => call.action), ['click', 'suspend']);
+});
+
+test('queued admission validation errors cannot roll back the browser observation generation', async t => {
+  const f = fixture(t);
+  const observed = receipt(await f.handler(invoke('one', 'click', { ref: 'first' })));
+  const handler = createBrowserToolHandler({
+    browser: f.browser, owner: taskOwner,
+    beforeDispatch: async () => { throw Object.assign(new Error('admission rejected'), { code: 'BROWSER_VALIDATION' }); },
+  });
+  const failed = await handler(invoke('one', 'suspend', { observationReceipt: observed.observationReceipt }));
+  assert.equal(failed.code, 'BROWSER_VALIDATION');
+  assert.equal(failed.actionDispatched, false);
+  assert.equal((await f.handler(invoke('one', 'click', { ref: 'next', observationReceipt: observed.observationReceipt }))).code, 'BROWSER_REOBSERVE_REQUIRED');
+  assert.deepEqual(f.calls.map(call => call.action), ['click']);
+});
+
+test('a delayed validation refusal cannot replace a concurrently delivered observation', async t => {
+  const f = fixture(t), rejected = deferred(), release = deferred();
+  t.after(() => release.resolve());
+  const perform = f.browser.perform.bind(f.browser);
+  f.browser.perform = async (...args) => {
+    try { return await perform(...args); }
+    catch (error) {
+      if (args[0].action !== 'suspend') throw error;
+      rejected.resolve();
+      await release.promise;
+      throw error;
+    }
+  };
+  const prior = receipt(await f.handler(invoke('one', 'click', { ref: 'first' })));
+  const pending = f.handler(invoke('one', 'suspend', {
+    observationReceipt: prior.observationReceipt,
+    expectedUrl: prior.url, expectedDocumentId: prior.documentId,
+  }));
+  await rejected.promise;
+  const current = receipt(await f.handler(invoke('one', 'snapshot')));
+  assert.notEqual(current.observationReceipt, prior.observationReceipt);
+  release.resolve();
+  const invalid = await pending;
+  assert.equal(invalid.code, 'BROWSER_VALIDATION');
+  assert.equal(receipt(invalid).recovery.observationReceiptPreserved, false);
+  assert.equal((await f.handler(invoke('one', 'click', { ref: 'next', observationReceipt: prior.observationReceipt }))).code, 'BROWSER_REOBSERVE_REQUIRED');
+  assert.equal((await f.handler(invoke('one', 'click', { ref: 'next', observationReceipt: current.observationReceipt }))).success, true);
+  assert.deepEqual(f.calls.map(call => call.action), ['click', 'snapshot', 'click']);
+});
+
+for (const captureStage of ['render-boundary', 'bitmap-copy']) {
+  test('native browser failure retains the bounded capture stage ' + captureStage, async t => {
+    const f = fixture(t, async () => { throw Object.assign(new Error('capture deadline'), {
+      code: 'BROWSER_CAPTURE_TIMEOUT', captureStage, rawRenderer: 'PRIVATE_RENDERER_BODY',
+    }); });
+    const result = await f.handler(invoke('one', 'screenshot'));
+    assert.equal(result.success, false);
+    assert.equal(result.captureStage, captureStage);
+    assert.equal(receipt(result).captureStage, captureStage);
+    assert.equal(result.actionDispatched, undefined);
+    assert.equal(result.inputDispatched, undefined);
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE_RENDERER_BODY/);
+    assert.deepEqual(f.calls.map(call => call.action), ['screenshot']);
+  });
+}
+
+test('native browser projection omits unknown capture stages and stages on unrelated errors', async t => {
+  for (const errorFields of [
+    { code: 'BROWSER_CAPTURE_TIMEOUT', captureStage: 'PRIVATE_RENDERER_STAGE' },
+    { code: 'BROWSER_ACTION_FAILED', captureStage: 'render-boundary' },
+  ]) {
+    const f = fixture(t, async () => { throw Object.assign(new Error('failure'), errorFields); });
+    const result = await f.handler(invoke('one', 'screenshot'));
+    assert.equal(result.captureStage, undefined);
+    assert.equal(receipt(result).captureStage, undefined);
+    assert.equal(result.actionDispatched, undefined);
+    assert.equal(result.inputDispatched, undefined);
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE_RENDERER_STAGE/);
+  }
+});

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {toolResultEvent,nativeToolResultEvent} from '../lib/tool-outcomes.mjs';
 import {modelToolCapability,reduceToolOutcome,renderToolIssues} from '../public/tool-outcomes-model.mjs';
 import {reduceRunEvent} from '../public/run-state-model.mjs';
+import {retainToolFailureHistory, projectToolFailureHistory} from '../public/next/chat/tool-failure.mjs';
 test('returned command and structured failures produce explicit bounded redacted receipts',()=>{
  for(const detail of [{success:false,error:'secret failed'},{ok:false,message:'secret failed'},{exitCode:7,stderr:'secret failed'},{isError:true,message:'secret failed'}]){
   const event=toolResultEvent({name:'relay_workspace',callId:'call',arguments:'{"action":"exec"}'},{success:true,contentItems:[{type:'inputText',text:JSON.stringify(detail)}]},value=>value.replaceAll('secret','[redacted]'));
@@ -174,4 +175,42 @@ test('browser and validation failure events preserve trusted dispatch and bounde
  assert.equal(codex.nativeExitCode,7);
  assert.equal(codex.evidence.commandStatus,'exited');
  assert.doesNotMatch(JSON.stringify(codex.evidence),/raw-command/);
+});
+
+test('capture stages survive saved failure projection and distinguish timeout causes without dispatch claims', () => {
+  let history;
+  for (const [index, captureStage] of ['render-boundary', 'bitmap-copy', 'render-boundary'].entries()) {
+    const event = toolResultEvent({ name: 'relay_browser', callId: 'capture-' + index, arguments: { action: 'screenshot' } }, {
+      success: false, code: 'BROWSER_CAPTURE_TIMEOUT', captureStage,
+      contentItems: [{ type: 'inputText', text: JSON.stringify({ error: 'capture deadline', code: 'BROWSER_CAPTURE_TIMEOUT', captureStage }) }],
+    });
+    assert.equal(event.success, false);
+    assert.equal(event.evidence.captureStage, captureStage);
+    assert.equal(event.actionDispatched, undefined);
+    assert.equal(event.inputDispatched, undefined);
+    history = retainToolFailureHistory(history, {
+      at: new Date(Date.UTC(2026, 10, 27, 19, 0, index)).toISOString(), nodeId: 'agent', data: event,
+    });
+  }
+  const saved = projectToolFailureHistory(JSON.parse(JSON.stringify(history)));
+  assert.deepEqual(saved.receipts.map(row => row.evidence.captureStage), ['render-boundary', 'bitmap-copy', 'render-boundary']);
+  assert.equal(saved.distinctKinds.length, 2);
+  assert.deepEqual(saved.distinctKinds.map(row => [row.evidence.captureStage, row.count]), [['render-boundary', 2], ['bitmap-copy', 1]]);
+  assert.ok(saved.receipts.every(row => row.actionDispatched === undefined && row.inputDispatched === undefined));
+});
+
+test('capture evidence ignores unknown stages, unrelated codes and successful results', () => {
+  for (const result of [
+    { success: false, code: 'BROWSER_CAPTURE_TIMEOUT', captureStage: 'PRIVATE_RENDERER_STAGE' },
+    { success: false, code: 'BROWSER_ACTION_FAILED', captureStage: 'render-boundary' },
+    { success: true, captureStage: 'bitmap-copy' },
+    { success: false, code: 'BROWSER_CAPTURE_TIMEOUT' },
+  ]) {
+    const event = toolResultEvent({ name: 'relay_browser', arguments: { action: 'screenshot' } }, result);
+    assert.equal(event.success, result.success);
+    assert.equal(event.evidence?.captureStage, undefined);
+    assert.equal(event.actionDispatched, undefined);
+    assert.equal(event.inputDispatched, undefined);
+    assert.doesNotMatch(JSON.stringify(event), /PRIVATE_RENDERER_STAGE/);
+  }
 });

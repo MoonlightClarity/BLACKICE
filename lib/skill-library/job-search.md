@@ -14,6 +14,16 @@ For applications, use the user's current designated application resume unchanged
 
 Do not tailor, rewrite, reformat, or create role-specific resume versions unless the user explicitly requests it. If an employer genuinely requires a different file format, convert the existing document without changing its substantive content. Complete the application directly rather than spending time on unsolicited resume preparation. Do not promote generated copies or prior uploads to authoritative applicant records.
 
+## Preserve application files and prior outcomes
+
+Carry the exact absolute resume path from a successful read or stat into every upload and successor turn. A basename resolves against the tool's working folder, not the resume folder. For ENOENT, correct the submitted path from that known source and verify the file before retrying; confirm the page retained the attachment.
+
+Reuse the actual application-history paths returned earlier. A guessed filename or default-workspace miss does not establish missing history. Search the known application folder when recovery is needed, then retain the returned paths for the batch.
+
+Before form work, reconcile employer plus exact requisition or authoritative posting URL. Preserve prior positive confirmation even when a later summary omits it; keep prior outcomes separate from this request's new submissions. Another requisition at that employer remains a separate candidate.
+
+Choose an observed native option value; open custom pickers and choose visible options. After a selection changes filters, URL, or fields, inspect its result before continuing. Follow each browser action's fields rather than adding identity fields to actions that reject them. Keep Goal progress within its field limits and honor paused or cancelled state.
+
 ## Reconcile application history
 
 Reuse application history and submission receipts already available from the current search or prior work. If necessary, load the relevant index once for a candidate batch, not a fresh broad file search for every role. A missing or stale index is not evidence that no application was made; it is also not a reason to stall other applications.
