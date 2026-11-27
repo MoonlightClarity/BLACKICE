@@ -1,0 +1,139 @@
+name: Diagnose BLACKICE 2.40.85 installer on disposable Windows (never publish)
+
+on:
+  push:
+    branches:
+      - recovery/full-lineage-24085-20261127
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blackice-24085-installer-diagnostic
+  cancel-in-progress: true
+
+jobs:
+  package-diagnostic:
+    if: github.ref == 'refs/heads/recovery/full-lineage-24085-20261127'
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - name: Build the candidate from this exact Git commit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Locked dependencies failed.' }
+          node scripts/materialize-llama-repair.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned runtime repair inputs failed.' }
+          $env:BLACKICE_LLAMA_REPAIR_BUNDLE=Join-Path $PWD '.build/llama-repair'
+          npm run package:public
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate packaging failed.' }
+          $manifest=Get-Content -Raw -LiteralPath 'dist/Blackice-Public-Windows/blackice-public-release.json' | ConvertFrom-Json
+          if ($manifest.version -cne '2.40.85' -or $manifest.product -cne 'BLACKICE') { throw 'Wrong diagnostic candidate.' }
+          $setup=Join-Path $PWD 'dist/Blackice-Public-Windows/Blackice-2.40.85-Setup.exe'
+          $sha=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha -cne $manifest.artifact.sha256) { throw 'Candidate artifact fingerprint mismatch.' }
+          Write-Output ('Diagnostic candidate installer SHA-256: '+$sha)
+          Write-Output ('Application fingerprint: '+$manifest.appFingerprint)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blackice-24085-recovery-installer-not-a-release
+          path: |
+            dist/Blackice-Public-Windows/Blackice-2.40.85-Setup.exe
+            dist/Blackice-Public-Windows/blackice-public-release.json
+          if-no-files-found: error
+          retention-days: 3
+
+  clean-install-diagnostic:
+    needs: package-diagnostic
+    if: github.ref == 'refs/heads/recovery/full-lineage-24085-20261127'
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: blackice-24085-recovery-installer-not-a-release
+          path: dist/Blackice-Public-Windows
+      - name: Verify actual clean installation, native Runtime and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./scripts/verify-recovery-installer.ps1 -Mode clean -SourceRoot $PWD.Path -Distribution (Join-Path $PWD 'dist/Blackice-Public-Windows') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'blackice-recovery-installer-evidence')
+          if ($LASTEXITCODE -ne 0) { throw 'Clean installation diagnostic failed.' }
+      - name: Stage bounded diagnostic record
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path verification/installer-diagnostics -Force | Out-Null
+          $file=Join-Path $env:RUNNER_TEMP 'blackice-recovery-installer-evidence/clean.json'
+          if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination verification/installer-diagnostics/clean.json }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blackice-24085-clean-install-diagnostic
+          path: verification/installer-diagnostics/clean.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  published-24084-upgrade-diagnostic:
+    needs: package-diagnostic
+    if: github.ref == 'refs/heads/recovery/full-lineage-24085-20261127'
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: blackice-24085-recovery-installer-not-a-release
+          path: dist/Blackice-Public-Windows
+      - name: Verify upgrade from published 2.40.84, profile preservation, Runtime and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & ./scripts/verify-recovery-installer.ps1 -Mode upgrade -SourceRoot $PWD.Path -Distribution (Join-Path $PWD 'dist/Blackice-Public-Windows') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'blackice-recovery-installer-evidence')
+          if ($LASTEXITCODE -ne 0) { throw 'Published baseline upgrade diagnostic failed.' }
+      - name: Stage bounded diagnostic record
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path verification/installer-diagnostics -Force | Out-Null
+          $file=Join-Path $env:RUNNER_TEMP 'blackice-recovery-installer-evidence/upgrade.json'
+          if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination verification/installer-diagnostics/upgrade.json }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blackice-24085-published-24084-upgrade-diagnostic
+          path: verification/installer-diagnostics/upgrade.json
+          if-no-files-found: warn
+          retention-days: 7
+
+# This workflow never creates a Git tag, draft, GitHub Release, or publication
+# receipt. Both installer lifecycle jobs operate only on disposable hosted VMs.
