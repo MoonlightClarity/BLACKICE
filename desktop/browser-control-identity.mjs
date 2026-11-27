@@ -23,7 +23,11 @@ export function browserControlDescriptor(el, role) {
   return [el.tagName, el.type || '', role || (el.isContentEditable ? 'textbox' : el.tagName === 'CANVAS' ? 'canvas' : 'element'), label.slice(0, 300)];
 }
 
-export function browserPointerHitMatches(el, hit, point) {
+export function browserPointerHitMatches(el, hit, point, diagnostic) {
+  const reject = relationship => {
+    if (diagnostic) diagnostic.pointerHitRelationship = relationship;
+    return false;
+  };
   // A slotted node belongs to its composed ancestor, not necessarily its DOM
   // parent. Never accept an unrelated sibling, overlay, or ordinary ancestor.
   const within = node => {
@@ -35,9 +39,10 @@ export function browserPointerHitMatches(el, hit, point) {
     }
     return false;
   };
-  if (!el?.isConnected || !hit?.isConnected || hit.ownerDocument !== el.ownerDocument) return false;
+  if (!el?.isConnected || !hit?.isConnected) return reject('disconnected');
+  if (hit.ownerDocument !== el.ownerDocument) return reject('different-document');
   if (within(hit)) return true;
-  if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return false;
+  if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return reject('invalid-local-point');
   // CDP may retarget a hit on assigned text to a custom-element host. Descend
   // ONLY that exact host's open root, using its topmost rendered hit. An
   // ancestor rectangle, text match or a lower hit-stack entry is insufficient.
@@ -47,13 +52,13 @@ export function browserPointerHitMatches(el, hit, point) {
   while (hit && hosts.has(hit) && !seen.has(hit)) {
     seen.add(hit);
     const root = hit.shadowRoot;
-    if (!root || typeof root.elementsFromPoint !== 'function') return false;
+    if (!root || typeof root.elementsFromPoint !== 'function') return reject('shadow-root-unavailable');
     const next = root.elementsFromPoint(point.x, point.y)[0];
-    if (!next || next === hit || !next.isConnected) return false;
+    if (!next || next === hit || !next.isConnected) return reject('shadow-hit-unavailable');
     if (within(next)) return true;
     hit = next;
   }
-  return false;
+  return reject(seen.size ? 'shadow-hit-unrelated' : 'unrelated');
 }
 
 /** A native file picker may be deliberately unrendered while its label or form
